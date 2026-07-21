@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using RescuAR.App.Services.Unity;
 
 #if ANDROID
@@ -23,6 +23,9 @@ namespace RescuAR.App
 #if ANDROID
             builder.Services.AddSingleton<IUnityService, UnityService>();
 #endif
+            builder.Services.AddSingleton<RescuAR.App.Services.Navigation.OSRMService>();
+            builder.Services.AddSingleton<RescuAR.App.Services.Navigation.OfflineRoutingService>();
+            builder.Services.AddSingleton<RescuAR.App.Services.Navigation.RoutingService>();
 
 #if DEBUG
             builder.Logging.AddDebug();

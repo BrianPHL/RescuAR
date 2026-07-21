@@ -82,6 +82,7 @@
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<PackageReference Include="OsmSharp" Version="6.2.0" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -264,11 +265,9 @@
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0-android'">
 
-    		<AndroidNativeLibrary
-        		Include="Platforms\Android\Unity\jniLibs\arm64-v8a\*.so" />
+    		<AndroidNativeLibrary Include="Platforms\Android\Unity\jniLibs\arm64-v8a\*.so" />
 
-    		<AndroidJavaLibrary
-        		Include="Platforms\Android\Unity\aar\unity-classes.jar" />
+    		<AndroidJavaLibrary Include="Platforms\Android\Unity\aar\unity-classes.jar" />
 
 	</ItemGroup>
 
