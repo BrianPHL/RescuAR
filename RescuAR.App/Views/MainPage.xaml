@@ -19,6 +19,38 @@
             Text="Launch Unity"
             Clicked="LaunchUnityClicked" />
 
+        <Label
+            HorizontalOptions="Center"
+            FontSize="18"
+            Text="Profile Modules Test"
+            Margin="0,20,0,0"/>
+
+        <Button
+            Text="View Help Center"
+            Clicked="OnHelpCenterClicked" />
+            
+        <Button
+            Text="View Privacy Policy"
+            Clicked="OnPrivacyPolicyClicked" />
+            
+        <Button
+            Text="View Terms &amp; Conditions"
+            Clicked="OnTermsConditionsClicked" />
+            
+        <Button
+            Text="View System Information"
+            Clicked="OnSystemInformationClicked" />
+
+        <Label
+            HorizontalOptions="Center"
+            FontSize="18"
+            Text="Home Modules Test"
+            Margin="0,20,0,0"/>
+
+        <Button
+            Text="View Summary"
+            Clicked="OnSummaryClicked" />
+
     </VerticalStackLayout>
 
 </ContentPage>

@@ -1,11 +1,213 @@
 <?xml version="1.0" encoding="utf-8" ?>
 
 <ContentPage
+    x:Class="RescuAR.App.Views.Profile.TermsConditionsPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:DataType="vm:TermsConditionsViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="{StaticResource FillNeutralsPrimaryLight}">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <!-- Title Style (underlined) -->
+            <Style x:Key="TermsTitleStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsPrimaryLight}" />
+                <Setter Property="TextDecorations" Value="Underline" />
+                <Setter Property="LineBreakMode" Value="WordWrap" />
+            </Style>
+
+            <!-- Description Style -->
+            <Style x:Key="TermsDescriptionStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistRegular" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Setter Property="LineBreakMode" Value="WordWrap" />
+            </Style>
+
+            <!-- Bullet Point Style -->
+            <Style x:Key="TermsBulletStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistRegular" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Setter Property="LineBreakMode" Value="WordWrap" />
+            </Style>
+
+            <!-- Number Badge Style -->
+            <Style x:Key="TermsNumberBadgeStyle" TargetType="Border">
+                <Setter Property="WidthRequest" Value="28" />
+                <Setter Property="HeightRequest" Value="28" />
+                <Setter Property="StrokeShape" Value="RoundRectangle 14" />
+                <Setter Property="Stroke" Value="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                <Setter Property="StrokeThickness" Value="1.5" />
+                <Setter Property="BackgroundColor" Value="Transparent" />
+                <Setter Property="VerticalOptions" Value="Start" />
+                <Setter Property="Margin" Value="0,2,0,0" />
+            </Style>
+
+            <!-- Number Label Style -->
+            <Style x:Key="TermsNumberLabelStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                <Setter Property="HorizontalOptions" Value="Center" />
+                <Setter Property="VerticalOptions" Value="Center" />
+            </Style>
+
+            <!-- Bullet Point item template -->
+            <DataTemplate x:Key="TermsBulletTemplate" x:DataType="x:String">
+                <Grid
+                    ColumnDefinitions="14,*"
+                    Padding="0,2">
+                    <Label
+                        Grid.Column="0"
+                        Text="•"
+                        Style="{StaticResource TermsBulletStyle}"
+                        HorizontalOptions="Center" />
+                    <Label
+                        Grid.Column="1"
+                        Text="{Binding}"
+                        Style="{StaticResource TermsBulletStyle}" />
+                </Grid>
+            </DataTemplate>
+
+            <!-- Terms Item template — each item in its own card -->
+            <DataTemplate x:Key="TermsItemTemplate" x:DataType="models:PrivacyPolicyItem">
+                <Border
+                    StrokeShape="RoundRectangle 12"
+                    Stroke="{StaticResource FillNeutralsOutlineAndDividersLight}"
+                    StrokeThickness="1"
+                    BackgroundColor="White"
+                    Padding="0"
+                    Margin="0,0,0,12">
+
+                    <Grid
+                        Padding="12,14"
+                        ColumnDefinitions="36,*"
+                        ColumnSpacing="12">
+
+                        <!-- Number Badge -->
+                        <Border
+                            Grid.Column="0"
+                            Style="{StaticResource TermsNumberBadgeStyle}">
+                            <Label
+                                Text="{Binding Number}"
+                                Style="{StaticResource TermsNumberLabelStyle}" />
+                        </Border>
+
+                        <!-- Title + Description + Bullet Points -->
+                        <VerticalStackLayout
+                            Grid.Column="1"
+                            Spacing="4"
+                            VerticalOptions="Start">
+
+                            <!-- Title (underlined) -->
+                            <Label
+                                Text="{Binding Title}"
+                                Style="{StaticResource TermsTitleStyle}" />
+
+                            <!-- Description -->
+                            <Label
+                                Text="{Binding Description}"
+                                Style="{StaticResource TermsDescriptionStyle}" />
+
+                            <!-- Bullet Points (only shown if present) -->
+                            <VerticalStackLayout
+                                BindableLayout.ItemsSource="{Binding BulletPoints}"
+                                BindableLayout.ItemTemplate="{StaticResource TermsBulletTemplate}"
+                                IsVisible="{Binding HasBulletPoints}"
+                                Spacing="0"
+                                Margin="4,2,0,0" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="20,0,20,24"
+            Spacing="0">
+
+            <!-- ===== Top Navigation Bar ===== -->
+            <Grid
+                Padding="0,12,0,8"
+                ColumnDefinitions="Auto,*,Auto">
+
+                <!-- Back Button -->
+                <HorizontalStackLayout
+                    Grid.Column="0"
+                    Spacing="4"
+                    VerticalOptions="Center">
+                    <Label
+                        Text="‹"
+                        FontFamily="GeistRegular"
+                        FontSize="24"
+                        TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                        VerticalOptions="Center" />
+                    <Label
+                        Text="Back"
+                        FontFamily="GeistRegular"
+                        FontSize="16"
+                        TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                        VerticalOptions="Center" />
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                </HorizontalStackLayout>
+
+                <!-- Title -->
+                <Label
+                    Grid.Column="1"
+                    Text="RescuAR"
+                    FontFamily="GeistSemiBold"
+                    FontSize="16"
+                    TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center" />
+
+                <!-- Notification Bell -->
+                <Label
+                    Grid.Column="2"
+                    Text="🔔"
+                    FontSize="18"
+                    VerticalOptions="Center"
+                    HorizontalOptions="End" />
+            </Grid>
+
+            <!-- ===== Header ===== -->
+            <VerticalStackLayout
+                Spacing="4"
+                Margin="0,8,0,16">
+
+                <Label
+                    Text="Profile/"
+                    FontFamily="GeistRegular"
+                    FontSize="13"
+                    TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+
+                <Label
+                    Text="Terms &amp; Conditions"
+                    FontFamily="GeistBold"
+                    FontSize="28"
+                    TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+            </VerticalStackLayout>
+
+            <!-- ===== Terms Items (individual cards) ===== -->
+            <VerticalStackLayout
+                BindableLayout.ItemsSource="{Binding TermsItems}"
+                BindableLayout.ItemTemplate="{StaticResource TermsItemTemplate}"
+                Spacing="0" />
+
+            <!-- Bottom spacing for tab bar clearance -->
+            <BoxView HeightRequest="24" Color="Transparent" />
+
+        </VerticalStackLayout>
+    </ScrollView>
 
 </ContentPage>

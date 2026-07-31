@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace RescuAR.App.ViewModels.Summary
 {
-    internal class AreaStatusViewModel
+    public class AreaStatusViewModel
     {
     }
 }

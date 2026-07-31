@@ -9,12 +9,14 @@
     <TabBar>
 
         <ShellContent
-            Title="Dashboard"
-            ContentTemplate="{DataTemplate views:DashboardPage}" />
+            Title="Main"
+            ContentTemplate="{DataTemplate views:MainPage}" />
 
+        <!--
         <ShellContent
             Title="Camera"
             ContentTemplate="{DataTemplate views:CameraPage}" />
+        -->
 
     </TabBar>
 

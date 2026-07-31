@@ -1,11 +1,185 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
+    x:Class="RescuAR.App.Views.Summary.SummaryPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Summary"
+    x:DataType="vm:SummaryViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="{StaticResource FillNeutralsSecondaryLight}">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <Style x:Key="SectionTitleStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsPrimaryLight}" />
+                <Setter Property="Margin" Value="0,20,0,8" />
+            </Style>
 
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="StrokeShape" Value="RoundRectangle 8" />
+                <Setter Property="Stroke" Value="{StaticResource FillNeutralsOutlineAndDividersLight}" />
+                <Setter Property="StrokeThickness" Value="1" />
+                <Setter Property="BackgroundColor" Value="White" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
+
+            <Style x:Key="ActionTextStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistRegular" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsPrimaryLight}" />
+                <Setter Property="VerticalOptions" Value="Center" />
+            </Style>
+
+            <!-- Action Item Template (Checkmark + Text) -->
+            <DataTemplate x:Key="ActionItemTemplate" x:DataType="x:String">
+                <VerticalStackLayout>
+                    <BoxView HeightRequest="1" Color="{StaticResource FillNeutralsOutlineAndDividersLight}" />
+                    <Grid ColumnDefinitions="Auto,*" Padding="16,12" ColumnSpacing="12">
+                        <!-- Checkmark Icon -->
+                        <Border Grid.Column="0" WidthRequest="20" HeightRequest="20" StrokeShape="RoundRectangle 10" Stroke="{StaticResource RescuARFillBtnPrimaryDefaultLight}" StrokeThickness="1.5" BackgroundColor="Transparent" VerticalOptions="Center">
+                            <Label Text="✓" FontSize="12" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" HorizontalOptions="Center" VerticalOptions="Center" FontFamily="GeistBold"/>
+                        </Border>
+                        <Label Grid.Column="1" Text="{Binding}" Style="{StaticResource ActionTextStyle}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </DataTemplate>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20,0,20,24" Spacing="0">
+            <!-- Top Nav -->
+            <Grid Padding="0,12,0,8" ColumnDefinitions="Auto,*,Auto">
+                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                    <Label Text="‹" FontFamily="GeistRegular" FontSize="24" TextColor="{StaticResource TypoNeutralsPrimaryLight}" VerticalOptions="Center" />
+                    <Label Text="Back" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource TypoNeutralsPrimaryLight}" VerticalOptions="Center" />
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                </HorizontalStackLayout>
+                <Label Grid.Column="1" Text="RescuAR" FontFamily="GeistSemiBold" FontSize="16" TextColor="{StaticResource TypoNeutralsPrimaryLight}" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Label Grid.Column="2" Text="🔔" FontSize="18" VerticalOptions="Center" HorizontalOptions="End" />
+            </Grid>
+
+            <!-- Header -->
+            <VerticalStackLayout Spacing="4" Margin="0,8,0,16">
+                <Label Text="Home/" FontFamily="GeistRegular" FontSize="13" TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Label Text="Summary" FontFamily="GeistBold" FontSize="32" TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+                <Label Text="Your emergency overview and recommendations." FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource TypoNeutralsSecondaryLight}" LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Overview Card -->
+            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,8">
+                <VerticalStackLayout Spacing="8">
+                    <!-- Increased Risk Badge -->
+                    <Border HorizontalOptions="Start" StrokeShape="RoundRectangle 4" BackgroundColor="{StaticResource FillSemanticsWarningInfoFillLight}" StrokeThickness="0" Padding="8,4">
+                        <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                            <BoxView WidthRequest="6" HeightRequest="6" CornerRadius="3" Color="{StaticResource TypoSemanticsWarningDefaultLight}" VerticalOptions="Center" />
+                            <Label Text="Increased Risk" FontFamily="GeistSemiBold" FontSize="11" TextColor="{StaticResource TypoSemanticsWarningDefaultLight}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Border>
+                    
+                    <Label Text="{Binding OverviewTitle}" FontFamily="GeistBold" FontSize="14" TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+                    <Label Text="{Binding OverviewSubtitle}" FontFamily="GeistRegular" FontSize="13" TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+                    <Label Text="{Binding LastUpdated}" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" Margin="0,4,0,0" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Situation Assessment -->
+            <Label Text="Situation Assessment" Style="{StaticResource SectionTitleStyle}" />
+            <Border StrokeShape="RoundRectangle 8" BackgroundColor="{StaticResource FillSemanticsWarningInfoFillLight}" StrokeThickness="0" Padding="16">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="⚠️" FontSize="20" />
+                    <Label Text="{Binding SituationAssessmentText}" FontFamily="GeistSemiBold" FontSize="14" TextColor="{StaticResource TypoSemanticsWarningDefaultLight}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Recommended Actions -->
+            <Label Text="Recommended Actions" Style="{StaticResource SectionTitleStyle}" />
+            <Border StrokeShape="RoundRectangle 8" BackgroundColor="White" StrokeThickness="1" Stroke="{StaticResource FillNeutralsOutlineAndDividersLight}" Padding="0">
+                <VerticalStackLayout Spacing="0">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding ImmediateActions}" BindableLayout.ItemTemplate="{StaticResource ActionItemTemplate}" Spacing="0" />
+                    
+                    <BoxView HeightRequest="1" Color="{StaticResource FillNeutralsOutlineAndDividersLight}" />
+                    <Label Text="If conditions worsen:" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsPrimaryLight}" Margin="16,12,16,12" />
+                    
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding ContingencyActions}" BindableLayout.ItemTemplate="{StaticResource ActionItemTemplate}" Spacing="0" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Nearest Safe Zone -->
+            <Label Text="Nearest Safe Zone" Style="{StaticResource SectionTitleStyle}" />
+            <Border Style="{StaticResource CardBorderStyle}">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="{Binding NearestSafeZoneName}" FontFamily="GeistBold" FontSize="16" TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+                    <Label Text="{Binding NearestSafeZoneDistance}" FontFamily="GeistRegular" FontSize="13" TextColor="{StaticResource TypoNeutralsPrimaryLight}" Margin="0,0,0,12" />
+                    
+                    <!-- Grid for details -->
+                    <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="12" Margin="0,0,0,16">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Address" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding NearestSafeZoneAddress}" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsPrimaryLight}" HorizontalOptions="End" HorizontalTextAlignment="End" />
+                        
+                        <Label Grid.Row="1" Grid.Column="0" Text="Verified by" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding NearestSafeZoneVerifiedBy}" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsPrimaryLight}" HorizontalOptions="End" HorizontalTextAlignment="End" />
+                    </Grid>
+                    
+                    <HorizontalStackLayout Spacing="4">
+                        <Label Text="View more details" FontFamily="GeistSemiBold" FontSize="13" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                        <Label Text="›" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <HorizontalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewMoreDetailsCommand}" />
+                        </HorizontalStackLayout.GestureRecognizers>
+                    </HorizontalStackLayout>
+                    
+                    <HorizontalStackLayout Spacing="4" Margin="0,12,0,0">
+                        <Label Text="Start practice AR evacuation route" FontFamily="GeistSemiBold" FontSize="13" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                        <Label Text="›" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <HorizontalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding StartPracticeARCommand}" />
+                        </HorizontalStackLayout.GestureRecognizers>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Your Activity -->
+            <Label Text="Your Activity" Style="{StaticResource SectionTitleStyle}" />
+            <Border Style="{StaticResource CardBorderStyle}">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
+                    <Label Grid.Row="0" Grid.Column="0" Text="Last AR Guidance Session" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+                    <Label Grid.Row="0" Grid.Column="1" Text="Never" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+                    
+                    <Label Grid.Row="1" Grid.Column="0" Text="Preparedness Progress" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" VerticalOptions="Center"/>
+                    <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
+                        <Label Text="6/10 items completed" FontFamily="GeistSemiBold" FontSize="12" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center"/>
+                        <Label Text="›" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <HorizontalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewPreparednessProgressCommand}" />
+                        </HorizontalStackLayout.GestureRecognizers>
+                    </HorizontalStackLayout>
+                    
+                    <Label Grid.Row="2" Grid.Column="0" Text="Last Viewed Evacuation&#x0a;Center" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" VerticalOptions="Center"/>
+                    <HorizontalStackLayout Grid.Row="2" Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                        <Label Text="Malanday Element..." FontFamily="GeistSemiBold" FontSize="12" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <Label Text="›" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <HorizontalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewLastEvacuationCenterCommand}" />
+                        </HorizontalStackLayout.GestureRecognizers>
+                    </HorizontalStackLayout>
+                    
+                    <Label Grid.Row="3" Grid.Column="0" Text="Last Viewed Advisory" FontFamily="GeistRegular" FontSize="12" TextColor="{StaticResource TypoNeutralsSecondaryLight}" VerticalOptions="Center"/>
+                    <HorizontalStackLayout Grid.Row="3" Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                        <Label Text="Water Level in Marik..." FontFamily="GeistSemiBold" FontSize="12" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center"/>
+                        <Label Text="›" FontFamily="GeistRegular" FontSize="16" TextColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" VerticalOptions="Center" />
+                        <HorizontalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewLastAdvisoryCommand}" />
+                        </HorizontalStackLayout.GestureRecognizers>
+                    </HorizontalStackLayout>
+                </Grid>
+            </Border>
+            
+            <BoxView HeightRequest="24" Color="Transparent" />
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

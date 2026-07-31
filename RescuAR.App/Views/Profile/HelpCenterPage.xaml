@@ -1,11 +1,321 @@
 <?xml version="1.0" encoding="utf-8" ?>
 
 <ContentPage
+    x:Class="RescuAR.App.Views.Profile.HelpCenterPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:DataType="vm:HelpCenterViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="{StaticResource FillNeutralsPrimaryLight}">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <!-- Section Header Style -->
+            <Style x:Key="SectionHeaderStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Setter Property="TextTransform" Value="Uppercase" />
+                <Setter Property="Margin" Value="0,20,0,8" />
+                <Setter Property="CharacterSpacing" Value="1" />
+            </Style>
+
+            <!-- Item Title Style -->
+            <Style x:Key="ItemTitleStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsPrimaryLight}" />
+                <Setter Property="LineBreakMode" Value="WordWrap" />
+            </Style>
+
+            <!-- Item Description Style -->
+            <Style x:Key="ItemDescriptionStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistRegular" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Setter Property="LineBreakMode" Value="WordWrap" />
+            </Style>
+
+            <!-- Chevron Style -->
+            <Style x:Key="ChevronStyle" TargetType="Label">
+                <Setter Property="Text" Value="›" />
+                <Setter Property="FontFamily" Value="GeistRegular" />
+                <Setter Property="FontSize" Value="22" />
+                <Setter Property="TextColor" Value="{StaticResource TypoNeutralsSecondaryLight}" />
+                <Setter Property="VerticalOptions" Value="Center" />
+                <Setter Property="HorizontalOptions" Value="End" />
+            </Style>
+
+            <!-- Number Badge Style -->
+            <Style x:Key="NumberBadgeStyle" TargetType="Border">
+                <Setter Property="WidthRequest" Value="28" />
+                <Setter Property="HeightRequest" Value="28" />
+                <Setter Property="StrokeShape" Value="RoundRectangle 14" />
+                <Setter Property="Stroke" Value="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                <Setter Property="StrokeThickness" Value="1.5" />
+                <Setter Property="BackgroundColor" Value="Transparent" />
+                <Setter Property="VerticalOptions" Value="Start" />
+                <Setter Property="Margin" Value="0,2,0,0" />
+            </Style>
+
+            <!-- Number Label Style -->
+            <Style x:Key="NumberLabelStyle" TargetType="Label">
+                <Setter Property="FontFamily" Value="GeistSemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+                <Setter Property="HorizontalOptions" Value="Center" />
+                <Setter Property="VerticalOptions" Value="Center" />
+            </Style>
+
+            <!-- Item card template for BindableLayout -->
+            <DataTemplate x:Key="HelpItemTemplate" x:DataType="models:HelpCenterItem">
+                <VerticalStackLayout>
+                    <!-- Divider (hidden for first item via converter or always shown — simple approach) -->
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource FillNeutralsOutlineAndDividersLight}"
+                        Margin="0,0,0,0"
+                        IsVisible="{Binding Number, Converter={StaticResource NumberToDividerVisibilityConverter}}" />
+
+                    <Grid
+                        Padding="12,12"
+                        ColumnDefinitions="36,*,24"
+                        ColumnSpacing="12">
+
+                        <!-- Number Badge -->
+                        <Border
+                            Grid.Column="0"
+                            Style="{StaticResource NumberBadgeStyle}">
+                            <Label
+                                Text="{Binding Number}"
+                                Style="{StaticResource NumberLabelStyle}" />
+                        </Border>
+
+                        <!-- Title + Description -->
+                        <VerticalStackLayout
+                            Grid.Column="1"
+                            Spacing="2"
+                            VerticalOptions="Center">
+                            <Label
+                                Text="{Binding Title}"
+                                Style="{StaticResource ItemTitleStyle}" />
+                            <Label
+                                Text="{Binding Description}"
+                                Style="{StaticResource ItemDescriptionStyle}" />
+                        </VerticalStackLayout>
+
+                        <!-- Chevron -->
+                        <Label
+                            Grid.Column="2"
+                            Style="{StaticResource ChevronStyle}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </DataTemplate>
+
+            <!-- Converter for showing/hiding divider above first item -->
+            <local:NumberToDividerVisibilityConverter
+                xmlns:local="clr-namespace:RescuAR.App.Views.Profile"
+                x:Key="NumberToDividerVisibilityConverter" />
+
+            <!-- Section template -->
+            <DataTemplate x:Key="SectionTemplate" x:DataType="models:HelpCenterSection">
+                <VerticalStackLayout>
+                    <!-- Section Header -->
+                    <Label
+                        Text="{Binding Title}"
+                        Style="{StaticResource SectionHeaderStyle}" />
+
+                    <!-- Items Card -->
+                    <Border
+                        StrokeShape="RoundRectangle 12"
+                        Stroke="{StaticResource FillNeutralsOutlineAndDividersLight}"
+                        StrokeThickness="1"
+                        BackgroundColor="White"
+                        Padding="0">
+                        <VerticalStackLayout
+                            BindableLayout.ItemsSource="{Binding Items}"
+                            BindableLayout.ItemTemplate="{StaticResource HelpItemTemplate}"
+                            Spacing="0" />
+                    </Border>
+                </VerticalStackLayout>
+            </DataTemplate>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="20,0,20,24"
+            Spacing="0">
+
+            <!-- ===== Top Navigation Bar ===== -->
+            <Grid
+                Padding="0,12,0,8"
+                ColumnDefinitions="Auto,*,Auto">
+
+                <!-- Back Button -->
+                <HorizontalStackLayout
+                    Grid.Column="0"
+                    Spacing="4"
+                    VerticalOptions="Center">
+                    <Label
+                        Text="‹"
+                        FontFamily="GeistRegular"
+                        FontSize="24"
+                        TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                        VerticalOptions="Center" />
+                    <Label
+                        Text="Back"
+                        FontFamily="GeistRegular"
+                        FontSize="16"
+                        TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                        VerticalOptions="Center" />
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                </HorizontalStackLayout>
+
+                <!-- Title -->
+                <Label
+                    Grid.Column="1"
+                    Text="RescuAR"
+                    FontFamily="GeistSemiBold"
+                    FontSize="16"
+                    TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center" />
+
+                <!-- Notification Bell (placeholder) -->
+                <Label
+                    Grid.Column="2"
+                    Text="🔔"
+                    FontSize="18"
+                    VerticalOptions="Center"
+                    HorizontalOptions="End" />
+            </Grid>
+
+            <!-- ===== Header ===== -->
+            <VerticalStackLayout
+                Spacing="4"
+                Margin="0,8,0,0">
+
+                <Label
+                    Text="Profile/"
+                    FontFamily="GeistRegular"
+                    FontSize="13"
+                    TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+
+                <Label
+                    Text="Help Center"
+                    FontFamily="GeistBold"
+                    FontSize="28"
+                    TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+
+                <Label
+                    Text="Find answers and guidance on using the app."
+                    FontFamily="GeistRegular"
+                    FontSize="14"
+                    TextColor="{StaticResource TypoNeutralsSecondaryLight}"
+                    Margin="0,0,0,12" />
+            </VerticalStackLayout>
+
+            <!-- ===== Search Bar ===== -->
+            <Border
+                StrokeShape="RoundRectangle 10"
+                Stroke="{StaticResource FillNeutralsOutlineAndDividersLight}"
+                StrokeThickness="1"
+                BackgroundColor="White"
+                Padding="4,0"
+                Margin="0,0,0,4">
+                <SearchBar
+                    Placeholder="Search here..."
+                    Text="{Binding SearchText}"
+                    FontFamily="GeistRegular"
+                    FontSize="14"
+                    BackgroundColor="Transparent"
+                    CancelButtonColor="{StaticResource RescuARFillBtnPrimaryDefaultLight}" />
+            </Border>
+
+            <!-- ===== FAQ Sections ===== -->
+            <VerticalStackLayout
+                BindableLayout.ItemsSource="{Binding Sections}"
+                BindableLayout.ItemTemplate="{StaticResource SectionTemplate}"
+                Spacing="0" />
+
+            <!-- ===== Contact Support Card ===== -->
+            <VerticalStackLayout
+                Margin="0,28,0,0"
+                Spacing="8">
+
+                <Label
+                    Text="Contact Support"
+                    Style="{StaticResource SectionHeaderStyle}" />
+
+                <Border
+                    StrokeShape="RoundRectangle 12"
+                    Stroke="{StaticResource RescuARFillBtnPrimaryDefaultLight}"
+                    StrokeThickness="1.5"
+                    BackgroundColor="#E6F7F8"
+                    Padding="16">
+
+                    <VerticalStackLayout Spacing="12">
+
+                        <Label
+                            Text="Still need help? Contact us."
+                            FontFamily="GeistSemiBold"
+                            FontSize="16"
+                            TextColor="{StaticResource TypoNeutralsPrimaryLight}" />
+
+                        <!-- Email row -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label
+                                Text="Email address"
+                                FontFamily="GeistRegular"
+                                FontSize="12"
+                                TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+
+                            <Border
+                                StrokeShape="RoundRectangle 8"
+                                Stroke="{StaticResource FillNeutralsOutlineAndDividersLight}"
+                                StrokeThickness="1"
+                                BackgroundColor="White"
+                                Padding="12,10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label
+                                        Grid.Column="0"
+                                        Text="support@rescuar.ph"
+                                        FontFamily="GeistRegular"
+                                        FontSize="14"
+                                        TextColor="{StaticResource TypoNeutralsPrimaryLight}"
+                                        VerticalOptions="Center" />
+                                    <Label
+                                        Grid.Column="1"
+                                        Text="📋"
+                                        FontSize="16"
+                                        VerticalOptions="Center" />
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding OpenContactEmailCommand}" />
+                                    </Grid.GestureRecognizers>
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Response time -->
+                        <Label
+                            Text="Response time: 1–2 Business Days"
+                            FontFamily="GeistRegular"
+                            FontSize="12"
+                            TextColor="{StaticResource TypoNeutralsSecondaryLight}" />
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- Bottom spacing for tab bar clearance -->
+            <BoxView HeightRequest="24" Color="Transparent" />
+
+        </VerticalStackLayout>
+    </ScrollView>
 
 </ContentPage>
