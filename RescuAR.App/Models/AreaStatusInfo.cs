@@ -10,12 +10,4 @@ namespace RescuAR.App.Models
         public string RecommendedAction { get; set; } = string.Empty;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
     }
-
-    public enum FloodRiskLevel
-    {
-        Low,
-        Moderate,
-        High,
-        Critical
-    }
 }

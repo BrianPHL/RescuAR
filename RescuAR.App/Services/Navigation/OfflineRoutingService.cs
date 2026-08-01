@@ -8,7 +8,7 @@ namespace RescuAR.App.Services.Navigation
     public class OfflineRoutingService : IRoutingProvider
     {
         private readonly string _mapFileName = "osm.pbf";
-        private string _localMapPath;
+        private string _localMapPath = string.Empty;
 
         public async Task<object> CalculateRouteAsync(object startCoordinate, object endCoordinate)
         {

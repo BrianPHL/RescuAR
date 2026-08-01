@@ -16,7 +16,7 @@ namespace RescuAR.App.Services.Navigation
 
         public async Task<object> CalculateRouteAsync(object startCoordinate, object endCoordinate)
         {
-            bool isOnline = Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
+            bool isOnline = Microsoft.Maui.Networking.Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
 
             if (isOnline)
             {
