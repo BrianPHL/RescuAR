@@ -18,6 +18,14 @@
         <Button
             Text="Launch Unity"
             Clicked="LaunchUnityClicked" />
+            
+        <Button
+            Text="Test Routing"
+            Clicked="TestRoutingClicked" />
+            
+        <Label
+            x:Name="RoutingResultLabel"
+            Text="" />
 
     </VerticalStackLayout>
 
