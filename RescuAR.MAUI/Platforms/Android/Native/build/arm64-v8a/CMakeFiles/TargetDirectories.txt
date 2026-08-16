@@ -1,0 +1,3 @@
+D:/Projects/RescuAR/RescuAR.MAUI/Platforms/Android/Native/build/arm64-v8a/CMakeFiles/native_bridge.dir
+D:/Projects/RescuAR/RescuAR.MAUI/Platforms/Android/Native/build/arm64-v8a/CMakeFiles/edit_cache.dir
+D:/Projects/RescuAR/RescuAR.MAUI/Platforms/Android/Native/build/arm64-v8a/CMakeFiles/rebuild_cache.dir

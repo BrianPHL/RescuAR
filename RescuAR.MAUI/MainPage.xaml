@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="RescuAR.MAUI.MainPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine">
+    <Grid>
+        
+        <evergine:EvergineView x:Name="evergineView" />
+
+        <VerticalStackLayout
+            Padding="30"
+            Spacing="20"
+            VerticalOptions="Start">
+
+            <Button
+                Text="Initialize ARCore"
+                Clicked="InitializeArCoreClicked" />
+
+            <Button
+                Text="Update ARCore Frame"
+                Clicked="UpdateArCoreClicked" />
+
+        </VerticalStackLayout>
+
+    </Grid>
+</ContentPage>

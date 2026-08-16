@@ -1,0 +1,183 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0-android</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<RootNamespace>RescuAR.MAUI</RootNamespace>
+
+		<UseMaui>true</UseMaui>
+		<SingleProject>true</SingleProject>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<!-- Display name -->
+		<ApplicationTitle>RescuAR.MAUI</ApplicationTitle>
+
+		<!-- App identifier -->
+		<ApplicationId>com.rescuar.app</ApplicationId>
+		<ApplicationIdGuid>d62842df-e7e1-4c24-a05d-dea1969b1bd2</ApplicationIdGuid>
+
+		<!-- Versions -->
+		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationVersion>1</ApplicationVersion>
+
+		<!-- Android 8.0 / API 26 minimum -->
+		<SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
+
+		<!-- Required by Vulkan and native interop code -->
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+
+		<!-- Android ABI targets -->
+		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+	</PropertyGroup>
+
+	<!--
+		Native Android build-tool paths.
+
+		Update these version folders only when your installed NDK or CMake
+		version changes.
+	-->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<AndroidSdkDirectory>C:\Users\Bri\AppData\Local\Android\Sdk</AndroidSdkDirectory>
+
+		<AndroidNdkDirectory>$(AndroidSdkDirectory)\ndk\28.2.13676358</AndroidNdkDirectory>
+		<AndroidCMakeDirectory>$(AndroidSdkDirectory)\cmake\3.22.1</AndroidCMakeDirectory>
+
+		<CMakeExecutable>$(AndroidCMakeDirectory)\bin\cmake.exe</CMakeExecutable>
+		<NinjaExecutable>$(AndroidCMakeDirectory)\bin\ninja.exe</NinjaExecutable>
+
+		<AndroidCMakeToolchain>$(AndroidNdkDirectory)\build\cmake\android.toolchain.cmake</AndroidCMakeToolchain>
+
+		<NativeFolder>$(MSBuildProjectDirectory)\Platforms\Android\Native</NativeFolder>
+		<NativeBuildFolder>$(NativeFolder)\build</NativeBuildFolder>
+
+		<NativeLibraryFolder>$(MSBuildProjectDirectory)\Platforms\Android\lib</NativeLibraryFolder>
+	</PropertyGroup>
+
+	<!-- MAUI resources -->
+	<ItemGroup>
+		<!-- App icon -->
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
+
+		<!-- Splash screen -->
+		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+
+		<!-- Images -->
+		<MauiImage Include="Resources\Images\*" />
+		<MauiImage Update="Resources\Images\dotnet_bot.png" BaseSize="168,208" />
+
+		<!-- Custom fonts -->
+		<MauiFont Include="Resources\Fonts\*" />
+
+		<!-- Raw assets -->
+		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<!-- MAUI packages -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
+
+		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+
+		<PackageReference Include="Microsoft.Maui.Controls.Compatibility" Version="$(MauiVersion)" />
+	</ItemGroup>
+
+	<!-- Evergine application project -->
+	<ItemGroup>
+		<ProjectReference Include="..\RescuAR\RescuAR.csproj" />
+	</ItemGroup>
+
+	<!--
+		Register the generated native shared libraries for Android packaging.
+
+		The files are generated and copied before PrepareForBuild runs.
+	-->
+	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<AndroidNativeLibrary Include="Platforms\Android\lib\arm64-v8a\libnative_bridge.so" Abi="arm64-v8a" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Folder Include="Platforms\Android\Vulkan\Shaders\" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<EmbeddedResource Include="Platforms\Android\Vulkan\Shaders\CameraFullscreen.vert.spv" />
+		<EmbeddedResource Include="Platforms\Android\Vulkan\Shaders\CameraExternal.frag.spv" />
+	</ItemGroup>
+
+	<!--
+		Entry point for native bridge preparation.
+
+		This target runs before Android begins preparing build inputs.
+		It executes BuildNativeBridge first, followed by CopyNativeBridge.
+	-->
+	<Target Name="PrepareNativeBridge" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildNativeBridge;CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'" />
+
+	<!-- Build libnative_bridge.so for every supported ABI -->
+	<Target Name="BuildNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'">
+
+		<Message Text="Preparing ARM64 Android native bridge..." Importance="high" />
+
+		<Error Condition="!Exists('$(NativeFolder)\CMakeLists.txt')" Text="CMakeLists.txt was not found: $(NativeFolder)\CMakeLists.txt" />
+
+		<Error Condition="!Exists('$(NativeFolder)\native_bridge.cpp')" Text="native_bridge.cpp was not found: $(NativeFolder)\native_bridge.cpp" />
+
+		<Error Condition="!Exists('$(AndroidCMakeToolchain)')" Text="Android CMake toolchain was not found: $(AndroidCMakeToolchain)" />
+
+		<Error Condition="!Exists('$(CMakeExecutable)')" Text="CMake executable was not found: $(CMakeExecutable)" />
+
+		<Error Condition="!Exists('$(NinjaExecutable)')" Text="Ninja executable was not found: $(NinjaExecutable)" />
+
+		<Message Text="Configuring native bridge for arm64-v8a..." Importance="high" />
+
+		<Exec Command="&quot;$(CMakeExecutable)&quot; -S &quot;$(NativeFolder)&quot; -B &quot;$(NativeBuildFolder)\arm64-v8a&quot; -G Ninja -DCMAKE_MAKE_PROGRAM=&quot;$(NinjaExecutable)&quot; -DCMAKE_TOOLCHAIN_FILE=&quot;$(AndroidCMakeToolchain)&quot; -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=Release" />
+
+		<Message Text="Building native bridge for arm64-v8a..." Importance="high" />
+
+		<Exec Command="&quot;$(CMakeExecutable)&quot; --build &quot;$(NativeBuildFolder)\arm64-v8a&quot;" />
+	</Target>
+
+	<!-- Copy generated libraries into the Android native-library folders -->
+	<Target Name="CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'">
+
+		<Error Condition="!Exists('$(NativeBuildFolder)\arm64-v8a\libnative_bridge.so')" Text="The ARM64 native bridge was not generated: $(NativeBuildFolder)\arm64-v8a\libnative_bridge.so" />
+
+		<MakeDir Directories="$(NativeLibraryFolder)\arm64-v8a" />
+
+		<Copy SourceFiles="$(NativeBuildFolder)\arm64-v8a\libnative_bridge.so" DestinationFolder="$(NativeLibraryFolder)\arm64-v8a" SkipUnchangedFiles="true" />
+
+		<Message Text="ARM64 native bridge copied successfully." Importance="high" />
+	</Target>
+
+	<!-- Evergine Android configuration -->
+	<Choose>
+		<When Condition="'$(TargetFramework)' == 'net9.0-android'">
+
+			<PropertyGroup>
+				<EvergineProfileName>#MAUI#Android</EvergineProfileName>
+			</PropertyGroup>
+
+			<ItemGroup>
+				<PackageReference Include="Evergine.Android" Version="2025.10.21.3204" />
+
+				<PackageReference Include="Evergine.LibBulletc.Natives" Version="2025.8.29.27" />
+
+				<PackageReference Include="Evergine.OpenAL" Version="2025.10.21.3204" />
+
+				<PackageReference Include="Evergine.Targets" Version="2025.10.21.3204" />
+
+				<PackageReference Include="Evergine.Targets.Maui" Version="2025.10.21.3204" />
+
+				<PackageReference Include="Evergine.Vulkan" Version="2025.10.21.3204" />
+
+				<PackageReference Include="Vapolia.Google.ARCore" Version="1.47.1" />
+			</ItemGroup>
+
+			<ItemGroup>
+				<TrimmerRootDescriptor Include="Platforms\Android\linker.xml" />
+			</ItemGroup>
+
+		</When>
+	</Choose>
+
+</Project>
