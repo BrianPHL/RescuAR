@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using RescuAR.MAUI.Evergine;
 using RescuAR.MAUI.Services;
+using RescuAR.MAUI.Services.Location;
 
 namespace RescuAR.MAUI;
 
@@ -35,6 +36,10 @@ public static class MauiProgram
         builder.Services.AddSingleton<
             IArCoreService,
             Platforms.Android.Services.ArCoreService>();
+
+        builder.Services.AddSingleton<
+            ILocationService,
+            MauiLocationService>();
 
 #endif
 
