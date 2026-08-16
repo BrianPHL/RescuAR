@@ -2,6 +2,7 @@ using Evergine.Common.IO;
 using Evergine.Framework;
 using Evergine.Framework.Services;
 using Evergine.Framework.Threading;
+using RescuAR.Navigation.Data;
 
 namespace RescuAR
 {
@@ -34,6 +35,17 @@ namespace RescuAR
             var scene = assetsService.Load<MyScene>(EvergineContent.Scenes.MyScene_wescene);
             ScreenContext screenContext = new ScreenContext(scene);
             screenContextManager.To(screenContext);
+
+            /*
+             * Milestone 4 diagnostic:
+             * validate the embedded Marikina navigation datasets once without
+             * blocking Evergine scene initialization.
+             *
+             * The task caches its result, so this cannot build the graph more
+             * than once per process.
+             */
+            _ =
+                NavigationDataBootstrap.ValidateOnceAsync();
         }
     }
 }

@@ -20,4 +20,9 @@
 		<PackageReference Include="Evergine.CodeScenes" Version="2025.10.21.3204" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<EmbeddedResource Include="Navigation\Data\Resources\ROADS.geojson" />
+		<EmbeddedResource Include="Navigation\Data\Resources\POINTS.geojson" />
+	</ItemGroup>
+
 </Project>
