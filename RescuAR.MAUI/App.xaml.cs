@@ -1,15 +1,36 @@
-namespace RescuAR.MAUI
-{
-    public partial class App : Application
-    {
-        public App()
-        {
-            InitializeComponent();
-        }
+using Microsoft.Maui.Storage;
 
-        protected override Window CreateWindow(IActivationState? activationState)
-        {
-            return new Window(new AppShell());
-        }
+using RescuAR.App.Views.Authentication;
+
+namespace RescuAR.MAUI;
+
+public partial class App : Application
+{
+    private readonly OnboardingPage onboardingPage;
+
+    public App(
+        OnboardingPage onboardingPage)
+    {
+        InitializeComponent();
+
+        this.onboardingPage =
+            onboardingPage;
+    }
+
+    protected override Window CreateWindow(
+        IActivationState? activationState)
+    {
+        bool isLoggedIn =
+            Preferences.Default.Get(
+                "IsLoggedIn",
+                false);
+
+        Page rootPage =
+            isLoggedIn
+                ? new AppShell()
+                : onboardingPage;
+
+        return new Window(
+            rootPage);
     }
 }
