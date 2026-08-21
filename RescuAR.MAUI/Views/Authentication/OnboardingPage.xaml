@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:OnboardingViewModel"
+    x:Class="RescuAR.App.Views.Authentication.OnboardingPage"
+    BackgroundColor="#F7F7F7">
+
+    <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
+
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
+            <!-- Back button on top left -->
+            <Label Grid.Column="0"
+                   Text="&lt; Back"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="14"
+                   TextColor="#00848E"
+                   VerticalOptions="Center"
+                   IsVisible="{Binding IsBackButtonVisible}">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding BackCommand}" />
+                </Label.GestureRecognizers>
+            </Label>
+
+            <!-- Centered Title -->
+            <Label Grid.Column="1"
+                   Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1" ColumnDefinitions="*">
+
+            <!-- Onboarding Layout (Slides 1, 2, 3) -->
+            <Grid IsVisible="{Binding IsOnboardingVisible}" RowDefinitions="*, Auto" RowSpacing="16" VerticalOptions="FillAndExpand">
+                
+                <!-- Top Image -->
+                <Border Grid.Row="0" StrokeThickness="0" Margin="0" Padding="0" VerticalOptions="FillAndExpand">
+                    <Image Source="{Binding CurrentImage}"
+                           Aspect="AspectFill"
+                           HorizontalOptions="Fill"
+                           VerticalOptions="Fill" />
+                </Border>
+
+                <!-- Middle Text & Dots -->
+                <VerticalStackLayout Grid.Row="1" Spacing="8" Margin="0, 0, 0, 16">
+                    <Label FontSize="26" 
+                           FontFamily="OpenSansSemibold" 
+                           TextColor="#1E1E1E" 
+                           LineBreakMode="WordWrap" 
+                           Margin="24, 0">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="{Binding TitlePart1}" />
+                                <Span Text="{Binding TitleHighlight}" TextColor="#00848E" FontFamily="OpenSansSemibold" />
+                                <Span Text="{Binding TitlePart2}" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+
+                    <Label Text="{Binding Description}"
+                           FontSize="14"
+                           FontFamily="OpenSansRegular"
+                           TextColor="#5A5A5A"
+                           LineBreakMode="WordWrap"
+                           Margin="24, 8, 24, 16" />
+
+                    <!-- Dots Indicator -->
+                    <HorizontalStackLayout Spacing="8" Margin="24, 0" HorizontalOptions="Center">
+                        <!-- Dot 1 -->
+                        <Border HeightRequest="6" StrokeThickness="0" StrokeShape="RoundRectangle 3">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot1Active}" Value="True">
+                                    <Setter Property="BackgroundColor" Value="#1E1E1E" />
+                                    <Setter Property="WidthRequest" Value="24" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot1Active}" Value="False">
+                                    <Setter Property="BackgroundColor" Value="#CCCCCC" />
+                                    <Setter Property="WidthRequest" Value="6" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                        </Border>
+                        <!-- Dot 2 -->
+                        <Border HeightRequest="6" StrokeThickness="0" StrokeShape="RoundRectangle 3">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot2Active}" Value="True">
+                                    <Setter Property="BackgroundColor" Value="#1E1E1E" />
+                                    <Setter Property="WidthRequest" Value="24" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot2Active}" Value="False">
+                                    <Setter Property="BackgroundColor" Value="#CCCCCC" />
+                                    <Setter Property="WidthRequest" Value="6" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                        </Border>
+                        <!-- Dot 3 -->
+                        <Border HeightRequest="6" StrokeThickness="0" StrokeShape="RoundRectangle 3">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot3Active}" Value="True">
+                                    <Setter Property="BackgroundColor" Value="#1E1E1E" />
+                                    <Setter Property="WidthRequest" Value="24" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsDot3Active}" Value="False">
+                                    <Setter Property="BackgroundColor" Value="#CCCCCC" />
+                                    <Setter Property="WidthRequest" Value="6" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                        </Border>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Grid>
+
+            <!-- Entry Layout -->
+            <Grid IsVisible="{Binding IsEntryVisible}" RowDefinitions="*, Auto" VerticalOptions="FillAndExpand">
+                
+                <!-- Centered Logo Card -->
+                <VerticalStackLayout Grid.Row="0" 
+                                     HorizontalOptions="Center" 
+                                     VerticalOptions="Center"
+                                     Spacing="20">
+                    
+                    <Border WidthRequest="300"
+                            HeightRequest="120"
+                            StrokeThickness="0"
+                            BackgroundColor="White"
+                            StrokeShape="RoundRectangle 12">
+                        <Border.Shadow>
+                            <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
+                        </Border.Shadow>
+                        
+                        <Image Source="rescuar_logo.jpg"
+                               Aspect="AspectFit"
+                               Margin="10"
+                               HorizontalOptions="Fill"
+                               VerticalOptions="Fill" />
+                    </Border>
+                    
+                </VerticalStackLayout>
+
+                <!-- Bottom Button Actions -->
+                <VerticalStackLayout Grid.Row="1" Spacing="16" Margin="0, 0, 0, 24">
+                    <Button Text="Create an Account"
+                            Command="{Binding CreateAccountCommand}"
+                            TextColor="White"
+                            BackgroundColor="#00848E"
+                            CornerRadius="8"
+                            HeightRequest="50"
+                            FontFamily="OpenSansSemibold"
+                            Margin="24, 0" />
+
+                    <Label Text="Sign In"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="14"
+                           TextColor="#00848E"
+                           HorizontalOptions="Center">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding SignInCommand}" />
+                        </Label.GestureRecognizers>
+                    </Label>
+                </VerticalStackLayout>
+            </Grid>
+            
+        </Grid>
+
+        <!-- Footer Area -->
+        <VerticalStackLayout Grid.Row="2" Spacing="12">
+            
+            <!-- Navigation controls for Onboarding -->
+            <Grid IsVisible="{Binding IsOnboardingVisible}" ColumnDefinitions="Auto, *" ColumnSpacing="16" Margin="24, 0, 24, 12">
+                <Button Grid.Column="0"
+                        Text="Skip"
+                        Command="{Binding SkipCommand}"
+                        TextColor="#1E1E1E"
+                        BackgroundColor="#EAEAEA"
+                        CornerRadius="8"
+                        WidthRequest="100"
+                        HeightRequest="50"
+                        FontFamily="OpenSansSemibold" />
+
+                <Button Grid.Column="1"
+                        Text="{Binding NextButtonText}"
+                        Command="{Binding NextCommand}"
+                        TextColor="White"
+                        BackgroundColor="#00848E"
+                        CornerRadius="8"
+                        HeightRequest="50"
+                        FontFamily="OpenSansSemibold" />
+            </Grid>
+
+            <!-- Always visible version text -->
+            <Label Text="{Binding VersionText}"
+                   FontSize="12"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#A0A0A0"
+                   HorizontalOptions="Center"
+                   Margin="0, 0, 0, 16" />
+            
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>

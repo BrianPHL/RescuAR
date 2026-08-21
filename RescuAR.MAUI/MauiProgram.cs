@@ -2,6 +2,9 @@ using Microsoft.Extensions.Logging;
 using RescuAR.MAUI.Evergine;
 using RescuAR.MAUI.Services;
 using RescuAR.MAUI.Services.Location;
+using RescuAR.App.Services.Authentication;
+using RescuAR.App.ViewModels.Authentication;
+using RescuAR.App.Views.Authentication;
 
 namespace RescuAR.MAUI;
 
@@ -42,6 +45,31 @@ public static class MauiProgram
             MauiLocationService>();
 
 #endif
+
+        // RescuAR authentication service
+        builder.Services.AddSingleton<AuthenticationService>();
+
+        // Authentication Views + ViewModels
+        builder.Services.AddTransient<SplashPage>();
+        builder.Services.AddTransient<SplashViewModel>();
+
+        builder.Services.AddTransient<OnboardingPage>();
+        builder.Services.AddTransient<OnboardingViewModel>();
+
+        builder.Services.AddTransient<RegistrationPage>();
+        builder.Services.AddTransient<RegistrationViewModel>();
+
+        builder.Services.AddTransient<RegistrationSuccessPage>();
+        builder.Services.AddTransient<RegistrationSuccessViewModel>();
+
+        builder.Services.AddTransient<LoginPage>();
+        builder.Services.AddTransient<LoginViewModel>();
+
+        builder.Services.AddTransient<GoogleAuthPage>();
+        builder.Services.AddTransient<GoogleAuthViewModel>();
+
+        builder.Services.AddTransient<PermissionsPage>();
+        builder.Services.AddTransient<PermissionsViewModel>();
 
 #if DEBUG
         builder.Logging.AddDebug();

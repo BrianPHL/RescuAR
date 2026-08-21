@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:RegistrationViewModel"
+    x:Class="RescuAR.App.Views.Authentication.RegistrationPage"
+    BackgroundColor="#F7F7F7">
+
+    <Grid RowDefinitions="Auto, *, Auto">
+
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
+            <!-- Back button on top left -->
+            <Label Grid.Column="0"
+                   Text="&lt; Back"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="14"
+                   TextColor="#00848E"
+                   VerticalOptions="Center">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding BackCommand}" />
+                </Label.GestureRecognizers>
+            </Label>
+
+            <!-- Centered Title -->
+            <Label Grid.Column="1"
+                   Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Form Content (Scrollable) -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="24, 16" Spacing="16">
+
+                <!-- Logo Header Card -->
+                <Border WidthRequest="300"
+                        HeightRequest="110"
+                        StrokeThickness="0"
+                        BackgroundColor="White"
+                        StrokeShape="RoundRectangle 12"
+                        HorizontalOptions="Center"
+                        Margin="0, 0, 0, 8">
+                    <Border.Shadow>
+                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
+                    </Border.Shadow>
+                    
+                    <Image Source="rescuar_logo.jpg"
+                           Aspect="AspectFit"
+                           Margin="10"
+                           HorizontalOptions="Fill"
+                           VerticalOptions="Fill" />
+                </Border>
+
+                <!-- Error Message Display -->
+                <Label Text="{Binding ErrorMessage}"
+                       TextColor="#FF3333"
+                       FontSize="13"
+                       FontFamily="OpenSansRegular"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       IsVisible="{Binding HasError}"
+                       LineBreakMode="WordWrap" />
+
+                <!-- First Name and Middle Name Fields -->
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="12">
+                    <!-- First Name -->
+                    <VerticalStackLayout Grid.Column="0" Spacing="4">
+                        <Label Text="Full Name"
+                               FontSize="12"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#5A5A5A" />
+                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                            <Entry Text="{Binding FirstName}"
+                                   Placeholder="Brian Lawrence"
+                                   TextColor="#1E1E1E"
+                                   FontSize="14"
+                                   FontFamily="OpenSansRegular"
+                                   VerticalOptions="Center"
+                                   Keyboard="Text" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <!-- Middle Name -->
+                    <VerticalStackLayout Grid.Column="1" Spacing="4">
+                        <Label Text="Middle Name (Optional)"
+                               FontSize="12"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#5A5A5A" />
+                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                            <Entry Text="{Binding MiddleName}"
+                                   Placeholder="Cardoza"
+                                   TextColor="#1E1E1E"
+                                   FontSize="14"
+                                   FontFamily="OpenSansRegular"
+                                   VerticalOptions="Center"
+                                   Keyboard="Text" />
+                        </Border>
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- Last Name Field -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Last Name"
+                           FontSize="12"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#5A5A5A" />
+                    <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                        <Entry Text="{Binding LastName}"
+                               Placeholder="Pasco"
+                               TextColor="#1E1E1E"
+                               FontSize="14"
+                               FontFamily="OpenSansRegular"
+                               VerticalOptions="Center"
+                               Keyboard="Text" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Email Address Field -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Email Address"
+                           FontSize="12"
+                           FontFamily="OpenSansSemibold"
+                           TextColor="#5A5A5A" />
+                    <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                        <Entry Text="{Binding Email}"
+                               Placeholder="qblcpasco@tip.edu.ph"
+                               TextColor="#1E1E1E"
+                               FontSize="14"
+                               FontFamily="OpenSansRegular"
+                               VerticalOptions="Center"
+                               Keyboard="Email" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Password and Confirm Password Fields -->
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="12">
+                    <!-- Password -->
+                    <VerticalStackLayout Grid.Column="0" Spacing="4">
+                        <Label Text="Password"
+                               FontSize="12"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#5A5A5A" />
+                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                            <Grid ColumnDefinitions="*, Auto">
+                                <Entry Grid.Column="0"
+                                       Text="{Binding Password}"
+                                       IsPassword="{Binding IsPasswordHidden}"
+                                       Placeholder="••••••••"
+                                       TextColor="#1E1E1E"
+                                       FontSize="14"
+                                       FontFamily="OpenSansRegular"
+                                       VerticalOptions="Center" />
+                                <Button Grid.Column="1"
+                                        Text="{Binding PasswordToggleIcon}"
+                                        Command="{Binding TogglePasswordVisibilityCommand}"
+                                        BackgroundColor="Transparent"
+                                        TextColor="#00848E"
+                                        FontFamily="OpenSansRegular"
+                                        FontSize="14"
+                                        Padding="0"
+                                        WidthRequest="36"
+                                        HeightRequest="36"
+                                        VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <!-- Confirm Password -->
+                    <VerticalStackLayout Grid.Column="1" Spacing="4">
+                        <Label Text="Confirm Password"
+                               FontSize="12"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#5A5A5A" />
+                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
+                            <Grid ColumnDefinitions="*, Auto">
+                                <Entry Grid.Column="0"
+                                       Text="{Binding ConfirmPassword}"
+                                       IsPassword="{Binding IsConfirmPasswordHidden}"
+                                       Placeholder="••••••••"
+                                       TextColor="#1E1E1E"
+                                       FontSize="14"
+                                       FontFamily="OpenSansRegular"
+                                       VerticalOptions="Center" />
+                                <Button Grid.Column="1"
+                                        Text="{Binding ConfirmPasswordToggleIcon}"
+                                        Command="{Binding ToggleConfirmPasswordVisibilityCommand}"
+                                        BackgroundColor="Transparent"
+                                        TextColor="#00848E"
+                                        FontFamily="OpenSansRegular"
+                                        FontSize="14"
+                                        Padding="0"
+                                        WidthRequest="36"
+                                        HeightRequest="36"
+                                        VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- Terms and Conditions Checkbox -->
+                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" Margin="0, 4">
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IsTermsAccepted}"
+                              Color="#00848E"
+                              VerticalOptions="Center" />
+                    <Label Grid.Column="1"
+                           FontSize="12"
+                           FontFamily="OpenSansRegular"
+                           TextColor="#5A5A5A"
+                           LineBreakMode="WordWrap"
+                           VerticalOptions="Center">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="I read and agree to the " />
+                                <Span Text="Terms &amp; Conditions" TextColor="#00848E" FontFamily="OpenSansSemibold" />
+                                <Span Text=" and " />
+                                <Span Text="Privacy Policy" TextColor="#00848E" FontFamily="OpenSansSemibold" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </Grid>
+
+                <!-- Create Account Button -->
+                <Grid Margin="0, 8, 0, 0">
+                    <Button Text="→ Create an Account"
+                            Command="{Binding CreateAccountCommand}"
+                            TextColor="White"
+                            BackgroundColor="#00848E"
+                            CornerRadius="8"
+                            HeightRequest="50"
+                            FontFamily="OpenSansSemibold"
+                            FontSize="15"
+                            IsVisible="{Binding IsNotLoading}" />
+                    
+                    <ActivityIndicator IsRunning="{Binding IsLoading}"
+                                       Color="#00848E"
+                                       HeightRequest="50"
+                                       HorizontalOptions="Center"
+                                       IsVisible="{Binding IsLoading}" />
+                </Grid>
+
+                <!-- Already have an account? Sign In -->
+                <Label HorizontalOptions="Center"
+                       FontSize="13"
+                       FontFamily="OpenSansRegular"
+                       TextColor="#5A5A5A"
+                       Margin="0, 8, 0, 16">
+                    <Label.FormattedText>
+                        <FormattedString>
+                            <Span Text="Already have an account? " />
+                            <Span Text="Sign in" TextColor="#00848E" FontFamily="OpenSansSemibold">
+                                <Span.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToSignInCommand}" />
+                                </Span.GestureRecognizers>
+                            </Span>
+                        </FormattedString>
+                    </Label.FormattedText>
+                </Label>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Footer Area -->
+        <VerticalStackLayout Grid.Row="2" Padding="0, 0, 0, 16">
+            <Label Text="v0.0.1s"
+                   FontSize="12"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#A0A0A0"
+                   HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>
