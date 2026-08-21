@@ -34,13 +34,13 @@ public partial class EvacuationCenterItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(ProgressValue))]
     [NotifyPropertyChangedFor(nameof(StatusPillBg))]
     [NotifyPropertyChangedFor(nameof(StatusPillText))]
-    public partial int CurrentOccupancy { get; set; }
+    private int currentOccupancy;
 
     public int MaxCapacity { get; set; } = 500;
 
     public string Status { get; set; } = "Open";
 
-    public string CapacityText => $"{CurrentOccupancy} / {MaxCapacity} evacuees";
+    public string CapacityText => $"{ CurrentOccupancy } / { MaxCapacity } evacuees";
 
     public double ProgressValue => (double)CurrentOccupancy / MaxCapacity;
 
@@ -72,7 +72,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     public ObservableCollection<EvacuationCenterItem> EvacuationCenters { get; } = new();
 
     [ObservableProperty]
-    public partial string SelectedFilter { get; set; } = "Nearest";
+    private string selectedFilter = "Nearest";
 
     public EvacuationCenterInfoViewModel()
     {

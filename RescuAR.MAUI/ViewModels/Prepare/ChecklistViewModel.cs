@@ -20,7 +20,7 @@ public partial class ChecklistItem : ObservableObject
     public string IconBg { get; set; } = "#E0F2FE";
 
     [ObservableProperty]
-    public partial bool IsCompleted { get; set; }
+    private bool isCompleted;
 }
 
 public partial class ChecklistViewModel : ObservableObject
@@ -30,28 +30,28 @@ public partial class ChecklistViewModel : ObservableObject
     public ObservableCollection<ChecklistItem> FilteredItems { get; } = new();
 
     [ObservableProperty]
-    public partial double ProgressValue { get; set; } = 0.6;
+    private double progressValue = 0.6;
 
     [ObservableProperty]
-    public partial int PercentReady { get; set; } = 60;
+    private int percentReady = 60;
 
     [ObservableProperty]
-    public partial string PreparedCountText { get; set; } = "6 of 10 items prepared";
+    private string preparedCountText = "6 of 10 items prepared";
 
     [ObservableProperty]
-    public partial string SelectedCategory { get; set; } = "All";
+    private string selectedCategory = "All";
 
     [ObservableProperty]
-    public partial bool IsAddModalVisible { get; set; } = false;
+    private bool isAddModalVisible = false;
 
     [ObservableProperty]
-    public partial string NewItemTitle { get; set; } = string.Empty;
+    private string newItemTitle = string.Empty;
 
     [ObservableProperty]
-    public partial string NewItemDescription { get; set; } = string.Empty;
+    private string newItemDescription = string.Empty;
 
     [ObservableProperty]
-    public partial string NewItemCategory { get; set; } = "Food & Water";
+    private string newItemCategory = "Food & Water";
 
     public ChecklistViewModel()
     {

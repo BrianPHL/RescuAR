@@ -19,38 +19,38 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
     private readonly AdvisoryService _advisoryService;
 
     [ObservableProperty]
-    public partial string RiskTitle { get; set; } = "Critical Flood Risk";
+    private string riskTitle = "Critical Flood Risk";
 
     [ObservableProperty]
-    public partial string AdvisoriesText { get; set; } = "1 active advisory within 0.5 km. Evacuation guidance available.";
+    private string advisoriesText = "1 active advisory within 0.5 km. Evacuation guidance available.";
 
     [ObservableProperty]
-    public partial string NearestCenterName { get; set; } = "Marikina City Hall";
+    private string nearestCenterName = "Marikina City Hall";
 
     [ObservableProperty]
-    public partial string NearestCenterDistance { get; set; } = "0.5km";
+    private string nearestCenterDistance = "0.5km";
 
     [ObservableProperty]
-    public partial string RecommendedAction { get; set; } = "Evacuate immediately to safe shelter";
+    private string recommendedAction = "Evacuate immediately to safe shelter";
 
     [ObservableProperty]
-    public partial string UpdatedText { get; set; } = "Just now";
+    private string updatedText = "Just now";
 
     // Styling bindings for exact match
     [ObservableProperty]
-    public partial string BackgroundColor { get; set; } = "#FEE2E2";
+    private string backgroundColor = "#FEE2E2";
 
     [ObservableProperty]
-    public partial string TextColor { get; set; } = "#991B1B";
+    private string textColor = "#991B1B";
 
     [ObservableProperty]
-    public partial string SubtitleColor { get; set; } = "#B91C1C";
+    private string subtitleColor = "#B91C1C";
 
     [ObservableProperty]
-    public partial string LabelColor { get; set; } = "#64748B";
+    private string labelColor = "#64748B";
 
     [ObservableProperty]
-    public partial string LinkColor { get; set; } = "#0A8491";
+    private string linkColor = "#0A8491";
 
     // Dynamic User Coordinates
     public double UserLatitude { get; set; } = 14.6340;

@@ -16,19 +16,19 @@ public partial class EvacuationOverviewViewModel : ObservableObject
     private readonly IAreaStatusService _areaStatusService;
 
     [ObservableProperty]
-    public partial string DistanceText { get; set; } = "Calculating...";
+    private string distanceText = "Calculating...";
 
     [ObservableProperty]
-    public partial string CenterName { get; set; } = "Locating nearest shelter...";
+    private string centerName = "Locating nearest shelter...";
 
     [ObservableProperty]
-    public partial string ActionText { get; set; } = "Nearest Evacuation Center";
+    private string actionText = "Nearest Evacuation Center";
 
     [ObservableProperty]
-    public partial string ModuleRoute { get; set; } = "//Map";
+    private string moduleRoute = "//Map";
 
     [ObservableProperty]
-    public partial string ModuleName { get; set; } = "Evacuation Center Info";
+    private string moduleName = "Evacuation Center Info";
 
     public EvacuationOverviewViewModel() : this(DashboardDataService.Instance, AreaStatusService.Instance)
     {
@@ -95,7 +95,7 @@ public partial class EvacuationOverviewViewModel : ObservableObject
             }
             catch (Exception)
             {
-                await Shell.Current.DisplayAlertAsync(
+                await Shell.Current.DisplayAlert(
                     "Link Redirection",
                     $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
                     "OK");

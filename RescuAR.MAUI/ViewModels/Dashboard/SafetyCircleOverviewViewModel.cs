@@ -12,25 +12,25 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    public partial string Circle1Name { get; set; } = string.Empty;
+    private string circle1Name = string.Empty;
 
     [ObservableProperty]
-    public partial string Circle1Status { get; set; } = string.Empty;
+    private string circle1Status = string.Empty;
 
     [ObservableProperty]
-    public partial string Circle2Name { get; set; } = string.Empty;
+    private string circle2Name = string.Empty;
 
     [ObservableProperty]
-    public partial string Circle2Status { get; set; } = string.Empty;
+    private string circle2Status = string.Empty;
 
     [ObservableProperty]
-    public partial string ActionText { get; set; } = string.Empty;
+    private string actionText = string.Empty;
 
     [ObservableProperty]
-    public partial string ModuleRoute { get; set; } = "//Map/SafetyCircle";
+    private string moduleRoute = "//Map/SafetyCircle";
 
     [ObservableProperty]
-    public partial string ModuleName { get; set; } = string.Empty;
+    private string moduleName = string.Empty;
 
     public SafetyCircleOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -68,7 +68,7 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
             }
             catch (Exception)
             {
-                await Shell.Current.DisplayAlertAsync(
+                await Shell.Current.DisplayAlert(
                     "Link Redirection",
                     $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
                     "OK");

@@ -19,25 +19,25 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     public ObservableCollection<DisasterAdvisory> Advisories { get; } = new();
 
     [ObservableProperty]
-    public partial bool IsRefreshing { get; set; }
+    private bool isRefreshing;
 
     [ObservableProperty]
-    public partial string SelectedFilter { get; set; } = "All";
+    private string selectedFilter = "All";
 
     [ObservableProperty]
-    public partial string LatestWaterLevelText { get; set; } = "16.5 m";
+    private string latestWaterLevelText = "16.5 m";
 
     [ObservableProperty]
-    public partial string CurrentAlertStatus { get; set; } = "Level 2 — Warning";
+    private string currentAlertStatus = "Level 2 — Warning";
 
     [ObservableProperty]
-    public partial string CurrentDateTimeText { get; set; } = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
+    private string currentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
 
     [ObservableProperty]
-    public partial DisasterAdvisory? SelectedAdvisory { get; set; }
+    private DisasterAdvisory? selectedAdvisory;
 
     [ObservableProperty]
-    public partial bool IsPopupVisible { get; set; }
+    private bool isPopupVisible;
 
     public AdvisoryFeedViewModel()
     {

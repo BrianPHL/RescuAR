@@ -1,5 +1,3 @@
-using System;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.ApplicationModel;
@@ -9,6 +7,9 @@ using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Reports;
 using RescuAR.App.Services.Weather;
+using System;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
 
 namespace RescuAR.App.ViewModels.Dashboard;
 
@@ -17,52 +18,52 @@ public partial class DashboardViewModel : ObservableObject
     private readonly IWeatherService _weatherService;
 
     [ObservableProperty]
-    public partial string UserName { get; set; } = "Aubrey";
+    private string userName = "Aubrey";
 
     [ObservableProperty]
-    public partial string Greeting { get; set; } = "Good day,";
+    private string greeting = "Good day,";
 
     [ObservableProperty]
-    public partial int PreparednessScore { get; set; } = 100;
+    private int preparednessScore = 100;
 
     [ObservableProperty]
-    public partial double ScoreProgress { get; set; } = 1.0;
+    private double scoreProgress = 1.0;
 
     [ObservableProperty]
-    public partial string PreparednessStatus { get; set; } = "Highly Prepared";
+    private string preparednessStatus = "Highly Prepared";
 
     [ObservableProperty]
-    public partial int ActiveAdvisoriesCount { get; set; } = 2;
+    private int activeAdvisoriesCount = 2;
 
     [ObservableProperty]
-    public partial string WeatherSummary { get; set; } = "24 °C • Clear / Sunny";
+    private string weatherSummary = "24 °C • Clear / Sunny";
 
     [ObservableProperty]
-    public partial string WeatherTemperatureText { get; set; } = "24 °C";
+    private string weatherTemperatureText = "24 °C";
 
     [ObservableProperty]
-    public partial string WeatherConditionTitle { get; set; } = "Clear / Sunny";
+    private string weatherConditionTitle = "Clear / Sunny";
 
     [ObservableProperty]
-    public partial string WeatherConditionSummary { get; set; } = "Clear weather conditions in your area";
+    private string weatherConditionSummary = "Clear weather conditions in your area";
 
     [ObservableProperty]
-    public partial string LocationName { get; set; } = "Quezon City, Metro Manila";
+    private string locationName = "Quezon City, Metro Manila";
 
     [ObservableProperty]
-    public partial string FloodRiskLevel { get; set; } = "Moderate Flood Risk";
+    private string floodRiskLevel = "Moderate Flood Risk";
 
     [ObservableProperty]
-    public partial string RiverStatusText { get; set; } = "Marikina River: Level 1 (Standby)";
+    private string riverStatusText = "Marikina River: Level 1 (Standby)";
 
     [ObservableProperty]
-    public partial string RiverStatusPillText { get; set; } = "Monitoring";
+    private string riverStatusPillText = "Monitoring";
 
     [ObservableProperty]
-    public partial DisasterAdvisory? SelectedAdvisory { get; set; }
+    private DisasterAdvisory? selectedAdvisory;
 
     [ObservableProperty]
-    public partial bool IsPopupVisible { get; set; }
+    private bool isPopupVisible;
 
     public DashboardViewModel()
     {

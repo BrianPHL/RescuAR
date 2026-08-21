@@ -12,22 +12,22 @@ public partial class PASSOverviewViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    public partial string Title { get; set; } = string.Empty;
+    private string title = string.Empty;
 
     [ObservableProperty]
-    public partial string ScoreText { get; set; } = string.Empty;
+    private string scoreText = string.Empty;
 
     [ObservableProperty]
-    public partial string Description { get; set; } = string.Empty;
+    private string description = string.Empty;
 
     [ObservableProperty]
-    public partial string ButtonText { get; set; } = string.Empty;
+    private string buttonText = string.Empty;
 
     [ObservableProperty]
-    public partial string ModuleRoute { get; set; } = "//Prepare/PASS";
+    private string moduleRoute = "//Prepare/PASS";
 
     [ObservableProperty]
-    public partial string ModuleName { get; set; } = string.Empty;
+    private string moduleName = string.Empty;
 
     public PASSOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -66,7 +66,7 @@ public partial class PASSOverviewViewModel : ObservableObject
             }
             catch (Exception)
             {
-                await Shell.Current.DisplayAlertAsync(
+                await Shell.Current.DisplayAlert(
                     "Link Redirection",
                     $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
                     "OK");

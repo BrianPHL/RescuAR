@@ -10,19 +10,19 @@ namespace RescuAR.App.ViewModels.Dashboard;
 public partial class QuickActionItem : ObservableObject
 {
     [ObservableProperty]
-    public partial string Title { get; set; } = string.Empty;
+    private string title = string.Empty;
 
     [ObservableProperty]
-    public partial string Subtitle { get; set; } = string.Empty;
+    private string subtitle = string.Empty;
 
     [ObservableProperty]
-    public partial string IconData { get; set; } = string.Empty;
+    private string iconData = string.Empty;
 
     [ObservableProperty]
-    public partial string TargetRoute { get; set; } = string.Empty;
+    private string targetRoute = string.Empty;
 
     [ObservableProperty]
-    public partial string ModuleName { get; set; } = string.Empty;
+    private string moduleName = string.Empty;
 }
 
 public partial class QuickActionsViewModel : ObservableObject
@@ -91,7 +91,7 @@ public partial class QuickActionsViewModel : ObservableObject
             }
             catch (Exception)
             {
-                await Shell.Current.DisplayAlertAsync(
+                await Shell.Current.DisplayAlert(
                     "Link Redirection",
                     $"Redirecting to link reference:\n{action.TargetRoute}\n\nTarget Module: {action.ModuleName}",
                     "OK");
@@ -104,7 +104,7 @@ public partial class QuickActionsViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.DisplayAlertAsync(
+            await Shell.Current.DisplayAlert(
                 "Quick Actions",
                 "Customize Quick Actions layout...",
                 "OK");

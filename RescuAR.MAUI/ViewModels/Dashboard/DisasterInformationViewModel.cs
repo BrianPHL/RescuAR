@@ -12,19 +12,19 @@ public partial class DisasterInformationViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    public partial string Title { get; set; } = string.Empty;
+    private string title = string.Empty;
 
     [ObservableProperty]
-    public partial string Description { get; set; } = string.Empty;
+    private string description = string.Empty;
 
     [ObservableProperty]
-    public partial string ActionText { get; set; } = string.Empty;
+    private string actionText = string.Empty;
 
     [ObservableProperty]
-    public partial string ModuleRoute { get; set; } = "//Reports/AdvisoryFeed";
+    private string moduleRoute = "//Reports/AdvisoryFeed";
 
     [ObservableProperty]
-    public partial string ModuleName { get; set; } = string.Empty;
+    private string moduleName = string.Empty;
 
     public DisasterInformationViewModel() : this(DashboardDataService.Instance)
     {
@@ -57,7 +57,7 @@ public partial class DisasterInformationViewModel : ObservableObject
             }
             catch (Exception)
             {
-                await Shell.Current.DisplayAlertAsync(
+                await Shell.Current.DisplayAlert(
                     "Link Redirection",
                     $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
                     "OK");

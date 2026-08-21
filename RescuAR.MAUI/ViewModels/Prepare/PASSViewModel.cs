@@ -19,37 +19,37 @@ public class AssessmentHistoryItem
 public partial class PASSViewModel : ObservableObject
 {
     [ObservableProperty]
-    public partial bool IsModalVisible { get; set; } = false;
+    private bool isModalVisible = false;
 
     [ObservableProperty]
-    public partial int ScorePercentage { get; set; } = 100;
+    private int scorePercentage = 100;
 
     [ObservableProperty]
-    public partial double ProgressValue { get; set; } = 1.0;
+    private double progressValue = 1.0;
 
     [ObservableProperty]
-    public partial string ScoreStatus { get; set; } = "Highly Prepared";
+    private string scoreStatus = "Highly Prepared";
 
     [ObservableProperty]
-    public partial string StatusColor { get; set; } = "#15803D";
+    private string statusColor = "#15803D";
 
     [ObservableProperty]
-    public partial string StatusBadgeBg { get; set; } = "#DCFCE7";
+    private string statusBadgeBg = "#DCFCE7";
 
     [ObservableProperty]
-    public partial string LastAssessedText { get; set; } = "Last assessed August 03, 2026";
+    private string lastAssessedText = "Last assessed August 03, 2026";
 
     [ObservableProperty]
-    public partial bool IsEmergencySuppliesExpanded { get; set; } = true;
+    private bool isEmergencySuppliesExpanded = true;
 
     [ObservableProperty]
-    public partial bool IsEvacuationReadinessExpanded { get; set; } = true;
+    private bool isEvacuationReadinessExpanded = true;
 
     [ObservableProperty]
-    public partial bool IsEmergencyCommunicationExpanded { get; set; } = false;
+    private bool isEmergencyCommunicationExpanded = false;
 
     [ObservableProperty]
-    public partial bool IsHouseholdPreparednessExpanded { get; set; } = false;
+    private bool isHouseholdPreparednessExpanded = false;
 
     public List<AssessmentHistoryItem> History { get; } = new();
 

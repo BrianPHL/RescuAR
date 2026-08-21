@@ -15,25 +15,25 @@ public partial class WeatherInformationViewModel : ObservableObject
     private readonly IWeatherService _weatherService;
 
     [ObservableProperty]
-    public partial string LocationName { get; set; } = "Tap to load weather...";
+    private string locationName = "Tap to load weather...";
 
     [ObservableProperty]
-    public partial string TemperatureDisplay { get; set; } = "-- °C";
+    private string temperatureDisplay = "-- °C";
 
     [ObservableProperty]
-    public partial string ConditionDescription { get; set; } = "Location weather";
+    private string conditionDescription = "Location weather";
 
     [ObservableProperty]
-    public partial string ConditionSummary { get; set; } = "Tap to grant location permission & view forecast";
+    private string conditionSummary = "Tap to grant location permission & view forecast";
 
     [ObservableProperty]
-    public partial string IconPathData { get; set; } = "M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7L12,7z";
+    private string iconPathData = "M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7L12,7z";
 
     [ObservableProperty]
-    public partial bool IsLoading { get; set; }
+    private bool isLoading;
 
     [ObservableProperty]
-    public partial bool HasLocationPermission { get; set; }
+    private bool hasLocationPermission;
 
     public double Latitude { get; set; }
     public double Longitude { get; set; }

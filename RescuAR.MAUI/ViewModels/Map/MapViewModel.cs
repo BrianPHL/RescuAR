@@ -7,7 +7,7 @@ namespace RescuAR.App.ViewModels.Map;
 public partial class MapViewModel : ObservableObject
 {
     [ObservableProperty]
-    public partial HtmlWebViewSource MapHtmlSource { get; set; } = null!;
+    private HtmlWebViewSource mapHtmlSource = null!;
 
     public MapViewModel()
     {

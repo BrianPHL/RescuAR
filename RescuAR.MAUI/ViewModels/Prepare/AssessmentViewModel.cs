@@ -31,50 +31,50 @@ public partial class AssessmentViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanGoPrevious))]
     [NotifyPropertyChangedFor(nameof(IsLastQuestion))]
     [NotifyPropertyChangedFor(nameof(IsNotLastQuestion))]
-    public partial int CurrentIndex { get; set; } = 0;
+    private int currentIndex = 0;
 
     [ObservableProperty]
-    public partial AssessmentQuestion CurrentQuestion { get; set; } = null!;
+    private AssessmentQuestion currentQuestion = null!;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsNotFinished))]
-    public partial bool IsFinished { get; set; } = false;
+    [NotifyPropertyChangedFor(nameof(isNotFinished))]
+    private bool isFinished = false;
 
-    public bool IsNotFinished => !IsFinished;
-
-    [ObservableProperty]
-    public partial int FinalScorePercentage { get; set; } = 0;
+    private bool isNotFinished => !IsFinished;
 
     [ObservableProperty]
-    public partial string FinalScoreStatus { get; set; } = "Prepared";
+    private int finalScorePercentage = 0;
+
+    [ObservableProperty]
+    private string finalScoreStatus = "Prepared";
 
     // Option Properties for UI binding
     [ObservableProperty]
-    public partial string Option1Text { get; set; } = string.Empty;
+    private string option1Text = string.Empty;
 
     [ObservableProperty]
-    public partial string Option2Text { get; set; } = string.Empty;
+    private string option2Text = string.Empty;
 
     [ObservableProperty]
-    public partial string Option3Text { get; set; } = string.Empty;
+    private string option3Text = string.Empty;
 
     [ObservableProperty]
-    public partial bool IsOption1Selected { get; set; }
+    private bool isOption1Selected = false;
 
     [ObservableProperty]
-    public partial bool IsOption2Selected { get; set; }
+    private bool isOption2Selected = false;
 
     [ObservableProperty]
-    public partial bool IsOption3Selected { get; set; }
+    private bool isOption3Selected = false;
 
     [ObservableProperty]
-    public partial bool IsOption3Visible { get; set; }
+    private bool isOption3Visible = false;
 
     [ObservableProperty]
-    public partial bool CanGoNext { get; set; }
+    private bool canGoNext = false;
 
     [ObservableProperty]
-    public partial bool CanSubmit { get; set; }
+    private bool canSubmit;
 
     public double ProgressValue => (CurrentIndex + 1) / (double)_questions.Count;
 
