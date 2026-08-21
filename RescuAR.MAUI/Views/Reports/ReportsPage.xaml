@@ -1,0 +1,629 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    xmlns:services="clr-namespace:RescuAR.App.Services.Reports"
+    xmlns:converters="clr-namespace:RescuAR.App.Converters"
+    x:Class="RescuAR.App.Views.Reports.ReportsPage"
+    x:DataType="vm:ReportsViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <Grid>
+        <!-- Main Page Layout -->
+        <Grid RowDefinitions="Auto, *">
+            
+            <!-- Top App Bar (Dark Navy Header) -->
+            <Border Grid.Row="0"
+                    BackgroundColor="#132238"
+                    HeightRequest="56"
+                    StrokeThickness="0"
+                    Padding="16,0">
+                <Grid ColumnDefinitions="*, Auto" VerticalOptions="Center">
+                    <Label Grid.Column="0"
+                           Text="RescuAR Community"
+                           TextColor="#FFFFFF"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center" />
+
+                    <!-- Bell / Notification Icon -->
+                    <Path Grid.Column="1"
+                          Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                          Fill="#FFFFFF"
+                          WidthRequest="22"
+                          HeightRequest="22"
+                          Aspect="Uniform"
+                          HorizontalOptions="End"
+                          VerticalOptions="Center" />
+                </Grid>
+            </Border>
+
+            <!-- Scrollable Content Feed -->
+            <RefreshView Grid.Row="1"
+                         IsRefreshing="{Binding IsRefreshing}"
+                         Command="{Binding LoadReportsCommand}">
+                <ScrollView VerticalScrollBarVisibility="Never">
+                    <VerticalStackLayout Spacing="16" Padding="16,16,16,80">
+                        
+                        <!-- Header Titles & Breadcrumbs -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Home / Community" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                            <Label Text="Community Reports" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
+                            <Label Text="See real-time disaster reports and safety updates from others." TextColor="#475569" FontSize="14" />
+                        </VerticalStackLayout>
+
+                        <!-- Search & Filter Controls Bar -->
+                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10" Margin="0,2,0,4">
+                            <!-- Search Entry -->
+                            <Border Grid.Column="0"
+                                    BackgroundColor="#FFFFFF"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 12"
+                                    Padding="12,0"
+                                    HeightRequest="44">
+                                <Entry Text="{Binding SearchQuery, Mode=TwoWay}"
+                                       Placeholder="Search reports or category..."
+                                       PlaceholderColor="#94A3B8"
+                                       TextColor="#0F172A"
+                                       FontSize="14"
+                                       VerticalOptions="Center" />
+                            </Border>
+
+                            <!-- Filter Picker Dropdown -->
+                            <Border Grid.Column="1"
+                                    BackgroundColor="#FFFFFF"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 12"
+                                    Padding="8,0"
+                                    HeightRequest="44"
+                                    WidthRequest="140">
+                                <Picker ItemsSource="{Binding FilterOptions}"
+                                        SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                                        TextColor="#0F172A"
+                                        TitleColor="#94A3B8"
+                                        FontSize="13"
+                                        FontAttributes="Bold"
+                                        HorizontalOptions="FillAndExpand"
+                                        VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+
+                        <!-- Reports Collection (Modern Community Feed) -->
+                        <CollectionView ItemsSource="{Binding Reports}">
+                            <CollectionView.EmptyView>
+                                <VerticalStackLayout Spacing="8" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
+                                    <Label Text="No reports found." TextColor="#94A3B8" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" />
+                                    <Label Text="Be the first to create a community report." TextColor="#64748B" FontSize="13" HorizontalOptions="Center" />
+                                </VerticalStackLayout>
+                            </CollectionView.EmptyView>
+
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:CommunityReport">
+                                    <Border BackgroundColor="#FFFFFF"
+                                            Margin="0,0,0,16"
+                                            Padding="16"
+                                            Stroke="#E2E8F0"
+                                            StrokeThickness="1"
+                                            StrokeShape="RoundRectangle 16">
+                                        <Border.Shadow>
+                                            <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
+                                        </Border.Shadow>
+
+                                        <VerticalStackLayout Spacing="12">
+                                            
+                                            <!-- Author Header & Category Badge -->
+                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                                <!-- Author Initials Avatar Circle -->
+                                                <Border Grid.Column="0"
+                                                        WidthRequest="40"
+                                                        HeightRequest="40"
+                                                        StrokeShape="RoundRectangle 20"
+                                                        BackgroundColor="#008080"
+                                                        StrokeThickness="0"
+                                                        VerticalOptions="Center">
+                                                    <Label Text="{Binding AuthorInitials}"
+                                                           TextColor="#FFFFFF"
+                                                           FontSize="15"
+                                                           FontAttributes="Bold"
+                                                           HorizontalOptions="Center"
+                                                           VerticalOptions="Center" />
+                                                </Border>
+
+                                                <!-- Author Name & Time -->
+                                                <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                    <Label Text="{Binding PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                                    <Label Text="{Binding PostedAtText}" TextColor="#64748B" FontSize="12" />
+                                                </VerticalStackLayout>
+
+                                                <!-- Category Badge -->
+                                                <Border Grid.Column="2"
+                                                        BackgroundColor="{Binding CategoryBadgeColor}"
+                                                        StrokeThickness="0"
+                                                        StrokeShape="RoundRectangle 14"
+                                                        Padding="10,4"
+                                                        VerticalOptions="Center">
+                                                    <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                        <Path Data="{Binding CategoryIcon}"
+                                                              Fill="{Binding CategoryTextColor}"
+                                                              WidthRequest="12"
+                                                              HeightRequest="12"
+                                                              Aspect="Uniform"
+                                                              VerticalOptions="Center" />
+                                                        <Label Text="{Binding Category}"
+                                                               TextColor="{Binding CategoryTextColor}"
+                                                               FontSize="12"
+                                                               FontAttributes="Bold"
+                                                               VerticalOptions="Center" />
+                                                    </HorizontalStackLayout>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- Media Image / Video Preview -->
+                                            <Border StrokeShape="RoundRectangle 12"
+                                                    StrokeThickness="0"
+                                                    HeightRequest="190"
+                                                    HorizontalOptions="FillAndExpand"
+                                                    IsVisible="{Binding HasMedia}">
+                                                <Image Source="{Binding MediaUrl}"
+                                                       Aspect="AspectFill"
+                                                       HorizontalOptions="FillAndExpand"
+                                                       VerticalOptions="FillAndExpand" />
+                                            </Border>
+
+                                            <!-- Report Title -->
+                                            <Label Text="{Binding Title}"
+                                                   TextColor="#0F172A"
+                                                   FontSize="18"
+                                                   FontAttributes="Bold"
+                                                   LineBreakMode="WordWrap" />
+
+                                            <!-- Description -->
+                                            <Label Text="{Binding Description}"
+                                                   TextColor="#475569"
+                                                   FontSize="14"
+                                                   LineHeight="1.3"
+                                                   LineBreakMode="WordWrap" />
+
+                                            <!-- Location Address Bar -->
+                                            <Border BackgroundColor="#F8FAFC"
+                                                    Stroke="#E2E8F0"
+                                                    StrokeThickness="1"
+                                                    StrokeShape="RoundRectangle 10"
+                                                    Padding="10,8">
+                                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" VerticalOptions="Center">
+                                                    <Path Grid.Column="0"
+                                                          Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                                                          Fill="#008080"
+                                                          WidthRequest="16"
+                                                          HeightRequest="16"
+                                                          Aspect="Uniform"
+                                                          VerticalOptions="Center" />
+                                                    <Label Grid.Column="1"
+                                                           Text="{Binding Address}"
+                                                           TextColor="#0F172A"
+                                                           FontSize="13"
+                                                           FontAttributes="Bold"
+                                                           VerticalOptions="Center"
+                                                           LineBreakMode="TailTruncation" />
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Bottom Action Bar -->
+                                            <Grid ColumnDefinitions="*, Auto, Auto" ColumnSpacing="8" VerticalOptions="Center" Margin="0,4,0,0">
+                                                <!-- View details button -->
+                                                <Button Grid.Column="0"
+                                                        Text="View report details  ❯"
+                                                        TextColor="#008080"
+                                                        BackgroundColor="Transparent"
+                                                        FontSize="14"
+                                                        FontAttributes="Bold"
+                                                        HorizontalOptions="Start"
+                                                        Padding="0"
+                                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ReportsViewModel}}, Path=ViewReportDetailsCommand}"
+                                                        CommandParameter="{Binding .}" />
+
+                                                <!-- Comment Count Badge -->
+                                                <Border Grid.Column="1"
+                                                        BackgroundColor="#F1F5F9"
+                                                        StrokeThickness="0"
+                                                        StrokeShape="RoundRectangle 14"
+                                                        Padding="10,4"
+                                                        VerticalOptions="Center"
+                                                        IsVisible="{Binding AllowComments}">
+                                                    <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                        <Path Data="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"
+                                                              Fill="#64748B"
+                                                              WidthRequest="14"
+                                                              HeightRequest="14"
+                                                              Aspect="Uniform"
+                                                              VerticalOptions="Center" />
+                                                        <Label Text="{Binding CommentCount}"
+                                                               TextColor="#475569"
+                                                               FontSize="12"
+                                                               FontAttributes="Bold"
+                                                               VerticalOptions="Center" />
+                                                    </HorizontalStackLayout>
+                                                </Border>
+
+                                                <!-- Like Button -->
+                                                <Button Grid.Column="2"
+                                                        Text="{Binding LikeCount, StringFormat='♥ {0}'}"
+                                                        TextColor="#EF4444"
+                                                        BackgroundColor="#FEF2F2"
+                                                        CornerRadius="16"
+                                                        FontSize="12"
+                                                        FontAttributes="Bold"
+                                                        HeightRequest="32"
+                                                        Padding="12,0"
+                                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ReportsViewModel}}, Path=ToggleLikeCommand}"
+                                                        CommandParameter="{Binding .}" />
+                                            </Grid>
+
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                    </VerticalStackLayout>
+                </ScrollView>
+            </RefreshView>
+
+            <!-- Floating Action Button (+), lower right corner -->
+            <Border Grid.Row="1"
+                    WidthRequest="56"
+                    HeightRequest="56"
+                    StrokeShape="RoundRectangle 28"
+                    StrokeThickness="0"
+                    BackgroundColor="#008080"
+                    HorizontalOptions="End"
+                    VerticalOptions="End"
+                    Margin="0,0,20,24">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.25" />
+                </Border.Shadow>
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding OpenCreateModalCommand}" />
+                </Border.GestureRecognizers>
+
+                <!-- Plus (+) Icon -->
+                <Path Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"
+                      Fill="#FFFFFF"
+                      WidthRequest="24"
+                      HeightRequest="24"
+                      Aspect="Uniform"
+                      HorizontalOptions="Center"
+                      VerticalOptions="Center" />
+            </Border>
+        </Grid>
+
+        <!-- ============================================================== -->
+        <!-- MODAL OVERLAY 1: CREATE COMMUNITY REPORT MODAL -->
+        <!-- ============================================================== -->
+        <Grid BackgroundColor="#80000000"
+              IsVisible="{Binding IsCreateModalVisible}"
+              VerticalOptions="FillAndExpand"
+              HorizontalOptions="FillAndExpand">
+            
+            <Border BackgroundColor="#FFFFFF"
+                    Margin="16,24,16,16"
+                    Padding="20"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 20"
+                    VerticalOptions="Center"
+                    MaximumHeightRequest="640">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,8" Radius="16" Opacity="0.3" />
+                </Border.Shadow>
+
+                <Grid RowDefinitions="Auto, *, Auto" RowSpacing="14">
+                    
+                    <!-- Modal Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
+                        <Label Grid.Column="0"
+                               Text="Create Community Report"
+                               TextColor="#0F172A"
+                               FontSize="17"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center" />
+
+                        <!-- Close (X) Button -->
+                        <Button Grid.Column="1"
+                                Text="✕"
+                                TextColor="#64748B"
+                                BackgroundColor="Transparent"
+                                FontSize="18"
+                                Padding="0"
+                                WidthRequest="32"
+                                HeightRequest="32"
+                                Command="{Binding CloseCreateModalCommand}" />
+                    </Grid>
+
+                    <!-- Form Body -->
+                    <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+                        <VerticalStackLayout Spacing="14">
+                            
+                            <!-- Category Selection Dropdown -->
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Category" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="8,0" HeightRequest="44">
+                                    <Picker ItemsSource="{Binding CategoryOptions}" SelectedItem="{Binding NewReportCategory, Mode=TwoWay}" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Title Input -->
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Title" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,0" HeightRequest="44">
+                                    <Entry Text="{Binding NewReportTitle}" Placeholder="Incident title..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Description Input -->
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Description" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,8" HeightRequest="80">
+                                    <Editor Text="{Binding NewReportDescription}" Placeholder="Describe the situation..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" AutoSize="Disabled" />
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Location Input with INTERACTIVE OSM CHANGE BUTTON -->
+                            <VerticalStackLayout Spacing="6">
+                                <Grid ColumnDefinitions="*, Auto">
+                                    <Label Grid.Column="0" Text="Location (OpenStreetMap / GPS)" TextColor="#475569" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                                    <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsFetchingLocation}" IsVisible="{Binding IsFetchingLocation}" WidthRequest="16" HeightRequest="16" Color="#008080" />
+                                </Grid>
+
+                                <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,0" HeightRequest="48">
+                                    <Grid ColumnDefinitions="*, Auto" VerticalOptions="Center">
+                                        <Label Grid.Column="0"
+                                               Text="{Binding NewReportAddress}"
+                                               TextColor="#0F172A"
+                                               FontSize="13"
+                                               VerticalOptions="Center"
+                                               LineBreakMode="TailTruncation" />
+
+                                        <!-- Interactive Change Button -->
+                                        <Button Grid.Column="1"
+                                                Text="Change 📍"
+                                                TextColor="#008080"
+                                                BackgroundColor="#E6F2F2"
+                                                FontSize="12"
+                                                FontAttributes="Bold"
+                                                CornerRadius="6"
+                                                HeightRequest="32"
+                                                Padding="10,0"
+                                                Command="{Binding OpenMapPickerCommand}"
+                                                VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Picture / Media Section -->
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Picture / Media Attachment" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                
+                                <Border BackgroundColor="#F8FAFC"
+                                        Stroke="#CBD5E1"
+                                        StrokeThickness="1.5"
+                                        StrokeShape="RoundRectangle 12"
+                                        HeightRequest="120"
+                                        Padding="12">
+                                    <Border.StrokeDashArray>
+                                        <x:Array Type="{x:Type x:Double}">
+                                            <x:Double>4</x:Double>
+                                            <x:Double>4</x:Double>
+                                        </x:Array>
+                                    </Border.StrokeDashArray>
+                                    
+                                    <Grid>
+                                        <!-- No Media Upload State -->
+                                        <VerticalStackLayout Spacing="6"
+                                                             HorizontalOptions="Center"
+                                                             VerticalOptions="Center"
+                                                             IsVisible="{Binding NewReportHasMedia, Converter={StaticResource InverseBoolConverter}}">
+                                            <Path Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                                                  Fill="#94A3B8"
+                                                  WidthRequest="32"
+                                                  HeightRequest="32"
+                                                  Aspect="Uniform"
+                                                  HorizontalOptions="Center" />
+                                            <Label Text="Capture or Pick Image/Video"
+                                                   TextColor="#64748B"
+                                                   FontSize="13"
+                                                   HorizontalOptions="Center" />
+                                        </VerticalStackLayout>
+                                        
+                                        <!-- Uploaded Media Preview State -->
+                                        <Grid IsVisible="{Binding NewReportHasMedia}" ColumnDefinitions="*, Auto">
+                                            <Image Grid.Column="0" Source="{Binding NewReportMediaUrl}" Aspect="AspectFill" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
+                                            <Button Grid.Column="1" Text="✕ Remove" TextColor="#EF4444" BackgroundColor="#FEE2E2" FontSize="11" FontAttributes="Bold" CornerRadius="6" HeightRequest="28" Padding="8,0" Margin="8" Command="{Binding RemoveMediaCommand}" VerticalOptions="Start" />
+                                        </Grid>
+                                    </Grid>
+
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding PickMediaCommand}" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Allow Comments Checkbox -->
+                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center" Margin="0,4,0,0">
+                                <CheckBox IsChecked="{Binding NewReportAllowComments}" Color="#008080" VerticalOptions="Center" />
+                                <Label Text="Allow community comments" TextColor="#475569" FontSize="14" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <!-- Modal Submit Button -->
+                    <Button Grid.Row="2"
+                            Text="✓  Publish Community Report"
+                            TextColor="#FFFFFF"
+                            BackgroundColor="#008080"
+                            FontSize="15"
+                            FontAttributes="Bold"
+                            CornerRadius="12"
+                            HeightRequest="48"
+                            Command="{Binding SubmitReportCommand}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ============================================================== -->
+        <!-- MODAL OVERLAY 2: SUCCESS MODAL -->
+        <!-- ============================================================== -->
+        <Grid BackgroundColor="#80000000"
+              IsVisible="{Binding IsSuccessModalVisible}"
+              VerticalOptions="FillAndExpand"
+              HorizontalOptions="FillAndExpand">
+            
+            <Border BackgroundColor="#FFFFFF"
+                    Margin="32"
+                    Padding="32"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 20"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    WidthRequest="300">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,8" Radius="16" Opacity="0.3" />
+                </Border.Shadow>
+
+                <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center">
+                    <Border WidthRequest="80"
+                            HeightRequest="80"
+                            StrokeShape="RoundRectangle 40"
+                            Stroke="#15803D"
+                            StrokeThickness="4"
+                            BackgroundColor="Transparent"
+                            HorizontalOptions="Center">
+                        <Path Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                              Fill="#15803D"
+                              WidthRequest="40"
+                              HeightRequest="40"
+                              Aspect="Uniform"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Border>
+
+                    <Label Text="Report Published!"
+                           TextColor="#15803D"
+                           FontSize="22"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+
+        <!-- ============================================================== -->
+        <!-- MODAL OVERLAY 3: INTERACTIVE OPENSTREETMAP (OSM) LOCATION PICKER -->
+        <!-- ============================================================== -->
+        <Grid BackgroundColor="#80000000"
+              IsVisible="{Binding IsMapPickerVisible}"
+              VerticalOptions="FillAndExpand"
+              HorizontalOptions="FillAndExpand">
+
+            <Border BackgroundColor="#FFFFFF"
+                    Margin="16,32,16,16"
+                    Padding="20"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 20"
+                    VerticalOptions="Center"
+                    MaximumHeightRequest="600">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,8" Radius="16" Opacity="0.3" />
+                </Border.Shadow>
+
+                <Grid RowDefinitions="Auto, Auto, *, Auto" RowSpacing="12">
+                    <!-- Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                            <Label Text="Select Incident Location" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" />
+                            <Label Text="Search via OpenStreetMap (OSM) Nominatim" TextColor="#64748B" FontSize="12" />
+                        </VerticalStackLayout>
+
+                        <Button Grid.Column="1" Text="✕" TextColor="#64748B" BackgroundColor="Transparent" FontSize="18" Padding="0" Command="{Binding CloseMapPickerCommand}" />
+                    </Grid>
+
+                    <!-- Interactive OSM Search Input -->
+                    <Border Grid.Row="1" BackgroundColor="#FFFFFF" Stroke="#008080" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12,0" HeightRequest="46">
+                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="8" VerticalOptions="Center">
+                            <Path Grid.Column="0" Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" Fill="#008080" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                            <Entry Grid.Column="1" Text="{Binding MapSearchQuery, Mode=TwoWay}" Placeholder="Search any street, barangay or city in OSM..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                            <ActivityIndicator Grid.Column="2" IsRunning="{Binding IsSearchingOsm}" IsVisible="{Binding IsSearchingOsm}" WidthRequest="18" HeightRequest="18" Color="#008080" VerticalOptions="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Locations Search Results List -->
+                    <ScrollView Grid.Row="2" VerticalScrollBarVisibility="Never">
+                        <VerticalStackLayout Spacing="10">
+                            
+                            <!-- OSM Live Search Results Section -->
+                            <VerticalStackLayout Spacing="6" IsVisible="{Binding OsmSearchResults.Count, Converter={StaticResource InverseBoolConverter}, ConverterParameter='Inverse'}">
+                                <Label Text="OpenStreetMap Search Results" TextColor="#008080" FontSize="12" FontAttributes="Bold" />
+
+                                <CollectionView ItemsSource="{Binding OsmSearchResults}">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate x:DataType="services:OsmSearchResult">
+                                            <Border BackgroundColor="#F0FDF4" Stroke="#DCFCE7" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12" Margin="0,3">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ReportsViewModel}}, Path=SelectOsmLocationCommand}" CommandParameter="{Binding .}" />
+                                                </Border.GestureRecognizers>
+                                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" VerticalOptions="Center">
+                                                    <Path Grid.Column="0" Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#166534" WidthRequest="20" HeightRequest="20" Aspect="Uniform" VerticalOptions="Center" />
+                                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                        <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                                        <Label Text="{Binding DisplayName}" TextColor="#15803D" FontSize="12" LineBreakMode="WordWrap" />
+                                                    </VerticalStackLayout>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                            </VerticalStackLayout>
+
+                            <!-- Preset Locations Section -->
+                            <VerticalStackLayout Spacing="6" Margin="0,4,0,0">
+                                <Label Text="Popular Locations in Marikina" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+
+                                <CollectionView ItemsSource="{Binding PresetLocations}">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12" Margin="0,3">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ReportsViewModel}}, Path=SelectPresetLocationCommand}" CommandParameter="{Binding .}" />
+                                                </Border.GestureRecognizers>
+                                                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                                    <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#008080" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                                    <Label Text="{Binding .}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" LineBreakMode="WordWrap" />
+                                                </HorizontalStackLayout>
+                                            </Border>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                            </VerticalStackLayout>
+
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <!-- Confirm Custom Button -->
+                    <Button Grid.Row="3" Text="Use Typed Custom Address" TextColor="#FFFFFF" BackgroundColor="#008080" FontSize="14" FontAttributes="Bold" CornerRadius="10" HeightRequest="44" Command="{Binding ConfirmCustomMapLocationCommand}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+    </Grid>
+</ContentPage>

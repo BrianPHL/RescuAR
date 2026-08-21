@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Map"
+    x:Class="RescuAR.App.Views.Map.MapPage"
+    x:DataType="vm:MapViewModel"
+    Title="Map"
+    BackgroundColor="#F2F2F7">
+
+    <Grid VerticalOptions="Center" HorizontalOptions="Center" Padding="20">
+        <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center">
+            
+            <!-- Map Location Pin Icon Badge -->
+            <Border StrokeShape="RoundRectangle 50"
+                    StrokeThickness="0"
+                    BackgroundColor="#E2F0D9"
+                    WidthRequest="100"
+                    HeightRequest="100"
+                    HorizontalOptions="Center">
+                <Path Data="M12,2C8.13,2,5,5.13,5,9c0,5.25,7,13,7,13s7-7.75,7-13C19,5.13,15.87,2,12,2z M12,11.5c-1.38,0-2.5-1.12-2.5-2.5s1.12-2.5,2.5-2.5s2.5,1.12,2.5,2.5S13.38,11.5,12,11.5z"
+                      Fill="#385723"
+                      WidthRequest="48"
+                      HeightRequest="48"
+                      Aspect="Uniform"
+                      HorizontalOptions="Center"
+                      VerticalOptions="Center" />
+            </Border>
+
+            <!-- Text Details -->
+            <Label Text="Interactive Map"
+                   TextColor="#000000"
+                   FontSize="24"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center" />
+
+            <Label Text="Real-time map visualization for safe zones, evacuation routes, and flood warning markers."
+                   TextColor="#7F7F7F"
+                   FontSize="14"
+                   LineBreakMode="WordWrap"
+                   HorizontalTextAlignment="Center"
+                   HorizontalOptions="Center"
+                   WidthRequest="300" />
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>

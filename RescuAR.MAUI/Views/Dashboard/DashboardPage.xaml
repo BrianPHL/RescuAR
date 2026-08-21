@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:dashboard="clr-namespace:RescuAR.App.Views.Dashboard"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.DashboardPage"
+    x:DataType="vm:DashboardViewModel"
+    Title="Home"
+    BackgroundColor="#F8FAFC"
+    Shell.NavBarIsVisible="False">
+
+    <Grid>
+        <ScrollView>
+            <VerticalStackLayout Spacing="18" Padding="16">
+                
+                <!-- 1. Hero User Greeting Banner Card -->
+                <Border BackgroundColor="#0A8491" StrokeThickness="0" StrokeShape="RoundRectangle 24" Padding="20">
+                    <VerticalStackLayout Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                <Label Text="{Binding Greeting}" TextColor="#E0F2FE" FontSize="14" FontAttributes="Bold" />
+                                <Label Text="{Binding UserName}" TextColor="#FFFFFF" FontSize="28" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                            
+                            <!-- Top Right USER Avatar Circle -->
+                            <Border Grid.Column="1" StrokeShape="RoundRectangle 24" StrokeThickness="2" Stroke="#FFFFFF" WidthRequest="48" HeightRequest="48" BackgroundColor="#0A8491" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding OpenProfileCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="USER" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+
+                        <!-- Emergency Status Banner Inside Hero -->
+                        <Border BackgroundColor="#065F69" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenAdvisoriesCommand}" />
+                            </Border.GestureRecognizers>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                <Label Grid.Column="0" Text="{Binding RiverStatusText}" TextColor="#FFFFFF" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" LineBreakMode="WordWrap" />
+                                <Border Grid.Column="1" BackgroundColor="#10B981" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="12,5" VerticalOptions="Center">
+                                    <Label Text="{Binding RiverStatusPillText}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 2. Weather Forecast Section -->
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Weather Forecast" TextColor="#0F172A" FontSize="19" FontAttributes="Bold" Margin="4,0,0,0" />
+                    
+                    <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="20">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalOptions="Center">
+                            
+                            <!-- Weather Text Info -->
+                            <VerticalStackLayout Grid.Column="0" Spacing="6">
+                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                    <Label Text="{Binding LocationName}" TextColor="#64748B" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                                    <Label Text="📍" FontSize="10" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+
+                                <Label Text="{Binding WeatherTemperatureText}" TextColor="#0F172A" FontSize="36" FontAttributes="Bold" Margin="0,2,0,0" />
+
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding WeatherConditionTitle}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                    <Label Text="{Binding WeatherConditionSummary}" TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+
+                            <!-- Weather Cloud Icon Outline -->
+                            <Border Grid.Column="1" StrokeThickness="0" BackgroundColor="Transparent" VerticalOptions="Center" HorizontalOptions="Center" WidthRequest="70" HeightRequest="60">
+                                <Path Data="M19.35,10.04C18.67,6.59,15.64,4,12,4C9.11,4,6.6,5.64,5.35,8.04C2.34,8.36,0,10.91,0,14c0,3.31,2.69,6,6,6h13c2.76,0,5-2.24,5-5C24,12.36,21.95,10.22,19.35,10.04z"
+                                      Stroke="#94A3B8"
+                                      StrokeThickness="3"
+                                      Fill="Transparent"
+                                      WidthRequest="64"
+                                      HeightRequest="48"
+                                      Aspect="Uniform"
+                                      HorizontalOptions="Center"
+                                      VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- 3. PASS Preparedness Card -->
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="20">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding OpenPASSCommand}" />
+                    </Border.GestureRecognizers>
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <Label Text="PASS Preparedness" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding PreparednessScore, StringFormat='{0}%'}" TextColor="#0A8491" FontSize="32" FontAttributes="Bold" VerticalOptions="Center" />
+                        </Grid>
+
+                        <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                            <Label Text="{Binding PreparednessStatus}" TextColor="#0369A1" FontSize="11" FontAttributes="Bold" />
+                        </Border>
+
+                        <!-- Solid Teal Progress Bar -->
+                        <ProgressBar Progress="{Binding ScoreProgress}" ProgressColor="#0A8491" HeightRequest="6" VerticalOptions="Center" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 4. Quick Access Bento Grid (Kit Checklist & Evacuation Centers) -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    
+                    <!-- Left Tile: Kit Checklist -->
+                    <Border Grid.Column="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenChecklistCommand}" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="6" VerticalOptions="Center">
+                            <Border BackgroundColor="#DCFCE7" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,3" HorizontalOptions="Start">
+                                <Label Text="CHECKLIST" TextColor="#166534" FontSize="10" FontAttributes="Bold" />
+                            </Border>
+                            <Label Text="Kit Checklist" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" Margin="0,4,0,0" />
+                            <Label Text="10 Essential Supplies" TextColor="#64748B" FontSize="11" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Right Tile: Evacuation Centers -->
+                    <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenEvacuationCommand}" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="6" VerticalOptions="Center">
+                            <Border BackgroundColor="#DBEAFE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,3" HorizontalOptions="Start">
+                                <Label Text="SHELTERS" TextColor="#1D4ED8" FontSize="10" FontAttributes="Bold" />
+                            </Border>
+                            <Label Text="Evacuation Centers" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" Margin="0,4,0,0" />
+                            <Label Text="Real-Time Capacity" TextColor="#64748B" FontSize="11" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                </Grid>
+
+                <!-- 5. Area Status Overview Card (Dynamic Red/Yellow/Green live color matching Supabase) -->
+                <ContentView>
+                    <dashboard:AreaStatusOverviewPage />
+                </ContentView>
+
+                <!-- 6. Preparation Progress Card -->
+                <ContentView>
+                    <dashboard:PreparednessOverviewPage />
+                </ContentView>
+
+                <!-- Bottom PASS Widget -->
+                <dashboard:PASSOverviewPage />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Real-time SweetAlert Emergency Advisory Pop-Up Modal Overlay -->
+        <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
+                <VerticalStackLayout Spacing="0">
+                    
+                    <!-- Pop-up Header Banner -->
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 24 24 0 0" Padding="20,16">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                            <Label Text="{Binding SelectedAdvisory.AlertIconEmoji}" FontSize="26" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="NEW EMERGENCY ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="10" FontAttributes="Bold" />
+                                <Label Text="{Binding SelectedAdvisory.DisplayAlertLevel}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="16" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+                            <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="32" HeightRequest="32" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="✕" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Pop-up Body Content -->
+                    <ScrollView MaximumHeightRequest="420" Padding="20">
+                        <VerticalStackLayout Spacing="14">
+                            <!-- Title -->
+                            <Label Text="{Binding SelectedAdvisory.Title}" TextColor="#0F172A" FontSize="19" FontAttributes="Bold" />
+
+                            <!-- Message -->
+                            <Label Text="{Binding SelectedAdvisory.DisplayMessage}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" CharacterSpacing="0.2" />
+
+                            <!-- Recommended Action Plan -->
+                            <Border IsVisible="{Binding SelectedAdvisory.HasActionPlan}" BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="⚡ RECOMMENDED ACTION PLAN" TextColor="#B45309" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayActionPlan}" TextColor="#92400E" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Affected Sectors -->
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="📍 AFFECTED AREA SECTORS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayAffectedArea}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Timestamp & Water Level -->
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedAdvisory.CreatedAtText}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+                                <Border Grid.Column="1" IsVisible="{Binding SelectedAdvisory.ShowWaterLevel}" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="{Binding SelectedAdvisory.WaterLevelText}" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <!-- Pop-up Footer Buttons -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Padding="20,16" BackgroundColor="#F8FAFC">
+                        <Button Grid.Column="0" Text="Close" TextColor="#475569" BackgroundColor="#E2E8F0" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding ClosePopupCommand}" />
+                        <Button Grid.Column="1" Text="See Full Details" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding GoToAdvisoriesFeedCommand}" />
+                    </Grid>
+
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.EvacuationOverviewPage"
+    x:DataType="vm:EvacuationOverviewViewModel">
+
+    <Border StrokeShape="RoundRectangle 16"
+            StrokeThickness="1"
+            Stroke="#E5E5EA"
+            BackgroundColor="#FFFFFF"
+            Padding="16"
+            HeightRequest="150"
+            VerticalOptions="Fill">
+
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding NavigateToEvacuationCenterCommand}" />
+        </Border.GestureRecognizers>
+
+        <Grid RowDefinitions="*,Auto" RowSpacing="8">
+            <!-- Header & Subtitle -->
+            <VerticalStackLayout Grid.Row="0" Spacing="6">
+                <Label Text="{Binding DistanceText}"
+                       TextColor="#000000"
+                       FontSize="16"
+                       FontAttributes="Bold" />
+                <Label Text="{Binding CenterName}"
+                       TextColor="#7F7F7F"
+                       FontSize="12"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Footer Link -->
+            <HorizontalStackLayout Grid.Row="1" Spacing="4" VerticalOptions="End">
+                <Label Text="{Binding ActionText}"
+                       TextColor="#0A8491"
+                       FontSize="13"
+                       FontAttributes="Bold" />
+                <Path Data="M6.4,18L5,16.6L14.6,7H7V5H18V16H16V8.4L6.4,18Z"
+                      Fill="#0A8491"
+                      WidthRequest="12"
+                      HeightRequest="12"
+                      Aspect="Uniform"
+                      VerticalOptions="Center" />
+            </HorizontalStackLayout>
+        </Grid>
+    </Border>
+</ContentView>

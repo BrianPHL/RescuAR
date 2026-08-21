@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.EvacuationCenterInfoPage"
+    x:Name="thisPage"
+    Title="Evacuation Centers"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.BindingContext>
+        <vm:EvacuationCenterInfoViewModel />
+    </ContentPage.BindingContext>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="24">
+            
+            <!-- Section 1: Emergency Hotlines Banner -->
+            <VerticalStackLayout Spacing="14">
+                <Label Text="Emergency Hotlines" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding Hotlines}" Spacing="10">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EmergencyHotlineItem">
+                            <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 14" BackgroundColor="#FFFFFF" Padding="14">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" VerticalOptions="Center">
+                                    
+                                    <!-- Agency Emoji Icon Badge -->
+                                    <Border WidthRequest="44" HeightRequest="44" StrokeShape="RoundRectangle 14" StrokeThickness="0" BackgroundColor="{Binding IconBg}" VerticalOptions="Center">
+                                        <Label Text="{Binding IconEmoji}"
+                                               FontSize="22"
+                                               HorizontalOptions="Center"
+                                               VerticalOptions="Center" />
+                                    </Border>
+                                    
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                        <Label Text="{Binding Number}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
+                                        <Label Text="{Binding Type}" TextColor="#64748B" FontSize="11" />
+                                    </VerticalStackLayout>
+                                    
+                                    <!-- Call Action Button with Lucide Phone Icon -->
+                                    <Border Grid.Column="2" BackgroundColor="#0A8491" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="12,8" VerticalOptions="Center">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding BindingContext.DialNumberAsyncCommand, Source={x:Reference thisPage}}"
+                                                CommandParameter="{Binding Number}" />
+                                        </Border.GestureRecognizers>
+                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                            <!-- Lucide Phone Icon -->
+                                            <Path Data="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                                                  Fill="#FFFFFF"
+                                                  WidthRequest="13"
+                                                  HeightRequest="13"
+                                                  Aspect="Uniform"
+                                                  VerticalOptions="Center" />
+                                            <Label Text="Call" TextColor="#FFFFFF" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+
+            <!-- Section 2: Evacuation Centers Near You (Matching User's Reference Screenshot) -->
+            <VerticalStackLayout Spacing="14">
+                <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                    <Label Text="Evacuation Centers Near You" TextColor="#0F172A" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
+                    <Button Grid.Column="1" Text="Open Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="10" HeightRequest="36" FontSize="11" FontAttributes="Bold" Padding="10,0"
+                            Command="{Binding NavigateToMapCommand}" />
+                </Grid>
+
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding EvacuationCenters}" Spacing="20">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EvacuationCenterItem">
+                            <!-- Main Evacuation Center Card -->
+                            <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 18" BackgroundColor="#FFFFFF" Padding="18">
+                                <VerticalStackLayout Spacing="14">
+                                    
+                                    <!-- Filter Chips Row & Bookmark Icon -->
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                        <Border Grid.Column="0" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="12,6">
+                                            <Label Text="Nearest" TextColor="#0369A1" FontSize="12" FontAttributes="Bold" />
+                                        </Border>
+                                        
+                                        <Border Grid.Column="1" BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 8" Padding="12,6">
+                                            <Label Text="Within 1 km" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" />
+                                        </Border>
+
+                                        <!-- Bookmark Icon -->
+                                        <Border Grid.Column="3" WidthRequest="32" HeightRequest="32" StrokeThickness="0" BackgroundColor="#F8FAFC" StrokeShape="RoundRectangle 8" HorizontalOptions="End" VerticalOptions="Center">
+                                            <Path Data="M17,3H7A2,2 0 0,0 5,5V21L12,18L19,21V5C19,3.89 18.1,3 17,3Z" Fill="Transparent" Stroke="#0F172A" StrokeThickness="1.5" WidthRequest="16" HeightRequest="16" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- OpenStreetMap Real-Time Location Image Banner -->
+                                    <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="160">
+                                        <Grid>
+                                            <Image Source="{Binding MapImageSource}" Aspect="AspectFill" HeightRequest="160" />
+                                            
+                                            <!-- Status Tag Overlay -->
+                                            <Border BackgroundColor="{Binding StatusPillBg}" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start" VerticalOptions="Start" Margin="10">
+                                                <Label Text="{Binding StatusLabel}" TextColor="{Binding StatusPillText}" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Name & Distance -->
+                                    <VerticalStackLayout Spacing="2">
+                                        <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                                        <Label Text="{Binding Distance}" TextColor="#64748B" FontSize="13" />
+                                    </VerticalStackLayout>
+
+                                    <!-- Address Row -->
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                        <Label Grid.Column="0" Text="Address" TextColor="#64748B" FontSize="13" VerticalOptions="Start" />
+                                        <Label Grid.Column="1" Text="{Binding Address}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" VerticalOptions="Start" LineBreakMode="WordWrap" />
+                                    </Grid>
+
+                                    <!-- Verified by Row -->
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                        <Label Grid.Column="0" Text="Verified by" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
+                                        <Label Grid.Column="1" Text="{Binding VerifiedBy}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <!-- Real-time Capacity Progress Bar -->
+                                    <VerticalStackLayout Spacing="6" BackgroundColor="#F8FAFC" Padding="12" RoundRectangle.CornerRadius="10">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <Label Text="Real-Time Occupancy" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
+                                            <Label Grid.Column="1" Text="{Binding CapacityText}" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
+                                        </Grid>
+                                        <ProgressBar Progress="{Binding ProgressValue}" ProgressColor="#0A8491" HeightRequest="8" />
+                                    </VerticalStackLayout>
+
+                                    <!-- Action Links Row -->
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,4,0,0">
+                                        
+                                        <!-- View More Details Link (Launches Interactive Map View) -->
+                                        <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                                            <HorizontalStackLayout.GestureRecognizers>
+                                                <TapGestureRecognizer 
+                                                    Command="{Binding BindingContext.ViewMoreDetailsCommand, Source={x:Reference thisPage}}"
+                                                    CommandParameter="{Binding .}" />
+                                            </HorizontalStackLayout.GestureRecognizers>
+                                            <Label Text="View more details" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                                            <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+
+                                        <!-- Live Check-In Button -->
+                                        <Button Grid.Column="1" Text="Live Check-In" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="10" HeightRequest="38" FontSize="12" FontAttributes="Bold" Padding="14,0"
+                                                Command="{Binding BindingContext.CheckInEvacueeCommand, Source={x:Reference thisPage}}"
+                                                CommandParameter="{Binding .}" />
+                                    </Grid>
+
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.ChecklistPage"
+    x:Name="thisPage"
+    Title="Kit Checklist"
+    Shell.NavBarIsVisible="True"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.BindingContext>
+        <vm:ChecklistViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid>
+        <!-- Main Scroll Area -->
+        <ScrollView>
+            <VerticalStackLayout Padding="20" Spacing="24">
+                
+                <!-- Header -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Home / Preparedness" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                    <Label Text="Emergency Kit Checklist" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
+                    <Label Text="Build and inspect your 72-hour survival supplies." TextColor="#475569" FontSize="14" />
+                </VerticalStackLayout>
+
+                <!-- Readiness Status Banner -->
+                <Border BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Padding="20" Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Disaster Readiness Level" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Border BackgroundColor="#DCFCE7" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,4">
+                                <Label Text="On Track" TextColor="#15803D" FontSize="12" FontAttributes="Bold" />
+                            </Border>
+                        </Grid>
+                        
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
+                            <Label Text="{Binding PercentReady, StringFormat='{0}%'}" TextColor="#0A8491" FontSize="36" FontAttributes="Bold" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
+                                <ProgressBar Progress="{Binding ProgressValue}" ProgressColor="#0A8491" HeightRequest="10" />
+                                <Label Text="{Binding PreparedCountText}" TextColor="#64748B" FontSize="12" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Category Filter Tabs + Add Item Button -->
+                <VerticalStackLayout Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Supply Categories" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="+ Add Item" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="10" HeightRequest="36" FontSize="12" FontAttributes="Bold" Padding="12,0"
+                                Command="{Binding OpenAddModalCommand}" />
+                    </Grid>
+
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout Spacing="8">
+                            <!-- Category: All -->
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 10" BackgroundColor="#FFFFFF" Padding="14,8">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding SelectedCategory}" Value="All">
+                                        <Setter Property="BackgroundColor" Value="#0A8491" />
+                                        <Setter Property="Stroke" Value="#0A8491" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectCategoryCommand}" CommandParameter="All" />
+                                </Border.GestureRecognizers>
+                                <Label Text="All Items" TextColor="#0F172A" FontSize="13" FontAttributes="Bold">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding SelectedCategory}" Value="All">
+                                            <Setter Property="TextColor" Value="#FFFFFF" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+
+                            <!-- Category: Food & Water -->
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 10" BackgroundColor="#FFFFFF" Padding="14,8">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding SelectedCategory}" Value="Food &amp; Water">
+                                        <Setter Property="BackgroundColor" Value="#0A8491" />
+                                        <Setter Property="Stroke" Value="#0A8491" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectCategoryCommand}" CommandParameter="Food &amp; Water" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Food &amp; Water" TextColor="#0F172A" FontSize="13" FontAttributes="Bold">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding SelectedCategory}" Value="Food &amp; Water">
+                                            <Setter Property="TextColor" Value="#FFFFFF" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+
+                            <!-- Category: Medical & Safety -->
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 10" BackgroundColor="#FFFFFF" Padding="14,8">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding SelectedCategory}" Value="Medical &amp; Safety">
+                                        <Setter Property="BackgroundColor" Value="#0A8491" />
+                                        <Setter Property="Stroke" Value="#0A8491" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectCategoryCommand}" CommandParameter="Medical &amp; Safety" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Medical &amp; Safety" TextColor="#0F172A" FontSize="13" FontAttributes="Bold">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding SelectedCategory}" Value="Medical &amp; Safety">
+                                            <Setter Property="TextColor" Value="#FFFFFF" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+
+                            <!-- Category: Tools & Power -->
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 10" BackgroundColor="#FFFFFF" Padding="14,8">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding SelectedCategory}" Value="Tools &amp; Power">
+                                        <Setter Property="BackgroundColor" Value="#0A8491" />
+                                        <Setter Property="Stroke" Value="#0A8491" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectCategoryCommand}" CommandParameter="Tools &amp; Power" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Tools &amp; Power" TextColor="#0F172A" FontSize="13" FontAttributes="Bold">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding SelectedCategory}" Value="Tools &amp; Power">
+                                            <Setter Property="TextColor" Value="#FFFFFF" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+
+                            <!-- Category: Documents -->
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 10" BackgroundColor="#FFFFFF" Padding="14,8">
+                                <Border.Triggers>
+                                    <DataTrigger TargetType="Border" Binding="{Binding SelectedCategory}" Value="Documents">
+                                        <Setter Property="BackgroundColor" Value="#0A8491" />
+                                        <Setter Property="Stroke" Value="#0A8491" />
+                                    </DataTrigger>
+                                </Border.Triggers>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectCategoryCommand}" CommandParameter="Documents" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Documents" TextColor="#0F172A" FontSize="13" FontAttributes="Bold">
+                                    <Label.Triggers>
+                                        <DataTrigger TargetType="Label" Binding="{Binding SelectedCategory}" Value="Documents">
+                                            <Setter Property="TextColor" Value="#FFFFFF" />
+                                        </DataTrigger>
+                                    </Label.Triggers>
+                                </Label>
+                            </Border>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <!-- Item Cards Stack -->
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding FilteredItems}" Spacing="10">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChecklistItem">
+                            <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 14" BackgroundColor="#FFFFFF">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer 
+                                        Command="{Binding BindingContext.ToggleItemCommand, Source={x:Reference thisPage}}"
+                                        CommandParameter="{Binding .}" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto" Padding="12" ColumnSpacing="12" VerticalOptions="Center">
+                                    
+                                    <!-- Check Status Circle -->
+                                    <Border Grid.Column="0" WidthRequest="26" HeightRequest="26" StrokeShape="RoundRectangle 13" StrokeThickness="1.5" Stroke="#CBD5E1" BackgroundColor="Transparent" VerticalOptions="Center">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsCompleted}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="#16A34A" />
+                                                <Setter Property="Stroke" Value="#16A34A" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Label Text="OK" TextColor="#FFFFFF" FontSize="9" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" IsVisible="{Binding IsCompleted}" />
+                                    </Border>
+
+                                    <!-- Supply Category Emoji Icon Box -->
+                                    <Border Grid.Column="1" WidthRequest="40" HeightRequest="40" StrokeShape="RoundRectangle 12" StrokeThickness="0" BackgroundColor="{Binding IconBg}" VerticalOptions="Center">
+                                        <Label Text="{Binding IconEmoji}"
+                                               FontSize="20"
+                                               HorizontalOptions="Center"
+                                               VerticalOptions="Center" />
+                                    </Border>
+                                    
+                                    <!-- Title & Description -->
+                                    <VerticalStackLayout Grid.Column="2" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding Title}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsCompleted}" Value="True">
+                                                    <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                    <Setter Property="TextColor" Value="#94A3B8" />
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                        <Label Text="{Binding Description}" TextColor="#64748B" FontSize="11" LineBreakMode="WordWrap" />
+                                    </VerticalStackLayout>
+                                    
+                                    <Border Grid.Column="3" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,2" VerticalOptions="Center">
+                                        <Label Text="{Binding Category}" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <!-- Next Steps Button -->
+                <Button Text="Proceed to Evacuation Center Info" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="48" FontSize="14" FontAttributes="Bold"
+                        Command="{Binding NavigateToEvacuationCentersCommand}" Margin="0,8,0,20" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Add Custom Item Modal Overlay -->
+        <Grid BackgroundColor="#80000000" IsVisible="{Binding IsAddModalVisible}">
+            <Border BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 18" Margin="24" Padding="20" VerticalOptions="Center">
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="Add Custom Kit Item" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                    
+                    <Entry Placeholder="Item Title (e.g., Heavy Duty Gloves)" Text="{Binding NewItemTitle}" FontSize="14" />
+                    <Entry Placeholder="Item Description (e.g., Protection from sharp debris)" Text="{Binding NewItemDescription}" FontSize="14" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,8,0,0">
+                        <Button Text="Cancel" TextColor="#64748B" BackgroundColor="#F1F5F9" CornerRadius="10" HeightRequest="44" FontSize="14" FontAttributes="Bold"
+                                Command="{Binding CloseAddModalCommand}" />
+                        <Button Grid.Column="1" Text="Save Item" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="10" HeightRequest="44" FontSize="14" FontAttributes="Bold"
+                                Command="{Binding SaveNewItemCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+
+    </Grid>
+</ContentPage>

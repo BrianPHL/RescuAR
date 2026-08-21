@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.PASSPage"
+    Title="Preparation Assessment"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.BindingContext>
+        <vm:PASSViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid>
+        <!-- Main Scrollable Content -->
+        <ScrollView>
+            <VerticalStackLayout Padding="20" Spacing="24">
+
+                <!-- Header Section -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Home / Preparedness" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <Label Text="Preparation Assessment" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
+                    <Label Text="Evaluate your emergency readiness with our interactive score system." TextColor="#475569" FontSize="14" />
+                </VerticalStackLayout>
+
+                <!-- Hero Score Card -->
+                <Border BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Padding="20" Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Overall Preparedness" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Border Grid.Column="1" BackgroundColor="{Binding StatusBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="10,5">
+                                <Label Text="{Binding ScoreStatus}" TextColor="{Binding StatusColor}" FontSize="12" FontAttributes="Bold" />
+                            </Border>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
+                            <Label Grid.Column="0" Text="{Binding ScorePercentage, StringFormat='{0}%'}" TextColor="#0A8491" FontSize="42" FontAttributes="Bold" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                <Label Text="Readiness Level" TextColor="#64748B" FontSize="12" />
+                                <ProgressBar Progress="{Binding ProgressValue}" ProgressColor="#0A8491" HeightRequest="10" />
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <Label Text="You have completed most recommended preparedness activities. Retake the quiz to update your score." TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" />
+                        <Label Text="{Binding LastAssessedText}" TextColor="#94A3B8" FontSize="11" />
+
+                        <!-- Retake Button -->
+                        <Button Text="Take Interactive Assessment" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="48" FontSize="14" FontAttributes="Bold"
+                                Command="{Binding StartAssessmentCommand}" Margin="0,4,0,0" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Quick Navigation Action Cards -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Border Grid.Column="0" BackgroundColor="#F0FDF4" Stroke="#DCFCE7" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding NavigateToChecklistCommand}" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="6">
+                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                <!-- Lucide Clipboard Check Icon -->
+                                <Path Data="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 14l2 2 4-4 M12 2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1 1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"
+                                      Stroke="#166534"
+                                      StrokeThickness="2"
+                                      WidthRequest="14"
+                                      HeightRequest="14"
+                                      Aspect="Uniform"
+                                      VerticalOptions="Center" />
+                                <Label Text="Kit Checklist" TextColor="#166534" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Label Text="Track essential supplies" TextColor="#15803D" FontSize="11" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Border Grid.Column="1" BackgroundColor="#EFF6FF" Stroke="#DBEAFE" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding NavigateToEvacuationCommand}" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="6">
+                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                <!-- Lucide Home / Shelter Icon -->
+                                <Path Data="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10"
+                                      Stroke="#1E40AF"
+                                      StrokeThickness="2"
+                                      WidthRequest="14"
+                                      HeightRequest="14"
+                                      Aspect="Uniform"
+                                      VerticalOptions="Center" />
+                                <Label Text="Evacuation Info" TextColor="#1E40AF" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Label Text="Find centers &amp; hotlines" TextColor="#1D4ED8" FontSize="11" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <!-- Section: Assessment Breakdown Accordions -->
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Readiness Breakdown" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+
+                    <!-- Category 1: Emergency Supplies -->
+                    <Border StrokeShape="RoundRectangle 14" StrokeThickness="1" Stroke="#E2E8F0" BackgroundColor="#FFFFFF">
+                        <VerticalStackLayout>
+                            <Grid ColumnDefinitions="*,Auto" Padding="16" BackgroundColor="#FFFFFF">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleEmergencySuppliesCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Text="Emergency Supplies (85%)" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="[Collapse]" TextColor="#64748B" FontSize="12" VerticalOptions="Center" />
+                            </Grid>
+                            
+                            <VerticalStackLayout Padding="16,0,16,16" Spacing="10" IsVisible="{Binding IsEmergencySuppliesExpanded}">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#DCFCE7" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="Y" TextColor="#16A34A" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Water Supply (3-day storage)" TextColor="#334155" FontSize="13" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#DCFCE7" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="Y" TextColor="#16A34A" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="First Aid &amp; Medication Kit" TextColor="#334155" FontSize="13" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#DCFCE7" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="Y" TextColor="#16A34A" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Flashlight &amp; Backup Power Bank" TextColor="#334155" FontSize="13" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#FEE2E2" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="N" TextColor="#DC2626" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Portable Battery Radio missing" TextColor="#64748B" FontSize="13" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Category 2: Evacuation Readiness -->
+                    <Border StrokeShape="RoundRectangle 14" StrokeThickness="1" Stroke="#E2E8F0" BackgroundColor="#FFFFFF">
+                        <VerticalStackLayout>
+                            <Grid ColumnDefinitions="*,Auto" Padding="16" BackgroundColor="#FFFFFF">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleEvacuationReadinessCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Text="Evacuation Readiness (60%)" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="[Collapse]" TextColor="#64748B" FontSize="12" VerticalOptions="Center" />
+                            </Grid>
+
+                            <VerticalStackLayout Padding="16,0,16,16" Spacing="10" IsVisible="{Binding IsEvacuationReadinessExpanded}">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#DCFCE7" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="Y" TextColor="#16A34A" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Nearest evacuation center identified" TextColor="#334155" FontSize="13" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#DCFCE7" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="Y" TextColor="#16A34A" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Interactive OSM route mapped" TextColor="#334155" FontSize="13" />
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Border WidthRequest="18" HeightRequest="18" StrokeShape="RoundRectangle 9" BackgroundColor="#FEE2E2" StrokeThickness="0" VerticalOptions="Center">
+                                        <Label Text="N" TextColor="#DC2626" FontSize="10" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                    <Label Grid.Column="1" Text="Family emergency meeting point undefined" TextColor="#64748B" FontSize="13" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- History Section -->
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Assessment History" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                    
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding History}" Spacing="8">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AssessmentHistoryItem">
+                                <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="14">
+                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="{Binding Date}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                            <Label Text="{Binding Status}" TextColor="{Binding StatusColor}" FontSize="12" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" Text="{Binding ScoreText}" TextColor="#0A8491" FontSize="18" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+
+</ContentPage>

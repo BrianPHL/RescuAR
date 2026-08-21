@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:Class="RescuAR.App.Views.Reports.AdvisoryFeedPage"
+    x:Name="AdvisoryPageRoot"
+    Title="Advisory Feed"
+    Shell.NavBarIsVisible="True"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.BindingContext>
+        <vm:AdvisoryFeedViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid>
+        <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshAdvisoriesCommand}">
+            <ScrollView>
+                <VerticalStackLayout Padding="20" Spacing="20">
+
+                    <!-- Header with Live Real-time Ticking Clock -->
+                    <VerticalStackLayout Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <Label Grid.Column="0" Text="Reports / Advisories" TextColor="#64748B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4" VerticalOptions="Center">
+                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                    <Label Text="🔴 LIVE" TextColor="#EF4444" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    <Label Text="{Binding CurrentDateTimeText}" TextColor="#334155" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+                        </Grid>
+                        <Label Text="Disaster Updates &amp; Advisories" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" />
+                        <Label Text="Real-time emergency broadcasts from Marikina LGU &amp; Water Level Monitoring." TextColor="#475569" FontSize="13" />
+                    </VerticalStackLayout>
+
+                    <!-- Current Water Level Summary Banner -->
+                    <Border BackgroundColor="#0F766E" StrokeThickness="0" StrokeShape="RoundRectangle 18" Padding="18">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalOptions="Center">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                <Label Text="Marikina River Monitoring" TextColor="#CCFBF1" FontSize="12" FontAttributes="Bold" />
+                                <Label Text="{Binding CurrentAlertStatus}" TextColor="#FFFFFF" FontSize="18" FontAttributes="Bold" />
+                                <Label Text="Pull down to refresh live advisories" TextColor="#99F6E4" FontSize="11" />
+                            </VerticalStackLayout>
+
+                            <!-- Water Level Meter Badge -->
+                            <Border Grid.Column="1" BackgroundColor="#14B8A6" StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="14,10" VerticalOptions="Center">
+                                <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="2">
+                                    <Label Text="WATER LEVEL" TextColor="#E0F2FE" FontSize="9" FontAttributes="Bold" HorizontalOptions="Center" />
+                                    <Label Text="{Binding LatestWaterLevelText}" TextColor="#FFFFFF" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Filter Chips -->
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout Spacing="8">
+                            <!-- All -->
+                            <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="16,10">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BackgroundColor" Value="#FFFFFF" />
+                                        <Style.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding SelectedFilter}" Value="All">
+                                                <Setter Property="BackgroundColor" Value="#0A8491" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectFilterCommand}" CommandParameter="All" />
+                                </Border.GestureRecognizers>
+                                <Label Text="All Advisories" FontAttributes="Bold" FontSize="13">
+                                    <Label.Style>
+                                        <Style TargetType="Label">
+                                            <Setter Property="TextColor" Value="#475569" />
+                                            <Style.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding SelectedFilter}" Value="All">
+                                                    <Setter Property="TextColor" Value="#FFFFFF" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Label.Style>
+                                </Label>
+                            </Border>
+
+                            <!-- Critical & Warnings -->
+                            <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="16,10">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BackgroundColor" Value="#FFFFFF" />
+                                        <Style.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding SelectedFilter}" Value="Critical">
+                                                <Setter Property="BackgroundColor" Value="#EF4444" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectFilterCommand}" CommandParameter="Critical" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Critical &amp; Warnings" FontAttributes="Bold" FontSize="13">
+                                    <Label.Style>
+                                        <Style TargetType="Label">
+                                            <Setter Property="TextColor" Value="#475569" />
+                                            <Style.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding SelectedFilter}" Value="Critical">
+                                                    <Setter Property="TextColor" Value="#FFFFFF" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Label.Style>
+                                </Label>
+                            </Border>
+
+                            <!-- Standby & Normal -->
+                            <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="16,10">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BackgroundColor" Value="#FFFFFF" />
+                                        <Style.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding SelectedFilter}" Value="Standby">
+                                                <Setter Property="BackgroundColor" Value="#3B82F6" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SelectFilterCommand}" CommandParameter="Standby" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Standby &amp; Normal" FontAttributes="Bold" FontSize="13">
+                                    <Label.Style>
+                                        <Style TargetType="Label">
+                                            <Setter Property="TextColor" Value="#475569" />
+                                            <Style.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding SelectedFilter}" Value="Standby">
+                                                    <Setter Property="TextColor" Value="#FFFFFF" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Label.Style>
+                                </Label>
+                            </Border>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+
+                    <!-- Advisories List -->
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Advisories}" Spacing="16">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:DisasterAdvisory">
+                                <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 20" BackgroundColor="#FFFFFF" Padding="18">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer 
+                                            Command="{Binding BindingContext.ShowAdvisoryDetailCommand, Source={x:Reference AdvisoryPageRoot}}" 
+                                            CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <VerticalStackLayout Spacing="12">
+                                        
+                                        <!-- Top Row: Alert Badge & Time Ago -->
+                                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                                <Border BackgroundColor="{Binding AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                                    <HorizontalStackLayout Spacing="4">
+                                                        <Label Text="{Binding AlertIconEmoji}" FontSize="12" VerticalOptions="Center" />
+                                                        <Label Text="{Binding DisplayAlertLevel}" TextColor="{Binding AlertBadgeText}" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                                    </HorizontalStackLayout>
+                                                </Border>
+
+                                                <!-- TODO: Implement IsFloodCategory property in DisasterAdvisory model to determine if the advisory is related to flood
+                                                <Border IsVisible="{Binding IsFloodCategory}" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,2">
+                                                    <Label Text="Flood" TextColor="#475569" FontSize="10" FontAttributes="Bold" />
+                                                </Border>
+                                                -->
+                                            </HorizontalStackLayout>
+
+                                            <Label Grid.Column="1" Text="{Binding TimeAgoText}" TextColor="#94A3B8" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                        </Grid>
+
+                                        <!-- Title -->
+                                        <Label Text="{Binding Title}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" LineBreakMode="WordWrap" />
+
+                                        <!-- Full Message Description Body -->
+                                        <Label Text="{Binding DisplayMessage}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" CharacterSpacing="0.2" />
+
+                                        <!-- Dedicated Action Plan Card -->
+                                        <Border IsVisible="{Binding HasActionPlan}" BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                                            <VerticalStackLayout Spacing="4">
+                                                <Label Text="⚡ RECOMMENDED ACTION PLAN" TextColor="#B45309" FontSize="10" FontAttributes="Bold" />
+                                                <Label Text="{Binding DisplayActionPlan}" TextColor="#92400E" FontSize="12" LineBreakMode="WordWrap" />
+                                            </VerticalStackLayout>
+                                        </Border>
+
+                                        <!-- Dedicated Affected Area Sectors Card -->
+                                        <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="📍 AFFECTED AREA SECTORS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                                <Label Text="{Binding DisplayAffectedArea}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                            </VerticalStackLayout>
+                                        </Border>
+
+                                        <!-- Bottom Details Bar -->
+                                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
+                                            <Label Text="{Binding CreatedAtText}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+
+                                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                                <Border IsVisible="{Binding ShowWaterLevel}" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                                    <Label Text="{Binding WaterLevelText}" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                                </Border>
+
+                                                <Label Text="See Full Details →" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Grid>
+
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+
+        <!-- Pop-Up Advisory Overlay Modal Sheet -->
+        <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
+                <VerticalStackLayout Spacing="0">
+                    
+                    <!-- Pop-up Header Banner -->
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 24 24 0 0" Padding="20,16">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                            <Label Text="{Binding SelectedAdvisory.AlertIconEmoji}" FontSize="26" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="EMERGENCY ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="10" FontAttributes="Bold" />
+                                <Label Text="{Binding SelectedAdvisory.DisplayAlertLevel}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="16" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+                            <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="32" HeightRequest="32" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="✕" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Pop-up Body Content -->
+                    <ScrollView MaximumHeightRequest="420" Padding="20">
+                        <VerticalStackLayout Spacing="14">
+                            <!-- Title -->
+                            <Label Text="{Binding SelectedAdvisory.Title}" TextColor="#0F172A" FontSize="19" FontAttributes="Bold" />
+
+                            <!-- Message -->
+                            <Label Text="{Binding SelectedAdvisory.DisplayMessage}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" CharacterSpacing="0.2" />
+
+                            <!-- Recommended Action Plan -->
+                            <Border IsVisible="{Binding SelectedAdvisory.HasActionPlan}" BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="⚡ RECOMMENDED ACTION PLAN" TextColor="#B45309" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayActionPlan}" TextColor="#92400E" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Affected Sectors -->
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="📍 AFFECTED AREA SECTORS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayAffectedArea}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Timestamp & Water Level -->
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedAdvisory.CreatedAtText}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+                                <Border Grid.Column="1" IsVisible="{Binding SelectedAdvisory.ShowWaterLevel}" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="{Binding SelectedAdvisory.WaterLevelText}" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <!-- Pop-up Footer Buttons -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Padding="20,16" BackgroundColor="#F8FAFC">
+                        <Button Grid.Column="0" Text="Close" TextColor="#475569" BackgroundColor="#E2E8F0" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding ClosePopupCommand}" />
+                        <Button Grid.Column="1" Text="See Full Feed" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding GoToAdvisoriesFeedCommand}" />
+                    </Grid>
+
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentPage>
