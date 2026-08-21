@@ -99,7 +99,7 @@ namespace RescuAR.App.ViewModels.Authentication
                 {
                     if (Application.Current != null)
                     {
-                        Application.Current.MainPage = new AppShell();
+                        Application.Current.Windows[0].Page = new AppShell();
                     }
                 });
             }
@@ -139,7 +139,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = googleAuthPage;
+                    Application.Current.Windows[0].Page = googleAuthPage;
                 }
             });
         }
@@ -152,7 +152,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = registrationPage;
+                    Application.Current.Windows[0].Page = registrationPage;
                 }
             });
         }
@@ -170,7 +170,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = onboardingPage;
+                    Application.Current.Windows[0].Page = onboardingPage;
                 }
             });
         }
@@ -178,9 +178,9 @@ namespace RescuAR.App.ViewModels.Authentication
         [RelayCommand]
         private async Task ResetPassword()
         {
-            if (Application.Current?.MainPage != null)
+            if (Application.Current?.Windows[0].Page != null)
             {
-                await Application.Current.MainPage.DisplayAlert("Reset Password", "Password reset instructions have been sent to your email.", "OK");
+                await Application.Current.Windows[0].Page.DisplayAlert("Reset Password", "To reset your password, please visit the 'Forgot Password' section on the login page or contact support.", "OK");
             }
         }
     }

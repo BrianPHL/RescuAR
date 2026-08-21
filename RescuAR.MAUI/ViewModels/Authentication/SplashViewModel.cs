@@ -32,7 +32,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = registrationPage;
+                    Application.Current.Windows[0].Page = registrationPage;
                 }
             });
         }

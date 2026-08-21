@@ -135,7 +135,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = splashPage;
+                    Application.Current.Windows[0].Page = splashPage;
                 }
             });
         }
@@ -148,7 +148,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = registrationPage;
+                    Application.Current.Windows[0].Page = registrationPage;
                 }
             });
         }
@@ -161,7 +161,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = loginPage;
+                    Application.Current.Windows[0].Page = loginPage;
                 }
             });
         }

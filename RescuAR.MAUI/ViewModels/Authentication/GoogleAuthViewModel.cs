@@ -60,7 +60,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     if (Application.Current != null)
                     {
                         Preferences.Default.Set("IsLoggedIn", true);
-                        Application.Current.MainPage = new AppShell();
+                        Application.Current.Windows[0].Page = new AppShell();
                     }
                 });
             }
@@ -95,7 +95,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     if (Application.Current != null)
                     {
                         Preferences.Default.Set("IsLoggedIn", true);
-                        Application.Current.MainPage = new AppShell();
+                        Application.Current.Windows[0].Page = new AppShell();
                     }
                 });
             }
@@ -123,7 +123,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = loginPage;
+                    Application.Current.Windows[0].Page = loginPage;
                 }
             });
         }

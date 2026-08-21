@@ -249,7 +249,7 @@ namespace RescuAR.App.ViewModels.Reports
         {
             try
             {
-                var action = await Shell.Current.DisplayActionSheetAsync("Upload Media", "Cancel", null, "Take Photo", "Choose Photo from Gallery", "Pick Video");
+                var action = await Shell.Current.DisplayActionSheet("Upload Media", "Cancel", null, "Take Photo", "Choose Photo from Gallery", "Pick Video");
 
                 if (action == "Take Photo")
                 {
@@ -349,13 +349,13 @@ namespace RescuAR.App.ViewModels.Reports
         {
             if (string.IsNullOrWhiteSpace(NewReportTitle))
             {
-                await Shell.Current.DisplayAlertAsync("Required Field", "Please enter a title for your community report.", "OK");
+                await Shell.Current.DisplayAlert("Required Field", "Please enter a title for your community report.", "OK");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(NewReportDescription))
             {
-                await Shell.Current.DisplayAlertAsync("Required Field", "Please enter a description of the incident.", "OK");
+                await Shell.Current.DisplayAlert("Required Field", "Please enter a description of the incident.", "OK");
                 return;
             }
 
@@ -369,7 +369,7 @@ namespace RescuAR.App.ViewModels.Reports
                 Longitude = NewReportLongitude,
                 DistanceText = "50 meters away",
                 PostedBy = "Aubrey T.",
-                PostedAt = DateTime.Now,
+                CreatedAt = DateTime.Now,
                 MediaUrl = NewReportMediaUrl,
                 MediaType = NewReportMediaType,
                 HasMedia = NewReportHasMedia,

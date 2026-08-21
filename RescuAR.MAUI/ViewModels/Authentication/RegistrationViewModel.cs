@@ -171,7 +171,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     if (Application.Current != null)
                     {
                         Preferences.Default.Set("HasSignedUp", true);
-                        Application.Current.MainPage = successPage;
+                        Application.Current.Windows[0].Page = successPage;
                     }
                 });
             }
@@ -199,7 +199,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = onboardingPage;
+                    Application.Current.Windows[0].Page = onboardingPage;
                 }
             });
         }
@@ -212,7 +212,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.MainPage = loginPage;
+                    Application.Current.Windows[0].Page = loginPage;
                 }
             });
         }
