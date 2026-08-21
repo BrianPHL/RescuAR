@@ -29,7 +29,7 @@ namespace RescuAR.App.Services.Reports
                     Category = "Flood Warning",
                     DistanceText = "150 meters away",
                     PostedBy = "Captain Santos",
-                    PostedAt = DateTime.Now.AddMinutes(-25),
+                    CreatedAt = DateTime.Now.AddMinutes(-25),
                     LikeCount = 14,
                     AllowComments = true
                 });
@@ -43,7 +43,7 @@ namespace RescuAR.App.Services.Reports
                     Category = "Road Hazard",
                     DistanceText = "620 meters away",
                     PostedBy = "Maria Cruz",
-                    PostedAt = DateTime.Now.AddHours(-1),
+                    CreatedAt = DateTime.Now.AddHours(-1),
                     LikeCount = 8,
                     AllowComments = true
                 });
