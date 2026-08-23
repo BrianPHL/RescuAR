@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    
+    <Color x:Key="RescuARFillBtnPrimaryDefaultLight">#00848E</Color>
+    <Color x:Key="RescuARFillBtnPrimaryDefaultDark">#00C4D3</Color>
+    <Color x:Key="RescuARFillBtnPrimaryHoveredLight">#00747D</Color>
+    <Color x:Key="RescuARFillBtnPrimaryHoveredDark">#00D9E9</Color>
+    <Color x:Key="RescuARFillBtnPrimaryDisabledLight">#5FADB3</Color>
+    <Color x:Key="RescuARFillBtnPrimaryDisabledDark">#006971</Color>
+
+    <Color x:Key="RescuARFillBtnPrimaryOutlineDefaultLight">#00747D</Color>
+    <Color x:Key="RescuARFillBtnPrimaryOutlineDefaultDark">#00E6F8</Color>
+    <Color x:Key="RescuARFillBtnPrimaryOutlineHoveredLight">#005B62</Color>
+    <Color x:Key="RescuARFillBtnPrimaryOutlineHoveredDark">#56F3FF</Color>
+    <Color x:Key="RescuARFillBtnPrimaryOutlineDisabledLight">#8ECCD1</Color>
+    <Color x:Key="RescuARFillBtnPrimaryOutlineDisabledDark">#00858E</Color>
+
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryDefaultLight">#CC00848E</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryDefaultDark">#CC00C4D3</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryHoveredLight">#CC00747D</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryHoveredDark">#CC00D9E9</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryDisabledLight">#CC5FADB3</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryDisabledDark">#CC006971</Color>
+
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineDefaultLight">#CC00747D</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineDefaultDark">#CC00E6F8</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineHoveredLight">#CC005B62</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineHoveredDark">#CC56F3FF</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineDisabledLight">#CC8ECCD1</Color>
+    <Color x:Key="RescuARFillBtnTranslucentPrimaryOutlineDisabledDark">#CC00858E</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerInfoFillLight">#CCFEE2E2</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerInfoFillDark">#CC491515</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerInfoOutlineLight">#CCFBCBCB</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerInfoOutlineDark">#CC601B1B</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTADefaultLight">#CCFF373A</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTADefaultDark">#CC901F20</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAHoveredLight">#CCB91C1C</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAHoveredDark">#CCD42627</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTADisabledLight">#CCFCA5A5</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTADisabledDark">#CC651616</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineDefaultLight">#CCB01919</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineDefaultDark">#CCA82124</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineHoveredLight">#CC890002</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineHoveredDark">#CCFE262A</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineDisabledLight">#CCFFCECF</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentDangerCTAOutlineDisabledDark">#CC560000</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessInfoFillLight">#CCB6F2D1</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessInfoFillDark">#CC022411</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessInfoOutlineLight">#CCA5D2B9</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessInfoOutlineDark">#CC003819</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTADefaultLight">#CC269C5B</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTADefaultDark">#CC1E814B</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAHoveredLight">#CC1B7142</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAHoveredDark">#CC2FC673</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTADisabledLight">#CC82BC9D</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTADisabledDark">#CC114D2C</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineDefaultLight">#CC148949</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineDefaultDark">#CC219958</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineHoveredLight">#CC0C562D</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineHoveredDark">#CC68DE9D</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineDisabledLight">#CCA9D5BD</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentSuccessCTAOutlineDisabledDark">#CC145D35</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentWarningFillLight">#CCEEE4C1</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentWarningFillDark">#CC261E01</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentWarningOutlineLight">#CCDDD4B5</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentWarningOutlineDark">#CC362A00</Color>
+
+    <Color x:Key="RescuARFillSemanticsTranslucentHintFillLight">#CCC9E2F3</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentHintFillDark">#CC021C2F</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentHintOutlineLight">#CCB0D5EE</Color>
+    <Color x:Key="RescuARFillSemanticsTranslucentHintOutlineDark">#CC002640</Color>
+
+    <Color x:Key="RescuARTypographyBrandDefaultLight">#00848E</Color>
+    <Color x:Key="RescuARTypographyBrandDefaultDark">#00C4D3</Color>
+    <Color x:Key="RescuARTypographyBrandHoveredLight">#00747D</Color>
+    <Color x:Key="RescuARTypographyBrandHoveredDark">#00D9E9</Color>
+    <Color x:Key="RescuARTypographyBrandDisabledLight">#8ECCD1</Color>
+    <Color x:Key="RescuARTypographyBrandDisabledDark">#00858E</Color>
+
+    <Color x:Key="RescuARTypographyButtonDefaultLight">#FAFAFA</Color>
+    <Color x:Key="RescuARTypographyButtonDefaultDark">#FAFAFA</Color>
+    <Color x:Key="RescuARTypographyButtonDisabledLight">#D5D5D5</Color>
+    <Color x:Key="RescuARTypographyButtonDisabledDark">#D5D5D5</Color>
+
+    <!-- Fill Colors -->
+
+    <Color x:Key="FillNeutralsOutlineAndDividersLight">#E0E0E0</Color>
+    <Color x:Key="FillNeutralsOutlineAndDividersDark">#252525</Color>
+    <Color x:Key="FillNeutralsPrimaryLight">#FAFAFA</Color>
+    <Color x:Key="FillNeutralsPrimaryDark">#1A1A1A</Color>
+    <Color x:Key="FillNeutralsSecondaryLight">#E5E5E5</Color>
+    <Color x:Key="FillNeutralsSecondaryDark">#141414</Color>
+
+    <Color x:Key="FillNeutralsSecondaryOutlineDefaultLight">#CECECE</Color>
+    <Color x:Key="FillNeutralsSecondaryOutlineDefaultDark">#303030</Color>
+    <Color x:Key="FillNeutralsSecondaryOutlineHoveredLight">#B5B5B5</Color>
+    <Color x:Key="FillNeutralsSecondaryOutlineHoveredDark">#4D4D4D</Color>
+    <Color x:Key="FillNeutralsSecondaryOutlineDisabledLight">#DCDCDC</Color>
+    <Color x:Key="FillNeutralsSecondaryOutlineDisabledDark">#444444</Color>
+
+    <Color x:Key="FillNeutralsBlanket">#B3B5B5B5</Color>
+    <Color x:Key="FillNeutralsOverlay">#804D4D4D</Color>
+
+    <Color x:Key="FillSemanticsSuccessInfoFillLight">#B6F2D1</Color>
+    <Color x:Key="FillSemanticsSuccessInfoFillDark">#022411</Color>
+    <Color x:Key="FillSemanticsSuccessInfoOutlineLight">#A5D2B9</Color>
+    <Color x:Key="FillSemanticsSuccessInfoOutlineDark">#003819</Color>
+
+    <Color x:Key="FillSemanticsSuccessCTADefaultLight">#269C5B</Color>
+    <Color x:Key="FillSemanticsSuccessCTADefaultDark">#1E814B</Color>
+    <Color x:Key="FillSemanticsSuccessCTAHoveredLight">#1B7142</Color>
+    <Color x:Key="FillSemanticsSuccessCTAHoveredDark">#2FC673</Color>
+    <Color x:Key="FillSemanticsSuccessCTADisabledLight">#82BC9D</Color>
+    <Color x:Key="FillSemanticsSuccessCTADisabledDark">#114D2C</Color>
+
+    <Color x:Key="FillSemanticsSuccessCTAOutlineDefaultLight">#148949</Color>
+    <Color x:Key="FillSemanticsSuccessCTAOutlineDefaultDark">#219958</Color>
+    <Color x:Key="FillSemanticsSuccessCTAOutlineHoveredLight">#0C562D</Color>
+    <Color x:Key="FillSemanticsSuccessCTAOutlineHoveredDark">#68DE9D</Color>
+    <Color x:Key="FillSemanticsSuccessCTAOutlineDisabledLight">#A9D5BD</Color>
+    <Color x:Key="FillSemanticsSuccessCTAOutlineDisabledDark">#145D35</Color>
+
+    <Color x:Key="FillSemanticsDangerInfoFillLight">#FEE2E2</Color>
+    <Color x:Key="FillSemanticsDangerInfoFillDark">#491515</Color>
+    <Color x:Key="FillSemanticsDangerInfoOutlineLight">#FBCBCB</Color>
+    <Color x:Key="FillSemanticsDangerInfoOutlineDark">#601B1B</Color>
+
+    <Color x:Key="FillSemanticsDangerCTADefaultLight">#FF373A</Color>
+    <Color x:Key="FillSemanticsDangerCTADefaultDark">#901F20</Color>
+    <Color x:Key="FillSemanticsDangerCTAHoveredLight">#B91C1C</Color>
+    <Color x:Key="FillSemanticsDangerCTAHoveredDark">#D42627</Color>
+    <Color x:Key="FillSemanticsDangerCTADisabledLight">#FCA5A5</Color>
+    <Color x:Key="FillSemanticsDangerCTADisabledDark">#651616</Color>
+
+    <Color x:Key="FillSemanticsDangerCTAOutlineDefaultLight">#B01919</Color>
+    <Color x:Key="FillSemanticsDangerCTAOutlineDefaultDark">#A82124</Color>
+    <Color x:Key="FillSemanticsDangerCTAOutlineHoveredLight">#890002</Color>
+    <Color x:Key="FillSemanticsDangerCTAOutlineHoveredDark">#FE262A</Color>
+    <Color x:Key="FillSemanticsDangerCTAOutlineDisabledLight">#FFCECF</Color>
+    <Color x:Key="FillSemanticsDangerCTAOutlineDisabledDark">#560000</Color>
+
+    <Color x:Key="FillSemanticsWarningInfoFillLight">#EEE4C1</Color>
+    <Color x:Key="FillSemanticsWarningInfoFillDark">#261E01</Color>
+    <Color x:Key="FillSemanticsWarningInfoOutlineLight">#DDD4B5</Color>
+    <Color x:Key="FillSemanticsWarningInfoOutlineDark">#362A00</Color>
+
+    <Color x:Key="FillSemanticsWarningCTADefaultLight">#B38B00</Color>
+    <Color x:Key="FillSemanticsWarningCTADefaultDark">#795F01</Color>
+    <Color x:Key="FillSemanticsWarningCTAHoveredLight">#95760A</Color>
+    <Color x:Key="FillSemanticsWarningCTAHoveredDark">#9F7B00</Color>
+    <Color x:Key="FillSemanticsWarningCTADisabledLight">#D7BD60</Color>
+    <Color x:Key="FillSemanticsWarningCTADisabledDark">#4C3C00</Color>
+
+    <Color x:Key="FillSemanticsWarningCTAOutlineDefaultLight">#95760A</Color>
+    <Color x:Key="FillSemanticsWarningCTAOutlineDefaultDark">#9F7B00</Color>
+    <Color x:Key="FillSemanticsWarningCTAOutlineHoveredLight">#826608</Color>
+    <Color x:Key="FillSemanticsWarningCTAOutlineHoveredDark">#BC9200</Color>
+    <Color x:Key="FillSemanticsWarningCTAOutlineDisabledLight">#E6CE79</Color>
+    <Color x:Key="FillSemanticsWarningCTAOutlineDisabledDark">#403100</Color>
+
+    <Color x:Key="FillSemanticsHintInfoFillLight">#C9E2F3</Color>
+    <Color x:Key="FillSemanticsHintInfoFillDark">#021C2F</Color>
+    <Color x:Key="FillSemanticsHintInfoOutlineLight">#B0D5EE</Color>
+    <Color x:Key="FillSemanticsHintInfoOutlineDark">#002640</Color>
+
+    <Color x:Key="FillSemanticsHintCTADefaultLight">#4B9BD1</Color>
+    <Color x:Key="FillSemanticsHintCTADefaultDark">#26628B</Color>
+    <Color x:Key="FillSemanticsHintCTAHoveredLight">#2B79AD</Color>
+    <Color x:Key="FillSemanticsHintCTAHoveredDark">#2873A6</Color>
+    <Color x:Key="FillSemanticsHintCTADisabledLight">#98C4E1</Color>
+    <Color x:Key="FillSemanticsHintCTADisabledDark">#1B445F</Color>
+
+    <Color x:Key="FillSemanticsHintCTAOutlineDefaultLight">#2B79AD</Color>
+    <Color x:Key="FillSemanticsHintCTAOutlineDefaultDark">#2873A6</Color>
+    <Color x:Key="FillSemanticsHintCTAOutlineHoveredLight">#246896</Color>
+    <Color x:Key="FillSemanticsHintCTAOutlineHoveredDark">#3089C5</Color>
+    <Color x:Key="FillSemanticsHintCTAOutlineDisabledLight">#B6D4E9</Color>
+    <Color x:Key="FillSemanticsHintCTAOutlineDisabledDark">#0F2D42</Color>
+
+    <Color x:Key="FillBtnSecondaryOutlineDefaultLight">#AEAEAE</Color>
+    <Color x:Key="FillBtnSecondaryOutlineDefaultDark">#444444</Color>
+    <Color x:Key="FillBtnSecondaryOutlineHoveredLight">#909090</Color>
+    <Color x:Key="FillBtnSecondaryOutlineHoveredDark">#757575</Color>
+    <Color x:Key="FillBtnSecondaryOutlineDisabledLight">#D5D5D5</Color>
+    <Color x:Key="FillBtnSecondaryOutlineDisabledDark">#2A2A2A</Color>
+
+    <!-- Typography Colors -->
+
+    <Color x:Key="TypoNeutralsPrimaryLight">#101010</Color>
+    <Color x:Key="TypoNeutralsPrimaryDark">#FAFAFA</Color>
+    <Color x:Key="TypoNeutralsSecondaryLight">#808080</Color>
+    <Color x:Key="TypoNeutralsSecondaryDark">#B3B3B3</Color>
+    <Color x:Key="TypoNeutralsDisabledLight">#D5D5D5</Color>
+    <Color x:Key="TypoNeutralsDisabledDark">#444444</Color>
+    <Color x:Key="TypoNeutralsHintLight">#AEAEAE</Color>
+    <Color x:Key="TypoNeutralsHintDark">#6E6E6E</Color>
+
+    <Color x:Key="TypoSemanticsDangerDefaultLight">#A60103</Color>
+    <Color x:Key="TypoSemanticsDangerDefaultDark">#D82B2D</Color>
+    <Color x:Key="TypoSemanticsDangerDisabledLight">#FFCECF</Color>
+    <Color x:Key="TypoSemanticsDangerDisabledDark">#560000</Color>
+
+    <Color x:Key="TypoSemanticsSuccessDefaultLight">#00662D</Color>
+    <Color x:Key="TypoSemanticsSuccessDefaultDark">#00BE54</Color>
+    <Color x:Key="TypoSemanticsSuccessDisabledLight">#A9D5BD</Color>
+    <Color x:Key="TypoSemanticsSuccessDisabledDark">#145D35</Color>
+
+    <Color x:Key="TypoSemanticsWarningDefaultLight">#805D00</Color>
+    <Color x:Key="TypoSemanticsWarningDefaultDark">#DAA800</Color>
+    <Color x:Key="TypoSemanticsWarningDisabledLight">#E6CE79</Color>
+    <Color x:Key="TypoSemanticsWarningDisabledDark">#403100</Color>
+
+    <Color x:Key="TypoSemanticsHintDefaultLight">#0165AD</Color>
+    <Color x:Key="TypoSemanticsHintDefaultDark">#0096FF</Color>
+    <Color x:Key="TypoSemanticsHintDisabledLight">#B6D4E9</Color>
+    <Color x:Key="TypoSemanticsHintDisabledDark">#0F2D42</Color>
+    
+</ResourceDictionary>

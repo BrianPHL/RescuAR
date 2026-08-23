@@ -109,6 +109,12 @@
 		<EmbeddedResource Include="Platforms\Android\Vulkan\Shaders\CameraExternal.frag.spv" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <MauiXaml Update="Resources\Styles\RescuARColors.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	</ItemGroup>
+
 	<!--
 		Entry point for native bridge preparation.
 
