@@ -21,10 +21,9 @@ FROM osrm/osrm-backend:latest AS builder
 WORKDIR /data
 COPY --from=downloader /data/map.osm.pbf /data/map.osm.pbf
 
-# Process the map using the car profile (generates routing graph)
+# Process the map using the car profile (generates routing graph for CH)
 RUN osrm-extract -p /opt/car.lua map.osm.pbf
-RUN osrm-partition map.osrm
-RUN osrm-customize map.osrm
+RUN osrm-contract map.osrm
 
 # ==========================================
 # STAGE 3: Lightweight Production Runtime
@@ -36,7 +35,7 @@ WORKDIR /data
 # Copy pre-processed map data from builder stage
 COPY --from=builder /data/map.osrm* /data/
 
-EXPOSE ${PORT:-5000}
+EXPOSE 5000
 
-# Start OSRM routing daemon using Multi-Level Dijkstra (MLD) engine, limited to 1 thread to save memory
-CMD osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000} -t 1
+# Start OSRM routing daemon using Contraction Hierarchies (CH) engine, limited to 1 thread
+CMD sh -c "osrm-routed --algorithm ch /data/map.osrm --port ${PORT:-5000} -t 1"
