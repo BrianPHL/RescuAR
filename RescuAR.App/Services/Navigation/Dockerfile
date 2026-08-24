@@ -1,9 +1,9 @@
 # ==========================================
 # STAGE 1: Download and Clip Map Data
 # ==========================================
-FROM alpine:latest AS downloader
+FROM debian:bookworm-slim AS downloader
 
-RUN apk add --no-cache wget osmium-tool
+RUN apt-get update && apt-get install -y wget osmium-tool
 WORKDIR /data
 
 # Download the full Philippines PBF
