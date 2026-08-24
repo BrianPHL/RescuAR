@@ -1,11 +1,17 @@
 # ==========================================
-# STAGE 1: Download Map Data
+# STAGE 1: Download and Clip Map Data
 # ==========================================
 FROM alpine:latest AS downloader
 
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget osmium-tool
 WORKDIR /data
-RUN wget http://download.geofabrik.de/asia/philippines-latest.osm.pbf -O map.osm.pbf
+
+# Download the full Philippines PBF
+RUN wget http://download.geofabrik.de/asia/philippines-latest.osm.pbf -O philippines.osm.pbf
+
+# Clip to Marikina City bounding box (W,S,E,N: 121.08,14.60,121.13,14.67)
+RUN osmium extract --bbox 121.08,14.60,121.13,14.67 philippines.osm.pbf -o map.osm.pbf \
+    && rm philippines.osm.pbf
 
 # ==========================================
 # STAGE 2: Extract and Process Map Graph
