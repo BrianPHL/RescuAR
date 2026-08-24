@@ -113,6 +113,9 @@
 	  <MauiXaml Update="Resources\Styles\RescuARColors.xaml">
 	    <Generator>MSBuild:Compile</Generator>
 	  </MauiXaml>
+	  <MauiXaml Update="Views\Reports\CommunityPostingPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
 	</ItemGroup>
 
 	<!--

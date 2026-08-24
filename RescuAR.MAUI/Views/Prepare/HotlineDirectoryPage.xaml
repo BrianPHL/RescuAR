@@ -2,10 +2,25 @@
 
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.ViewModels.Prepare.HotlineDirectoryPage"
+    Title="Hotline Directory">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
+    <VerticalStackLayout
+        Padding="20"
+        VerticalOptions="Center">
+
+        <Label
+            Text="Hotline Directory"
+            FontSize="24"
+            FontAttributes="Bold"
+            HorizontalOptions="Center" />
+
+        <Label
+            Text="Placeholder"
+            Margin="0,12,0,0"
+            HorizontalOptions="Center" />
+
     </VerticalStackLayout>
 
 </ContentPage>

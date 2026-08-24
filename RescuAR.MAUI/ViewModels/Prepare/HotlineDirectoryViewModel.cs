@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace RescuAR.App.ViewModels.Prepare
+﻿namespace RescuAR.App.ViewModels.Prepare
 {
-    internal class HotlineDirectoryViewModel
+    public partial class HotlineDirectoryPage : ContentPage
     {
+        public HotlineDirectoryPage()
+        {
+            InitializeComponent();
+        }
     }
 }

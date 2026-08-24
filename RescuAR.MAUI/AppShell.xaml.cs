@@ -1,10 +1,66 @@
-namespace RescuAR.MAUI
+namespace RescuAR.MAUI;
+
+public partial class AppShell : Shell
 {
-    public partial class AppShell : Shell
+    public AppShell()
     {
-        public AppShell()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
+
+        RegisterRoutes();
+    }
+
+    private static void RegisterRoutes()
+    {
+        // Prepare
+        Routing.RegisterRoute(
+            "Prepare/Checklist",
+            typeof(RescuAR.App.Views.Prepare.ChecklistPage));
+
+        Routing.RegisterRoute(
+            "Prepare/PASS",
+            typeof(RescuAR.App.Views.Prepare.PASSPage));
+
+        Routing.RegisterRoute(
+            "Prepare/Assessment",
+            typeof(RescuAR.App.Views.Prepare.AssessmentPage));
+
+        Routing.RegisterRoute(
+            "Prepare/EvacuationCenterInfo",
+            typeof(RescuAR.App.Views.Prepare.EvacuationCenterInfoPage));
+
+        Routing.RegisterRoute(
+            "Prepare/HotlineDirectory",
+            typeof(RescuAR.App.ViewModels.Prepare.HotlineDirectoryPage));
+
+        // Reports
+        Routing.RegisterRoute(
+            "AdvisoryFeedPage",
+            typeof(RescuAR.App.Views.Reports.AdvisoryFeedPage));
+
+        Routing.RegisterRoute(
+            "Reports/AdvisoryFeed",
+            typeof(RescuAR.App.Views.Reports.AdvisoryFeedPage));
+
+        Routing.RegisterRoute(
+            "Reports/CommunityPosting",
+            typeof(RescuAR.App.ViewModels.Reports.CommunityPostingPage));
+
+        Routing.RegisterRoute(
+            "ReportDetails",
+            typeof(RescuAR.App.Views.Reports.ReportDetailsPage));
+
+        // Profile
+        Routing.RegisterRoute(
+            "ProfilePage",
+            typeof(RescuAR.App.Views.Profile.ProfilePage));
+
+        // Summary
+        Routing.RegisterRoute(
+            "SummaryPage",
+            typeof(RescuAR.App.Views.Summary.SummaryPage));
+
+        Routing.RegisterRoute(
+            "AreaStatusSummaryPage",
+            typeof(RescuAR.App.ViewModels.Summary.AreaStatusPage));
     }
 }
