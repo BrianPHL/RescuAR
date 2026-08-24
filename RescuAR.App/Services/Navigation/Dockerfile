@@ -1,20 +1,27 @@
 # ==========================================
-# STAGE 1: Extract and Process Map Graph
+# STAGE 1: Download Map Data
+# ==========================================
+FROM alpine:latest AS downloader
+
+RUN apk add --no-cache wget
+WORKDIR /data
+RUN wget http://download.geofabrik.de/asia/philippines-latest.osm.pbf -O map.osm.pbf
+
+# ==========================================
+# STAGE 2: Extract and Process Map Graph
 # ==========================================
 FROM osrm/osrm-backend:latest AS builder
 
 WORKDIR /data
+COPY --from=downloader /data/map.osm.pbf /data/map.osm.pbf
 
-# 1. Download the PBF map file for your target region
-RUN curl -L -o map.osm.pbf http://download.geofabrik.de/asia/philippines-latest.osm.pbf
-
-# 3. Process the map using the car profile (generates routing graph)
+# Process the map using the car profile (generates routing graph)
 RUN osrm-extract -p /opt/car.lua map.osm.pbf
 RUN osrm-partition map.osrm
 RUN osrm-customize map.osrm
 
 # ==========================================
-# STAGE 2: Lightweight Production Runtime
+# STAGE 3: Lightweight Production Runtime
 # ==========================================
 FROM osrm/osrm-backend:latest AS runner
 
