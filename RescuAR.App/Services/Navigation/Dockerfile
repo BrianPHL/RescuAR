@@ -30,7 +30,7 @@ WORKDIR /data
 # Copy pre-processed map data from builder stage
 COPY --from=builder /data/map.osrm* /data/
 
-EXPOSE 5000
+EXPOSE ${PORT:-5000}
 
 # Start OSRM routing daemon using Multi-Level Dijkstra (MLD) engine
-CMD ["osrm-routed", "--algorithm", "mld", "/data/map.osrm", "--port", "5000"]
+CMD osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000}
