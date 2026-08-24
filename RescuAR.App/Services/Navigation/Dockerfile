@@ -38,5 +38,5 @@ COPY --from=builder /data/map.osrm* /data/
 
 EXPOSE ${PORT:-5000}
 
-# Start OSRM routing daemon using Multi-Level Dijkstra (MLD) engine
-CMD osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000}
+# Start OSRM routing daemon using Multi-Level Dijkstra (MLD) engine, limited to 1 thread to save memory
+CMD osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000} -t 1
