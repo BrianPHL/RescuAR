@@ -5,11 +5,8 @@ FROM osrm/osrm-backend:latest AS builder
 
 WORKDIR /data
 
-# 1. Install wget to download map data
-RUN apt-get update && apt-get install -y wget
-
-# 2. Download the PBF map file for your target region (replace URL if needed)
-RUN wget http://download.geofabrik.de/asia/philippines-latest.osm.pbf -O map.osm.pbf
+# 1. Download the PBF map file for your target region
+RUN curl -L -o map.osm.pbf http://download.geofabrik.de/asia/philippines-latest.osm.pbf
 
 # 3. Process the map using the car profile (generates routing graph)
 RUN osrm-extract -p /opt/car.lua map.osm.pbf
