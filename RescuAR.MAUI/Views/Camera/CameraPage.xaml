@@ -1,42 +1,28 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
+    x:Class="RescuAR.App.Views.Camera.CameraPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    x:Class="RescuAR.App.Views.Camera.CameraPage"
-    Title="Camera"
-    BackgroundColor="#F2F2F7">
+    xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine">
+    <Grid>
 
-    <Grid VerticalOptions="Center" HorizontalOptions="Center" Padding="20">
-        <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center">
-            <!-- Camera/Aperture Icon -->
-            <Border StrokeShape="RoundRectangle 40"
-                    StrokeThickness="0"
-                    BackgroundColor="#D0E8F2"
-                    WidthRequest="80"
-                    HeightRequest="80"
-                    HorizontalOptions="Center">
-                <Path Data="M12 2A10 10 0 0 0 2 12A10 10 0 0 0 12 22A10 10 0 0 0 22 12A10 10 0 0 0 12 2M12 4A8 8 0 0 1 20 12A8 8 0 0 1 12 20A8 8 0 0 1 4 12A8 8 0 0 1 12 4M12 6A6 6 0 0 0 6 12A6 6 0 0 0 12 18A6 6 0 0 0 18 12A6 6 0 0 0 12 6M12 8A4 4 0 0 1 16 12A4 4 0 0 1 12 16A4 4 0 0 1 8 12A4 4 0 0 1 12 8Z"
-                      Fill="#005691"
-                      WidthRequest="40"
-                      HeightRequest="40"
-                      Aspect="Uniform"
-                      HorizontalOptions="Center"
-                      VerticalOptions="Center" />
-            </Border>
+        <evergine:EvergineView
+            x:Name="evergineView" />
 
-            <!-- Text Details -->
-            <Label Text="AR Camera"
-                   TextColor="#000000"
-                   FontSize="24"
-                   FontAttributes="Bold"
-                   HorizontalOptions="Center" />
-            <Label Text="Live AR navigation and flood depth visualization camera."
-                   TextColor="#7F7F7F"
-                   FontSize="14"
-                   LineBreakMode="WordWrap"
-                   HorizontalTextAlignment="Center"
-                   HorizontalOptions="Center"
-                   WidthRequest="300" />
+        <VerticalStackLayout
+            Padding="30"
+            Spacing="20"
+            VerticalOptions="Start">
+
+            <Button
+                Text="Initialize ARCore"
+                Clicked="InitializeArCoreClicked" />
+
+            <Button
+                Text="Update ARCore Frame"
+                Clicked="UpdateArCoreClicked" />
+
         </VerticalStackLayout>
+
     </Grid>
 </ContentPage>
