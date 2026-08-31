@@ -85,9 +85,7 @@ Vite requires client-side environment variables to be prefixed with **`VITE_`**.
 
 #### Step 1: Add to `.env` file (`rescuar-web/.env`)
 ```env
-VITE_SUPABASE_URL=https://itxjqcnvxlgzeqkivhhc.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F
-VITE_OSRM_API_URL=https://rescuar-production.up.railway.app
+
 ```
 
 #### Step 2: Access in React JavaScript / JSX code
@@ -95,7 +93,7 @@ VITE_OSRM_API_URL=https://rescuar-production.up.railway.app
 const OSRM_API_URL = import.meta.env.VITE_OSRM_API_URL;
 
 export const fetchRoute = async (startLng, startLat, endLng, endLat) => {
-  const url = `${OSRM_API_URL}/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+  const url = ``;
   const response = await fetch(url);
   return await response.json();
 };
@@ -111,14 +109,14 @@ namespace RescuAR.App
 {
     public static class AppConstants
     {
-        public const string OsrmBaseUrl = "https://rescuar-production.up.railway.app";
+        public const string OsrmBaseUrl = "";
     }
 }
 ```
 
 #### Step 2: Access in Service (`OSRMService.cs`)
 ```csharp
-string url = $"{AppConstants.OsrmBaseUrl}/route/v1/driving/" +
+string url = $"{" +
              $"{start.Longitude},{start.Latitude};" +
              $"{end.Longitude},{end.Latitude}" +
              $"?overview=full&geometries=geojson";
