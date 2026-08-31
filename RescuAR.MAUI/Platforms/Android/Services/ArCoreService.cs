@@ -31,6 +31,15 @@ public sealed class ArCoreService : IArCoreService
         new(1, 1);
 
     /*
+     * Serializes Camera-tab pause/resume transitions.
+     *
+     * MAUI page lifecycle callbacks can overlap during fast tab changes. Only
+     * one ARCore lifecycle transition may run at a time.
+     */
+    private readonly SemaphoreSlim lifecycleGate =
+        new(1, 1);
+
+    /*
      * Protects display-geometry values supplied by the Android/Evergine
      * presentation layer.
      *
@@ -63,7 +72,6 @@ public sealed class ArCoreService : IArCoreService
     private bool hasInspectedHardwareBuffer;
 
     private volatile bool captureCpuDiagnosticRequested;
-
 
     /*
      * ARCore BLOCKING mode can return the most recent frame after its
@@ -165,6 +173,7 @@ public sealed class ArCoreService : IArCoreService
 
     private const float GroundCapsuleCenterOffsetMeters =
         0.25f;
+
     /*
      * Match the Camera3D clipping planes serialized in MyScene.wescene.
      * These values are supplied to ARCore when generating the projection.
@@ -176,6 +185,21 @@ public sealed class ArCoreService : IArCoreService
         1000.0f;
 
     private Google.AR.Core.Anchor? spatialGroundAnchor;
+
+    /*
+     * A local ARCore anchor can temporarily become PAUSED when the physical
+     * camera is paused and resumed. Give the existing anchor a short chance
+     * to recover. If it remains non-tracking after that grace period, discard
+     * only the AR presentation anchor and let the next tracked frame create a
+     * fresh one from the current floor plane.
+     *
+     * This does NOT cancel the logical navigation/guidance session.
+     */
+    private const long SpatialAnchorResumeGraceMilliseconds =
+        1500;
+
+    private long spatialAnchorRecoveryDeadlineTimestamp =
+        long.MinValue;
 
     private bool hasLoggedGroundPlaneSearch;
 
@@ -191,6 +215,11 @@ public sealed class ArCoreService : IArCoreService
      */
     private string? lastLoggedTrackingState;
     private string? lastLoggedTrackingFailureReason;
+
+    private volatile bool sessionPaused;
+
+    public bool IsSessionPaused =>
+        sessionPaused;
 
     public Session? Session =>
         session;
@@ -290,8 +319,6 @@ public sealed class ArCoreService : IArCoreService
                 Tag,
                 "ARCore Session already exists.");
 
-            StartFrameLoop();
-
             return true;
         }
 
@@ -365,6 +392,9 @@ public sealed class ArCoreService : IArCoreService
             InspectSupportedCameraConfigurations(
                 session);
 
+            SelectThirtyFpsCameraConfig(
+                session);
+
             /*
              * The high-resolution CPU camera configuration was only needed
              * for the completed one-frame JPEG diagnostic. Leave ARCore on
@@ -416,12 +446,11 @@ public sealed class ArCoreService : IArCoreService
             config.SetPlaneFindingMode(
                 Google.AR.Core.Config
                     .PlaneFindingMode
-                    .HorizontalAndVertical);
+                    .Horizontal);
 
             Log.Debug(
                 Tag,
-                "PlaneFindingMode = " +
-                "HORIZONTAL_AND_VERTICAL.");
+                "PlaneFindingMode = HORIZONTAL.");
 
             Log.Debug(
                 Tag,
@@ -449,6 +478,9 @@ public sealed class ArCoreService : IArCoreService
 
             session.Resume();
 
+            sessionPaused =
+                false;
+
             Log.Debug(
                 Tag,
                 "ARCore Session resumed successfully.");
@@ -459,7 +491,7 @@ public sealed class ArCoreService : IArCoreService
              * RequestCpuDiagnosticCapture() when needed.
              */
             captureCpuDiagnosticRequested =
-                true;
+                false;
 
             lastProcessedTimestamp =
                 long.MinValue;
@@ -468,6 +500,9 @@ public sealed class ArCoreService : IArCoreService
                 false;
 
             ReleaseSpatialGroundAnchor();
+
+            spatialAnchorRecoveryDeadlineTimestamp =
+                long.MinValue;
 
             hasLoggedGroundPlaneSearch =
                 false;
@@ -518,20 +553,261 @@ public sealed class ArCoreService : IArCoreService
     }
 
     /// <summary>
+    /// Temporarily releases the physical ARCore camera when the Camera tab is
+    /// hidden while preserving the ARCore Session, current spatial anchor,
+    /// Vulkan importer, and navigation/guidance state.
+    /// </summary>
+    public async Task PauseCameraSessionAsync()
+    {
+        await lifecycleGate
+            .WaitAsync()
+            .ConfigureAwait(false);
+
+        try
+        {
+            Session? currentSession =
+                session;
+
+            if (currentSession is null)
+            {
+                return;
+            }
+
+            if (sessionPaused)
+            {
+                Log.Debug(
+                    Tag,
+                    "ARCore camera session is already paused.");
+
+                return;
+            }
+
+            Log.Debug(
+                Tag,
+                "Pausing ARCore camera session...");
+
+            /*
+             * Cancel new automatic updates first. Session.Update() itself is
+             * blocking, so wait for the worker to finish its current update
+             * before calling Session.Pause().
+             */
+            CancellationTokenSource? cancellation =
+                frameLoopCancellation;
+
+            Task? runningTask =
+                frameLoopTask;
+
+            if (cancellation is not null)
+            {
+                try
+                {
+                    cancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Already being cleaned up.
+                }
+            }
+
+            if (runningTask is not null)
+            {
+                try
+                {
+                    await runningTask
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected during normal Camera-tab shutdown.
+                }
+            }
+
+            frameLoopTask =
+                null;
+
+            frameLoopCancellation =
+                null;
+
+            cancellation?.Dispose();
+
+            /*
+             * Final barrier against the manual Update() path. The spatial
+             * anchor is intentionally retained; only the pending camera frame
+             * is released.
+             */
+            await updateGate
+                .WaitAsync()
+                .ConfigureAwait(false);
+
+            try
+            {
+                ReleasePendingCameraFrame();
+
+                ARCameraTextureBridge.Clear();
+
+                currentSession.Pause();
+
+                sessionPaused =
+                    true;
+
+                /*
+                 * The anchor is intentionally retained across the pause.
+                 * A recovery grace period is started only after Session.Resume().
+                 */
+                spatialAnchorRecoveryDeadlineTimestamp =
+                    long.MinValue;
+            }
+            finally
+            {
+                updateGate.Release();
+            }
+
+            Log.Debug(
+                Tag,
+                "ARCore camera session paused. Physical camera released; " +
+                "ARCore Session and guidance state retained.");
+        }
+        finally
+        {
+            lifecycleGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reopens the physical camera and restarts ARCore frame production when
+    /// the Camera tab becomes visible again. The existing Session and spatial
+    /// anchor are reused so ongoing guidance is not cancelled.
+    /// </summary>
+    public async Task<bool> ResumeCameraSessionAsync()
+    {
+        await lifecycleGate
+            .WaitAsync()
+            .ConfigureAwait(false);
+
+        try
+        {
+            Session? currentSession =
+                session;
+
+            if (currentSession is null)
+            {
+                Log.Warn(
+                    Tag,
+                    "Cannot resume ARCore camera because Session is null.");
+
+                return false;
+            }
+
+            if (!sessionPaused)
+            {
+                StartFrameLoop();
+
+                Log.Debug(
+                    Tag,
+                    "ARCore camera session is already resumed.");
+
+                return true;
+            }
+
+            Log.Debug(
+                Tag,
+                "Resuming ARCore camera session...");
+
+            await updateGate
+                .WaitAsync()
+                .ConfigureAwait(false);
+
+            try
+            {
+                /*
+                 * The Evergine viewport may have changed while Camera was
+                 * hidden. Apply any pending geometry before reopening camera
+                 * frame production.
+                 */
+                ApplyDisplayGeometryIfNeeded(
+                    currentSession);
+
+                currentSession.Resume();
+
+                sessionPaused =
+                    false;
+
+                /*
+                 * Retain the current AR anchor initially. If it does not
+                 * return to TRACKING shortly after camera resume, the frame
+                 * pipeline will rebuild only that AR presentation anchor.
+                 */
+                spatialAnchorRecoveryDeadlineTimestamp =
+                    Environment.TickCount64 +
+                    SpatialAnchorResumeGraceMilliseconds;
+
+                hasLoggedGroundPlaneSearch =
+                    false;
+
+                /*
+                 * Treat the next frame as the start of a fresh camera stream.
+                 */
+                lastProcessedTimestamp =
+                    long.MinValue;
+
+                processedFrameCount =
+                    0;
+
+                fpsWindowStartTimestamp =
+                    Environment.TickCount64;
+
+                hasLoggedTransformedUv =
+                    false;
+
+                lastSpatialPoseTelemetryLogTimestamp =
+                    long.MinValue;
+
+                lastLoggedTrackingState =
+                    null;
+
+                lastLoggedTrackingFailureReason =
+                    null;
+            }
+            catch (Exception exception)
+            {
+                sessionPaused =
+                    true;
+
+                Log.Error(
+                    Tag,
+                    $"Unable to resume ARCore camera session: {exception}");
+
+                return false;
+            }
+            finally
+            {
+                updateGate.Release();
+            }
+
+            StartFrameLoop();
+
+            Log.Debug(
+                Tag,
+                "ARCore camera session resumed. Existing AR guidance state " +
+                "was retained.");
+
+            return true;
+        }
+        finally
+        {
+            lifecycleGate.Release();
+        }
+    }
+
+    /// <summary>
     /// Supplies ARCore with the geometry of the viewport in which the camera
     /// image is being rendered.
-    ///
-    /// This should ultimately be called by the Android Evergine view whenever
-    /// its size or Android display rotation changes.
     ///
     /// rotation:
     ///     0 = ROTATION_0
     ///     1 = ROTATION_90
     ///     2 = ROTATION_180
     ///     3 = ROTATION_270
-    ///
-    /// width/height:
-    ///     Pixel dimensions of the Evergine rendering viewport.
     /// </summary>
     public void SetDisplayGeometry(
         int rotation,
@@ -591,10 +867,6 @@ public sealed class ArCoreService : IArCoreService
                 true;
         }
 
-        /*
-         * Force a new one-time UV log after rotation/resize so we can
-         * confirm ARCore generated different camera coordinates.
-         */
         hasLoggedTransformedUv =
             false;
 
@@ -606,16 +878,17 @@ public sealed class ArCoreService : IArCoreService
             $"height={height}");
     }
 
-    /// <summary>
-    /// Retained for the existing manual "Update ARCore Frame" button.
-    ///
-    /// The automatic frame loop now calls the same internal update path.
-    /// If the automatic loop is currently inside Session.Update(), this
-    /// method waits for that update to finish instead of entering
-    /// concurrently.
-    /// </summary>
     public Frame? Update()
     {
+        if (sessionPaused)
+        {
+            Log.Debug(
+                Tag,
+                "Manual Update() ignored because the ARCore Session is paused.");
+
+            return null;
+        }
+
         if (IsFrameLoopRunning)
         {
             Log.Debug(
@@ -640,12 +913,6 @@ public sealed class ArCoreService : IArCoreService
         this.graphicsContext =
             graphicsContext;
 
-        /*
-         * Register the Android-side camera conversion callback with the
-         * platform-neutral bridge. MyApplication.DrawFrame() invokes this
-         * callback immediately before Evergine performs its own draw cycle,
-         * so our vkQueueSubmit no longer originates from the ARCore worker.
-         */
         ARCameraTextureBridge.SetDrawThreadProcessor(
             ProcessPendingCameraFrameOnDrawThread);
 
@@ -655,18 +922,15 @@ public sealed class ArCoreService : IArCoreService
 
         Log.Debug(
             Tag,
-            $"VkInstance = " +
-            $"0x{graphicsContext.VkInstance.Handle:X}");
+            $"VkInstance = 0x{graphicsContext.VkInstance.Handle:X}");
 
         Log.Debug(
             Tag,
-            $"VkPhysicalDevice = " +
-            $"0x{graphicsContext.VkPhysicalDevice.Handle:X}");
+            $"VkPhysicalDevice = 0x{graphicsContext.VkPhysicalDevice.Handle:X}");
 
         Log.Debug(
             Tag,
-            $"VkDevice = " +
-            $"0x{graphicsContext.VkDevice.Handle:X}");
+            $"VkDevice = 0x{graphicsContext.VkDevice.Handle:X}");
     }
 
     private void StartFrameLoop()
@@ -676,6 +940,15 @@ public sealed class ArCoreService : IArCoreService
             Log.Warn(
                 Tag,
                 "Cannot start ARCore frame loop because Session is null.");
+
+            return;
+        }
+
+        if (sessionPaused)
+        {
+            Log.Debug(
+                Tag,
+                "Automatic ARCore frame loop not started because Session is paused.");
 
             return;
         }
@@ -733,8 +1006,7 @@ public sealed class ArCoreService : IArCoreService
         {
             Log.Error(
                 Tag,
-                $"Automatic ARCore frame loop terminated: " +
-                $"{exception}");
+                $"Automatic ARCore frame loop terminated: {exception}");
         }
         finally
         {
@@ -760,6 +1032,11 @@ public sealed class ArCoreService : IArCoreService
             return null;
         }
 
+        if (sessionPaused)
+        {
+            return null;
+        }
+
         bool gateEntered =
             false;
 
@@ -777,6 +1054,16 @@ public sealed class ArCoreService : IArCoreService
 
             gateEntered =
                 true;
+
+            /*
+             * Re-check after entering the gate. A manual Update() may have
+             * started immediately before PauseCameraSessionAsync() changed
+             * sessionPaused and then waited for this gate.
+             */
+            if (sessionPaused)
+            {
+                return null;
+            }
 
             return UpdateFrameInternal(
                 fromAutomaticLoop);
@@ -807,11 +1094,6 @@ public sealed class ArCoreService : IArCoreService
 
         try
         {
-            /*
-             * Apply any rotation or viewport-size change BEFORE requesting
-             * the next frame. ARCore's coordinate transformation for that
-             * frame will then use the latest display geometry.
-             */
             ApplyDisplayGeometryIfNeeded(
                 currentSession);
 
@@ -880,18 +1162,15 @@ public sealed class ArCoreService : IArCoreService
 
                 Log.Debug(
                     Tag,
-                    $"Camera Tracking State: " +
-                    $"{camera.TrackingState}");
+                    $"Camera Tracking State: {camera.TrackingState}");
 
                 Log.Debug(
                     Tag,
-                    $"Tracking Failure Reason: " +
-                    $"{camera.TrackingFailureReason}");
+                    $"Tracking Failure Reason: {camera.TrackingFailureReason}");
 
                 Log.Debug(
                     Tag,
-                    $"Camera Texture Name: " +
-                    $"{frame.CameraTextureName}");
+                    $"Camera Texture Name: {frame.CameraTextureName}");
             }
 
             HardwareBuffer? hardwareBuffer =
@@ -940,10 +1219,6 @@ public sealed class ArCoreService : IArCoreService
                     return frame;
                 }
 
-                /*
-                 * All ARCore work that must be tied to the current Frame is
-                 * performed here on the ARCore worker. Vulkan work is not.
-                 */
                 float[] cameraUv =
                     TransformCameraUv(
                         frame);
@@ -959,11 +1234,6 @@ public sealed class ArCoreService : IArCoreService
                     outputHeight,
                     timestamp);
 
-                /*
-                 * QueuePendingCameraFrame now owns this Java HardwareBuffer.
-                 * It will be closed either when consumed on Evergine's draw
-                 * thread or when replaced by a newer pending frame.
-                 */
                 ownershipTransferred =
                     true;
 
@@ -1184,9 +1454,6 @@ public sealed class ArCoreService : IArCoreService
     /// Publishes the newest valid ARCore display-oriented camera pose and,
     /// once ARCore has a usable horizontal upward-facing plane, places the
     /// diagnostic capsule on that detected ground surface.
-    ///
-    /// Unlike the earlier camera-forward test, placement no longer depends
-    /// on the phone's pitch at the first tracked frame.
     /// </summary>
     private void PublishSpatialPose(
         Frame frame,
@@ -1264,8 +1531,15 @@ public sealed class ArCoreService : IArCoreService
             SpatialProjectionFarPlane);
 
         /*
+         * Camera tracking may recover before an existing local anchor does.
+         * Never let a permanently PAUSED/STOPPED retained anchor prevent the
+         * AR path from being created again after returning to Camera.
+         */
+        RecoverSpatialGroundAnchorAfterCameraResumeIfNeeded();
+
+        /*
          * Keep searching until a real upward-facing horizontal floor plane
-         * is hit at the diagnostic distance.
+         * is hit at the diagnostic location.
          */
         if (spatialGroundAnchor is null)
         {
@@ -1280,9 +1554,8 @@ public sealed class ArCoreService : IArCoreService
                 out float anchorZ);
 
         /*
-         * CRITICAL: publish camera, projection, anchor, tracking, and the
-         * ARCore Frame timestamp in ONE atomic operation. Nothing below is
-         * independently versioned.
+         * Publish camera, projection, anchor, tracking, and timestamp as one
+         * coherent snapshot.
          */
         ARCameraPoseBridge.PublishFrame(
             true,
@@ -1309,10 +1582,97 @@ public sealed class ArCoreService : IArCoreService
     }
 
     /// <summary>
-    /// Attempts a screen-space hit test against an ARCore horizontal
-    /// upward-facing plane. The user should point the lower-middle part of
-    /// the camera view at the floor during initialization.
+    /// Allows an existing local anchor a short grace period to recover after
+    /// Session.Resume(). If the camera itself is already TRACKING but the
+    /// retained anchor remains non-tracking, remove only that stale AR
+    /// presentation anchor so the current frame can create a fresh floor
+    /// anchor. Navigation/guidance state is deliberately unaffected.
     /// </summary>
+    private void RecoverSpatialGroundAnchorAfterCameraResumeIfNeeded()
+    {
+        Google.AR.Core.Anchor? anchor =
+            spatialGroundAnchor;
+
+        if (anchor is null)
+        {
+            spatialAnchorRecoveryDeadlineTimestamp =
+                long.MinValue;
+
+            return;
+        }
+
+        string anchorTrackingState;
+
+        try
+        {
+            anchorTrackingState =
+                anchor.TrackingState.ToString();
+        }
+        catch (Exception exception)
+        {
+            Log.Warn(
+                SpatialPoseTag,
+                "Unable to read retained ARCore anchor tracking state. " +
+                $"Rebuilding AR presentation anchor. {exception.GetType().Name}: " +
+                $"{exception.Message}");
+
+            ReleaseSpatialGroundAnchor();
+
+            spatialAnchorRecoveryDeadlineTimestamp =
+                long.MinValue;
+
+            hasLoggedGroundPlaneSearch =
+                false;
+
+            return;
+        }
+
+        if (anchorTrackingState.Equals(
+                "Tracking",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            spatialAnchorRecoveryDeadlineTimestamp =
+                long.MinValue;
+
+            return;
+        }
+
+        bool anchorStopped =
+            anchorTrackingState.Equals(
+                "Stopped",
+                StringComparison.OrdinalIgnoreCase);
+
+        long recoveryDeadline =
+            spatialAnchorRecoveryDeadlineTimestamp;
+
+        bool gracePeriodExpired =
+            recoveryDeadline !=
+                long.MinValue &&
+            Environment.TickCount64 >=
+                recoveryDeadline;
+
+        if (!anchorStopped &&
+            !gracePeriodExpired)
+        {
+            return;
+        }
+
+        Log.Warn(
+            SpatialPoseTag,
+            "Retained ARCore ground anchor did not recover after camera " +
+            $"resume. TrackingState={anchorTrackingState}. " +
+            "Rebuilding only the AR presentation anchor; navigation " +
+            "guidance remains active.");
+
+        ReleaseSpatialGroundAnchor();
+
+        spatialAnchorRecoveryDeadlineTimestamp =
+            long.MinValue;
+
+        hasLoggedGroundPlaneSearch =
+            false;
+    }
+
     private void TryCreateSpatialGroundAnchor(
         Frame frame)
     {
@@ -1435,11 +1795,6 @@ public sealed class ArCoreService : IArCoreService
         }
     }
 
-    /// <summary>
-    /// Publishes the current ARCore ground Anchor into the platform-neutral
-    /// bridge. The capsule center is raised above the plane so the bottom of
-    /// the current diagnostic capsule sits approximately on the surface.
-    /// </summary>
     private bool TryGetSpatialGroundAnchorPose(
         out float anchorX,
         out float anchorY,
@@ -1501,6 +1856,9 @@ public sealed class ArCoreService : IArCoreService
                 ref spatialGroundAnchor,
                 null);
 
+        spatialAnchorRecoveryDeadlineTimestamp =
+            long.MinValue;
+
         if (anchor is null)
         {
             return;
@@ -1518,11 +1876,6 @@ public sealed class ArCoreService : IArCoreService
         anchor.Dispose();
     }
 
-    /// <summary>
-    /// Logs ARCore tracking-state/failure transitions immediately.
-    /// This makes tracking loss and reacquisition visible even between the
-    /// one-second telemetry samples.
-    /// </summary>
     private void LogTrackingTransitionIfNeeded(
         string trackingState,
         string trackingFailureReason,
@@ -1585,11 +1938,6 @@ public sealed class ArCoreService : IArCoreService
             trackingFailureReason;
     }
 
-    /// <summary>
-    /// Emits Android Logcat diagnostics using the dedicated RescuAR-ARPose
-    /// tag. Evergine publishes what it actually applied, allowing us to
-    /// compare ARCore input against the rendered camera state.
-    /// </summary>
     private void LogSpatialPoseTelemetryIfNeeded(
         string trackingState,
         string trackingFailureReason)
@@ -1748,15 +2096,8 @@ public sealed class ArCoreService : IArCoreService
     }
 
     /// <summary>
-    /// Uses ARCore to transform our four viewport corners from normalized
-    /// view coordinates into normalized camera-texture coordinates.
-    ///
-    /// Returned order:
-    ///
-    /// 0,1 = TL
-    /// 2,3 = TR
-    /// 4,5 = BL
-    /// 6,7 = BR
+    /// Uses ARCore to transform viewport corners from normalized view
+    /// coordinates into normalized camera-texture coordinates.
     /// </summary>
     private float[] TransformCameraUv(
         Frame frame)
@@ -1781,23 +2122,19 @@ public sealed class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                $"TL = ({transformedUv[0]:F6}, " +
-                $"{transformedUv[1]:F6})");
+                $"TL = ({transformedUv[0]:F6}, {transformedUv[1]:F6})");
 
             Log.Debug(
                 Tag,
-                $"TR = ({transformedUv[2]:F6}, " +
-                $"{transformedUv[3]:F6})");
+                $"TR = ({transformedUv[2]:F6}, {transformedUv[3]:F6})");
 
             Log.Debug(
                 Tag,
-                $"BL = ({transformedUv[4]:F6}, " +
-                $"{transformedUv[5]:F6})");
+                $"BL = ({transformedUv[4]:F6}, {transformedUv[5]:F6})");
 
             Log.Debug(
                 Tag,
-                $"BR = ({transformedUv[6]:F6}, " +
-                $"{transformedUv[7]:F6})");
+                $"BR = ({transformedUv[6]:F6}, {transformedUv[7]:F6})");
 
             Log.Debug(
                 Tag,
@@ -1807,12 +2144,6 @@ public sealed class ArCoreService : IArCoreService
         return transformedUv;
     }
 
-    /// <summary>
-    /// Returns the viewport dimensions currently applied to the ARCore
-    /// Session. These dimensions are also used as the Vulkan RGBA conversion
-    /// target so the converted camera texture has the same aspect ratio as
-    /// the Evergine viewport.
-    /// </summary>
     private void GetAppliedDisplaySize(
         out uint width,
         out uint height)
@@ -1845,12 +2176,6 @@ public sealed class ArCoreService : IArCoreService
             checked((uint)currentHeight);
     }
 
-    /// <summary>
-    /// Applies a pending display-geometry update to ARCore.
-    ///
-    /// Must only be called while updateGate is held or during initialization
-    /// before the automatic frame loop starts.
-    /// </summary>
     private void ApplyDisplayGeometryIfNeeded(
         Session currentSession)
     {
@@ -1864,12 +2189,9 @@ public sealed class ArCoreService : IArCoreService
             shouldApply =
                 displayGeometryAvailable &&
                 (displayGeometryDirty ||
-                 appliedDisplayRotation !=
-                     requestedDisplayRotation ||
-                 appliedDisplayWidth !=
-                     requestedDisplayWidth ||
-                 appliedDisplayHeight !=
-                     requestedDisplayHeight);
+                 appliedDisplayRotation != requestedDisplayRotation ||
+                 appliedDisplayWidth != requestedDisplayWidth ||
+                 appliedDisplayHeight != requestedDisplayHeight);
 
             if (!shouldApply)
             {
@@ -1902,10 +2224,6 @@ public sealed class ArCoreService : IArCoreService
             appliedDisplayHeight =
                 height;
 
-            /*
-             * Only clear dirty if nobody supplied another geometry while
-             * SetDisplayGeometry() was being executed.
-             */
             displayGeometryDirty =
                 requestedDisplayRotation != rotation ||
                 requestedDisplayWidth != width ||
@@ -1923,13 +2241,6 @@ public sealed class ArCoreService : IArCoreService
             $"height={height}");
     }
 
-    /// <summary>
-    /// Provides a safe initial fallback before the Evergine Android view has
-    /// explicitly supplied its actual viewport dimensions.
-    ///
-    /// For the final implementation the Evergine view dimensions should
-    /// replace this fallback through SetDisplayGeometry().
-    /// </summary>
     private void TryCaptureInitialDisplayGeometry()
     {
         lock (displayGeometryLock)
@@ -1945,10 +2256,10 @@ public sealed class ArCoreService : IArCoreService
             }
         }
 
-        Activity? activity =
+        Activity? currentActivity =
             Platform.CurrentActivity;
 
-        if (activity is null)
+        if (currentActivity is null)
         {
             Log.Warn(
                 Tag,
@@ -1959,10 +2270,10 @@ public sealed class ArCoreService : IArCoreService
         }
 
         var display =
-            activity.WindowManager?.DefaultDisplay;
+            currentActivity.WindowManager?.DefaultDisplay;
 
         var decorView =
-            activity.Window?.DecorView;
+            currentActivity.Window?.DecorView;
 
         if (display is null ||
             decorView is null)
@@ -1970,6 +2281,7 @@ public sealed class ArCoreService : IArCoreService
             Log.Warn(
                 Tag,
                 "Unable to capture initial ARCore display geometry.");
+
             return;
         }
 
@@ -1985,6 +2297,7 @@ public sealed class ArCoreService : IArCoreService
             Log.Warn(
                 Tag,
                 $"Invalid DecorView size: {width}x{height}");
+
             return;
         }
 
@@ -1998,6 +2311,11 @@ public sealed class ArCoreService : IArCoreService
             "Initial ARCore display geometry captured from Android DecorView.");
     }
 
+    /*
+     * Full shutdown helper retained for initialization failure/application
+     * destruction paths. Do not use this method for normal Camera-tab exit,
+     * because it intentionally releases the spatial anchor.
+     */
     private void StopFrameLoop()
     {
         CancellationTokenSource? cancellation =
@@ -2099,6 +2417,9 @@ public sealed class ArCoreService : IArCoreService
         session =
             null;
 
+        sessionPaused =
+            false;
+
         lastProcessedTimestamp =
             long.MinValue;
     }
@@ -2176,8 +2497,7 @@ public sealed class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                $"Supported camera configuration count = " +
-                $"{cameraConfigs.Count}");
+                $"Supported camera configuration count = {cameraConfigs.Count}");
 
             for (int index = 0;
                  index < cameraConfigs.Count;
@@ -2203,15 +2523,13 @@ public sealed class ArCoreService : IArCoreService
                 {
                     Log.Debug(
                         Tag,
-                        $"CameraId = " +
-                        $"{cameraConfig.CameraId ?? "<null>"}");
+                        $"CameraId = {cameraConfig.CameraId ?? "<null>"}");
                 }
                 catch (Exception exception)
                 {
                     Log.Debug(
                         Tag,
-                        $"CameraId = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"CameraId = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
@@ -2227,14 +2545,13 @@ public sealed class ArCoreService : IArCoreService
                 {
                     Log.Debug(
                         Tag,
-                        $"FacingDirection = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"FacingDirection = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
                 {
                     global::Android.Util.Range fpsRange =
-                    cameraConfig.FpsRange;
+                        cameraConfig.FpsRange;
 
                     Log.Debug(
                         Tag,
@@ -2244,8 +2561,7 @@ public sealed class ArCoreService : IArCoreService
                 {
                     Log.Debug(
                         Tag,
-                        $"FPS = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"FPS = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
@@ -2255,15 +2571,13 @@ public sealed class ArCoreService : IArCoreService
 
                     Log.Debug(
                         Tag,
-                        $"GPU Texture Size = " +
-                        $"{textureSize.Width}x{textureSize.Height}");
+                        $"GPU Texture Size = {textureSize.Width}x{textureSize.Height}");
                 }
                 catch (Exception exception)
                 {
                     Log.Debug(
                         Tag,
-                        $"GPU Texture Size = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"GPU Texture Size = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
@@ -2273,15 +2587,13 @@ public sealed class ArCoreService : IArCoreService
 
                     Log.Debug(
                         Tag,
-                        $"CPU Image Size = " +
-                        $"{imageSize.Width}x{imageSize.Height}");
+                        $"CPU Image Size = {imageSize.Width}x{imageSize.Height}");
                 }
                 catch (Exception exception)
                 {
                     Log.Debug(
                         Tag,
-                        $"CPU Image Size = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"CPU Image Size = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
@@ -2297,8 +2609,7 @@ public sealed class ArCoreService : IArCoreService
                 {
                     Log.Debug(
                         Tag,
-                        $"DepthSensorUsage = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"DepthSensorUsage = <unavailable: {exception.GetType().Name}>");
                 }
 
                 try
@@ -2314,8 +2625,7 @@ public sealed class ArCoreService : IArCoreService
                 {
                     Log.Debug(
                         Tag,
-                        $"StereoCameraUsage = <unavailable: " +
-                        $"{exception.GetType().Name}>");
+                        $"StereoCameraUsage = <unavailable: {exception.GetType().Name}>");
                 }
             }
 
@@ -2386,27 +2696,23 @@ public sealed class ArCoreService : IArCoreService
 
                 Log.Debug(
                     Tag,
-                    $"Dimensions = " +
-                    $"{dimensions[0]}x{dimensions[1]}");
+                    $"Dimensions = {dimensions[0]}x{dimensions[1]}");
 
                 Log.Debug(
                     Tag,
-                    $"FocalLength = " +
-                    $"fx={focalLength[0]:F3}, " +
-                    $"fy={focalLength[1]:F3}");
+                    $"FocalLength = fx={focalLength[0]:F3}, fy={focalLength[1]:F3}");
 
                 Log.Debug(
                     Tag,
-                    $"PrincipalPoint = " +
-                    $"cx={principalPoint[0]:F3}, " +
-                    $"cy={principalPoint[1]:F3}");
+                    $"PrincipalPoint = cx={principalPoint[0]:F3}, cy={principalPoint[1]:F3}");
 
                 Log.Debug(
                     Tag,
                     "==================================================");
             }
 
-            textureIntrinsicsLogged = true;
+            textureIntrinsicsLogged =
+                true;
         }
         catch (Exception exception)
         {
@@ -2465,24 +2771,12 @@ public sealed class ArCoreService : IArCoreService
                 global::Android.Util.Size cpuSize =
                     candidate.ImageSize;
 
-                /*
-                 * Preserve the existing working GPU camera stream.
-                 */
                 if (gpuSize.Width != 1920 ||
                     gpuSize.Height != 1080)
                 {
                     continue;
                 }
 
-                /*
-                 * Pick the candidate with the largest CPU image.
-                 *
-                 * On the Samsung A54 this should select:
-                 *
-                 * GPU = 1920x1080
-                 * CPU = 1920x1080
-                 * FPS = [30, 30]
-                 */
                 long cpuArea =
                     (long)cpuSize.Width *
                     cpuSize.Height;
@@ -2508,13 +2802,6 @@ public sealed class ArCoreService : IArCoreService
                 return;
             }
 
-            /*
-             * Vapolia exposes ARCore Session.setCameraConfig(...)
-             * through the CameraConfig property setter.
-             *
-             * This must happen while the Session is still paused,
-             * which is why this method is called before Resume().
-             */
             currentSession.CameraConfig =
                 selectedConfig;
 
@@ -2649,11 +2936,6 @@ public sealed class ArCoreService : IArCoreService
         catch (
             Google.AR.Core.Exceptions.NotYetAvailableException)
         {
-            /*
-             * Normal during startup.
-             * Keep the one-shot request alive and try again
-             * on the next ARCore frame.
-             */
             return false;
         }
         catch (Exception exception)
@@ -2707,16 +2989,6 @@ public sealed class ArCoreService : IArCoreService
             return null;
         }
 
-        /*
-         * NV21 layout:
-         *
-         * YYYYYYYYYYYYYYYY
-         * ...
-         * VUVUVUVUVUVUVUVU
-         *
-         * Total size for YUV420:
-         * width * height * 3 / 2
-         */
         byte[] nv21 =
             new byte[
                 width *
@@ -2727,19 +2999,6 @@ public sealed class ArCoreService : IArCoreService
         int destinationIndex =
             0;
 
-        /*
-         * ------------------------------------------------------------
-         * Copy the Y plane.
-         * ------------------------------------------------------------
-         *
-         * The current Samsung reports:
-         *
-         * RowStride   = 1920
-         * PixelStride = 1
-         *
-         * Do not rely on those values being identical on every device,
-         * so still honor the strides.
-         */
         int yRowStride =
             yPlane.RowStride;
 
@@ -2774,22 +3033,6 @@ public sealed class ArCoreService : IArCoreService
             }
         }
 
-        /*
-         * ------------------------------------------------------------
-         * Copy chroma as NV21 VU pairs.
-         * ------------------------------------------------------------
-         *
-         * Android YUV_420_888 defines:
-         *
-         * Plane 0 = Y
-         * Plane 1 = U / Cb
-         * Plane 2 = V / Cr
-         *
-         * Your Samsung reports PixelStride=2 for both chroma planes.
-         *
-         * We still read the planes individually rather than assuming
-         * that their backing buffers are physically contiguous.
-         */
         int chromaWidth =
             width / 2;
 
@@ -2852,9 +3095,6 @@ public sealed class ArCoreService : IArCoreService
                         (byte)uBuffer.Get(
                             uIndex));
 
-                /*
-                 * NV21 is V followed by U.
-                 */
                 nv21[destinationIndex++] =
                     v;
 
@@ -2863,9 +3103,6 @@ public sealed class ArCoreService : IArCoreService
             }
         }
 
-        /*
-         * Android can encode NV21 directly into JPEG.
-         */
         using global::Android.Graphics.YuvImage yuvImage =
             new(
                 nv21,
@@ -2926,5 +3163,126 @@ public sealed class ArCoreService : IArCoreService
         }
 
         return filePath;
+    }
+
+    private static void SelectThirtyFpsCameraConfig(
+        Session currentSession)
+    {
+        try
+        {
+            CameraConfig? currentConfig =
+                currentSession.CameraConfig;
+
+            if (currentConfig is null)
+            {
+                Log.Warn(
+                    Tag,
+                    "Current ARCore camera config unavailable.");
+
+                return;
+            }
+
+            global::Android.Util.Size currentGpuSize =
+                currentConfig.TextureSize;
+
+            using CameraConfigFilter cameraConfigFilter =
+                new(currentSession);
+
+            IList<CameraConfig> cameraConfigs =
+                currentSession.GetSupportedCameraConfigs(
+                    cameraConfigFilter);
+
+            CameraConfig? selectedConfig =
+                null;
+
+            foreach (CameraConfig candidate in cameraConfigs)
+            {
+                if (candidate.GetFacingDirection()
+                        .ToString() != "BACK")
+                {
+                    continue;
+                }
+
+                global::Android.Util.Size gpuSize =
+                    candidate.TextureSize;
+
+                /*
+                 * Preserve the GPU texture dimensions already proven to work
+                 * with the Vulkan camera pipeline.
+                 */
+                if (gpuSize.Width != currentGpuSize.Width ||
+                    gpuSize.Height != currentGpuSize.Height)
+                {
+                    continue;
+                }
+
+                global::Android.Util.Range fpsRange =
+                    candidate.FpsRange;
+
+                int minimumFps =
+                    Convert.ToInt32(
+                        fpsRange.Lower?.ToString());
+
+                int maximumFps =
+                    Convert.ToInt32(
+                        fpsRange.Upper?.ToString());
+
+                if (minimumFps == 30 &&
+                    maximumFps == 30)
+                {
+                    selectedConfig =
+                        candidate;
+
+                    break;
+                }
+            }
+
+            if (selectedConfig is null)
+            {
+                Log.Warn(
+                    Tag,
+                    "No matching 30 FPS ARCore camera config found. " +
+                    "Default configuration retained.");
+
+                return;
+            }
+
+            /*
+             * Camera configuration is selected once while the Session is
+             * initially paused. Pause/resume tab transitions reuse it.
+             */
+            currentSession.CameraConfig =
+                selectedConfig;
+
+            Log.Debug(
+                Tag,
+                "========================================");
+
+            Log.Debug(
+                Tag,
+                "ARCore camera capped at 30 FPS.");
+
+            Log.Debug(
+                Tag,
+                $"FPS = {selectedConfig.FpsRange}");
+
+            Log.Debug(
+                Tag,
+                $"GPU Texture = " +
+                $"{selectedConfig.TextureSize.Width}x" +
+                $"{selectedConfig.TextureSize.Height}");
+
+            Log.Debug(
+                Tag,
+                "========================================");
+        }
+        catch (Exception exception)
+        {
+            Log.Warn(
+                Tag,
+                "Unable to select 30 FPS ARCore camera config. " +
+                $"{exception.GetType().Name}: " +
+                $"{exception.Message}");
+        }
     }
 }

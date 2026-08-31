@@ -1,3 +1,4 @@
+using System.Threading;
 using Android.Util;
 using Evergine.Android;
 using Evergine.Common.Graphics;
@@ -17,13 +18,19 @@ namespace RescuAR.MAUI.Evergine
     {
         private const string VulkanTag =
             "RescuAR-Vulkan";
-
         private const string ArCoreTag =
             "RescuAR-ARCore";
+        private const string EvergineTag =
+            "RescuAR-Evergine";
 
         private AndroidSurface? androidSurface;
         private AndroidWindowsSystem? windowsSystem;
         private SwapChain? swapChain;
+        private volatile bool renderingEnabled =
+            true;
+
+        public bool IsRenderingEnabled =>
+            renderingEnabled;
 
         /*
          * Retain the concrete ARCore service once the graphics context is
@@ -137,7 +144,6 @@ namespace RescuAR.MAUI.Evergine
                         gameTime);
                 });
         }
-
         protected override AndroidSurfaceView CreatePlatformView()
         {
             windowsSystem =
@@ -146,12 +152,17 @@ namespace RescuAR.MAUI.Evergine
 
             androidSurface =
                 windowsSystem.CreateSurface(
-                    0,
-                    0)
+                    runInUIThread: false)
                 as AndroidSurface
                 ?? throw new InvalidOperationException(
-                    "AndroidWindowsSystem.CreateSurface() did not return " +
+                    "AndroidWindowsSystem.CreateSurface(false) did not return " +
                     "an AndroidSurface.");
+
+            Log.Debug(
+                EvergineTag,
+                "Evergine Android graphics backend configured for " +
+                $"independent thread. RunInUIThread=" +
+                $"{androidSurface.NativeSurface.RunInUIThread}");
 
             return androidSurface.NativeSurface;
         }
@@ -408,7 +419,7 @@ namespace RescuAR.MAUI.Evergine
                         true,
 
                     RefreshRate =
-                        60,
+                        GetCurrentDisplayRefreshRate(),
                 };
 
             swapChain =
@@ -544,6 +555,91 @@ namespace RescuAR.MAUI.Evergine
              * real rotation and trigger another geometry update.
              */
             return 0;
+        }
+        public void SuspendRendering()
+        {
+            if (!renderingEnabled)
+            {
+                return;
+            }
+
+            renderingEnabled =
+                false;
+
+            Log.Debug(
+                EvergineTag,
+                "Evergine rendering suspended.");
+        }
+
+        public void PauseRendering()
+        {
+            AndroidSurfaceView? nativeView =
+                PlatformView
+                ?? androidSurface?.NativeSurface;
+
+            if (nativeView is null)
+            {
+                return;
+            }
+
+            nativeView.Pause();
+
+            Log.Debug(
+                EvergineTag,
+                "Evergine Android surface paused.");
+        }
+
+        public void ResumeRendering()
+        {
+            AndroidSurfaceView? nativeView =
+                PlatformView
+                ?? androidSurface?.NativeSurface;
+
+            if (nativeView is null)
+            {
+                return;
+            }
+
+            nativeView.Resume();
+
+            Log.Debug(
+                EvergineTag,
+                "Evergine Android surface resumed.");
+        }
+
+        private uint GetCurrentDisplayRefreshRate()
+        {
+            AndroidSurfaceView? nativeView =
+                PlatformView
+                ?? androidSurface?.NativeSurface;
+
+            Android.Views.Display? display =
+                nativeView?.Display;
+
+            if (display is null)
+            {
+                Log.Warn(
+                    VulkanTag,
+                    "Android display unavailable. Falling back to 60 Hz.");
+
+                return 60;
+            }
+
+            float currentRefreshRate =
+                display.GetMode()?.RefreshRate
+                ?? display.RefreshRate;
+
+            uint selectedRefreshRate =
+                (uint)Math.Round(
+                    currentRefreshRate);
+
+            if (selectedRefreshRate == 0)
+            {
+                selectedRefreshRate =
+                    60;
+            }
+
+            return selectedRefreshRate;
         }
     }
 }

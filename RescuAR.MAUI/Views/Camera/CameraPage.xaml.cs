@@ -13,6 +13,7 @@ namespace RescuAR.App.Views.Camera
     {
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
+        private bool _pageIsVisible;
 
         public CameraPage(IArCoreService arCoreService)
         {
@@ -21,6 +22,64 @@ namespace RescuAR.App.Views.Camera
             this.evergineView.Application = this.evergineApplication;
             _arCoreService =
                 arCoreService;
+        }
+
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+
+            _pageIsVisible =
+                true;
+
+#if ANDROID
+            if (_arCoreService.IsInitialized)
+            {
+                Log.Debug(
+                    "RescuAR-ARCore",
+                    "Camera tab entered. Resuming ARCore camera.");
+
+                bool resumed =
+                    await _arCoreService
+                        .ResumeCameraSessionAsync();
+
+                Log.Debug(
+                    "RescuAR-ARCore",
+                    $"Camera-tab ARCore resume returned: {resumed}");
+
+                if (!resumed)
+                {
+                    await DisplayAlert(
+                        "ARCore",
+                        "The camera could not be resumed. " +
+                        "Try opening the Camera tab again.",
+                        "OK");
+                }
+            }
+#endif
+        }
+
+        protected override async void OnDisappearing()
+        {
+            _pageIsVisible =
+                false;
+
+            /*
+             * Let MAUI complete its page lifecycle immediately. ARCore camera
+             * shutdown continues asynchronously after the page becomes hidden.
+             */
+            base.OnDisappearing();
+
+#if ANDROID
+            if (_arCoreService.IsInitialized)
+            {
+                Log.Debug(
+                    "RescuAR-ARCore",
+                    "Camera tab exited. Releasing ARCore camera.");
+
+                await _arCoreService
+                    .PauseCameraSessionAsync();
+            }
+#endif
         }
 
         private async void InitializeArCoreClicked(
@@ -66,6 +125,20 @@ namespace RescuAR.App.Views.Camera
             Log.Debug(
                 "RescuAR-ARCore",
                 $"Initialize() returned: {initialized}");
+
+            /*
+             * The permission/install flow is asynchronous. If Camera became
+             * hidden while initialization was completing, immediately release
+             * the physical camera so it cannot keep Samsung's camera refresh
+             * policy active in the background.
+             */
+            if (initialized &&
+                !_pageIsVisible &&
+                !_arCoreService.IsSessionPaused)
+            {
+                await _arCoreService
+                    .PauseCameraSessionAsync();
+            }
 
             if (initialized)
             {
