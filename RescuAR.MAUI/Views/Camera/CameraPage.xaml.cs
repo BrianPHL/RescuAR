@@ -53,6 +53,11 @@ namespace RescuAR.App.Views.Camera
 
         private RouteResult? activeRoute;
 
+        private string activeDestinationName =
+            string.Empty;
+
+        private GeoCoordinate? activeDestinationCoordinate;
+
         private double activeMapToArYawDegrees;
 
         /*
@@ -61,6 +66,16 @@ namespace RescuAR.App.Views.Camera
          * production navigation testing.
          */
         private const bool IndoorRouteTestMode =
+            true;
+
+        /*
+         * The moving-window milestone has already been proven. While indoor
+         * testing continues, freeze route progress so poor GPS and synthetic
+         * test advancement cannot move an otherwise healthy AR route.
+         *
+         * Set IndoorRouteTestMode=false for real outdoor GPS progress.
+         */
+        private const bool FreezeRouteProgressDuringIndoorTest =
             true;
 
         private const int IndoorStationaryPollsBeforeSyntheticAdvance =
@@ -160,9 +175,13 @@ namespace RescuAR.App.Views.Camera
             {
                 Log.Warn(
                     ProgressLogTag,
-                    "INDOOR ROUTE TEST MODE ENABLED. GPS thresholds are relaxed " +
-                    "and controlled synthetic progress may be used after several " +
-                    "stationary samples. Disable this before outdoor/production testing.");
+                    FreezeRouteProgressDuringIndoorTest
+                        ? "INDOOR ROUTE TEST MODE ENABLED. Route progress is FROZEN " +
+                          "for stability; GPS/synthetic samples will not move the AR " +
+                          "window. Disable IndoorRouteTestMode for outdoor progress testing."
+                        : "INDOOR ROUTE TEST MODE ENABLED. GPS thresholds are relaxed " +
+                          "and controlled synthetic progress may be used after several " +
+                          "stationary samples. Disable this before outdoor/production testing.");
             }
 #endif
 
@@ -260,8 +279,8 @@ namespace RescuAR.App.Views.Camera
         /// Later visits:
         ///   resume the retained Session and restart its frame loop.
         ///
-        /// The operation is serialized with arCoreActivationGate so the
-        /// optional manual button cannot race automatic startup.
+        /// The operation is serialized with arCoreActivationGate so repeated
+        /// page lifecycle callbacks cannot race automatic startup.
         /// </summary>
         private async Task<bool> EnsureArCoreActiveAsync(
             CancellationToken cancellationToken)
@@ -309,7 +328,24 @@ namespace RescuAR.App.Views.Camera
                     if (resumed &&
                         pageIsVisible)
                     {
-                        StartRouteRequestIfPossible();
+                        if (CanResumeRetainedRoute())
+                        {
+                            Log.Debug(
+                                MldLogTag,
+                                "Camera re-entry is using the retained MLD route. " +
+                                "No new Railway request and no route-progress reset.");
+
+                            StartRouteProgress();
+                        }
+                        else
+                        {
+                            Log.Debug(
+                                MldLogTag,
+                                "Camera re-entry has no compatible retained route. " +
+                                "Requesting MLD route for the current destination.");
+
+                            StartRouteRequestIfPossible();
+                        }
                     }
                     else if (!resumed &&
                              pageIsVisible)
@@ -783,6 +819,12 @@ namespace RescuAR.App.Views.Camera
                 activeRoute =
                     route;
 
+                activeDestinationName =
+                    destination.Name;
+
+                activeDestinationCoordinate =
+                    destination.Coordinate;
+
                 activeMapToArYawDegrees =
                     mapToArYawDegrees;
 
@@ -831,6 +873,55 @@ namespace RescuAR.App.Views.Camera
             await Task.CompletedTask;
             return false;
 #endif
+        }
+
+        /// <summary>
+        /// Returns true only when the route retained by this CameraPage still
+        /// belongs to the destination currently published by the navigation
+        /// flow. This prevents Camera tab re-entry from silently rerouting and
+        /// moving the AR geometry when nothing about the trip changed.
+        /// </summary>
+        private bool CanResumeRetainedRoute()
+        {
+            if (activeRoute is null ||
+                !activeDestinationCoordinate.HasValue ||
+                !ARRouteBridge.Current.IsAvailable)
+            {
+                return false;
+            }
+
+            NavigationDestinationBridge.DestinationSnapshot destination =
+                NavigationDestinationBridge.Current;
+
+            if (!destination.IsAvailable)
+            {
+                return false;
+            }
+
+            GeoCoordinate retainedCoordinate =
+                activeDestinationCoordinate.Value;
+
+            const double coordinateToleranceDegrees =
+                0.0000001;
+
+            bool sameCoordinate =
+                Math.Abs(
+                    destination.Coordinate.Latitude -
+                    retainedCoordinate.Latitude) <=
+                    coordinateToleranceDegrees &&
+                Math.Abs(
+                    destination.Coordinate.Longitude -
+                    retainedCoordinate.Longitude) <=
+                    coordinateToleranceDegrees;
+
+            bool sameName =
+                string.Equals(
+                    destination.Name,
+                    activeDestinationName,
+                    StringComparison.Ordinal);
+
+            return sameCoordinate &&
+                sameName;
         }
 
         private void StartRouteRequestIfPossible()
@@ -928,6 +1019,12 @@ namespace RescuAR.App.Views.Camera
             activeRoute =
                 null;
 
+            activeDestinationName =
+                string.Empty;
+
+            activeDestinationCoordinate =
+                null;
+
             indoorStationaryPollCount =
                 0;
 
@@ -953,6 +1050,18 @@ namespace RescuAR.App.Views.Camera
             if (!pageIsVisible ||
                 activeRoute is null)
             {
+                return;
+            }
+
+            if (IndoorRouteTestMode &&
+                FreezeRouteProgressDuringIndoorTest)
+            {
+#if ANDROID
+                Log.Debug(
+                    ProgressLogTag,
+                    "Indoor stability mode: GPS/synthetic route progress loop " +
+                    "is intentionally frozen. Existing AR route window retained.");
+#endif
                 return;
             }
 
@@ -1727,6 +1836,8 @@ namespace RescuAR.App.Views.Camera
                 $"rendererVersion={ARRouteRenderer.AppliedRouteVersion}, " +
                 $"activeSegments={activeSegments}, " +
                 $"indoorTest={IndoorRouteTestMode}, " +
+                $"progressFrozen=" +
+                $"{(IndoorRouteTestMode && FreezeRouteProgressDuringIndoorTest)}, " +
                 $"progressActive={progress.HasProgress}, " +
                 $"progress={progress.CommittedProgressMeters:F1}m, " +
                 $"remaining={progress.RemainingMeters:F1}m, " +
