@@ -75,6 +75,36 @@ namespace RescuAR.App.Views.Camera
 
         private int indoorStationaryPollCount;
 
+        /*
+         * Ground-anchor recovery is only armed after this CameraPage has
+         * observed at least one valid anchor. Initial floor acquisition is
+         * still handled by the existing ARCore frame loop.
+         */
+        private bool hasObservedGroundAnchor;
+
+        private bool anchorRecoveryInProgress;
+
+        /*
+         * Camera-tab ARCore activation is serialized so automatic startup and
+         * the existing manual fallback button cannot initialize/resume the
+         * Session concurrently.
+         */
+        private readonly SemaphoreSlim arCoreActivationGate =
+            new(
+                1,
+                1);
+
+        private CancellationTokenSource? arCoreAutoStartCancellation;
+
+        private const int ArCoreSurfaceReadyTimeoutMilliseconds =
+            3000;
+
+        private const int ArCoreSurfaceReadyPollMilliseconds =
+            100;
+
+        private const int ArCoreSurfaceSettleMilliseconds =
+            250;
+
         public CameraPage(
             IArCoreService arCoreService)
         {
@@ -1033,6 +1063,155 @@ namespace RescuAR.App.Views.Camera
 #endif
         }
 
+        /// <summary>
+        /// Re-publishes the currently active short route window against the
+        /// newly recovered ground anchor.
+        ///
+        /// The full MLD RouteResult and route-progress state are retained.
+        /// Only the local AR X/Z placement is recalculated for the replacement
+        /// anchor so navigation does not restart from zero.
+        /// </summary>
+        private bool TryRebaseRouteAfterAnchorRecovery(
+            ARCameraPoseBridge.SpatialSnapshot spatial)
+        {
+#if ANDROID
+            RouteResult? route =
+                activeRoute;
+
+            if (route is null ||
+                route.Points.Count <
+                    2)
+            {
+                Log.Debug(
+                    "RescuAR-AnchorRecovery",
+                    "Ground anchor recovered, but no active MLD route exists " +
+                    "to rebase.");
+
+                return false;
+            }
+
+            if (!spatial.IsTracking ||
+                !spatial.Pose.IsTracking ||
+                !spatial.Anchor.IsAvailable)
+            {
+                return false;
+            }
+
+            RouteProgressTracker.ProgressSnapshot progress =
+                _routeProgressTracker.Current;
+
+            double startDistanceMeters;
+            GeoCoordinate referenceCoordinate;
+
+            if (progress.HasProgress &&
+                progress.SnappedCoordinate.IsValid)
+            {
+                startDistanceMeters =
+                    progress.CommittedProgressMeters;
+
+                referenceCoordinate =
+                    progress.SnappedCoordinate;
+            }
+            else
+            {
+                startDistanceMeters =
+                    route.Points[0]
+                        .DistanceFromStartMeters;
+
+                referenceCoordinate =
+                    route.Points[0]
+                        .Coordinate;
+            }
+
+            /*
+             * IMPORTANT:
+             *
+             * A replacement ground anchor is already a NEW local AR origin
+             * acquired from the user's current lower-middle floor view.
+             *
+             * Do NOT add (camera - anchor) here.
+             *
+             * Doing so translates the route from:
+             *
+             *     newAnchor + localRoute
+             *
+             * to:
+             *
+             *     newAnchor + (camera - newAnchor) + localRoute
+             *     = camera + localRoute
+             *
+             * which is exactly the post-recovery offset observed on-device:
+             * the capsule remains at the new anchor while the cyan route
+             * starts several meters away.
+             *
+             * The recovered route window must therefore begin at the new
+             * anchor's X/Z origin. Normal GPS moving-window updates are still
+             * free to apply their camera-relative offset later, after genuine
+             * route progress advances.
+             */
+            const float arOriginOffsetX =
+                0.0f;
+
+            const float arOriginOffsetZ =
+                0.0f;
+
+            bool published =
+                _mldArIntegrationService.PublishProgressWindow(
+                    route,
+                    startDistanceMeters,
+                    referenceCoordinate,
+                    activeMapToArYawDegrees,
+                    arOriginOffsetX,
+                    arOriginOffsetZ);
+
+            if (!published)
+            {
+                Log.Warn(
+                    "RescuAR-AnchorRecovery",
+                    "Replacement anchor is valid, but the active route window " +
+                    "could not be republished.");
+
+                return false;
+            }
+
+            /*
+             * Treat this freshly rebased window as already published even if
+             * GPS progress has not been established yet. Otherwise the very
+             * next stationary GPS sample would be considered the first window
+             * publication and could immediately shift the route back toward
+             * the camera without any meaningful movement.
+             */
+            _routeProgressTracker.MarkWindowPublished(
+                startDistanceMeters);
+
+            ARRouteBridge.RouteSnapshot recoveredRoute =
+                ARRouteBridge.Current;
+
+            string firstPointText =
+                recoveredRoute.Points.Count >
+                    0
+                    ? $"({recoveredRoute.Points[0].X:F2}," +
+                      $"{recoveredRoute.Points[0].Z:F2})"
+                    : "<none>";
+
+            Log.Debug(
+                "RescuAR-AnchorRecovery",
+                "Active route window REBASED at replacement-anchor origin: " +
+                $"progress={startDistanceMeters:F1} m, " +
+                $"newAnchor=(" +
+                $"{spatial.Anchor.PositionX:F2}," +
+                $"{spatial.Anchor.PositionY:F2}," +
+                $"{spatial.Anchor.PositionZ:F2}), " +
+                "recoveryOriginOffset=(0.00,0.00) m, " +
+                $"firstLocalRoutePoint={firstPointText}, " +
+                $"routeVersion={recoveredRoute.Version}");
+
+            return true;
+#else
+            return false;
+#endif
+        }
+
         private static void LogRouteDirectionDiagnostics(
             RouteResult route,
             ARRouteBridge.RouteSnapshot routeSnapshot,
@@ -1307,6 +1486,62 @@ namespace RescuAR.App.Views.Camera
                 spatial.IsTracking &&
                 spatial.Pose.IsTracking;
 
+            /*
+             * Recovery is deliberately separate from initial floor placement.
+             * Once a ground anchor has existed, losing it after ARCore camera
+             * tracking recovers starts the stale-anchor recovery path.
+             */
+            if (spatial.Anchor.IsAvailable)
+            {
+                if (!hasObservedGroundAnchor)
+                {
+                    hasObservedGroundAnchor =
+                        true;
+                }
+
+                if (anchorRecoveryInProgress)
+                {
+                    anchorRecoveryInProgress =
+                        false;
+
+                    Log.Debug(
+                        "RescuAR-AnchorRecovery",
+                        "Ground anchor REACQUIRED. Re-enabling anchored AR " +
+                        "guidance and rebasing the active route window.");
+
+                    TryRebaseRouteAfterAnchorRecovery(
+                        spatial);
+
+                    /*
+                     * Clear the service-side grace/recovery state once, only
+                     * after an actual recovery. Do not probe updateGate every
+                     * second while a normal healthy anchor is already valid.
+                     */
+                    _arCoreService.TryRecoverGroundAnchorIfNeeded();
+                }
+            }
+            else if (hasObservedGroundAnchor)
+            {
+                if (!anchorRecoveryInProgress)
+                {
+                    anchorRecoveryInProgress =
+                        true;
+
+                    Log.Warn(
+                        "RescuAR-AnchorRecovery",
+                        "Ground anchor became unavailable after having been " +
+                        "valid. Starting automatic recovery.");
+                }
+
+                /*
+                 * Call this even while camera tracking is PAUSED. Recovery V2
+                 * uses that observation to invalidate any stale-anchor grace
+                 * timer that started before the newest tracking-loss period.
+                 * The anchor is never destroyed while camera tracking is lost.
+                 */
+                _arCoreService.TryRecoverGroundAnchorIfNeeded();
+            }
+
             bool routeShouldBeVisible =
                 pageIsVisible &&
                 !_arCoreService.IsSessionPaused &&
@@ -1327,6 +1562,7 @@ namespace RescuAR.App.Views.Camera
                 $"frameLoop={_arCoreService.IsFrameLoopRunning}, " +
                 $"tracking={tracking}, " +
                 $"anchor={spatial.Anchor.IsAvailable}, " +
+                $"anchorRecovery={anchorRecoveryInProgress}, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
                 $"headingStable={lastHeadingAlignment?.IsStable ?? false}, " +

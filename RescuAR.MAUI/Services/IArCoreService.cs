@@ -28,6 +28,18 @@ public interface IArCoreService
     /// </summary>
     bool ResumeCameraSession();
 
+    /// <summary>
+    /// Performs a non-destructive health check of the retained ground anchor.
+    ///
+    /// When ARCore camera tracking has recovered but the existing anchor
+    /// remains non-tracking beyond a short grace period, the stale anchor is
+    /// released. The existing ARCore frame loop will then automatically resume
+    /// its normal horizontal-floor hit-test acquisition.
+    ///
+    /// Returns true when ground-anchor reacquisition is/was armed.
+    /// </summary>
+    bool TryRecoverGroundAnchorIfNeeded();
+
     bool IsInitialized { get; }
 
     Session? Session { get; }
