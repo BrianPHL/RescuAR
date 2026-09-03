@@ -31,15 +31,22 @@ public sealed class RouteProgressTracker
      * or near buildings. Samples farther than this from the routed geometry
      * are retained for diagnostics but do not advance the AR route window.
      */
-    private const double MaximumCrossTrackErrorMeters =
+    private const double NormalMaximumCrossTrackErrorMeters =
         35.0;
+
+    private const double IndoorMaximumCrossTrackErrorMeters =
+        100.0;
 
     /*
      * Reject very low-quality samples before they are allowed to move route
-     * progress. A later fusion layer can make this adaptive.
+     * progress. Indoor test mode deliberately relaxes this so a nearby road
+     * can still be used while GPS is degraded by the building.
      */
-    private const double MaximumAcceptedAccuracyMeters =
+    private const double NormalMaximumAcceptedAccuracyMeters =
         50.0;
+
+    private const double IndoorMaximumAcceptedAccuracyMeters =
+        120.0;
 
     /*
      * Once progress has been established, prefer nearby route segments rather
@@ -56,8 +63,11 @@ public sealed class RouteProgressTracker
      * If the local search is clearly bad, perform one full-route fallback.
      * This lets the first useful GPS update recover after a larger movement.
      */
-    private const double FullSearchFallbackCrossTrackMeters =
+    private const double NormalFullSearchFallbackCrossTrackMeters =
         25.0;
+
+    private const double IndoorFullSearchFallbackCrossTrackMeters =
+        80.0;
 
     /*
      * Ordinary GPS noise should not continually rebuild Evergine geometry.
@@ -67,6 +77,23 @@ public sealed class RouteProgressTracker
 
     private readonly object sync =
         new();
+
+    private readonly bool indoorTestMode;
+
+    private double MaximumCrossTrackErrorMeters =>
+        indoorTestMode
+            ? IndoorMaximumCrossTrackErrorMeters
+            : NormalMaximumCrossTrackErrorMeters;
+
+    private double MaximumAcceptedAccuracyMeters =>
+        indoorTestMode
+            ? IndoorMaximumAcceptedAccuracyMeters
+            : NormalMaximumAcceptedAccuracyMeters;
+
+    private double FullSearchFallbackCrossTrackMeters =>
+        indoorTestMode
+            ? IndoorFullSearchFallbackCrossTrackMeters
+            : NormalFullSearchFallbackCrossTrackMeters;
 
     private RouteResult? route;
 
@@ -83,6 +110,24 @@ public sealed class RouteProgressTracker
 
     private ProgressSnapshot current =
         ProgressSnapshot.Unavailable;
+
+    public RouteProgressTracker(
+        bool indoorTestMode = false)
+    {
+        this.indoorTestMode =
+            indoorTestMode;
+
+        AndroidLog.Debug(
+            LogTag,
+            indoorTestMode
+                ? "RouteProgressTracker created in INDOOR TEST MODE: " +
+                  $"accuracyLimit={IndoorMaximumAcceptedAccuracyMeters:F0} m, " +
+                  $"crossTrackLimit={IndoorMaximumCrossTrackErrorMeters:F0} m."
+                : "RouteProgressTracker created in normal GPS mode.");
+    }
+
+    public bool IndoorTestMode =>
+        indoorTestMode;
 
     public ProgressSnapshot Current
     {
@@ -466,6 +511,125 @@ public sealed class RouteProgressTracker
         return accepted;
     }
 
+    /// <summary>
+    /// TEST-ONLY progress advance used by CameraPage's Indoor Test Mode.
+    /// Production/outdoor navigation must not call this method.
+    /// </summary>
+    public RouteProgressUpdate AdvanceSynthetic(
+        double advanceMeters)
+    {
+        if (!indoorTestMode)
+        {
+            return Reject(
+                "synthetic progress is disabled outside Indoor Test Mode",
+                default,
+                null);
+        }
+
+        if (advanceMeters <= 0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(advanceMeters));
+        }
+
+        RouteResult? currentRoute;
+        double currentProgress;
+        bool progressExists;
+
+        lock (sync)
+        {
+            currentRoute = route;
+            currentProgress = committedProgressMeters;
+            progressExists = hasProgress;
+        }
+
+        if (currentRoute is null ||
+            currentRoute.Points.Count < 2)
+        {
+            return Reject(
+                "no active route for synthetic progress",
+                default,
+                null);
+        }
+
+        if (!progressExists)
+        {
+            currentProgress =
+                currentRoute.Points[0]
+                    .DistanceFromStartMeters;
+        }
+
+        double geometryEnd =
+            currentRoute.Points[^1]
+                .DistanceFromStartMeters;
+
+        double nextProgress =
+            Math.Min(
+                geometryEnd,
+                currentProgress + advanceMeters);
+
+        GeoCoordinate snappedCoordinate =
+            GetCoordinateAtDistance(
+                currentRoute,
+                nextProgress);
+
+        int segmentIndex =
+            FindSegmentIndexAtDistance(
+                currentRoute,
+                nextProgress);
+
+        double remaining =
+            Math.Max(
+                0.0,
+                currentRoute.TotalDistanceMeters - nextProgress);
+
+        RouteProgressUpdate synthetic =
+            new(
+                true,
+                false,
+                true,
+                segmentIndex,
+                nextProgress,
+                nextProgress,
+                remaining,
+                0.0,
+                null,
+                snappedCoordinate,
+                snappedCoordinate,
+                "INDOOR_TEST_SYNTHETIC");
+
+        lock (sync)
+        {
+            hasProgress = true;
+            committedProgressMeters = nextProgress;
+            lastSegmentIndex = segmentIndex;
+
+            current =
+                new ProgressSnapshot(
+                    true,
+                    true,
+                    false,
+                    segmentIndex,
+                    nextProgress,
+                    nextProgress,
+                    remaining,
+                    0.0,
+                    double.NaN,
+                    snappedCoordinate,
+                    snappedCoordinate);
+        }
+
+        AndroidLog.Warn(
+            LogTag,
+            "INDOOR TEST synthetic route advance: " +
+            $"progress={nextProgress:F1} m, " +
+            $"remaining={remaining:F1} m, " +
+            $"segment={segmentIndex}. " +
+            "This is test-only and does not represent measured physical movement.");
+
+        return synthetic;
+    }
+
     public void MarkWindowPublished(
         double progressMeters)
     {
@@ -794,6 +958,30 @@ public sealed class RouteProgressTracker
 
         return route.Points[^1]
             .Coordinate;
+    }
+
+    private static int FindSegmentIndexAtDistance(
+        RouteResult route,
+        double distanceMeters)
+    {
+        if (route.Points.Count < 2)
+        {
+            return -1;
+        }
+
+        for (int i = 0;
+             i < route.Points.Count - 1;
+             i++)
+        {
+            if (route.Points[i + 1]
+                    .DistanceFromStartMeters >=
+                distanceMeters)
+            {
+                return i;
+            }
+        }
+
+        return route.Points.Count - 2;
     }
 
     private static string FormatNullable(

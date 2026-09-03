@@ -55,9 +55,25 @@ namespace RescuAR.App.Views.Camera
 
         private double activeMapToArYawDegrees;
 
+        /*
+         * TEST SWITCH:
+         * Keep true while testing indoors. Set false before normal outdoor /
+         * production navigation testing.
+         */
+        private const bool IndoorRouteTestMode =
+            true;
+
+        private const int IndoorStationaryPollsBeforeSyntheticAdvance =
+            3;
+
+        private const double IndoorSyntheticAdvanceMeters =
+            1.5;
+
         private static readonly TimeSpan RouteProgressPollInterval =
             TimeSpan.FromSeconds(
                 2);
+
+        private int indoorStationaryPollCount;
 
         public CameraPage(
             IArCoreService arCoreService)
@@ -83,7 +99,9 @@ namespace RescuAR.App.Views.Camera
                 new MauiLocationService();
 
             _routeProgressTracker =
-                new RouteProgressTracker();
+                new RouteProgressTracker(
+                    indoorTestMode:
+                        IndoorRouteTestMode);
 
             diagnosticTimer =
                 Dispatcher.CreateTimer();
@@ -107,6 +125,15 @@ namespace RescuAR.App.Views.Camera
             Log.Debug(
                 ArCoreLogTag,
                 "Camera tab entered.");
+
+            if (IndoorRouteTestMode)
+            {
+                Log.Warn(
+                    ProgressLogTag,
+                    "INDOOR ROUTE TEST MODE ENABLED. GPS thresholds are relaxed " +
+                    "and controlled synthetic progress may be used after several " +
+                    "stationary samples. Disable this before outdoor/production testing.");
+            }
 #endif
 
             SubscribeDestinationChanged();
@@ -718,6 +745,9 @@ namespace RescuAR.App.Views.Camera
             activeRoute =
                 null;
 
+            indoorStationaryPollCount =
+                0;
+
             _routeProgressTracker.Clear();
 
             _mldArIntegrationService.ClearRoute();
@@ -831,6 +861,9 @@ namespace RescuAR.App.Views.Camera
 
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    bool publishedRealProgress =
+                        false;
+
                     if (reading is not null)
                     {
                         RouteProgressTracker.RouteProgressUpdate update =
@@ -841,9 +874,55 @@ namespace RescuAR.App.Views.Camera
                         if (update.IsAccepted &&
                             update.ShouldPublishWindow)
                         {
-                            TryPublishMovingRouteWindow(
-                                route,
-                                update);
+                            publishedRealProgress =
+                                TryPublishMovingRouteWindow(
+                                    route,
+                                    update);
+                        }
+
+                        if (publishedRealProgress)
+                        {
+                            indoorStationaryPollCount =
+                                0;
+                        }
+                        else if (IndoorRouteTestMode)
+                        {
+                            indoorStationaryPollCount++;
+                        }
+                    }
+                    else if (IndoorRouteTestMode)
+                    {
+                        indoorStationaryPollCount++;
+                    }
+
+                    if (IndoorRouteTestMode &&
+                        !publishedRealProgress &&
+                        indoorStationaryPollCount >=
+                            IndoorStationaryPollsBeforeSyntheticAdvance)
+                    {
+                        RouteProgressTracker.RouteProgressUpdate synthetic =
+                            _routeProgressTracker.AdvanceSynthetic(
+                                IndoorSyntheticAdvanceMeters);
+
+                        if (synthetic.IsAccepted)
+                        {
+                            bool publishedSynthetic =
+                                TryPublishMovingRouteWindow(
+                                    route,
+                                    synthetic);
+
+                            if (publishedSynthetic)
+                            {
+#if ANDROID
+                                Log.Warn(
+                                    ProgressLogTag,
+                                    "INDOOR TEST moving window advanced synthetically by " +
+                                    $"{IndoorSyntheticAdvanceMeters:F1} m. " +
+                                    "This validates AR route-window movement only.");
+#endif
+                                indoorStationaryPollCount =
+                                    0;
+                            }
                         }
                     }
 
@@ -1258,6 +1337,7 @@ namespace RescuAR.App.Views.Camera
                 $"routePoints={route.Points.Count}, " +
                 $"rendererVersion={ARRouteRenderer.AppliedRouteVersion}, " +
                 $"activeSegments={activeSegments}, " +
+                $"indoorTest={IndoorRouteTestMode}, " +
                 $"progressActive={progress.HasProgress}, " +
                 $"progress={progress.CommittedProgressMeters:F1}m, " +
                 $"remaining={progress.RemainingMeters:F1}m, " +
