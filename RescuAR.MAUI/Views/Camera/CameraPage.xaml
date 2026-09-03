@@ -3,26 +3,15 @@
     x:Class="RescuAR.App.Views.Camera.CameraPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine">
+    xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine"
+    Title="Camera"
+    BackgroundColor="Black">
+
     <Grid>
-
         <evergine:EvergineView
-            x:Name="evergineView" />
-
-        <VerticalStackLayout
-            Padding="30"
-            Spacing="20"
-            VerticalOptions="Start">
-
-            <Button
-                Text="Initialize ARCore"
-                Clicked="InitializeArCoreClicked" />
-
-            <Button
-                Text="Update ARCore Frame"
-                Clicked="UpdateArCoreClicked" />
-
-        </VerticalStackLayout>
-
+            x:Name="evergineView"
+            HorizontalOptions="Fill"
+            VerticalOptions="Fill" />
     </Grid>
+
 </ContentPage>

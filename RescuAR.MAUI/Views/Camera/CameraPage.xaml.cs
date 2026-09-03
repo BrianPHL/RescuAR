@@ -85,9 +85,9 @@ namespace RescuAR.App.Views.Camera
         private bool anchorRecoveryInProgress;
 
         /*
-         * Camera-tab ARCore activation is serialized so automatic startup and
-         * the existing manual fallback button cannot initialize/resume the
-         * Session concurrently.
+         * Camera-tab ARCore activation is serialized so repeated MAUI
+         * OnAppearing transitions cannot initialize/resume the Session
+         * concurrently.
          */
         private readonly SemaphoreSlim arCoreActivationGate =
             new(
@@ -179,36 +179,34 @@ namespace RescuAR.App.Views.Camera
             }
 
             /*
-             * Do not auto-create a brand-new ARCore Session here. The first
-             * initialization remains user-controlled by the existing button.
+             * Camera is now a self-starting AR surface:
              *
-             * If a retained Session already exists, however, returning to the
-             * Camera tab must resume it automatically.
+             * - first visit -> request camera permission if needed, then create
+             *   the ARCore Session automatically;
+             * - later visits -> resume the retained Session automatically.
+             *
              */
-            if (_arCoreService.IsInitialized)
-            {
-                bool resumed =
-                    _arCoreService.ResumeCameraSession();
+            arCoreAutoStartCancellation?.Cancel();
+            arCoreAutoStartCancellation?.Dispose();
 
-#if ANDROID
-                Log.Debug(
-                    ArCoreLogTag,
-                    $"Camera tab ARCore resume result = {resumed}; " +
-                    $"paused={_arCoreService.IsSessionPaused}, " +
-                    $"frameLoop={_arCoreService.IsFrameLoopRunning}");
-#endif
+            arCoreAutoStartCancellation =
+                new CancellationTokenSource();
 
-                if (resumed)
-                {
-                    StartRouteRequestIfPossible();
-                }
-            }
+            _ =
+                EnsureArCoreActiveAsync(
+                    arCoreAutoStartCancellation.Token);
         }
 
         protected override void OnDisappearing()
         {
             pageIsVisible =
                 false;
+
+            arCoreAutoStartCancellation?.Cancel();
+            arCoreAutoStartCancellation?.Dispose();
+
+            arCoreAutoStartCancellation =
+                null;
 
             UnsubscribeDestinationChanged();
 
@@ -251,62 +249,153 @@ namespace RescuAR.App.Views.Camera
             base.OnDisappearing();
         }
 
-        private async void InitializeArCoreClicked(
-            object sender,
-            EventArgs e)
+        /// <summary>
+        /// Ensures ARCore is active whenever the Camera tab is visible.
+        ///
+        /// First visit:
+        ///   wait briefly for the Evergine surface/handler to exist,
+        ///   request Android camera permission if necessary,
+        ///   create a new ARCore Session.
+        ///
+        /// Later visits:
+        ///   resume the retained Session and restart its frame loop.
+        ///
+        /// The operation is serialized with arCoreActivationGate so the
+        /// optional manual button cannot race automatic startup.
+        /// </summary>
+        private async Task<bool> EnsureArCoreActiveAsync(
+            CancellationToken cancellationToken)
         {
 #if ANDROID
-            Log.Debug(
-                ArCoreLogTag,
-                "Initialize ARCore button clicked.");
+            bool gateEntered =
+                false;
 
-            PermissionStatus permissionStatus =
-                await Permissions.RequestAsync<
-                    Permissions.Camera>();
-
-            Log.Debug(
-                ArCoreLogTag,
-                $"Camera permission status: {permissionStatus}");
-
-            if (permissionStatus !=
-                PermissionStatus.Granted)
+            try
             {
-                Log.Error(
-                    ArCoreLogTag,
-                    "Camera permission was not granted.");
+                await arCoreActivationGate.WaitAsync(
+                    cancellationToken);
 
-                await DisplayAlert(
-                    "ARCore",
-                    "Camera permission was not granted.",
-                    "OK");
+                gateEntered =
+                    true;
 
-                return;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            Log.Debug(
-                ArCoreLogTag,
-                "Camera permission granted.");
+                if (!pageIsVisible)
+                {
+                    return false;
+                }
 
-            bool initialized;
-
-            bool creatingNewSession =
-                !_arCoreService.IsInitialized;
-
-            if (!creatingNewSession)
-            {
                 /*
-                 * A retained ARCore Session keeps the same AR world frame, so
-                 * its map-to-AR heading calibration must also be retained.
+                 * Fast path for the retained ARCore Session. No permission
+                 * prompt or heading reset is needed because this is still the
+                 * same ARCore world frame.
                  */
-                initialized =
-                    _arCoreService.ResumeCameraSession();
-            }
-            else
-            {
+                if (_arCoreService.IsInitialized)
+                {
+                    Log.Debug(
+                        ArCoreLogTag,
+                        "Camera tab auto-start: resuming retained ARCore Session.");
+
+                    bool resumed =
+                        _arCoreService.ResumeCameraSession();
+
+                    Log.Debug(
+                        ArCoreLogTag,
+                        "Camera tab ARCore resume result = " +
+                        $"{resumed}; " +
+                        $"paused={_arCoreService.IsSessionPaused}, " +
+                        $"frameLoop={_arCoreService.IsFrameLoopRunning}");
+
+                    if (resumed &&
+                        pageIsVisible)
+                    {
+                        StartRouteRequestIfPossible();
+                    }
+                    else if (!resumed &&
+                             pageIsVisible)
+                    {
+                        Log.Error(
+                            ArCoreLogTag,
+                            "Retained ARCore Session could not be resumed.");
+
+                        await DisplayAlert(
+                            "AR Camera",
+                            "The AR camera could not be resumed. Leave the Camera tab and try again.",
+                            "OK");
+                    }
+
+                    return resumed;
+                }
+
+                Log.Debug(
+                    ArCoreLogTag,
+                    "Camera tab auto-start: first ARCore Session is not yet " +
+                    "initialized. Waiting for the Evergine camera surface.");
+
+                await WaitForArCoreSurfaceReadyAsync(
+                    cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!pageIsVisible)
+                {
+                    Log.Debug(
+                        ArCoreLogTag,
+                        "Automatic ARCore initialization cancelled because " +
+                        "Camera tab is no longer visible.");
+
+                    return false;
+                }
+
+                PermissionStatus permissionStatus =
+                    await Permissions.CheckStatusAsync<
+                        Permissions.Camera>();
+
+                if (permissionStatus !=
+                    PermissionStatus.Granted)
+                {
+                    Log.Debug(
+                        ArCoreLogTag,
+                        "Camera tab auto-start requesting Android camera permission.");
+
+                    permissionStatus =
+                        await Permissions.RequestAsync<
+                            Permissions.Camera>();
+                }
+
+                Log.Debug(
+                    ArCoreLogTag,
+                    $"Camera permission status: {permissionStatus}");
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (permissionStatus !=
+                    PermissionStatus.Granted)
+                {
+                    Log.Error(
+                        ArCoreLogTag,
+                        "Automatic ARCore initialization stopped because " +
+                        "camera permission was not granted.");
+
+                    if (pageIsVisible)
+                    {
+                        await DisplayAlert(
+                            "Camera Permission Required",
+                            "Camera permission is required to start AR navigation.",
+                            "OK");
+                    }
+
+                    return false;
+                }
+
+                if (!pageIsVisible)
+                {
+                    return false;
+                }
+
                 /*
-                 * A newly-created ARCore Session defines a new arbitrary world
-                 * yaw. Clear the old calibration exactly here -- not when the
-                 * Camera tab pauses and not when the destination changes.
+                 * A newly created Session establishes a new arbitrary ARCore
+                 * world yaw. Reset only Session-scoped spatial state here.
                  */
                 _headingAlignmentService.ResetSessionCalibration(
                     "creating a new ARCore Session");
@@ -314,36 +403,160 @@ namespace RescuAR.App.Views.Camera
                 lastHeadingAlignment =
                     null;
 
-                initialized =
+                hasObservedGroundAnchor =
+                    false;
+
+                anchorRecoveryInProgress =
+                    false;
+
+                Log.Debug(
+                    ArCoreLogTag,
+                    "Camera tab auto-start: initializing new ARCore Session.");
+
+                bool initialized =
                     _arCoreService.Initialize();
+
+                Log.Debug(
+                    ArCoreLogTag,
+                    "Automatic ARCore start returned: " +
+                    $"{initialized}; " +
+                    $"paused={_arCoreService.IsSessionPaused}, " +
+                    $"frameLoop={_arCoreService.IsFrameLoopRunning}");
+
+                if (!initialized)
+                {
+                    Log.Error(
+                        ArCoreLogTag,
+                        "Automatic ARCore initialization failed.");
+
+                    if (pageIsVisible)
+                    {
+                        await DisplayAlert(
+                            "AR Camera",
+                            "ARCore could not be initialized. Check Logcat for RescuAR-ARCore.",
+                            "OK");
+                    }
+
+                    return false;
+                }
+
+                Log.Debug(
+                    MldLogTag,
+                    "ARCore automatically active. Checking navigation " +
+                    "destination for MLD routing.");
+
+                if (pageIsVisible)
+                {
+                    StartRouteRequestIfPossible();
+                }
+
+                return true;
             }
-
-            Log.Debug(
-                ArCoreLogTag,
-                $"ARCore start/resume returned: {initialized}; " +
-                $"paused={_arCoreService.IsSessionPaused}, " +
-                $"frameLoop={_arCoreService.IsFrameLoopRunning}");
-
-            if (!initialized)
+            catch (OperationCanceledException)
             {
-                await DisplayAlert(
-                    "ARCore",
-                    "ARCore Session was not initialized/resumed. Check Logcat.",
-                    "OK");
+                Log.Debug(
+                    ArCoreLogTag,
+                    "Camera-tab ARCore auto-start cancelled.");
 
-                return;
+                return false;
+            }
+            catch (Exception exception)
+            {
+                Log.Error(
+                    ArCoreLogTag,
+                    $"Camera-tab ARCore activation failed: {exception}");
+
+                if (pageIsVisible)
+                {
+                    await DisplayAlert(
+                        "AR Camera",
+                        "The AR camera could not be started. Check Logcat for RescuAR-ARCore.",
+                        "OK");
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (gateEntered)
+                {
+                    arCoreActivationGate.Release();
+                }
+            }
+#else
+            await Task.CompletedTask;
+            return false;
+#endif
+        }
+
+        /// <summary>
+        /// OnAppearing can occur before Evergine has finished attaching its
+        /// native handler and receiving a usable viewport size. Waiting here
+        /// replaces the human delay that previously occurred before tapping
+        /// the Initialize ARCore button.
+        /// </summary>
+        private async Task WaitForArCoreSurfaceReadyAsync(
+            CancellationToken cancellationToken)
+        {
+#if ANDROID
+            int elapsedMilliseconds =
+                0;
+
+            while (elapsedMilliseconds <
+                   ArCoreSurfaceReadyTimeoutMilliseconds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                bool handlerReady =
+                    evergineView.Handler is not null;
+
+                bool sizeReady =
+                    evergineView.Width >
+                        1.0 &&
+                    evergineView.Height >
+                        1.0;
+
+                if (handlerReady &&
+                    sizeReady)
+                {
+                    Log.Debug(
+                        ArCoreLogTag,
+                        "Evergine Camera surface ready for automatic ARCore " +
+                        $"startup: " +
+                        $"{evergineView.Width:F0}x" +
+                        $"{evergineView.Height:F0}.");
+
+                    /*
+                     * Give the Evergine handler one short settle interval to
+                     * create/bind the Vulkan graphics context. This replaces
+                     * the manual button's previous natural delay.
+                     */
+                    await Task.Delay(
+                        ArCoreSurfaceSettleMilliseconds,
+                        cancellationToken);
+
+                    return;
+                }
+
+                await Task.Delay(
+                    ArCoreSurfaceReadyPollMilliseconds,
+                    cancellationToken);
+
+                elapsedMilliseconds +=
+                    ArCoreSurfaceReadyPollMilliseconds;
             }
 
-            Log.Debug(
-                MldLogTag,
-                "ARCore active. Checking navigation destination for MLD routing.");
-
-            StartRouteRequestIfPossible();
-
-            await DisplayAlert(
-                "ARCore",
-                "ARCore Session initialized successfully.",
-                "OK");
+            /*
+             * Do not permanently block initialization if MAUI reports an
+             * unusual size/handler lifecycle. ArCoreService still performs
+             * its own availability/configuration checks and logs failures.
+             */
+            Log.Warn(
+                ArCoreLogTag,
+                "Timed out waiting for the Evergine surface readiness hint. " +
+                "Attempting automatic ARCore initialization anyway.");
+#else
+            await Task.CompletedTask;
 #endif
         }
 
@@ -617,66 +830,6 @@ namespace RescuAR.App.Views.Camera
 #else
             await Task.CompletedTask;
             return false;
-#endif
-        }
-
-        private async void UpdateArCoreClicked(
-            object sender,
-            EventArgs e)
-        {
-            if (!_arCoreService.IsInitialized)
-            {
-                await DisplayAlert(
-                    "ARCore",
-                    "Initialize ARCore first.",
-                    "OK");
-
-                return;
-            }
-
-#if ANDROID
-            if (_arCoreService.IsSessionPaused)
-            {
-                Log.Warn(
-                    ArCoreLogTag,
-                    "Manual Update ignored because ARCore Session is paused.");
-
-                return;
-            }
-
-            try
-            {
-                var frame =
-                    _arCoreService.Update();
-
-                if (frame is null)
-                {
-                    Log.Debug(
-                        ArCoreLogTag,
-                        "Manual ARCore Update(): frame is null. " +
-                        "This is expected while the automatic frame loop is running.");
-
-                    return;
-                }
-
-                var camera =
-                    frame.Camera;
-
-                Log.Debug(
-                    ArCoreLogTag,
-                    "Manual ARCore frame: " +
-                    $"timestamp={frame.Timestamp}, " +
-                    $"tracking={camera.TrackingState}, " +
-                    $"failure={camera.TrackingFailureReason}, " +
-                    $"textureName={frame.CameraTextureName}, " +
-                    $"hardwareBufferNull={frame.HardwareBuffer is null}");
-            }
-            catch (Exception ex)
-            {
-                Log.Error(
-                    ArCoreLogTag,
-                    $"Manual ARCore frame update exception: {ex}");
-            }
 #endif
         }
 
