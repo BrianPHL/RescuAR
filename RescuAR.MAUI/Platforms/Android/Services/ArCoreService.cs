@@ -12,7 +12,7 @@ using ArCorePlane = Google.AR.Core.Plane;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
-public sealed class ArCoreService : IArCoreService
+public sealed partial class ArCoreService : IArCoreService
 {
     private const string Tag =
         "RescuAR-ARCore";
