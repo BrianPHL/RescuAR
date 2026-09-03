@@ -38,6 +38,31 @@ public static class ARCameraSpatialController
     private const float RouteYOffsetFromPublishedAnchor =
         -0.235f;
 
+    /*
+     * V5 ROUTE ROOT LOCK
+     *
+     * ARCore may continue refining an Anchor's horizontal pose after the
+     * Anchor has already become TRACKING. The route root must not copy that
+     * live X/Z every frame, otherwise stationary guidance visibly drifts.
+     *
+     * Instead, X/Z are locked once for each applied route version. A new
+     * route version represents an intentional navigation-placement event
+     * (initial route, progress-window update, recovery rebase, reroute).
+     */
+    private static bool routeRootHorizontalLocked;
+
+    private static float lockedRouteRootX;
+    private static float lockedRouteRootZ;
+
+    private static long lockedRouteVersion =
+        -1;
+
+    private static int lastLoggedAnchorDriftBucket =
+        -1;
+
+    private const float AnchorDriftLogStepMeters =
+        0.25f;
+
     private static long appliedVersion =
         -1;
 
@@ -136,6 +161,21 @@ public static class ARCameraSpatialController
             appliedVersion =
                 -1;
 
+            routeRootHorizontalLocked =
+                false;
+
+            lockedRouteRootX =
+                0.0f;
+
+            lockedRouteRootZ =
+                0.0f;
+
+            lockedRouteVersion =
+                -1;
+
+            lastLoggedAnchorDriftBucket =
+                -1;
+
             lastLoggedTrackingValid =
                 null;
 
@@ -151,6 +191,42 @@ public static class ARCameraSpatialController
             initialized =
                 true;
         }
+    }
+
+    /// <summary>
+    /// Invalidates only the route-root placement state.
+    ///
+    /// CameraPage calls this when a genuinely new ARCore Session creates a new
+    /// arbitrary world frame. Normal Camera-tab pause/resume intentionally
+    /// keeps the lock.
+    /// </summary>
+    public static void ResetRouteRootLock(
+        string reason)
+    {
+        lock (sync)
+        {
+            routeRootHorizontalLocked =
+                false;
+
+            lockedRouteRootX =
+                0.0f;
+
+            lockedRouteRootZ =
+                0.0f;
+
+            lockedRouteVersion =
+                -1;
+
+            lastLoggedAnchorDriftBucket =
+                -1;
+        }
+
+        AndroidLog.Debug(
+            RouteLogTag,
+            "V5 route-root X/Z lock reset: " +
+            (string.IsNullOrWhiteSpace(reason)
+                ? "<unspecified>"
+                : reason));
     }
 
     public static void ProcessDrawThreadWork()
@@ -200,11 +276,14 @@ public static class ARCameraSpatialController
 
         /*
          * Route responses are independent from ARCore spatial-frame versions.
-         * Process the route bridge every draw before the spatial early-return.
+         * Process the route bridge every draw before any spatial early-return.
          */
         bool hasRouteGeometry =
             ARRouteRenderer.ProcessDrawThreadWork(
                 route);
+
+        long rendererRouteVersion =
+            ARRouteRenderer.AppliedRouteVersion;
 
         ARCameraPoseBridge.SpatialSnapshot frame =
             ARCameraPoseBridge.CurrentFrame;
@@ -217,14 +296,147 @@ public static class ARCameraSpatialController
             frame.Anchor;
 
         /*
-         * Route guidance must never remain visible while ARCore tracking is
-         * paused. Geometry can still be prepared in the background and will
-         * become visible again after a valid tracked anchor is available.
+         * A route bridge Clear() and every usable Publish() increment the route
+         * version. Any version change invalidates the previous X/Z lock.
+         *
+         * If the new version contains usable geometry, the first draw with a
+         * valid tracked Anchor establishes the new horizontal lock.
          */
-        route.IsEnabled =
+        if (rendererRouteVersion !=
+            lockedRouteVersion)
+        {
+            lockedRouteVersion =
+                rendererRouteVersion;
+
+            routeRootHorizontalLocked =
+                false;
+
+            lastLoggedAnchorDriftBucket =
+                -1;
+        }
+
+        if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
-            hasRouteGeometry;
+            !routeRootHorizontalLocked)
+        {
+            lockedRouteRootX =
+                anchor.PositionX;
+
+            lockedRouteRootZ =
+                anchor.PositionZ;
+
+            routeRootHorizontalLocked =
+                true;
+
+            lastLoggedAnchorDriftBucket =
+                -1;
+
+            AndroidLog.Debug(
+                RouteLogTag,
+                "V5 route-root X/Z LOCKED: " +
+                $"routeVersion={rendererRouteVersion}, " +
+                $"lockedRoot=(" +
+                $"{lockedRouteRootX:F2}," +
+                $"{lockedRouteRootZ:F2}), " +
+                $"anchorY={anchor.PositionY:F2}");
+        }
+
+        /*
+         * The diagnostic capsule continues to represent the LIVE ARCore
+         * Anchor. It is allowed to move as ARCore refines that Anchor.
+         */
+        if (trackingValid &&
+            anchor.IsAvailable)
+        {
+            capsuleTransform.Position =
+                new Vector3(
+                    anchor.PositionX,
+                    anchor.PositionY,
+                    anchor.PositionZ);
+
+            if (!capsule.IsEnabled)
+            {
+                capsule.IsEnabled =
+                    true;
+            }
+        }
+        else if (!anchor.IsAvailable &&
+                 capsule.IsEnabled)
+        {
+            capsule.IsEnabled =
+                false;
+        }
+
+        /*
+         * Route X/Z use the per-route-version lock. Y deliberately continues
+         * following the live Anchor so small floor-height refinement remains
+         * possible without horizontal route translation.
+         */
+        if (hasRouteGeometry &&
+            trackingValid &&
+            anchor.IsAvailable &&
+            routeRootHorizontalLocked)
+        {
+            routeRootTransform.Position =
+                new Vector3(
+                    lockedRouteRootX,
+                    anchor.PositionY +
+                        RouteYOffsetFromPublishedAnchor,
+                    lockedRouteRootZ);
+
+            route.IsEnabled =
+                true;
+
+            float driftX =
+                anchor.PositionX -
+                lockedRouteRootX;
+
+            float driftZ =
+                anchor.PositionZ -
+                lockedRouteRootZ;
+
+            float horizontalAnchorDrift =
+                MathF.Sqrt(
+                    driftX * driftX +
+                    driftZ * driftZ);
+
+            int driftBucket =
+                (int)MathF.Floor(
+                    horizontalAnchorDrift /
+                    AnchorDriftLogStepMeters);
+
+            if (driftBucket >=
+                    1 &&
+                driftBucket !=
+                    lastLoggedAnchorDriftBucket)
+            {
+                lastLoggedAnchorDriftBucket =
+                    driftBucket;
+
+                AndroidLog.Debug(
+                    RouteLogTag,
+                    "V5 route root remains X/Z locked while ARCore anchor " +
+                    "refines: " +
+                    $"routeVersion={rendererRouteVersion}, " +
+                    $"lockedRoot=(" +
+                    $"{lockedRouteRootX:F2}," +
+                    $"{lockedRouteRootZ:F2}), " +
+                    $"liveAnchor=(" +
+                    $"{anchor.PositionX:F2}," +
+                    $"{anchor.PositionZ:F2}), " +
+                    $"anchorDrift={horizontalAnchorDrift:F2} m");
+            }
+        }
+        else
+        {
+            /*
+             * Keep the horizontal lock through temporary tracking/anchor loss,
+             * but hide route guidance until spatial validity returns.
+             */
+            route.IsEnabled =
+                false;
+        }
 
         LogRouteStateIfChanged(
             trackingValid,
@@ -233,6 +445,10 @@ public static class ARCameraSpatialController
             route.IsEnabled,
             frame.Version);
 
+        /*
+         * A route version can change between ARCore frames. All route
+         * renderer/root-lock work above must occur before this early return.
+         */
         if (frame.Version ==
             appliedVersion)
         {
@@ -252,12 +468,9 @@ public static class ARCameraSpatialController
         if (!trackingValid)
         {
             /*
-             * Preserve the last valid camera transform/projection internally,
-             * but hide spatial guidance until tracking is valid again.
+             * Preserve the last valid camera transform/projection internally.
+             * Route visibility was already suppressed above.
              */
-            route.IsEnabled =
-                false;
-
             PublishTelemetry(
                 frame.Version,
                 frame.FrameTimestamp,
@@ -266,42 +479,6 @@ public static class ARCameraSpatialController
                 capsuleTransform);
 
             return;
-        }
-
-        if (anchor.IsAvailable)
-        {
-            capsuleTransform.Position =
-                new Vector3(
-                    anchor.PositionX,
-                    anchor.PositionY,
-                    anchor.PositionZ);
-
-            routeRootTransform.Position =
-                new Vector3(
-                    anchor.PositionX,
-                    anchor.PositionY +
-                        RouteYOffsetFromPublishedAnchor,
-                    anchor.PositionZ);
-
-            if (!capsule.IsEnabled)
-            {
-                capsule.IsEnabled =
-                    true;
-            }
-
-            route.IsEnabled =
-                hasRouteGeometry;
-        }
-        else
-        {
-            if (capsule.IsEnabled)
-            {
-                capsule.IsEnabled =
-                    false;
-            }
-
-            route.IsEnabled =
-                false;
         }
 
         ARCameraPoseBridge.ProjectionSnapshot projection =

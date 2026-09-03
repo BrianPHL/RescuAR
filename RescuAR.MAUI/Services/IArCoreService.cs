@@ -40,6 +40,24 @@ public interface IArCoreService
     /// </summary>
     bool TryRecoverGroundAnchorIfNeeded();
 
+    /// <summary>
+    /// Monotonically increasing generation that changes only after the
+    /// recovery service has actually released a stale retained ground anchor
+    /// and armed replacement floor-anchor acquisition.
+    ///
+    /// Temporary anchor PAUSED/unavailable states during the natural
+    /// relocalization grace period do not change this value.
+    ///
+    /// CameraPage uses this durable event to distinguish:
+    ///
+    ///     temporary natural relocalization
+    ///
+    /// from:
+    ///
+    ///     actual stale-anchor replacement
+    /// </summary>
+    long GroundAnchorReplacementGeneration { get; }
+
     bool IsInitialized { get; }
 
     Session? Session { get; }

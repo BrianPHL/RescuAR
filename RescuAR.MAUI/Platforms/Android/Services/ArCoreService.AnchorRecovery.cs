@@ -50,12 +50,33 @@ public sealed partial class ArCoreService
      */
     private long groundAnchorRecoveryGeneration;
 
+    /*
+     * V6 durable replacement event.
+     *
+     * This increments ONLY after this recovery component itself releases a
+     * stale retained Anchor. It is deliberately independent from short-lived
+     * SpatialSnapshot.Anchor.IsAvailable changes.
+     */
+    private long groundAnchorReplacementGeneration;
+
     private bool groundAnchorReacquisitionArmed;
 
     private long replacementAnchorSearchStartedTimestamp =
         long.MinValue;
 
     private bool replacementAnchorSearchNoticeLogged;
+
+    /// <inheritdoc />
+    public long GroundAnchorReplacementGeneration
+    {
+        get
+        {
+            lock (groundAnchorRecoveryLock)
+            {
+                return groundAnchorReplacementGeneration;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public bool TryRecoverGroundAnchorIfNeeded()
@@ -268,8 +289,27 @@ public sealed partial class ArCoreService
                 hasLoggedGroundPlaneSearch =
                     false;
 
+                long replacementGeneration;
+
                 lock (groundAnchorRecoveryLock)
                 {
+                    /*
+                     * This is the exact V6 transition from:
+                     *
+                     *     retained-anchor relocalization attempt
+                     *
+                     * to:
+                     *
+                     *     actual replacement-anchor recovery.
+                     *
+                     * CameraPage must react only to this generation change,
+                     * never merely to a transient Anchor.IsAvailable=false.
+                     */
+                    groundAnchorReplacementGeneration++;
+
+                    replacementGeneration =
+                        groundAnchorReplacementGeneration;
+
                     groundAnchorReacquisitionArmed =
                         true;
 
@@ -284,7 +324,8 @@ public sealed partial class ArCoreService
                     AnchorRecoveryLogTag,
                     "Stale ground anchor released after queued grace-period " +
                     "recovery. Replacement floor-anchor search is armed on " +
-                    "subsequent ARCore frames.");
+                    "subsequent ARCore frames. " +
+                    $"replacementGeneration={replacementGeneration}");
             }
             finally
             {
