@@ -1,4 +1,4 @@
-using Microsoft.Maui.Controls;
+using RescuAR.App.ViewModels.Prepare;
 
 namespace RescuAR.App.Views.Prepare
 {
@@ -7,6 +7,9 @@ namespace RescuAR.App.Views.Prepare
         public EvacuationCenterInfoPage()
         {
             InitializeComponent();
+
+            BindingContext =
+                new EvacuationCenterInfoViewModel();
         }
     }
 }

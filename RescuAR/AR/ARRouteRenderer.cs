@@ -4,20 +4,26 @@ using Evergine.Framework;
 using Evergine.Framework.Graphics;
 using Evergine.Framework.Graphics.Materials;
 using Evergine.Mathematics;
+using RescuAR.Diagnostics;
+using RescuAR.Navigation.Projection;
 using System;
 
 namespace RescuAR.AR;
 
 /// <summary>
-/// Milestone 3 hardcoded AR route renderer.
+/// Draw-thread AR route renderer.
 ///
-/// This deliberately uses a few thin CubeMesh entities instead of introducing
-/// GeoJSON/routing/PDR yet. The route is authored in a small local coordinate
-/// frame whose origin is positioned on the detected ARCore ground anchor by
-/// ARCameraSpatialController.
+/// Create() allocates a small reusable pool of route segments once. Runtime
+/// route updates only modify those already-created Evergine entities on the
+/// draw thread. No HTTP/navigation worker thread touches the scene graph.
+///
+/// Route points are local X/Z coordinates whose root is positioned on the
+/// current ARCore ground anchor by ARCameraSpatialController.
 /// </summary>
 public static class ARRouteRenderer
 {
+    private const string LogTag =
+        "RescuAR-ARRoute";
     public const string RouteRootEntityName =
         "ARRouteRoot";
 
@@ -27,28 +33,68 @@ public static class ARRouteRenderer
     private const float RouteThicknessMeters =
         0.03f;
 
+    private const float ArrowWingLengthMeters =
+        0.55f;
+
+    private const float ArrowHalfWidthMeters =
+        0.30f;
+
+    private const float ArrowWingWidthMeters =
+        0.16f;
+
+    private const int ArrowWingCount =
+        2;
+
     /*
-     * Hardcoded local route for Milestone 3:
-     *
-     * P0 = (0.0, 0.0,  0.0)
-     * P1 = (0.0, 0.0, -1.5)
-     * P2 = (0.8, 0.0, -3.0)
-     * P3 = (0.8, 0.0, -5.0)
-     *
-     * This gives us a straight section followed by a visible bend.
+     * A single ARCore anchor should only own a nearby route window.
+     * The current integration publishes approximately 7.5 m. 64 pooled
+     * segments leaves generous room for dense OSRM geometry without creating
+     * or destroying entities while rendering.
      */
-    private static readonly Vector3[] RoutePoints =
+    private const int MaxRouteSegments =
+        64;
+
+    private static readonly object sync =
+        new();
+
+    private static Entity? activeRouteRoot;
+
+    private static SegmentSlot[] segmentSlots =
+        [];
+
+    private static SegmentSlot[] arrowSlots =
+        [];
+
+    private static long appliedRouteVersion =
+        -1;
+
+    private static int activeSegmentCount;
+
+    public static int ActiveSegmentCount
     {
-        new(0.0f, 0.0f,  0.0f),
-        new(0.0f, 0.0f, -1.5f),
-        new(0.8f, 0.0f, -3.0f),
-        new(0.8f, 0.0f, -5.0f)
-    };
+        get
+        {
+            lock (sync)
+            {
+                return activeSegmentCount;
+            }
+        }
+    }
+
+    public static long AppliedRouteVersion
+    {
+        get
+        {
+            lock (sync)
+            {
+                return appliedRouteVersion;
+            }
+        }
+    }
 
     /// <summary>
-    /// Creates the complete route hierarchy using a clone of the capsule's
-    /// already-working material. Cloning preserves the material's render layer
-    /// and effect configuration, avoiding a second rendering-path experiment.
+    /// Creates an initially-empty route hierarchy using a clone of the
+    /// capsule's already-proven material/render path.
     /// </summary>
     public static Entity Create(
         Material sourceMaterial)
@@ -59,14 +105,6 @@ public static class ARRouteRenderer
         Material routeMaterial =
             sourceMaterial.Clone();
 
-        /*
-         * The supplied Evergine StandardMaterial API exposes BaseColorLinear,
-         * so no assumptions about Evergine.Common.Graphics.Color constructors
-         * are necessary here.
-         *
-         * Approximate intended UI cyan:
-         * RGB ~= (0, 210, 235).
-         */
         StandardMaterial standardMaterial =
             new(routeMaterial)
             {
@@ -100,10 +138,6 @@ public static class ARRouteRenderer
                 Name =
                     RouteRootEntityName,
 
-                /*
-                 * Do not render the serialized/local route until a valid
-                 * ARCore ground anchor is available.
-                 */
                 IsEnabled =
                     false
             };
@@ -111,33 +145,227 @@ public static class ARRouteRenderer
         routeRoot.AddComponent(
             new Transform3D());
 
+        SegmentSlot[] slots =
+            new SegmentSlot[
+                MaxRouteSegments];
+
         for (int i = 0;
-             i < RoutePoints.Length - 1;
+             i < slots.Length;
              i++)
         {
-            Entity segment =
-                CreateSegment(
+            SegmentSlot slot =
+                CreateSegmentSlot(
                     i,
-                    RoutePoints[i],
-                    RoutePoints[i + 1],
                     standardMaterial.Material);
 
+            slots[i] =
+                slot;
+
             routeRoot.AddChild(
-                segment);
+                slot.Entity);
         }
+
+        SegmentSlot[] arrows =
+            new SegmentSlot[
+                ArrowWingCount];
+
+        for (int i = 0;
+             i < arrows.Length;
+             i++)
+        {
+            SegmentSlot arrow =
+                CreateSegmentSlot(
+                    MaxRouteSegments +
+                        i,
+                    standardMaterial.Material);
+
+            arrow.Entity.Name =
+                $"ARRouteForwardArrow_{i}";
+
+            arrows[i] =
+                arrow;
+
+            routeRoot.AddChild(
+                arrow.Entity);
+        }
+
+        lock (sync)
+        {
+            activeRouteRoot =
+                routeRoot;
+
+            segmentSlots =
+                slots;
+
+            arrowSlots =
+                arrows;
+
+            appliedRouteVersion =
+                -1;
+
+            activeSegmentCount =
+                0;
+        }
+
+        AndroidLog.Debug(
+            LogTag,
+            $"AR route renderer created with {MaxRouteSegments} pooled route " +
+            $"segments and a {ArrowWingCount}-wing forward arrowhead.");
 
         return routeRoot;
     }
 
-    private static Entity CreateSegment(
-        int index,
-        Vector3 start,
-        Vector3 end,
-        Material material)
+    /// <summary>
+    /// Applies the newest route snapshot to the pooled Evergine geometry.
+    ///
+    /// Must be called on the Evergine draw thread.
+    ///
+    /// Returns true when at least one valid segment is available.
+    /// </summary>
+    public static bool ProcessDrawThreadWork(
+        Entity routeRoot)
     {
+        ArgumentNullException.ThrowIfNull(
+            routeRoot);
+
+        SegmentSlot[] slots;
+        SegmentSlot[] arrows;
+
+        lock (sync)
+        {
+            if (!ReferenceEquals(
+                    activeRouteRoot,
+                    routeRoot))
+            {
+                return false;
+            }
+
+            slots =
+                segmentSlots;
+
+            arrows =
+                arrowSlots;
+        }
+
+        ARRouteBridge.RouteSnapshot snapshot =
+            ARRouteBridge.Current;
+
+        if (snapshot.Version ==
+            appliedRouteVersion)
+        {
+            return activeSegmentCount >
+                0;
+        }
+
+        appliedRouteVersion =
+            snapshot.Version;
+
+        if (!snapshot.IsAvailable ||
+            snapshot.Points.Count <
+                2)
+        {
+            DisableAll(
+                slots);
+
+            DisableAll(
+                arrows);
+
+            activeSegmentCount =
+                0;
+
+            AndroidLog.Warn(
+                LogTag,
+                "Renderer received no usable route geometry: " +
+                $"routeVersion={snapshot.Version}, " +
+                $"available={snapshot.IsAvailable}, " +
+                $"points={snapshot.Points.Count}");
+
+            return false;
+        }
+
+        int requestedSegmentCount =
+            Math.Min(
+                snapshot.Points.Count -
+                    1,
+                slots.Length);
+
+        int renderedSegmentCount =
+            0;
+
+        for (int i = 0;
+             i < requestedSegmentCount;
+             i++)
+        {
+            ArHorizontalRoutePoint start =
+                snapshot.Points[i];
+
+            ArHorizontalRoutePoint end =
+                snapshot.Points[i + 1];
+
+            if (TryApplySegment(
+                    slots[i],
+                    start,
+                    end))
+            {
+                renderedSegmentCount++;
+            }
+            else
+            {
+                slots[i].Entity.IsEnabled =
+                    false;
+            }
+        }
+
+        for (int i = requestedSegmentCount;
+             i < slots.Length;
+             i++)
+        {
+            slots[i].Entity.IsEnabled =
+                false;
+        }
+
+        bool arrowVisible =
+            ApplyForwardArrow(
+                arrows,
+                snapshot.Points);
+
+        activeSegmentCount =
+            renderedSegmentCount;
+
+        AndroidLog.Debug(
+            LogTag,
+            "Renderer applied route snapshot: " +
+            $"routeVersion={snapshot.Version}, " +
+            $"inputPoints={snapshot.Points.Count}, " +
+            $"requestedSegments={requestedSegmentCount}, " +
+            $"activeSegments={activeSegmentCount}, " +
+            $"forwardArrow={arrowVisible}");
+
+        return activeSegmentCount >
+            0;
+    }
+
+    private static bool TryApplySegment(
+        SegmentSlot slot,
+        ArHorizontalRoutePoint start,
+        ArHorizontalRoutePoint end,
+        float widthMeters = RouteWidthMeters)
+    {
+        Vector3 startPoint =
+            new(
+                start.X,
+                0.0f,
+                start.Z);
+
+        Vector3 endPoint =
+            new(
+                end.X,
+                0.0f,
+                end.Z);
+
         Vector3 delta =
-            end -
-            start;
+            endPoint -
+            startPoint;
 
         float horizontalLength =
             MathF.Sqrt(
@@ -145,82 +373,292 @@ public static class ARRouteRenderer
                 delta.Z * delta.Z);
 
         if (horizontalLength <=
-            float.Epsilon)
+            0.01f)
         {
-            throw new InvalidOperationException(
-                $"Route segment {index} has zero horizontal length.");
+            return false;
         }
 
         Vector3 midpoint =
-            (start + end) *
+            (startPoint + endPoint) *
             0.5f;
 
-        /*
-         * CubeMesh's unit cube is centered at the origin. Stretch its local Z
-         * axis to the route-segment length, local X to ribbon width, and local
-         * Y to a very small thickness.
-         *
-         * The cube is symmetric along its length, so a 180-degree yaw is
-         * visually equivalent. atan2(X, Z) therefore gives all segment/bend
-         * orientations needed for this validation route.
-         */
         float yaw =
             MathF.Atan2(
                 delta.X,
                 delta.Z);
 
+        slot.Transform.LocalPosition =
+            midpoint;
+
+        slot.Transform.LocalRotation =
+            new Vector3(
+                0.0f,
+                yaw,
+                0.0f);
+
+        slot.Transform.LocalScale =
+            new Vector3(
+                widthMeters,
+                RouteThicknessMeters,
+                horizontalLength);
+
+        slot.Entity.IsEnabled =
+            true;
+
+        return true;
+    }
+
+    private static bool ApplyForwardArrow(
+        SegmentSlot[] arrows,
+        System.Collections.Generic.IReadOnlyList<ArHorizontalRoutePoint> points)
+    {
+        if (arrows.Length <
+                ArrowWingCount ||
+            points.Count <
+                2)
+        {
+            DisableAll(
+                arrows);
+
+            return false;
+        }
+
+        ArHorizontalRoutePoint end =
+            points[^1];
+
+        ArHorizontalRoutePoint? previous =
+            null;
+
+        for (int i = points.Count -
+                     2;
+             i >=
+             0;
+             i--)
+        {
+            float deltaX =
+                end.X -
+                points[i].X;
+
+            float deltaZ =
+                end.Z -
+                points[i].Z;
+
+            float length =
+                MathF.Sqrt(
+                    deltaX * deltaX +
+                    deltaZ * deltaZ);
+
+            if (length >
+                0.01f)
+            {
+                previous =
+                    points[i];
+
+                break;
+            }
+        }
+
+        if (!previous.HasValue)
+        {
+            DisableAll(
+                arrows);
+
+            return false;
+        }
+
+        float routeDeltaX =
+            end.X -
+            previous.Value.X;
+
+        float routeDeltaZ =
+            end.Z -
+            previous.Value.Z;
+
+        float routeLength =
+            MathF.Sqrt(
+                routeDeltaX * routeDeltaX +
+                routeDeltaZ * routeDeltaZ);
+
+        if (routeLength <=
+            0.01f)
+        {
+            DisableAll(
+                arrows);
+
+            return false;
+        }
+
+        float directionX =
+            routeDeltaX /
+            routeLength;
+
+        float directionZ =
+            routeDeltaZ /
+            routeLength;
+
+        float perpendicularX =
+            -directionZ;
+
+        float perpendicularZ =
+            directionX;
+
+        float arrowBaseX =
+            end.X -
+            directionX *
+            ArrowWingLengthMeters;
+
+        float arrowBaseZ =
+            end.Z -
+            directionZ *
+            ArrowWingLengthMeters;
+
+        ArHorizontalRoutePoint leftWing =
+            new(
+                arrowBaseX +
+                    perpendicularX *
+                    ArrowHalfWidthMeters,
+                arrowBaseZ +
+                    perpendicularZ *
+                    ArrowHalfWidthMeters,
+                end.DistanceFromWindowStartMeters);
+
+        ArHorizontalRoutePoint rightWing =
+            new(
+                arrowBaseX -
+                    perpendicularX *
+                    ArrowHalfWidthMeters,
+                arrowBaseZ -
+                    perpendicularZ *
+                    ArrowHalfWidthMeters,
+                end.DistanceFromWindowStartMeters);
+
+        bool leftVisible =
+            TryApplySegment(
+                arrows[0],
+                leftWing,
+                end,
+                ArrowWingWidthMeters);
+
+        bool rightVisible =
+            TryApplySegment(
+                arrows[1],
+                rightWing,
+                end,
+                ArrowWingWidthMeters);
+
+        if (!leftVisible)
+        {
+            arrows[0].Entity.IsEnabled =
+                false;
+        }
+
+        if (!rightVisible)
+        {
+            arrows[1].Entity.IsEnabled =
+                false;
+        }
+
+        return leftVisible &&
+            rightVisible;
+    }
+
+    private static SegmentSlot CreateSegmentSlot(
+        int index,
+        Material material)
+    {
         Transform3D transform =
             new()
             {
                 LocalPosition =
-                    midpoint,
+                    new Vector3(
+                        0.0f,
+                        0.0f,
+                        0.0f),
 
                 LocalRotation =
                     new Vector3(
                         0.0f,
-                        yaw,
+                        0.0f,
                         0.0f),
 
                 LocalScale =
                     new Vector3(
                         RouteWidthMeters,
                         RouteThicknessMeters,
-                        horizontalLength)
+                        0.01f)
             };
 
-        return new Entity()
-        {
-            Name =
-                $"ARRouteSegment_{index}"
-        }
-        .AddComponent(
-            transform)
-        .AddComponent(
-            new MaterialComponent
+        Entity entity =
+            new Entity()
             {
-                Material =
-                    material,
-
-                UseCopy =
-                    false,
-
-                AsignedTo =
-                    "Default"
-            })
-        .AddComponent(
-            new CubeMesh
-            {
-                Size =
-                    1.0f
-            })
-        .AddComponent(
-            new MeshRenderer
-            {
-                IsCullingEnabled =
-                    false,
+                Name =
+                    $"ARRouteSegment_{index}",
 
                 IsEnabled =
-                    true
-            });
+                    false
+            }
+            .AddComponent(
+                transform)
+            .AddComponent(
+                new MaterialComponent
+                {
+                    Material =
+                        material,
+
+                    UseCopy =
+                        false,
+
+                    AsignedTo =
+                        "Default"
+                })
+            .AddComponent(
+                new CubeMesh
+                {
+                    Size =
+                        1.0f
+                })
+            .AddComponent(
+                new MeshRenderer
+                {
+                    IsCullingEnabled =
+                        false,
+
+                    IsEnabled =
+                        true
+                });
+
+        return new SegmentSlot(
+            entity,
+            transform);
+    }
+
+    private static void DisableAll(
+        SegmentSlot[] slots)
+    {
+        for (int i = 0;
+             i < slots.Length;
+             i++)
+        {
+            slots[i].Entity.IsEnabled =
+                false;
+        }
+    }
+
+    private sealed class SegmentSlot
+    {
+        public SegmentSlot(
+            Entity entity,
+            Transform3D transform)
+        {
+            Entity =
+                entity;
+
+            Transform =
+                transform;
+        }
+
+        public Entity Entity { get; }
+
+        public Transform3D Transform { get; }
     }
 }

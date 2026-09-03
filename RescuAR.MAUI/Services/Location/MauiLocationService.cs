@@ -13,9 +13,9 @@ namespace RescuAR.MAUI.Services.Location;
 /// Foreground location provider based on the built-in .NET MAUI geolocation
 /// APIs. No additional NuGet package is required.
 ///
-/// This milestone intentionally provides location samples only. Continuous
-/// fusion, map matching, PDR, rerouting, and background tracking are separate
-/// navigation milestones.
+/// Continuous location in the current moving-window milestone is implemented
+/// as a foreground polling loop owned by CameraPage. This service remains the
+/// single adapter that converts MAUI Location into RescuAR LocationReading.
 /// </summary>
 public sealed class MauiLocationService : ILocationService
 {
@@ -60,7 +60,7 @@ public sealed class MauiLocationService : ILocationService
                 locationManager.IsProviderEnabled(
                     LocationManager.NetworkProvider);
 #else
-        return true;
+            return true;
 #endif
         }
     }
@@ -221,10 +221,6 @@ public sealed class MauiLocationService : ILocationService
             return null;
         }
 
-        /*
-         * MAUI Location.Timestamp is a DateTimeOffset. Accuracy is horizontal
-         * accuracy in meters when provided by the platform.
-         */
         LocationReading reading =
             new(
                 coordinate,
@@ -251,10 +247,6 @@ public sealed class MauiLocationService : ILocationService
     private static double? NormalizeAltitude(
         double? altitude)
     {
-        /*
-         * Android devices can report 0.0 when altitude is unavailable.
-         * Do not treat zero as verified sea-level altitude.
-         */
         if (!altitude.HasValue ||
             altitude.Value ==
             0.0)
@@ -277,12 +269,13 @@ public sealed class MauiLocationService : ILocationService
         string message)
     {
 #if ANDROID
+        /*
+         * Device-visible diagnostics intentionally use Android.Util.Log.
+         * Do not replace this with Console.WriteLine/Debug.WriteLine.
+         */
         Android.Util.Log.Debug(
             LogTag,
             message);
 #endif
-
-        System.Diagnostics.Trace.WriteLine(
-            $"[{LogTag}] {message}");
     }
 }
