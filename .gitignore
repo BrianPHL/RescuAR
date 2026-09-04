@@ -405,3 +405,5 @@ EvergineContent.cs
 !**/Content/**/*.obj
 **/wwwroot/lib/
 **/wwwroot/evergine.js
+
+RescuAR-FieldLog-OnDevice-2MB-Numbered.ps1
