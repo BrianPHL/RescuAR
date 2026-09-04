@@ -5,18 +5,19 @@ using System;
 namespace RescuAR.Navigation.Progress;
 
 /// <summary>
-/// GPS-only route progress tracker for the current navigation milestone.
+/// Route progress tracker for GPS + capstone-sized PDR map matching.
 ///
 /// Responsibilities:
-/// - snap a WGS84 GPS sample to the nearest plausible route segment;
+/// - snap WGS84 GPS samples to the nearest plausible route segment;
 /// - calculate cumulative route progress and remaining distance;
-/// - reject clearly poor/off-route samples;
+/// - reject clearly poor/off-route GPS samples;
 /// - prevent ordinary GPS jitter from moving progress backwards;
+/// - accept conservative along-route PDR distance increments between GPS fixes;
 /// - request a new AR window only after enough forward movement.
 ///
-/// This is intentionally NOT the final map-matching/PDR implementation.
-/// Stronger map matching, dead reckoning, off-route rerouting, and turn-state
-/// logic remain later milestones.
+/// PDR does not estimate a free 2D geographic position. It advances only along
+/// the already-selected route. Good GPS samples remain the global correction
+/// source while ARCore remains the rendering/spatial authority.
 /// </summary>
 public sealed class RouteProgressTracker
 {
@@ -509,6 +510,341 @@ public sealed class RouteProgressTracker
             $"publishWindow={shouldPublish}");
 
         return accepted;
+    }
+
+    /// <summary>
+    /// Applies a GPS/PDR fusion target after a normal route-matched GPS Update.
+    ///
+    /// Update(...) deliberately remains responsible for GPS-to-route matching.
+    /// The fusion policy can then bound a large forward jump or, after repeated
+    /// high-confidence evidence, apply a small controlled backward correction.
+    ///
+    /// The returned update is the authoritative value CameraPage should use
+    /// for AR-window publication.
+    /// </summary>
+    public RouteProgressUpdate ApplyFusionCorrection(
+        double targetProgressMeters,
+        RouteProgressUpdate gpsSource,
+        string fusionReason)
+    {
+        RouteResult? currentRoute;
+        bool alreadyPublished;
+        double previousPublishedProgress;
+
+        lock (sync)
+        {
+            currentRoute =
+                route;
+
+            alreadyPublished =
+                hasPublishedWindow;
+
+            previousPublishedProgress =
+                lastPublishedProgressMeters;
+        }
+
+        if (currentRoute is null ||
+            currentRoute.Points.Count <
+                2)
+        {
+            return Reject(
+                "no active route for GPS/PDR fusion correction",
+                gpsSource.GpsCoordinate,
+                gpsSource.AccuracyMeters);
+        }
+
+        if (!double.IsFinite(
+                targetProgressMeters))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(targetProgressMeters));
+        }
+
+        double geometryEnd =
+            currentRoute.Points[^1]
+                .DistanceFromStartMeters;
+
+        double correctedProgress =
+            Math.Clamp(
+                targetProgressMeters,
+                currentRoute.Points[0]
+                    .DistanceFromStartMeters,
+                geometryEnd);
+
+        int correctedSegment =
+            FindSegmentIndexAtDistance(
+                currentRoute,
+                correctedProgress);
+
+        GeoCoordinate correctedCoordinate =
+            GetCoordinateAtDistance(
+                currentRoute,
+                correctedProgress);
+
+        double remaining =
+            Math.Max(
+                0.0,
+                currentRoute.TotalDistanceMeters -
+                    correctedProgress);
+
+        /*
+         * Fusion corrections can be forward OR backward. Republish only after
+         * the corrected progress differs from the currently visible window by
+         * the same 1.5 m threshold already used by normal progress.
+         */
+        bool shouldPublish =
+            !alreadyPublished ||
+            Math.Abs(
+                correctedProgress -
+                previousPublishedProgress) >=
+                    MinimumProgressAdvanceForPublishMeters;
+
+        RouteProgressUpdate corrected =
+            new(
+                true,
+                false,
+                shouldPublish,
+                correctedSegment,
+                gpsSource.RawProgressMeters,
+                correctedProgress,
+                remaining,
+                gpsSource.CrossTrackErrorMeters,
+                gpsSource.AccuracyMeters,
+                gpsSource.GpsCoordinate,
+                correctedCoordinate,
+                string.IsNullOrWhiteSpace(
+                    fusionReason)
+                    ? "GPS_PDR_FUSION"
+                    : fusionReason);
+
+        lock (sync)
+        {
+            hasProgress =
+                true;
+
+            committedProgressMeters =
+                correctedProgress;
+
+            lastSegmentIndex =
+                Math.Max(
+                    0,
+                    correctedSegment);
+
+            current =
+                new ProgressSnapshot(
+                    true,
+                    true,
+                    false,
+                    correctedSegment,
+                    gpsSource.RawProgressMeters,
+                    correctedProgress,
+                    remaining,
+                    gpsSource.CrossTrackErrorMeters,
+                    gpsSource.AccuracyMeters ??
+                        double.NaN,
+                    gpsSource.GpsCoordinate,
+                    correctedCoordinate);
+        }
+
+        AndroidLog.Debug(
+            LogTag,
+            "GPS/PDR fusion correction applied: " +
+            $"rawGpsProgress={gpsSource.RawProgressMeters:F1} m, " +
+            $"correctedProgress={correctedProgress:F1} m, " +
+            $"remaining={remaining:F1} m, " +
+            $"publishWindow={shouldPublish}, " +
+            $"reason='{fusionReason}'");
+
+        return corrected;
+    }
+
+    /// <summary>
+    /// Advances committed progress along the already-selected route using one
+    /// directionally accepted PDR step/distance increment.
+    ///
+    /// This deliberately does not create a free-running latitude/longitude
+    /// estimate. The route geometry itself is the map-matching constraint.
+    /// GPS Update(...) can subsequently correct progress forward when a good
+    /// geographic sample is available.
+    /// </summary>
+    public RouteProgressUpdate AdvanceDeadReckoning(
+        double advanceMeters)
+    {
+        if (!double.IsFinite(
+                advanceMeters) ||
+            advanceMeters <=
+                0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(advanceMeters));
+        }
+
+        RouteResult? currentRoute;
+        double currentProgress;
+        bool progressExists;
+        bool alreadyPublished;
+        double previousPublishedProgress;
+
+        lock (sync)
+        {
+            currentRoute =
+                route;
+
+            currentProgress =
+                committedProgressMeters;
+
+            progressExists =
+                hasProgress;
+
+            alreadyPublished =
+                hasPublishedWindow;
+
+            previousPublishedProgress =
+                lastPublishedProgressMeters;
+        }
+
+        if (currentRoute is null ||
+            currentRoute.Points.Count <
+                2)
+        {
+            return Reject(
+                "no active route for PDR progress",
+                default,
+                null);
+        }
+
+        if (!progressExists)
+        {
+            currentProgress =
+                currentRoute.Points[0]
+                    .DistanceFromStartMeters;
+        }
+
+        double geometryEnd =
+            currentRoute.Points[^1]
+                .DistanceFromStartMeters;
+
+        double nextProgress =
+            Math.Min(
+                geometryEnd,
+                currentProgress +
+                    advanceMeters);
+
+        /*
+         * If geometry is already exhausted, accept no phantom extra travel.
+         */
+        if (nextProgress <=
+            currentProgress +
+                0.0001)
+        {
+            return new RouteProgressUpdate(
+                false,
+                false,
+                false,
+                FindSegmentIndexAtDistance(
+                    currentRoute,
+                    currentProgress),
+                currentProgress,
+                currentProgress,
+                Math.Max(
+                    0.0,
+                    currentRoute.TotalDistanceMeters -
+                        currentProgress),
+                0.0,
+                null,
+                GetCoordinateAtDistance(
+                    currentRoute,
+                    currentProgress),
+                GetCoordinateAtDistance(
+                    currentRoute,
+                    currentProgress),
+                "PDR reached route geometry end");
+        }
+
+        GeoCoordinate snappedCoordinate =
+            GetCoordinateAtDistance(
+                currentRoute,
+                nextProgress);
+
+        int segmentIndex =
+            FindSegmentIndexAtDistance(
+                currentRoute,
+                nextProgress);
+
+        double remaining =
+            Math.Max(
+                0.0,
+                currentRoute.TotalDistanceMeters -
+                    nextProgress);
+
+        /*
+         * The initial MLD window is already visible. PDR therefore waits until
+         * at least the normal publication threshold has accumulated before its
+         * first geometry refresh instead of rebuilding after the first step.
+         */
+        bool shouldPublish =
+            alreadyPublished
+                ? nextProgress -
+                    previousPublishedProgress >=
+                        MinimumProgressAdvanceForPublishMeters
+                : nextProgress -
+                    currentRoute.Points[0]
+                        .DistanceFromStartMeters >=
+                        MinimumProgressAdvanceForPublishMeters;
+
+        RouteProgressUpdate pdr =
+            new(
+                true,
+                false,
+                shouldPublish,
+                segmentIndex,
+                nextProgress,
+                nextProgress,
+                remaining,
+                0.0,
+                null,
+                snappedCoordinate,
+                snappedCoordinate,
+                "PDR_STEP");
+
+        lock (sync)
+        {
+            hasProgress =
+                true;
+
+            committedProgressMeters =
+                nextProgress;
+
+            lastSegmentIndex =
+                Math.Max(
+                    0,
+                    segmentIndex);
+
+            current =
+                new ProgressSnapshot(
+                    true,
+                    true,
+                    false,
+                    segmentIndex,
+                    nextProgress,
+                    nextProgress,
+                    remaining,
+                    0.0,
+                    double.NaN,
+                    snappedCoordinate,
+                    snappedCoordinate);
+        }
+
+        AndroidLog.Debug(
+            "RescuAR-PDR",
+            "PDR along-route progress accepted: " +
+            $"advance={advanceMeters:F2} m, " +
+            $"progress={nextProgress:F1} m, " +
+            $"remaining={remaining:F1} m, " +
+            $"segment={segmentIndex}, " +
+            $"publishWindow={shouldPublish}");
+
+        return pdr;
     }
 
     /// <summary>
