@@ -92,7 +92,9 @@ public sealed class MLDARIntegrationService
                 arWindowMeters:
                     arWindowMeters,
                 logTag:
-                    ProgressLogTag);
+                    ProgressLogTag,
+                clearRouteOnFailure:
+                    true);
 
         if (published)
         {
@@ -102,6 +104,28 @@ public sealed class MLDARIntegrationService
         }
 
         return route;
+    }
+
+    /// <summary>
+    /// Requests route geometry without touching ARRouteBridge.
+    ///
+    /// Dynamic rerouting uses this two-phase path so the currently visible
+    /// route remains intact until a replacement MLD route has been received
+    /// and is ready to publish.
+    /// </summary>
+    public Task<RouteResult?> RequestRouteAsync(
+        GeoCoordinate origin,
+        GeoCoordinate destination,
+        CancellationToken cancellationToken = default)
+    {
+        AndroidLog.Debug(
+            LogTag,
+            "MLD route-only request started for dynamic rerouting.");
+
+        return routingService.FindRouteAsync(
+            origin,
+            destination,
+            cancellationToken);
     }
 
     /// <summary>
@@ -120,7 +144,8 @@ public sealed class MLDARIntegrationService
         double mapToArYawDegrees,
         float arOriginOffsetX,
         float arOriginOffsetZ,
-        double arWindowMeters = 7.5)
+        double arWindowMeters = 7.5,
+        bool clearRouteOnFailure = true)
     {
         ArgumentNullException.ThrowIfNull(
             route);
@@ -134,7 +159,8 @@ public sealed class MLDARIntegrationService
                 arOriginOffsetX,
                 arOriginOffsetZ,
                 arWindowMeters,
-                ProgressLogTag);
+                ProgressLogTag,
+                clearRouteOnFailure);
 
         if (published)
         {
@@ -167,7 +193,8 @@ public sealed class MLDARIntegrationService
         float arOriginOffsetX,
         float arOriginOffsetZ,
         double arWindowMeters,
-        string logTag)
+        string logTag,
+        bool clearRouteOnFailure)
     {
         IReadOnlyList<LocalRoutePoint> localPoints =
             LocalRouteProjector.ProjectWindow(
@@ -193,7 +220,16 @@ public sealed class MLDARIntegrationService
                 "Local route window has fewer than two points. " +
                 "The user may be at the end of the geometry.");
 
-            ARRouteBridge.Clear();
+            if (clearRouteOnFailure)
+            {
+                ARRouteBridge.Clear();
+            }
+            else
+            {
+                AndroidLog.Warn(
+                    logTag,
+                    "Replacement route window was not publishable; retaining existing AR route.");
+            }
 
             return false;
         }
@@ -206,7 +242,16 @@ public sealed class MLDARIntegrationService
         if (aligned.Count <
             2)
         {
-            ARRouteBridge.Clear();
+            if (clearRouteOnFailure)
+            {
+                ARRouteBridge.Clear();
+            }
+            else
+            {
+                AndroidLog.Warn(
+                    logTag,
+                    "Replacement route window was not publishable; retaining existing AR route.");
+            }
 
             return false;
         }

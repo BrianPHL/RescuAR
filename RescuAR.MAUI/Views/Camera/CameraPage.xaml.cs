@@ -7,6 +7,7 @@ using RescuAR.AR;
 using RescuAR.MAUI.Services;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.MAUI.Services.Location;
+using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
@@ -39,6 +40,12 @@ namespace RescuAR.App.Views.Camera
         private const string FusionLogTag =
             "RescuAR-Fusion";
 
+        private const string RerouteLogTag =
+            "RescuAR-Reroute";
+
+        private const string TurnLogTag =
+            "RescuAR-Turn";
+
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
         private readonly MLDARIntegrationService _mldArIntegrationService;
@@ -47,6 +54,8 @@ namespace RescuAR.App.Views.Camera
         private readonly RouteProgressTracker _routeProgressTracker;
         private readonly PedestrianDeadReckoningService _pdrService;
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
+        private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
+        private readonly PedestrianTurnGuidanceService _turnGuidanceService;
 
         /*
          * GPS and PDR can both update the same monotonic route progress state.
@@ -80,11 +89,46 @@ namespace RescuAR.App.Views.Camera
 
         /*
          * TEST SWITCH:
-         * Keep true while testing indoors. Set false before normal outdoor /
-         * production navigation testing.
+         * Normal navigation baseline. Set true only for deliberate indoor
+         * GPS-freeze diagnostics.
          */
         private const bool IndoorRouteTestMode =
             false;
+
+        /*
+         * MILESTONE 3 DEVELOPER VALIDATION HARNESS
+         *
+         * TEMPORARY: keep true only while validating the confirmed-off-route
+         * -> Railway reroute -> replacement-route publication pipeline.
+         *
+         * This does NOT change the real RouteProgressTracker 35 m off-route
+         * threshold. It only exposes a test button that injects three policy
+         * confirmations while routing from the latest REAL GPS coordinate.
+         *
+         * Set false after Milestone 3 validation; the button then disappears.
+         */
+        private const bool EnableDeveloperOffRouteSimulation =
+            false;
+
+        /*
+         * MILESTONE 3 DEVELOPER TURN-STATE VALIDATION HARNESS
+         *
+         * This is deliberately separate from natural field validation. It
+         * runs controlled synthetic route geometries through the REAL
+         * PedestrianTurnGuidanceService so every classifier branch can be
+         * exercised without changing the active navigation route.
+         *
+         * Keep true only while running the classifier validation. Set false
+         * afterward; the button then disappears.
+         */
+        private const bool EnableDeveloperTurnSimulation =
+            false;
+
+        private const double DeveloperSimulatedCrossTrackMeters =
+            50.0;
+
+        private const double DeveloperSimulatedGpsAccuracyMeters =
+            5.0;
 
         /*
          * The moving-window milestone has already been proven. While indoor
@@ -140,6 +184,30 @@ namespace RescuAR.App.Views.Camera
         private long acceptedPdrStepCount;
 
         private long rejectedPdrStepCount;
+
+        private bool dynamicRerouteInProgress;
+
+        private bool lastOffRouteCandidate;
+
+        private int lastOffRouteConfirmationCount;
+
+        private string lastRerouteResult =
+            "None";
+
+        private GeoCoordinate? latestGpsCoordinateForDeveloperReroute;
+
+        private double? latestGpsAccuracyForDeveloperReroute;
+
+        private PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+            lastTurnGuidance =
+                PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
+
+        private PedestrianTurnGuidanceService.TurnInstruction
+            lastLoggedTurnInstruction =
+                PedestrianTurnGuidanceService.TurnInstruction.Continue;
+
+        private int lastLoggedTurnDistanceBucket =
+            -1;
 
         private const int IndoorStationaryPollsBeforeSyntheticAdvance =
             3;
@@ -223,6 +291,12 @@ namespace RescuAR.App.Views.Camera
         {
             InitializeComponent();
 
+            developerRerouteTestButton.IsVisible =
+                EnableDeveloperOffRouteSimulation;
+
+            developerTurnTestButton.IsVisible =
+                EnableDeveloperTurnSimulation;
+
             this.evergineApplication =
                 new MyApplication();
 
@@ -254,6 +328,12 @@ namespace RescuAR.App.Views.Camera
 
             _gpsPdrFusionPolicy =
                 new GpsPdrFusionPolicy();
+
+            _offRouteReroutePolicy =
+                new OffRouteReroutePolicy();
+
+            _turnGuidanceService =
+                new PedestrianTurnGuidanceService();
 
             _pdrService.StepDetected +=
                 OnPdrStepDetected;
@@ -347,6 +427,11 @@ namespace RescuAR.App.Views.Camera
 
             StopRouteProgress(
                 "Camera tab exited.");
+
+            Dispatcher.Dispatch(
+                () =>
+                    turnGuidancePanel.IsVisible =
+                        false);
 
             CancelRouteRequest(
                 "Camera tab exited.");
@@ -954,6 +1039,12 @@ namespace RescuAR.App.Views.Camera
                 _routeProgressTracker.SetRoute(
                     route);
 
+                _offRouteReroutePolicy.Reset();
+
+                UpdateTurnGuidance(
+                    route,
+                    0.0);
+
 #if ANDROID
                 CaptureRouteWorldStartContinuity(
                     ARCameraPoseBridge.CurrentFrame);
@@ -1178,6 +1269,28 @@ namespace RescuAR.App.Views.Camera
 
             _gpsPdrFusionPolicy.Reset();
 
+            _offRouteReroutePolicy.Reset();
+
+            dynamicRerouteInProgress =
+                false;
+
+            lastOffRouteCandidate =
+                false;
+
+            lastOffRouteConfirmationCount =
+                0;
+
+            lastRerouteResult =
+                "None";
+
+            latestGpsCoordinateForDeveloperReroute =
+                null;
+
+            latestGpsAccuracyForDeveloperReroute =
+                null;
+
+            ResetTurnGuidance();
+
             acceptedPdrStepCount =
                 0;
 
@@ -1211,6 +1324,15 @@ namespace RescuAR.App.Views.Camera
             {
                 return;
             }
+
+            RouteProgressTracker.ProgressSnapshot retainedProgress =
+                _routeProgressTracker.Current;
+
+            UpdateTurnGuidance(
+                activeRoute,
+                retainedProgress.HasProgress
+                    ? retainedProgress.CommittedProgressMeters
+                    : 0.0);
 
             StartPdrIfPossible();
 
@@ -1362,6 +1484,28 @@ namespace RescuAR.App.Views.Camera
                     {
                         lock (routeProgressFusionSync)
                         {
+                            latestGpsCoordinateForDeveloperReroute =
+                                reading.Coordinate;
+
+                            latestGpsAccuracyForDeveloperReroute =
+                                reading.AccuracyMeters;
+                        }
+
+                        bool shouldStartDynamicReroute =
+                            false;
+
+                        GeoCoordinate rerouteOrigin =
+                            default;
+
+                        string rerouteReason =
+                            string.Empty;
+
+                        RouteProgressTracker.RouteProgressUpdate?
+                            turnGuidanceUpdate =
+                                null;
+
+                        lock (routeProgressFusionSync)
+                        {
                             RouteProgressTracker.ProgressSnapshot beforeGps =
                                 _routeProgressTracker.Current;
 
@@ -1369,6 +1513,45 @@ namespace RescuAR.App.Views.Camera
                                 _routeProgressTracker.Update(
                                     reading.Coordinate,
                                     reading.AccuracyMeters);
+
+                            OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
+                                _offRouteReroutePolicy.Evaluate(
+                                    matchedGps,
+                                    DateTimeOffset.UtcNow);
+
+                            lastOffRouteCandidate =
+                                offRouteDecision.IsCandidate;
+
+                            lastOffRouteConfirmationCount =
+                                offRouteDecision.ConfirmationCount;
+
+#if ANDROID
+                            if (offRouteDecision.IsCandidate)
+                            {
+                                Log.Warn(
+                                    RerouteLogTag,
+                                    "OFF-ROUTE GPS candidate: " +
+                                    $"confirmation={offRouteDecision.ConfirmationCount}/" +
+                                    $"{offRouteDecision.RequiredConfirmationCount}, " +
+                                    $"crossTrack={offRouteDecision.CrossTrackErrorMeters:F1} m, " +
+                                    $"accuracy=" +
+                                    $"{(offRouteDecision.AccuracyMeters.HasValue ? offRouteDecision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
+                                    $"reroute={offRouteDecision.ShouldReroute}, " +
+                                    $"reason='{offRouteDecision.Reason}'");
+                            }
+#endif
+
+                            if (offRouteDecision.ShouldReroute)
+                            {
+                                shouldStartDynamicReroute =
+                                    true;
+
+                                rerouteOrigin =
+                                    reading.Coordinate;
+
+                                rerouteReason =
+                                    offRouteDecision.Reason;
+                            }
 
                             RouteProgressTracker.RouteProgressUpdate fusedGps =
                                 matchedGps;
@@ -1406,6 +1589,9 @@ namespace RescuAR.App.Views.Camera
                                             matchedGps,
                                             $"GPS_PDR_{decision.Action}");
                                 }
+
+                                turnGuidanceUpdate =
+                                    fusedGps;
 
 #if ANDROID
                                 Log.Debug(
@@ -1448,6 +1634,21 @@ namespace RescuAR.App.Views.Camera
                                         fusedGps,
                                         "GPS/FUSION");
                             }
+                        }
+
+                        if (turnGuidanceUpdate.HasValue)
+                        {
+                            UpdateTurnGuidance(
+                                route,
+                                turnGuidanceUpdate.Value
+                                    .CommittedProgressMeters);
+                        }
+
+                        if (shouldStartDynamicReroute)
+                        {
+                            StartDynamicRerouteIfPossible(
+                                rerouteOrigin,
+                                rerouteReason);
                         }
 
                         if (publishedRealProgress)
@@ -1533,6 +1734,791 @@ namespace RescuAR.App.Views.Camera
                     "GPS route-progress loop exited.");
 #endif
             }
+        }
+
+        private void OnDeveloperTurnTestClicked(
+            object? sender,
+            EventArgs e)
+        {
+#if ANDROID
+            if (!EnableDeveloperTurnSimulation)
+            {
+                return;
+            }
+
+            developerTurnTestButton.IsEnabled =
+                false;
+
+            try
+            {
+                DeveloperTurnCase[] cases =
+                new[]
+                {
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.Continue,
+                        0.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.SlightLeft,
+                        -40.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.Left,
+                        -80.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.SharpLeft,
+                        -140.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.SlightRight,
+                        40.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.Right,
+                        80.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.SharpRight,
+                        140.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.UTurn,
+                        175.0,
+                        false),
+
+                    new DeveloperTurnCase(
+                        PedestrianTurnGuidanceService.TurnInstruction.Arrive,
+                        0.0,
+                        true)
+                };
+
+                int passed =
+                    0;
+
+                foreach (DeveloperTurnCase testCase in cases)
+                {
+                    RouteResult syntheticRoute =
+                        CreateDeveloperTurnRoute(
+                            testCase.TurnAngleDegrees,
+                            testCase.ArrivalCase);
+
+                    PedestrianTurnGuidanceService.TurnGuidanceSnapshot result =
+                        _turnGuidanceService.Evaluate(
+                            syntheticRoute,
+                            0.0);
+
+                    bool casePassed =
+                        result.IsAvailable &&
+                        result.Instruction ==
+                            testCase.ExpectedInstruction;
+
+                    if (casePassed)
+                    {
+                        passed++;
+                    }
+
+                    Log.Warn(
+                        TurnLogTag,
+                        "[DEV TURN] " +
+                        $"expected={testCase.ExpectedInstruction}, " +
+                        $"actual={result.Instruction}, " +
+                        $"inputAngle={testCase.TurnAngleDegrees:F1} deg, " +
+                        $"evaluatedAngle={result.TurnAngleDegrees:F1} deg, " +
+                        $"distanceToTurn=" +
+                        $"{(double.IsFinite(result.DistanceToTurnMeters) ? result.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
+                        $"text='{result.DisplayText}', " +
+                        $"result={(casePassed ? "PASS" : "FAIL")}");
+                }
+
+                bool allPassed =
+                    passed ==
+                        cases.Length;
+
+                Log.Warn(
+                    TurnLogTag,
+                    "[DEV TURN] CLASSIFIER VALIDATION COMPLETE: " +
+                    $"passed={passed}/{cases.Length}, " +
+                    $"result={(allPassed ? "PASS" : "FAIL")}. " +
+                    "This validates controlled classifier branches only; natural route-turn field validation is still required.");
+
+                Dispatcher.Dispatch(
+                    () =>
+                    {
+                        turnGuidancePanel.IsVisible =
+                            true;
+
+                        turnInstructionLabel.Text =
+                            allPassed
+                                ? "DEV turn test: PASS"
+                                : "DEV turn test: FAIL";
+
+                        turnDistanceLabel.Text =
+                            $"{passed}/{cases.Length} classifier states";
+                    });
+            }
+            catch (Exception exception)
+            {
+                Log.Error(
+                    TurnLogTag,
+                    $"[DEV TURN] Classifier validation failed: {exception}");
+            }
+            finally
+            {
+                developerTurnTestButton.IsEnabled =
+                    true;
+            }
+#endif
+        }
+
+        private static RouteResult CreateDeveloperTurnRoute(
+            double signedTurnAngleDegrees,
+            bool arrivalCase)
+        {
+            GeoCoordinate origin =
+                new(
+                    14.6500000,
+                    121.1000000);
+
+            if (arrivalCase)
+            {
+                GeoCoordinate arrivalEnd =
+                    OffsetDeveloperCoordinate(
+                        origin,
+                        0.0,
+                        5.0);
+
+                return new RouteResult(
+                    new[]
+                    {
+                        new RoutePoint(
+                            origin,
+                            0.0),
+                        new RoutePoint(
+                            arrivalEnd,
+                            5.0)
+                    },
+                    5.0,
+                    "DEV-TURN-ARRIVAL");
+            }
+
+            const double approachMeters =
+                15.0;
+
+            const double exitMeters =
+                25.0;
+
+            GeoCoordinate corner =
+                OffsetDeveloperCoordinate(
+                    origin,
+                    0.0,
+                    approachMeters);
+
+            if (Math.Abs(
+                    signedTurnAngleDegrees) <
+                0.01)
+            {
+                GeoCoordinate straightEnd =
+                    OffsetDeveloperCoordinate(
+                        origin,
+                        0.0,
+                        approachMeters +
+                            exitMeters);
+
+                return new RouteResult(
+                    new[]
+                    {
+                        new RoutePoint(
+                            origin,
+                            0.0),
+                        new RoutePoint(
+                            corner,
+                            approachMeters),
+                        new RoutePoint(
+                            straightEnd,
+                            approachMeters +
+                                exitMeters)
+                    },
+                    approachMeters +
+                        exitMeters,
+                    "DEV-TURN-CONTINUE");
+            }
+
+            double radians =
+                signedTurnAngleDegrees *
+                Math.PI /
+                180.0;
+
+            double eastMeters =
+                Math.Sin(
+                    radians) *
+                exitMeters;
+
+            double northMeters =
+                Math.Cos(
+                    radians) *
+                exitMeters;
+
+            GeoCoordinate exit =
+                OffsetDeveloperCoordinate(
+                    corner,
+                    eastMeters,
+                    northMeters);
+
+            return new RouteResult(
+                new[]
+                {
+                    new RoutePoint(
+                        origin,
+                        0.0),
+                    new RoutePoint(
+                        corner,
+                        approachMeters),
+                    new RoutePoint(
+                        exit,
+                        approachMeters +
+                            exitMeters)
+                },
+                approachMeters +
+                    exitMeters,
+                $"DEV-TURN-{signedTurnAngleDegrees:F0}");
+        }
+
+        private static GeoCoordinate OffsetDeveloperCoordinate(
+            GeoCoordinate origin,
+            double eastMeters,
+            double northMeters)
+        {
+            const double metersPerDegreeLatitude =
+                111320.0;
+
+            double latitudeRadians =
+                origin.Latitude *
+                Math.PI /
+                180.0;
+
+            double metersPerDegreeLongitude =
+                metersPerDegreeLatitude *
+                Math.Cos(
+                    latitudeRadians);
+
+            return new GeoCoordinate(
+                origin.Latitude +
+                    northMeters /
+                    metersPerDegreeLatitude,
+                origin.Longitude +
+                    eastMeters /
+                    metersPerDegreeLongitude);
+        }
+
+        private readonly record struct DeveloperTurnCase(
+            PedestrianTurnGuidanceService.TurnInstruction ExpectedInstruction,
+            double TurnAngleDegrees,
+            bool ArrivalCase);
+
+        private async void OnDeveloperRerouteTestClicked(
+            object? sender,
+            EventArgs e)
+        {
+#if ANDROID
+            if (!EnableDeveloperOffRouteSimulation)
+            {
+                return;
+            }
+
+            if (!pageIsVisible ||
+                activeRoute is null ||
+                !activeDestinationCoordinate.HasValue)
+            {
+                Log.Warn(
+                    RerouteLogTag,
+                    "[DEV SIM] Reroute simulation ignored: active navigation route is not ready.");
+
+                return;
+            }
+
+            if (dynamicRerouteInProgress ||
+                routeRequestInProgress)
+            {
+                Log.Warn(
+                    RerouteLogTag,
+                    "[DEV SIM] Reroute simulation ignored because route work is already active.");
+
+                return;
+            }
+
+            GeoCoordinate? realOrigin;
+            double? realAccuracy;
+            OffRouteReroutePolicy.OffRouteDecision finalDecision =
+                default;
+
+            developerRerouteTestButton.IsEnabled =
+                false;
+
+            try
+            {
+                lock (routeProgressFusionSync)
+                {
+                    realOrigin =
+                        latestGpsCoordinateForDeveloperReroute;
+
+                    realAccuracy =
+                        latestGpsAccuracyForDeveloperReroute;
+
+                    if (!realOrigin.HasValue ||
+                        !realOrigin.Value.IsValid)
+                    {
+                        Log.Warn(
+                            RerouteLogTag,
+                            "[DEV SIM] No valid real GPS fix is available yet. Wait for GPS progress logs, then tap again.");
+
+                        return;
+                    }
+
+                    /*
+                     * Make the test deterministic. A normal on-route GPS poll
+                     * cannot reset the sequence while these three synthetic
+                     * policy evaluations execute because the GPS loop uses the
+                     * same routeProgressFusionSync lock.
+                     */
+                    _offRouteReroutePolicy.ResetConfirmation();
+
+                    DateTimeOffset now =
+                        DateTimeOffset.UtcNow;
+
+                    for (int confirmation = 1;
+                         confirmation <= 3;
+                         confirmation++)
+                    {
+                        finalDecision =
+                            _offRouteReroutePolicy.EvaluateDeveloperSimulation(
+                                DeveloperSimulatedCrossTrackMeters,
+                                DeveloperSimulatedGpsAccuracyMeters,
+                                now.AddMilliseconds(
+                                    confirmation));
+
+                        lastOffRouteCandidate =
+                            finalDecision.IsCandidate;
+
+                        lastOffRouteConfirmationCount =
+                            finalDecision.ConfirmationCount;
+
+                        Log.Warn(
+                            RerouteLogTag,
+                            "[DEV SIM] OFF-ROUTE GPS candidate: " +
+                            $"confirmation={finalDecision.ConfirmationCount}/" +
+                            $"{finalDecision.RequiredConfirmationCount}, " +
+                            $"syntheticCrossTrack={finalDecision.CrossTrackErrorMeters:F1} m, " +
+                            $"syntheticAccuracy=" +
+                            $"{(finalDecision.AccuracyMeters.HasValue ? finalDecision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
+                            $"realGpsAccuracy=" +
+                            $"{(realAccuracy.HasValue ? realAccuracy.Value.ToString("F1") : "<unknown>")} m, " +
+                            $"reroute={finalDecision.ShouldReroute}, " +
+                            $"reason='{finalDecision.Reason}'");
+                    }
+                }
+
+                if (!realOrigin.HasValue ||
+                    !finalDecision.ShouldReroute)
+                {
+                    lastRerouteResult =
+                        "DevSimDidNotTrigger";
+
+                    Log.Error(
+                        RerouteLogTag,
+                        "[DEV SIM] Expected 3/3 confirmation did not trigger reroute.");
+
+                    return;
+                }
+
+                lastRerouteResult =
+                    "DevSimTriggered";
+
+                Log.Warn(
+                    RerouteLogTag,
+                    "[DEV SIM] 3/3 CONFIRMED. Starting REAL Railway reroute from latest GPS origin: " +
+                    $"({realOrigin.Value.Latitude:F7},{realOrigin.Value.Longitude:F7}). " +
+                    "Only the confirmation is simulated; network routing and AR replacement publication are real.");
+
+                await TryDynamicRerouteAsync(
+                    realOrigin.Value,
+                    "DEVELOPER_SIMULATION_3_OF_3");
+            }
+            catch (Exception exception)
+            {
+                lastRerouteResult =
+                    "DevSimFailed";
+
+                Log.Error(
+                    RerouteLogTag,
+                    $"[DEV SIM] Reroute simulation FAILED: {exception}");
+            }
+            finally
+            {
+                developerRerouteTestButton.IsEnabled =
+                    true;
+            }
+#else
+            await Task.CompletedTask;
+#endif
+        }
+
+        private void StartDynamicRerouteIfPossible(
+            GeoCoordinate origin,
+            string reason)
+        {
+#if ANDROID
+            if (!pageIsVisible ||
+                !origin.IsValid ||
+                !activeDestinationCoordinate.HasValue)
+            {
+                return;
+            }
+
+            if (dynamicRerouteInProgress ||
+                routeRequestInProgress)
+            {
+                Log.Debug(
+                    RerouteLogTag,
+                    "Dynamic reroute trigger ignored because route work is already active.");
+
+                return;
+            }
+
+            _ =
+                TryDynamicRerouteAsync(
+                    origin,
+                    reason);
+#endif
+        }
+
+        private async Task<bool> TryDynamicRerouteAsync(
+            GeoCoordinate origin,
+            string reason)
+        {
+#if ANDROID
+            if (!pageIsVisible ||
+                !activeDestinationCoordinate.HasValue ||
+                routeRequestInProgress ||
+                dynamicRerouteInProgress)
+            {
+                return false;
+            }
+
+            GeoCoordinate destination =
+                activeDestinationCoordinate.Value;
+
+            string destinationName =
+                activeDestinationName;
+
+            routeRequestInProgress =
+                true;
+
+            dynamicRerouteInProgress =
+                true;
+
+            lastRerouteResult =
+                "Requesting";
+
+            routeRequestCancellation?.Dispose();
+
+            routeRequestCancellation =
+                new CancellationTokenSource();
+
+            CancellationToken cancellationToken =
+                routeRequestCancellation.Token;
+
+            try
+            {
+                Log.Warn(
+                    RerouteLogTag,
+                    "DYNAMIC REROUTE STARTED: " +
+                    $"reason='{reason}', " +
+                    $"origin=({origin.Latitude:F7},{origin.Longitude:F7}), " +
+                    $"destination='{destinationName}'. " +
+                    "The current AR route remains visible until a replacement route is ready.");
+
+                RouteResult? replacementRoute =
+                    await _mldArIntegrationService.RequestRouteAsync(
+                        origin,
+                        destination,
+                        cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (replacementRoute is null ||
+                    replacementRoute.Points.Count <
+                        2)
+                {
+                    lastRerouteResult =
+                        "NoRoute";
+
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Dynamic reroute returned no usable route. Retaining current guidance.");
+
+                    return false;
+                }
+
+                if (!activeDestinationCoordinate.HasValue ||
+                    activeDestinationCoordinate.Value !=
+                        destination ||
+                    !string.Equals(
+                        activeDestinationName,
+                        destinationName,
+                        StringComparison.Ordinal))
+                {
+                    lastRerouteResult =
+                        "DestinationChanged";
+
+                    Log.Debug(
+                        RerouteLogTag,
+                        "Dynamic reroute discarded because the navigation destination changed.");
+
+                    return false;
+                }
+
+                ARCameraPoseBridge.SpatialSnapshot spatial =
+                    ARCameraPoseBridge.CurrentFrame;
+
+                if (!spatial.IsTracking ||
+                    !spatial.Pose.IsTracking ||
+                    !spatial.Anchor.IsAvailable)
+                {
+                    lastRerouteResult =
+                        "WaitingForAR";
+
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Replacement MLD route is ready, but ARCore/ground anchor is not currently usable. " +
+                        "Retaining the existing route; a later confirmed off-route sequence may retry.");
+
+                    return false;
+                }
+
+                float arOriginOffsetX =
+                    spatial.Pose.PositionX -
+                    spatial.Anchor.PositionX;
+
+                float arOriginOffsetZ =
+                    spatial.Pose.PositionZ -
+                    spatial.Anchor.PositionZ;
+
+                bool published;
+
+                lock (routeProgressFusionSync)
+                {
+                    published =
+                        _mldArIntegrationService.PublishProgressWindow(
+                            replacementRoute,
+                            0.0,
+                            origin,
+                            activeMapToArYawDegrees,
+                            arOriginOffsetX,
+                            arOriginOffsetZ,
+                            clearRouteOnFailure:
+                                false);
+
+                    if (published)
+                    {
+                        activeRoute =
+                            replacementRoute;
+
+                        _routeProgressTracker.SetRoute(
+                            replacementRoute);
+
+                        _routeProgressTracker.MarkWindowPublished(
+                            0.0);
+
+                        _gpsPdrFusionPolicy.Reset();
+
+                        _offRouteReroutePolicy.MarkRerouteCompleted(
+                            DateTimeOffset.UtcNow);
+
+                        lastOffRouteCandidate =
+                            false;
+
+                        lastOffRouteConfirmationCount =
+                            0;
+                    }
+                }
+
+                if (!published)
+                {
+                    lastRerouteResult =
+                        "PublishFailed";
+
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Replacement route could not be published. Existing AR route retained.");
+
+                    return false;
+                }
+
+                CaptureRouteWorldStartContinuity(
+                    spatial);
+
+                UpdateTurnGuidance(
+                    replacementRoute,
+                    0.0);
+
+                lastRerouteResult =
+                    "Complete";
+
+                Log.Warn(
+                    RerouteLogTag,
+                    "DYNAMIC REROUTE COMPLETE: " +
+                    $"points={replacementRoute.Points.Count}, " +
+                    $"distance={replacementRoute.TotalDistanceMeters:F1} m, " +
+                    $"routeVersion={ARRouteBridge.Current.Version}, " +
+                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m.");
+
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                lastRerouteResult =
+                    "Cancelled";
+
+                Log.Debug(
+                    RerouteLogTag,
+                    "Dynamic reroute cancelled.");
+
+                return false;
+            }
+            catch (Exception exception)
+            {
+                lastRerouteResult =
+                    "Failed";
+
+                Log.Error(
+                    RerouteLogTag,
+                    $"Dynamic reroute FAILED: {exception}");
+
+                return false;
+            }
+            finally
+            {
+                dynamicRerouteInProgress =
+                    false;
+
+                routeRequestInProgress =
+                    false;
+            }
+#else
+            await Task.CompletedTask;
+            return false;
+#endif
+        }
+
+        private void UpdateTurnGuidance(
+            RouteResult route,
+            double progressMeters)
+        {
+            PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance =
+                _turnGuidanceService.Evaluate(
+                    route,
+                    progressMeters);
+
+            lastTurnGuidance =
+                guidance;
+
+            int distanceBucket =
+                guidance.IsAvailable &&
+                double.IsFinite(
+                    guidance.DistanceToTurnMeters)
+                    ? (int)Math.Floor(
+                        guidance.DistanceToTurnMeters /
+                        5.0)
+                    : -1;
+
+#if ANDROID
+            if (guidance.IsAvailable &&
+                (guidance.Instruction !=
+                    lastLoggedTurnInstruction ||
+                 distanceBucket !=
+                    lastLoggedTurnDistanceBucket))
+            {
+                Log.Debug(
+                    TurnLogTag,
+                    "TURN GUIDANCE: " +
+                    $"instruction={guidance.Instruction}, " +
+                    $"text='{guidance.DisplayText}', " +
+                    $"distanceToTurn=" +
+                    $"{(double.IsFinite(guidance.DistanceToTurnMeters) ? guidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
+                    $"turnAngle={guidance.TurnAngleDegrees:F1} deg, " +
+                    $"remaining={guidance.RemainingRouteMeters:F1} m, " +
+                    $"progress={progressMeters:F1} m");
+
+                lastLoggedTurnInstruction =
+                    guidance.Instruction;
+
+                lastLoggedTurnDistanceBucket =
+                    distanceBucket;
+            }
+#endif
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    if (!guidance.IsAvailable)
+                    {
+                        turnGuidancePanel.IsVisible =
+                            false;
+
+                        return;
+                    }
+
+                    turnGuidancePanel.IsVisible =
+                        true;
+
+                    turnInstructionLabel.Text =
+                        guidance.DisplayText;
+
+                    if (double.IsFinite(
+                            guidance.DistanceToTurnMeters))
+                    {
+                        turnDistanceLabel.Text =
+                            $"In {Math.Max(0.0, guidance.DistanceToTurnMeters):F0} m";
+                    }
+                    else
+                    {
+                        turnDistanceLabel.Text =
+                            $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m remaining";
+                    }
+                });
+        }
+
+        private void ResetTurnGuidance()
+        {
+            lastTurnGuidance =
+                PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
+
+            lastLoggedTurnInstruction =
+                PedestrianTurnGuidanceService.TurnInstruction.Continue;
+
+            lastLoggedTurnDistanceBucket =
+                -1;
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    turnGuidancePanel.IsVisible =
+                        false;
+
+                    turnInstructionLabel.Text =
+                        "Continue straight";
+
+                    turnDistanceLabel.Text =
+                        string.Empty;
+                });
         }
 
         private void OnPdrStepDetected(
@@ -1642,6 +2628,10 @@ namespace RescuAR.App.Views.Camera
             }
 
             acceptedPdrStepCount++;
+
+            UpdateTurnGuidance(
+                route,
+                update.CommittedProgressMeters);
 
             Log.Debug(
                 PdrLogTag,
@@ -2763,6 +3753,16 @@ namespace RescuAR.App.Views.Camera
                 $"gpsMinusPdr=" +
                 $"{(lastGpsPdrDivergenceMeters.HasValue ? lastGpsPdrDivergenceMeters.Value.ToString("F1") : "<none>")}m, " +
                 $"gpsBackConfirmations={lastGpsBackwardConfirmationCount}, " +
+                $"offRouteCandidate={lastOffRouteCandidate}, " +
+                $"offRouteConfirmations={lastOffRouteConfirmationCount}, " +
+                $"rerouteInProgress={dynamicRerouteInProgress}, " +
+                $"rerouteResult={lastRerouteResult}, " +
+                $"devRerouteSimulation={EnableDeveloperOffRouteSimulation}, " +
+                $"devTurnSimulation={EnableDeveloperTurnSimulation}, " +
+                $"turnInstruction=" +
+                $"{(lastTurnGuidance.IsAvailable ? lastTurnGuidance.Instruction.ToString() : "<none>")}, " +
+                $"turnDistance=" +
+                $"{(lastTurnGuidance.IsAvailable && double.IsFinite(lastTurnGuidance.DistanceToTurnMeters) ? lastTurnGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")}m, " +
                 $"progressActive={progress.HasProgress}, " +
                 $"progress={progress.CommittedProgressMeters:F1}m, " +
                 $"remaining={progress.RemainingMeters:F1}m, " +

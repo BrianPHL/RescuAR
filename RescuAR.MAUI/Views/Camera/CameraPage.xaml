@@ -12,6 +12,78 @@
             x:Name="evergineView"
             HorizontalOptions="Fill"
             VerticalOptions="Fill" />
-    </Grid>
 
+        <!--
+            Milestone 3 pedestrian turn guidance.
+            InputTransparent keeps the overlay from interfering with AR touch
+            handling or MAUI navigation gestures.
+        -->
+        <Border
+            x:Name="turnGuidancePanel"
+            IsVisible="False"
+            InputTransparent="True"
+            ZIndex="10"
+            Margin="16,18,16,0"
+            Padding="16,10"
+            HorizontalOptions="Center"
+            VerticalOptions="Start"
+            BackgroundColor="#CC111111"
+            StrokeThickness="0">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+
+            <VerticalStackLayout
+                Spacing="2"
+                HorizontalOptions="Center">
+                <Label
+                    x:Name="turnInstructionLabel"
+                    Text="Continue straight"
+                    TextColor="White"
+                    FontSize="20"
+                    FontAttributes="Bold"
+                    HorizontalTextAlignment="Center" />
+
+                <Label
+                    x:Name="turnDistanceLabel"
+                    Text=""
+                    TextColor="#E6FFFFFF"
+                    FontSize="13"
+                    HorizontalTextAlignment="Center" />
+            </VerticalStackLayout>
+        </Border>
+
+        <!--
+            TEMPORARY Milestone 3 developer validation controls.
+            Each control is independently hidden by its corresponding
+            CameraPage developer switch.
+        -->
+        <VerticalStackLayout
+            ZIndex="20"
+            Margin="20,0,20,28"
+            Spacing="8"
+            HorizontalOptions="Center"
+            VerticalOptions="End">
+
+            <Button
+                x:Name="developerTurnTestButton"
+                Text="DEV: Validate Turn States"
+                IsVisible="False"
+                Padding="14,10"
+                BackgroundColor="#CC1F4F7A"
+                TextColor="White"
+                FontAttributes="Bold"
+                Clicked="OnDeveloperTurnTestClicked" />
+
+            <Button
+                x:Name="developerRerouteTestButton"
+                Text="DEV: Simulate Off-Route Reroute"
+                IsVisible="False"
+                Padding="14,10"
+                BackgroundColor="#CC7A1F1F"
+                TextColor="White"
+                FontAttributes="Bold"
+                Clicked="OnDeveloperRerouteTestClicked" />
+        </VerticalStackLayout>
+    </Grid>
 </ContentPage>
