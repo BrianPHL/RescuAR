@@ -10,6 +10,7 @@ using RescuAR.MAUI.Services.Location;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Reports;
 using RescuAR.App.Services.AreaStatus;
+using RescuAR.App.Services.Flood;
 using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -55,6 +56,10 @@ namespace RescuAR.App.Views.Camera
         private const string EmergencyAlertLogTag =
             "RescuAR-AlertOverlay";
 
+        private const string FloodDepthLogTag =
+            "RescuAR-FloodDepth";
+
+
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
         private readonly MLDARIntegrationService _mldArIntegrationService;
@@ -66,6 +71,7 @@ namespace RescuAR.App.Views.Camera
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
+        private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
 
         /*
          * GPS and PDR can both update the same monotonic route progress state.
@@ -92,6 +98,12 @@ namespace RescuAR.App.Views.Camera
         private CancellationTokenSource? emergencyAdvisoryAutoStartCancellation;
 
         private bool emergencyGuidanceStartInProgress;
+
+        private FloodDepthVisualizationService.FloodVisualizationSnapshot
+            currentFloodVisualization =
+                FloodDepthVisualizationService.FloodVisualizationSnapshot.Unavailable;
+
+        private int developerFloodDepthSequenceIndex;
 
         private const int HighSeverityEmergencyAutoStartSeconds =
             5;
@@ -162,6 +174,26 @@ namespace RescuAR.App.Views.Camera
 
         private const double DeveloperSafeZoneTargetAheadMeters =
             20.0;
+
+        /*
+         * STAGE 7 DEVELOPER FLOOD-DEPTH VISUALIZATION
+         *
+         * The production advisory field `water_level` is a river gauge value,
+         * not local street depth. This temporary harness renders explicit
+         * synthetic LOCAL depth values so the camera UI can be validated
+         * without misrepresenting the live advisory data.
+         */
+        private const bool EnableDeveloperFloodDepthValidation =
+            true;
+
+        private static readonly double?[] DeveloperFloodDepthSequenceMeters =
+        {
+            0.30,
+            0.60,
+            1.00,
+            1.50,
+            null
+        };
 
         private const double DeveloperSimulatedCrossTrackMeters =
             50.0;
@@ -362,6 +394,9 @@ namespace RescuAR.App.Views.Camera
             developerSafeZoneTestButton.IsVisible =
                 EnableDeveloperSafeZoneValidation;
 
+            developerFloodDepthTestButton.IsVisible =
+                EnableDeveloperFloodDepthValidation;
+
             this.evergineApplication =
                 new MyApplication();
 
@@ -402,6 +437,9 @@ namespace RescuAR.App.Views.Camera
 
             _safeZoneConfirmationService =
                 new SafeZoneConfirmationService();
+
+            _floodDepthVisualizationService =
+                new FloodDepthVisualizationService();
 
             _pdrService.StepDetected +=
                 OnPdrStepDetected;
@@ -446,6 +484,13 @@ namespace RescuAR.App.Views.Camera
 
             SubscribeDestinationChanged();
             SubscribeEmergencyAdvisories();
+
+            if (currentFloodVisualization.IsAvailable)
+            {
+                ApplyFloodVisualization(
+                    currentFloodVisualization,
+                    "Camera tab re-entered");
+            }
 
             _headingAlignmentService.Start();
 
@@ -492,6 +537,10 @@ namespace RescuAR.App.Views.Camera
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
+
+            SetFloodVisualizationVisibility(
+                false,
+                "Camera tab exited; retaining last flood context for re-entry");
 
             if (diagnosticTimer.IsRunning)
             {
@@ -2756,6 +2805,9 @@ namespace RescuAR.App.Views.Camera
                 "safe zone confirmed",
                 restoreTurnGuidance: false);
 
+            ClearFloodVisualization(
+                "safe zone confirmed");
+
             StopRouteProgress(
                 "safe-zone arrival confirmed");
 
@@ -3043,6 +3095,230 @@ namespace RescuAR.App.Views.Camera
             return coordinate.IsValid;
         }
 
+        private void ApplyFloodVisualization(
+            FloodDepthVisualizationService.FloodVisualizationSnapshot snapshot,
+            string reason)
+        {
+            if (!snapshot.IsAvailable)
+            {
+                ClearFloodVisualization(reason);
+                return;
+            }
+
+            currentFloodVisualization =
+                snapshot;
+
+            /*
+             * Stage 7B: only an explicitly LOCAL flood depth is allowed to
+             * become world-space water geometry. River gauge levels and generic
+             * advisories remain informational because they do not describe the
+             * water depth at the phone.
+             *
+             * ARFloodDepthBridge crosses into the Evergine draw thread. The
+             * renderer then uses the existing frame-coherent ARCore ground
+             * anchor and meter scale; the MAUI layer no longer fakes water
+             * height using screen pixels.
+             */
+            bool hasLocalArDepth =
+                snapshot.Mode ==
+                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
+                snapshot.LocalDepthMeters.HasValue &&
+                double.IsFinite(
+                    snapshot.LocalDepthMeters.Value) &&
+                snapshot.LocalDepthMeters.Value >
+                    0.0;
+
+            if (hasLocalArDepth)
+            {
+                ARFloodDepthBridge.PublishLocalDepth(
+                    snapshot.LocalDepthMeters!.Value,
+                    snapshot.SourceText);
+            }
+            else
+            {
+                ARFloodDepthBridge.Clear(
+                    $"{snapshot.Mode} has no trusted local street-depth value");
+            }
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    floodVisualizationTitleLabel.Text =
+                        snapshot.Title;
+
+                    floodVisualizationPrimaryLabel.Text =
+                        snapshot.PrimaryText;
+
+                    floodVisualizationSecondaryLabel.Text =
+                        snapshot.SecondaryText;
+
+                    floodVisualizationSourceLabel.Text =
+                        hasLocalArDepth
+                            ? snapshot.SourceText +
+                              " • AR ground-relative visualization"
+                            : snapshot.SourceText;
+
+                    /*
+                     * Only the compact information card remains in MAUI. The
+                     * actual flood body is rendered in Evergine AR space.
+                     */
+                    floodVisualizationLayer.IsVisible =
+                        pageIsVisible &&
+                        !safeZoneConfirmed;
+                });
+
+#if ANDROID
+            string localDepthText =
+                snapshot.LocalDepthMeters.HasValue
+                    ? $"{snapshot.LocalDepthMeters.Value:F2}m"
+                    : "<none>";
+
+            string riverLevelText =
+                snapshot.ReportedRiverLevelMeters.HasValue
+                    ? $"{snapshot.ReportedRiverLevelMeters.Value:F1}m"
+                    : "<none>";
+
+            Log.Info(
+                FloodDepthLogTag,
+                "FLOOD VISUALIZATION APPLIED: " +
+                $"mode={snapshot.Mode}, " +
+                $"localDepth={localDepthText}, " +
+                $"reportedRiverLevel={riverLevelText}, " +
+                $"arSpaceWater={hasLocalArDepth}, " +
+                $"reason='{reason}'.");
+#endif
+        }
+
+        private void SetFloodVisualizationVisibility(
+            bool visible,
+            string reason)
+        {
+            bool hasLocalArDepth =
+                currentFloodVisualization.IsAvailable &&
+                currentFloodVisualization.Mode ==
+                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
+                currentFloodVisualization.LocalDepthMeters.HasValue &&
+                currentFloodVisualization.LocalDepthMeters.Value >
+                    0.0;
+
+            if (!visible)
+            {
+                ARFloodDepthBridge.Clear(
+                    reason);
+            }
+            else if (hasLocalArDepth)
+            {
+                ARFloodDepthBridge.PublishLocalDepth(
+                    currentFloodVisualization.LocalDepthMeters!.Value,
+                    currentFloodVisualization.SourceText);
+            }
+
+            Dispatcher.Dispatch(
+                () =>
+                    floodVisualizationLayer.IsVisible =
+                        visible &&
+                        currentFloodVisualization.IsAvailable &&
+                        pageIsVisible &&
+                        !safeZoneConfirmed);
+
+#if ANDROID
+            Log.Debug(
+                FloodDepthLogTag,
+                $"Flood visualization visibility={visible}; " +
+                $"arSpaceWater={(visible && hasLocalArDepth)}; " +
+                $"reason='{reason}'.");
+#endif
+        }
+
+        private void ClearFloodVisualization(
+            string reason)
+        {
+            bool wasAvailable =
+                currentFloodVisualization.IsAvailable;
+
+            currentFloodVisualization =
+                FloodDepthVisualizationService.FloodVisualizationSnapshot.Unavailable;
+
+            ARFloodDepthBridge.Clear(
+                reason);
+
+            Dispatcher.Dispatch(
+                () =>
+                    floodVisualizationLayer.IsVisible =
+                        false);
+
+#if ANDROID
+            if (wasAvailable)
+            {
+                Log.Debug(
+                    FloodDepthLogTag,
+                    $"FLOOD VISUALIZATION CLEARED: {reason}.");
+            }
+#endif
+        }
+
+        private void OnDeveloperFloodDepthTestClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (!EnableDeveloperFloodDepthValidation)
+            {
+                return;
+            }
+
+            double? nextDepth =
+                DeveloperFloodDepthSequenceMeters[
+                    developerFloodDepthSequenceIndex];
+
+            developerFloodDepthSequenceIndex =
+                (developerFloodDepthSequenceIndex + 1) %
+                DeveloperFloodDepthSequenceMeters.Length;
+
+            if (!nextDepth.HasValue)
+            {
+                ClearFloodVisualization(
+                    "developer flood-depth validation cycled OFF");
+
+                developerFloodDepthTestButton.Text =
+                    "DEV: AR Flood Depth 0.30 m";
+
+#if ANDROID
+                Log.Info(
+                    FloodDepthLogTag,
+                    "[DEV FLOOD] visualization OFF.");
+#endif
+                return;
+            }
+
+            FloodDepthVisualizationService.FloodVisualizationSnapshot snapshot =
+                _floodDepthVisualizationService.FromLocalDepth(
+                    nextDepth.Value,
+                    "DEV synthetic local depth",
+                    "Camera validation");
+
+            ApplyFloodVisualization(
+                snapshot,
+                "developer local-depth validation");
+
+            double? followingDepth =
+                DeveloperFloodDepthSequenceMeters[
+                    developerFloodDepthSequenceIndex];
+
+            developerFloodDepthTestButton.Text =
+                followingDepth.HasValue
+                    ? $"DEV: AR Flood Depth {followingDepth.Value:F2} m"
+                    : "DEV: AR Flood Depth OFF";
+
+#if ANDROID
+            Log.Info(
+                FloodDepthLogTag,
+                "[DEV FLOOD] AR-SPACE LOCAL DEPTH VISUALIZED: " +
+                $"depth={nextDepth.Value:F2}m, " +
+                $"groundRelative=True, " +
+                $"next='{developerFloodDepthTestButton.Text}'.");
+#endif
+        }
+
         private void SubscribeEmergencyAdvisories()
         {
             if (emergencyAdvisoryEventSubscribed)
@@ -3097,6 +3373,17 @@ namespace RescuAR.App.Views.Camera
                 safeZoneConfirmed)
             {
                 return;
+            }
+
+            FloodDepthVisualizationService.FloodVisualizationSnapshot floodSnapshot =
+                _floodDepthVisualizationService.FromAdvisory(
+                    advisory);
+
+            if (floodSnapshot.IsAvailable)
+            {
+                ApplyFloodVisualization(
+                    floodSnapshot,
+                    "new verified flood advisory");
             }
 
             ShowEmergencyAdvisoryOverlay(

@@ -73,6 +73,30 @@ namespace RescuAR
                 routeEntity);
 
             /*
+             * Stage 7B - AR-space Flood Depth Visualization
+             *
+             * Flood depth uses its own Evergine hierarchy and does not depend
+             * on navigation-route geometry. The transparent water volume uses
+             * Evergine's AlphaDoubleSided render layer so the live AR camera
+             * remains visible through the simulated water and the surface can
+             * be seen from either side.
+             */
+            AssetsService assetsService =
+                Application.Current.Container.Resolve<AssetsService>();
+
+            RenderLayerDescription alphaDoubleSidedLayer =
+                assetsService.Load<RenderLayerDescription>(
+                    EvergineContent.RenderLayers.AlphaDoubleSided);
+
+            Entity floodDepthEntity =
+                ARFloodDepthRenderer.Create(
+                    capsuleMaterialComponent.Material,
+                    alphaDoubleSidedLayer);
+
+            this.Managers.EntityManager.Add(
+                floodDepthEntity);
+
+            /*
              * Initialize the AR spatial renderer directly from the loaded
              * scene entities. MyApplication.DrawFrame() applies the newest
              * coherent ARCore snapshot immediately before rendering.
@@ -80,7 +104,8 @@ namespace RescuAR
             ARCameraSpatialController.Initialize(
                 cameraEntity,
                 capsuleEntity,
-                routeEntity);
+                routeEntity,
+                floodDepthEntity);
         }
     }
 }

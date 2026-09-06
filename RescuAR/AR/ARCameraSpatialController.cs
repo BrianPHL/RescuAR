@@ -28,6 +28,17 @@ public static class ARCameraSpatialController
     private static Entity? routeEntity;
     private static Transform3D? routeTransform;
 
+    private static Entity? floodDepthEntity;
+    private static Transform3D? floodDepthTransform;
+
+    /*
+     * ArCoreService publishes AnchorSnapshot.PositionY as the diagnostic
+     * capsule center, 0.25 m above the actual detected floor plane. Route and
+     * flood rendering therefore convert that published Y back to ground Y.
+     */
+    private const float PublishedAnchorCenterOffsetFromGroundMeters =
+        0.25f;
+
     /*
      * ArCoreService publishes the diagnostic capsule CENTER at
      * groundAnchorY + 0.25 m. The ribbon center should sit 0.015 m above the
@@ -73,10 +84,14 @@ public static class ARCameraSpatialController
     private static bool? lastLoggedRouteGeometry;
     private static bool? lastLoggedRouteVisible;
 
+    private static bool? lastLoggedFloodGeometry;
+    private static bool? lastLoggedFloodVisible;
+
     public static void Initialize(
         Entity cameraEntity,
         Entity capsuleEntity,
-        Entity arRouteEntity)
+        Entity arRouteEntity,
+        Entity arFloodDepthEntity)
     {
         ArgumentNullException.ThrowIfNull(
             cameraEntity);
@@ -86,6 +101,9 @@ public static class ARCameraSpatialController
 
         ArgumentNullException.ThrowIfNull(
             arRouteEntity);
+
+        ArgumentNullException.ThrowIfNull(
+            arFloodDepthEntity);
 
         Transform3D? resolvedCameraTransform =
             cameraEntity.FindComponent<Transform3D>();
@@ -98,6 +116,9 @@ public static class ARCameraSpatialController
 
         Transform3D? resolvedRouteTransform =
             arRouteEntity.FindComponent<Transform3D>();
+
+        Transform3D? resolvedFloodDepthTransform =
+            arFloodDepthEntity.FindComponent<Transform3D>();
 
         if (resolvedCameraTransform is null)
         {
@@ -123,6 +144,12 @@ public static class ARCameraSpatialController
                 "AR route root does not contain Transform3D.");
         }
 
+        if (resolvedFloodDepthTransform is null)
+        {
+            throw new InvalidOperationException(
+                "AR flood-depth root does not contain Transform3D.");
+        }
+
         resolvedCameraComponent.NearPlane =
             0.1f;
 
@@ -136,6 +163,9 @@ public static class ARCameraSpatialController
             false;
 
         arRouteEntity.IsEnabled =
+            false;
+
+        arFloodDepthEntity.IsEnabled =
             false;
 
         lock (sync)
@@ -157,6 +187,12 @@ public static class ARCameraSpatialController
 
             routeTransform =
                 resolvedRouteTransform;
+
+            floodDepthEntity =
+                arFloodDepthEntity;
+
+            floodDepthTransform =
+                resolvedFloodDepthTransform;
 
             appliedVersion =
                 -1;
@@ -186,6 +222,12 @@ public static class ARCameraSpatialController
                 null;
 
             lastLoggedRouteVisible =
+                null;
+
+            lastLoggedFloodGeometry =
+                null;
+
+            lastLoggedFloodVisible =
                 null;
 
             initialized =
@@ -238,6 +280,9 @@ public static class ARCameraSpatialController
         Entity? route;
         Transform3D? routeRootTransform;
 
+        Entity? floodDepthRoot;
+        Transform3D? floodDepthRootTransform;
+
         lock (sync)
         {
             if (!initialized)
@@ -262,6 +307,12 @@ public static class ARCameraSpatialController
 
             routeRootTransform =
                 routeTransform;
+
+            floodDepthRoot =
+                floodDepthEntity;
+
+            floodDepthRootTransform =
+                floodDepthTransform;
         }
 
         if (camera is null ||
@@ -269,10 +320,21 @@ public static class ARCameraSpatialController
             capsule is null ||
             capsuleTransform is null ||
             route is null ||
-            routeRootTransform is null)
+            routeRootTransform is null ||
+            floodDepthRoot is null ||
+            floodDepthRootTransform is null)
         {
             return;
         }
+
+        /*
+         * Route responses and flood-depth updates are independent from ARCore
+         * spatial-frame versions. Process both bridges every draw before any
+         * spatial early-return.
+         */
+        bool hasFloodDepthGeometry =
+            ARFloodDepthRenderer.ProcessDrawThreadWork(
+                floodDepthRoot);
 
         /*
          * Route responses are independent from ARCore spatial-frame versions.
@@ -294,6 +356,51 @@ public static class ARCameraSpatialController
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
+
+        /*
+         * FLOOD DEPTH AR SPACE
+         * --------------------
+         * Flood depth is intentionally independent from navigation-route
+         * placement. It belongs to the Flood Depth Visualization sub-tab and
+         * is rooted directly on the current detected ARCore ground plane.
+         *
+         * AnchorSnapshot.PositionY contains the diagnostic capsule-center
+         * offset (+0.25 m), so subtract that offset to recover the actual floor
+         * height. ARFloodDepthRenderer then expresses the requested local water
+         * depth upward from local Y=0 in real ARCore meters.
+         *
+         * X/Z deliberately follow the CURRENT anchor pose from the SAME
+         * frame-coherent snapshot as the Evergine camera. Unlike the route, no
+         * route-version root lock is appropriate here: this is local physical
+         * scene content attached to the ARCore anchor itself.
+         */
+        if (hasFloodDepthGeometry &&
+            trackingValid &&
+            anchor.IsAvailable)
+        {
+            floodDepthRootTransform.Position =
+                new Vector3(
+                    anchor.PositionX,
+                    anchor.PositionY -
+                        PublishedAnchorCenterOffsetFromGroundMeters,
+                    anchor.PositionZ);
+
+            floodDepthRoot.IsEnabled =
+                true;
+        }
+        else
+        {
+            floodDepthRoot.IsEnabled =
+                false;
+        }
+
+        LogFloodDepthStateIfChanged(
+            trackingValid,
+            anchor.IsAvailable,
+            hasFloodDepthGeometry,
+            floodDepthRoot.IsEnabled,
+            frame.Version,
+            floodDepthRootTransform.Position.Y);
 
         /*
          * A route bridge Clear() and every usable Publish() increment the route
@@ -568,6 +675,47 @@ public static class ARCameraSpatialController
             camera,
             capsule,
             capsuleTransform);
+    }
+
+    private static void LogFloodDepthStateIfChanged(
+        bool trackingValid,
+        bool anchorAvailable,
+        bool hasFloodGeometry,
+        bool floodVisible,
+        long spatialVersion,
+        float groundWorldY)
+    {
+        bool changed =
+            lastLoggedTrackingValid !=
+                trackingValid ||
+            lastLoggedAnchorAvailable !=
+                anchorAvailable ||
+            lastLoggedFloodGeometry !=
+                hasFloodGeometry ||
+            lastLoggedFloodVisible !=
+                floodVisible;
+
+        if (!changed)
+        {
+            return;
+        }
+
+        lastLoggedFloodGeometry =
+            hasFloodGeometry;
+
+        lastLoggedFloodVisible =
+            floodVisible;
+
+        AndroidLog.Debug(
+            "RescuAR-FloodDepth",
+            "AR flood-depth visibility state: " +
+            $"spatialVersion={spatialVersion}, " +
+            $"tracking={trackingValid}, " +
+            $"anchor={anchorAvailable}, " +
+            $"geometry={hasFloodGeometry}, " +
+            $"visible={floodVisible}, " +
+            $"groundWorldY={groundWorldY:F2} m, " +
+            $"depth={ARFloodDepthRenderer.AppliedDepthMeters:F2} m.");
     }
 
     private static void LogRouteStateIfChanged(

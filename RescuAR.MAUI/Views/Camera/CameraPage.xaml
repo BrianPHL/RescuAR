@@ -54,6 +54,93 @@
         </Border>
 
         <!--
+            Stage 7B Flood Depth Visualization.
+
+            The actual water body is now rendered in Evergine AR space using
+            the frame-coherent ARCore ground anchor and meter scale. This MAUI
+            layer intentionally contains ONLY the compact information card.
+
+            River-gauge values remain informational and never become a fake
+            local water depth. Only an explicitly local depth can create the
+            world-space water volume.
+        -->
+        <Grid
+            x:Name="floodVisualizationLayer"
+            IsVisible="False"
+            InputTransparent="True"
+            ZIndex="6">
+
+            <Border
+                x:Name="floodVisualizationBanner"
+                Margin="14,84,14,0"
+                Padding="12,10"
+                VerticalOptions="Start"
+                BackgroundColor="#E8E0F2FE"
+                Stroke="#7DD3FC"
+                StrokeThickness="1">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="10" />
+                </Border.StrokeShape>
+
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <Grid
+                        WidthRequest="34"
+                        HeightRequest="34"
+                        VerticalOptions="Center">
+                        <Path
+                            Data="M17,2 L27,12 L22,12 L22,21 L12,21 L12,12 L7,12 Z"
+                            Fill="#0284C7"
+                            Aspect="Uniform" />
+                        <Path
+                            Data="M2,25 C7,21 12,21 17,25 C22,29 27,29 32,25"
+                            Stroke="#0284C7"
+                            StrokeThickness="3"
+                            Fill="Transparent"
+                            Aspect="Uniform" />
+                        <Path
+                            Data="M2,31 C7,27 12,27 17,31 C22,35 27,35 32,31"
+                            Stroke="#0284C7"
+                            StrokeThickness="3"
+                            Fill="Transparent"
+                            Aspect="Uniform" />
+                    </Grid>
+
+                    <VerticalStackLayout
+                        Grid.Column="1"
+                        Spacing="1">
+                        <Label
+                            x:Name="floodVisualizationTitleLabel"
+                            Text="Flood depth visualization"
+                            TextColor="#075985"
+                            FontSize="13"
+                            FontAttributes="Bold" />
+
+                        <Label
+                            x:Name="floodVisualizationPrimaryLabel"
+                            Text="Estimated local depth: 0.60 m"
+                            TextColor="#0C4A6E"
+                            FontSize="16"
+                            FontAttributes="Bold" />
+
+                        <Label
+                            x:Name="floodVisualizationSecondaryLabel"
+                            Text="Water surface is rendered at the measured height above the detected ARCore ground plane."
+                            TextColor="#075985"
+                            FontSize="11"
+                            LineBreakMode="WordWrap" />
+
+                        <Label
+                            x:Name="floodVisualizationSourceLabel"
+                            Text="DEV synthetic local depth • AR ground-relative visualization"
+                            TextColor="#0369A1"
+                            FontSize="10"
+                            Margin="0,2,0,0" />
+                    </VerticalStackLayout>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!--
             Stage 6 Emergency Alert Overlay.
 
             The alert presentation intentionally follows the approved Camera
@@ -323,6 +410,16 @@
             Spacing="8"
             HorizontalOptions="Center"
             VerticalOptions="End">
+
+            <Button
+                x:Name="developerFloodDepthTestButton"
+                Text="DEV: AR Flood Depth 0.60 m"
+                IsVisible="False"
+                Padding="14,10"
+                BackgroundColor="#CC0284C7"
+                TextColor="White"
+                FontAttributes="Bold"
+                Clicked="OnDeveloperFloodDepthTestClicked" />
 
             <Button
                 x:Name="developerSafeZoneTestButton"
