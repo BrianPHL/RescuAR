@@ -54,9 +54,80 @@
         </Border>
 
         <!--
-            TEMPORARY Milestone 3 developer validation controls.
-            Each control is independently hidden by its corresponding
-            CameraPage developer switch.
+            Stage 5 Safe Zone Confirmation.
+            Full-screen completion state aligned with the approved green
+            safe-zone UI direction. It is intentionally hidden until repeated
+            GPS + route-progress checks confirm arrival.
+        -->
+        <Grid
+            x:Name="safeZoneConfirmationOverlay"
+            IsVisible="False"
+            ZIndex="100"
+            BackgroundColor="#F20C6B43"
+            Padding="28">
+
+            <VerticalStackLayout
+                Spacing="16"
+                HorizontalOptions="Center"
+                VerticalOptions="Center"
+                MaximumWidthRequest="420">
+
+                <Border
+                    WidthRequest="96"
+                    HeightRequest="96"
+                    HorizontalOptions="Center"
+                    BackgroundColor="#26FFFFFF"
+                    Stroke="#B3FFFFFF"
+                    StrokeThickness="2">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="48" />
+                    </Border.StrokeShape>
+                    <Label
+                        Text="✓"
+                        TextColor="White"
+                        FontSize="58"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        VerticalTextAlignment="Center" />
+                </Border>
+
+                <Label
+                    Text="You've Reached a Safe Zone"
+                    TextColor="White"
+                    FontSize="30"
+                    FontAttributes="Bold"
+                    HorizontalTextAlignment="Center" />
+
+                <Label
+                    x:Name="safeZoneDestinationLabel"
+                    Text="Evacuation Center"
+                    TextColor="White"
+                    FontSize="18"
+                    FontAttributes="Bold"
+                    HorizontalTextAlignment="Center" />
+
+                <Label
+                    x:Name="safeZoneDetailsLabel"
+                    Text="Arrival confirmed."
+                    TextColor="#E6FFFFFF"
+                    FontSize="14"
+                    HorizontalTextAlignment="Center" />
+
+                <Button
+                    Text="Finish Navigation"
+                    Margin="0,12,0,0"
+                    Padding="18,12"
+                    BackgroundColor="White"
+                    TextColor="#0C6B43"
+                    FontAttributes="Bold"
+                    Clicked="OnFinishNavigationClicked" />
+            </VerticalStackLayout>
+        </Grid>
+
+        <!--
+            TEMPORARY developer validation controls.
+            Stage 5 safe-zone validation is enabled for the current test build;
+            the older Milestone 3 controls remain disabled.
         -->
         <VerticalStackLayout
             ZIndex="20"
@@ -64,6 +135,16 @@
             Spacing="8"
             HorizontalOptions="Center"
             VerticalOptions="End">
+
+            <Button
+                x:Name="developerSafeZoneTestButton"
+                Text="DEV: Arm Safe Zone Test"
+                IsVisible="False"
+                Padding="14,10"
+                BackgroundColor="#CC0C6B43"
+                TextColor="White"
+                FontAttributes="Bold"
+                Clicked="OnDeveloperSafeZoneTestClicked" />
 
             <Button
                 x:Name="developerTurnTestButton"

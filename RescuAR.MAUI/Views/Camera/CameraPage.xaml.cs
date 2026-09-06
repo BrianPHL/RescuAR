@@ -46,6 +46,9 @@ namespace RescuAR.App.Views.Camera
         private const string TurnLogTag =
             "RescuAR-Turn";
 
+        private const string SafeZoneLogTag =
+            "RescuAR-SafeZone";
+
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
         private readonly MLDARIntegrationService _mldArIntegrationService;
@@ -56,6 +59,7 @@ namespace RescuAR.App.Views.Camera
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
+        private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
 
         /*
          * GPS and PDR can both update the same monotonic route progress state.
@@ -123,6 +127,24 @@ namespace RescuAR.App.Views.Camera
          */
         private const bool EnableDeveloperTurnSimulation =
             false;
+
+        /*
+         * STAGE 5 DEVELOPER SAFE-ZONE VALIDATION
+         *
+         * This does NOT change the production 30 m arrival radius or the real
+         * evacuation-center destination used for routing. When armed, only
+         * SafeZoneConfirmationService evaluation is temporarily pointed at a
+         * test coordinate 42 m ahead along the CURRENT active route. Because
+         * The DEV target is intentionally placed only 20 m ahead, which starts
+         * inside the unchanged 30 m production arrival radius. This controlled
+         * validation is for the real 3-distinct-GPS-fix confirmation path and UI,
+         * not for natural destination-distance validation. Disable after Stage 5 validation.
+         */
+        private const bool EnableDeveloperSafeZoneValidation =
+            true;
+
+        private const double DeveloperSafeZoneTargetAheadMeters =
+            20.0;
 
         private const double DeveloperSimulatedCrossTrackMeters =
             50.0;
@@ -208,6 +230,29 @@ namespace RescuAR.App.Views.Camera
 
         private int lastLoggedTurnDistanceBucket =
             -1;
+
+        /*
+         * STAGE 5 SAFE ZONE CONFIRMATION
+         *
+         * Arrival requires repeated good-quality GPS fixes that agree with
+         * both destination proximity and retained route progress. PDR alone
+         * never completes navigation.
+         */
+        private SafeZoneConfirmationService.SafeZoneDecision
+            lastSafeZoneDecision =
+                SafeZoneConfirmationService.SafeZoneDecision.Unavailable;
+
+        private bool safeZoneConfirmed;
+
+        private int lastLoggedSafeZoneConfirmationCount =
+            -1;
+
+        private bool developerSafeZoneValidationArmed;
+
+        private GeoCoordinate? developerSafeZoneTargetCoordinate;
+
+        private double developerSafeZoneTargetProgressMeters =
+            double.NaN;
 
         private const int IndoorStationaryPollsBeforeSyntheticAdvance =
             3;
@@ -297,6 +342,9 @@ namespace RescuAR.App.Views.Camera
             developerTurnTestButton.IsVisible =
                 EnableDeveloperTurnSimulation;
 
+            developerSafeZoneTestButton.IsVisible =
+                EnableDeveloperSafeZoneValidation;
+
             this.evergineApplication =
                 new MyApplication();
 
@@ -334,6 +382,9 @@ namespace RescuAR.App.Views.Camera
 
             _turnGuidanceService =
                 new PedestrianTurnGuidanceService();
+
+            _safeZoneConfirmationService =
+                new SafeZoneConfirmationService();
 
             _pdrService.StepDetected +=
                 OnPdrStepDetected;
@@ -1291,6 +1342,9 @@ namespace RescuAR.App.Views.Camera
 
             ResetTurnGuidance();
 
+            ResetSafeZoneConfirmation(
+                "navigation destination changed");
+
             acceptedPdrStepCount =
                 0;
 
@@ -1322,6 +1376,16 @@ namespace RescuAR.App.Views.Camera
             if (!pageIsVisible ||
                 activeRoute is null)
             {
+                return;
+            }
+
+            if (safeZoneConfirmed)
+            {
+#if ANDROID
+                Log.Debug(
+                    SafeZoneLogTag,
+                    "Route-progress restart skipped because safe-zone arrival is already confirmed.");
+#endif
                 return;
             }
 
@@ -1448,6 +1512,15 @@ namespace RescuAR.App.Views.Camera
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    if (safeZoneConfirmed)
+                    {
+                        await Task.Delay(
+                            RouteProgressPollInterval,
+                            cancellationToken);
+
+                        continue;
+                    }
+
                     if (!pageIsVisible ||
                         !_arCoreService.IsInitialized ||
                         _arCoreService.IsSessionPaused)
@@ -1502,6 +1575,10 @@ namespace RescuAR.App.Views.Camera
 
                         RouteProgressTracker.RouteProgressUpdate?
                             turnGuidanceUpdate =
+                                null;
+
+                        SafeZoneConfirmationService.SafeZoneDecision?
+                            safeZoneDecision =
                                 null;
 
                         lock (routeProgressFusionSync)
@@ -1634,9 +1711,88 @@ namespace RescuAR.App.Views.Camera
                                         fusedGps,
                                         "GPS/FUSION");
                             }
+
+                            RouteProgressTracker.ProgressSnapshot afterGps =
+                                _routeProgressTracker.Current;
+
+                            if (activeDestinationCoordinate.HasValue &&
+                                afterGps.HasProgress)
+                            {
+                                GeoCoordinate safeZoneEvaluationCoordinate =
+                                    activeDestinationCoordinate.Value;
+
+                                double safeZoneEvaluationRemainingMeters =
+                                    afterGps.RemainingMeters;
+
+                                if (EnableDeveloperSafeZoneValidation &&
+                                    developerSafeZoneValidationArmed &&
+                                    developerSafeZoneTargetCoordinate.HasValue &&
+                                    double.IsFinite(
+                                        developerSafeZoneTargetProgressMeters))
+                                {
+                                    safeZoneEvaluationCoordinate =
+                                        developerSafeZoneTargetCoordinate.Value;
+
+                                    safeZoneEvaluationRemainingMeters =
+                                        Math.Max(
+                                            0.0,
+                                            developerSafeZoneTargetProgressMeters -
+                                            afterGps.CommittedProgressMeters);
+                                }
+
+                                SafeZoneConfirmationService.SafeZoneDecision decision =
+                                    _safeZoneConfirmationService.Evaluate(
+                                        reading.Coordinate,
+                                        safeZoneEvaluationCoordinate,
+                                        reading.AccuracyMeters,
+                                        safeZoneEvaluationRemainingMeters,
+                                        reading.Timestamp);
+
+                                safeZoneDecision =
+                                    decision;
+
+                                lastSafeZoneDecision =
+                                    decision;
+
+                                /*
+                                 * Arrival takes precedence over off-route
+                                 * rerouting. Evacuation centers can sit several
+                                 * meters away from the road centerline; once
+                                 * repeated destination-proximity checks begin,
+                                 * do not reroute the user away from the safe
+                                 * zone merely because the map match is noisy.
+                                 */
+                                if (decision.IsCandidate ||
+                                    decision.IsConfirmed)
+                                {
+                                    shouldStartDynamicReroute =
+                                        false;
+
+                                    _offRouteReroutePolicy.ResetConfirmation();
+
+                                    lastOffRouteCandidate =
+                                        false;
+
+                                    lastOffRouteConfirmationCount =
+                                        0;
+                                }
+                            }
                         }
 
-                        if (turnGuidanceUpdate.HasValue)
+                        if (safeZoneDecision.HasValue)
+                        {
+                            HandleSafeZoneDecision(
+                                safeZoneDecision.Value);
+                        }
+
+                        if (safeZoneConfirmed)
+                        {
+                            shouldStartDynamicReroute =
+                                false;
+                        }
+
+                        if (turnGuidanceUpdate.HasValue &&
+                            !safeZoneConfirmed)
                         {
                             UpdateTurnGuidance(
                                 route,
@@ -2175,7 +2331,8 @@ namespace RescuAR.App.Views.Camera
             string reason)
         {
 #if ANDROID
-            if (!pageIsVisible ||
+            if (safeZoneConfirmed ||
+                !pageIsVisible ||
                 !origin.IsValid ||
                 !activeDestinationCoordinate.HasValue)
             {
@@ -2204,7 +2361,8 @@ namespace RescuAR.App.Views.Camera
             string reason)
         {
 #if ANDROID
-            if (!pageIsVisible ||
+            if (safeZoneConfirmed ||
+                !pageIsVisible ||
                 !activeDestinationCoordinate.HasValue ||
                 routeRequestInProgress ||
                 dynamicRerouteInProgress)
@@ -2521,12 +2679,379 @@ namespace RescuAR.App.Views.Camera
                 });
         }
 
+        private void HandleSafeZoneDecision(
+            SafeZoneConfirmationService.SafeZoneDecision decision)
+        {
+#if ANDROID
+            if (decision.IsCandidate &&
+                decision.ConfirmationCount !=
+                    lastLoggedSafeZoneConfirmationCount)
+            {
+                Log.Info(
+                    SafeZoneLogTag,
+                    "ARRIVAL CANDIDATE: " +
+                    $"confirmation={decision.ConfirmationCount}/" +
+                    $"{decision.RequiredConfirmationCount}, " +
+                    $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
+                    $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                    $"accuracy=" +
+                    $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
+                    $"confirmed={decision.IsConfirmed}, " +
+                    $"reason='{decision.Reason}'");
+            }
+            else if (!decision.IsCandidate &&
+                     lastLoggedSafeZoneConfirmationCount >
+                         0 &&
+                     decision.ConfirmationCount ==
+                         0)
+            {
+                Log.Debug(
+                    SafeZoneLogTag,
+                    "Arrival confirmation sequence RESET: " +
+                    $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
+                    $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                    $"accuracy=" +
+                    $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
+                    $"reason='{decision.Reason}'");
+            }
+#endif
+
+            lastLoggedSafeZoneConfirmationCount =
+                decision.ConfirmationCount;
+
+            if (!decision.IsConfirmed ||
+                safeZoneConfirmed)
+            {
+                return;
+            }
+
+            safeZoneConfirmed =
+                true;
+
+            StopRouteProgress(
+                "safe-zone arrival confirmed");
+
+            ResetTurnGuidance();
+
+#if ANDROID
+            Log.Info(
+                SafeZoneLogTag,
+                "SAFE ZONE CONFIRMED: " +
+                $"destination='{activeDestinationName}', " +
+                $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
+                $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                $"accuracy=" +
+                $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
+                $"confirmations={decision.ConfirmationCount}/" +
+                $"{decision.RequiredConfirmationCount}.");
+#endif
+
+            string destinationName =
+                EnableDeveloperSafeZoneValidation &&
+                developerSafeZoneValidationArmed
+                    ? "DEV Safe Zone Test"
+                    : string.IsNullOrWhiteSpace(
+                        activeDestinationName)
+                        ? "Evacuation Center"
+                        : activeDestinationName;
+
+            string accuracyText =
+                decision.AccuracyMeters.HasValue
+                    ? $" GPS accuracy: {decision.AccuracyMeters.Value:F0} m."
+                    : string.Empty;
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    turnGuidancePanel.IsVisible =
+                        false;
+
+                    safeZoneDestinationLabel.Text =
+                        destinationName;
+
+                    safeZoneDetailsLabel.Text =
+                        $"Arrival confirmed about " +
+                        $"{decision.DistanceToDestinationMeters:F0} m from the destination." +
+                        accuracyText;
+
+                    safeZoneConfirmationOverlay.IsVisible =
+                        true;
+                });
+        }
+
+        private void ResetSafeZoneConfirmation(
+            string reason)
+        {
+            bool hadArrivalState =
+                safeZoneConfirmed ||
+                lastSafeZoneDecision.ConfirmationCount >
+                    0;
+
+            _safeZoneConfirmationService.Reset();
+
+            lastSafeZoneDecision =
+                SafeZoneConfirmationService.SafeZoneDecision.Unavailable;
+
+            safeZoneConfirmed =
+                false;
+
+            lastLoggedSafeZoneConfirmationCount =
+                -1;
+
+            developerSafeZoneValidationArmed =
+                false;
+
+            developerSafeZoneTargetCoordinate =
+                null;
+
+            developerSafeZoneTargetProgressMeters =
+                double.NaN;
+
+#if ANDROID
+            if (hadArrivalState)
+            {
+                Log.Debug(
+                    SafeZoneLogTag,
+                    $"Safe-zone confirmation state reset: {reason}.");
+            }
+#endif
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    safeZoneConfirmationOverlay.IsVisible =
+                        false;
+
+                    safeZoneDestinationLabel.Text =
+                        "Evacuation Center";
+
+                    safeZoneDetailsLabel.Text =
+                        "Arrival confirmed.";
+
+                    if (developerSafeZoneTestButton is not null)
+                    {
+                        developerSafeZoneTestButton.Text =
+                            "DEV: Arm Safe Zone Test";
+
+                        developerSafeZoneTestButton.IsEnabled =
+                            true;
+                    }
+                });
+        }
+
+        private void OnDeveloperSafeZoneTestClicked(
+            object? sender,
+            EventArgs e)
+        {
+#if ANDROID
+            if (!EnableDeveloperSafeZoneValidation ||
+                safeZoneConfirmed)
+            {
+                return;
+            }
+
+            RouteResult? route =
+                activeRoute;
+
+            RouteProgressTracker.ProgressSnapshot progress =
+                _routeProgressTracker.Current;
+
+            if (route is null ||
+                route.Points.Count < 2 ||
+                !progress.HasProgress)
+            {
+                Log.Warn(
+                    SafeZoneLogTag,
+                    "[DEV SAFE ZONE] Cannot arm yet. Wait until a route is active and GPS/PDR route progress is available.");
+
+                return;
+            }
+
+            double targetProgressMeters =
+                Math.Min(
+                    route.TotalDistanceMeters,
+                    progress.CommittedProgressMeters +
+                    DeveloperSafeZoneTargetAheadMeters);
+
+            if (targetProgressMeters -
+                    progress.CommittedProgressMeters <
+                DeveloperSafeZoneTargetAheadMeters *
+                    0.75)
+            {
+                Log.Warn(
+                    SafeZoneLogTag,
+                    "[DEV SAFE ZONE] Active route is too close to its real destination to place the requested test target ahead.");
+
+                return;
+            }
+
+            if (!TryGetRouteCoordinateAtProgress(
+                    route,
+                    targetProgressMeters,
+                    out GeoCoordinate targetCoordinate))
+            {
+                Log.Warn(
+                    SafeZoneLogTag,
+                    "[DEV SAFE ZONE] Could not interpolate the temporary target coordinate from the active route.");
+
+                return;
+            }
+
+            _safeZoneConfirmationService.Reset();
+
+            lastSafeZoneDecision =
+                SafeZoneConfirmationService.SafeZoneDecision.Unavailable;
+
+            lastLoggedSafeZoneConfirmationCount =
+                -1;
+
+            developerSafeZoneValidationArmed =
+                true;
+
+            developerSafeZoneTargetCoordinate =
+                targetCoordinate;
+
+            developerSafeZoneTargetProgressMeters =
+                targetProgressMeters;
+
+            developerSafeZoneTestButton.Text =
+                $"DEV Safe Zone Armed ({DeveloperSafeZoneTargetAheadMeters:F0} m target)";
+
+            developerSafeZoneTestButton.IsEnabled =
+                false;
+
+            Log.Warn(
+                SafeZoneLogTag,
+                "[DEV SAFE ZONE] ARMED: " +
+                $"currentProgress={progress.CommittedProgressMeters:F1} m, " +
+                $"targetCenterAhead={DeveloperSafeZoneTargetAheadMeters:F1} m, " +
+                $"targetProgress={targetProgressMeters:F1} m, " +
+                $"target=({targetCoordinate.Latitude:F7},{targetCoordinate.Longitude:F7}), " +
+                $"productionArrivalRadius={SafeZoneConfirmationService.ArrivalRadiusMeters:F1} m. " +
+                "The DEV target intentionally starts inside the production arrival radius. Stay near the arming point and wait for three DISTINCT qualifying GPS observations; production thresholds remain unchanged.");
+#endif
+        }
+
+        private static bool TryGetRouteCoordinateAtProgress(
+            RouteResult route,
+            double progressMeters,
+            out GeoCoordinate coordinate)
+        {
+            coordinate =
+                default;
+
+            if (route.Points.Count == 0 ||
+                !double.IsFinite(progressMeters))
+            {
+                return false;
+            }
+
+            IReadOnlyList<RoutePoint> points =
+                route.Points;
+
+            if (progressMeters <=
+                points[0].DistanceFromStartMeters)
+            {
+                coordinate =
+                    points[0].Coordinate;
+
+                return coordinate.IsValid;
+            }
+
+            for (int index = 1;
+                 index < points.Count;
+                 index++)
+            {
+                RoutePoint previous =
+                    points[index - 1];
+
+                RoutePoint current =
+                    points[index];
+
+                if (progressMeters >
+                    current.DistanceFromStartMeters)
+                {
+                    continue;
+                }
+
+                double segmentDistanceMeters =
+                    current.DistanceFromStartMeters -
+                    previous.DistanceFromStartMeters;
+
+                if (!double.IsFinite(segmentDistanceMeters) ||
+                    segmentDistanceMeters <= 0.001)
+                {
+                    coordinate =
+                        current.Coordinate;
+
+                    return coordinate.IsValid;
+                }
+
+                double fraction =
+                    Math.Clamp(
+                        (progressMeters -
+                         previous.DistanceFromStartMeters) /
+                        segmentDistanceMeters,
+                        0.0,
+                        1.0);
+
+                coordinate =
+                    new GeoCoordinate(
+                        previous.Coordinate.Latitude +
+                        ((current.Coordinate.Latitude -
+                          previous.Coordinate.Latitude) *
+                         fraction),
+                        previous.Coordinate.Longitude +
+                        ((current.Coordinate.Longitude -
+                          previous.Coordinate.Longitude) *
+                         fraction));
+
+                return coordinate.IsValid;
+            }
+
+            coordinate =
+                points[^1].Coordinate;
+
+            return coordinate.IsValid;
+        }
+
+        private async void OnFinishNavigationClicked(
+            object? sender,
+            EventArgs e)
+        {
+#if ANDROID
+            Log.Info(
+                SafeZoneLogTag,
+                "User finished safe-zone navigation. Clearing the active destination.");
+#endif
+
+            NavigationDestinationBridge.Clear();
+
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    await Shell.Current.GoToAsync(
+                        "//Home");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    SafeZoneLogTag,
+                    $"Navigation was cleared, but returning to Home failed: {exception.Message}");
+#endif
+            }
+        }
+
         private void OnPdrStepDetected(
             object? sender,
             PedestrianDeadReckoningService.PdrStepDetectedEventArgs e)
         {
 #if ANDROID
             if (!EnablePedestrianDeadReckoning ||
+                safeZoneConfirmed ||
                 !pageIsVisible ||
                 !_arCoreService.IsInitialized ||
                 _arCoreService.IsSessionPaused)
@@ -3763,6 +4288,16 @@ namespace RescuAR.App.Views.Camera
                 $"{(lastTurnGuidance.IsAvailable ? lastTurnGuidance.Instruction.ToString() : "<none>")}, " +
                 $"turnDistance=" +
                 $"{(lastTurnGuidance.IsAvailable && double.IsFinite(lastTurnGuidance.DistanceToTurnMeters) ? lastTurnGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")}m, " +
+                $"safeZoneCandidate={lastSafeZoneDecision.IsCandidate}, " +
+                $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +
+                $"{lastSafeZoneDecision.RequiredConfirmationCount}, " +
+                $"safeZoneConfirmed={safeZoneConfirmed}, " +
+                $"safeZoneDistance=" +
+                $"{(lastSafeZoneDecision.IsAvailable && double.IsFinite(lastSafeZoneDecision.DistanceToDestinationMeters) ? lastSafeZoneDecision.DistanceToDestinationMeters.ToString("F1") : "<none>")}m, " +
+                $"devSafeZoneValidation={EnableDeveloperSafeZoneValidation}, " +
+                $"devSafeZoneArmed={developerSafeZoneValidationArmed}, " +
+                $"devSafeZoneTargetProgress=" +
+                $"{(double.IsFinite(developerSafeZoneTargetProgressMeters) ? developerSafeZoneTargetProgressMeters.ToString("F1") : "<none>")}m, " +
                 $"progressActive={progress.HasProgress}, " +
                 $"progress={progress.CommittedProgressMeters:F1}m, " +
                 $"remaining={progress.RemainingMeters:F1}m, " +
