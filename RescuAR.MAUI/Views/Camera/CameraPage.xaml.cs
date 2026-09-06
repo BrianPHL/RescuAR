@@ -7,6 +7,9 @@ using RescuAR.AR;
 using RescuAR.MAUI.Services;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.MAUI.Services.Location;
+using RescuAR.App.Models;
+using RescuAR.App.Services.Reports;
+using RescuAR.App.Services.AreaStatus;
 using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -49,6 +52,9 @@ namespace RescuAR.App.Views.Camera
         private const string SafeZoneLogTag =
             "RescuAR-SafeZone";
 
+        private const string EmergencyAlertLogTag =
+            "RescuAR-AlertOverlay";
+
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
         private readonly MLDARIntegrationService _mldArIntegrationService;
@@ -77,7 +83,18 @@ namespace RescuAR.App.Views.Camera
 
         private bool routeRequestInProgress;
         private bool destinationEventSubscribed;
+        private bool emergencyAdvisoryEventSubscribed;
+        private bool emergencyAdvisoryVisible;
         private bool pageIsVisible;
+
+        private DisasterAdvisory? currentEmergencyAdvisory;
+
+        private CancellationTokenSource? emergencyAdvisoryAutoStartCancellation;
+
+        private bool emergencyGuidanceStartInProgress;
+
+        private const int HighSeverityEmergencyAutoStartSeconds =
+            5;
 
         private ArHeadingAlignmentService.HeadingAlignmentResult?
             lastHeadingAlignment;
@@ -134,8 +151,8 @@ namespace RescuAR.App.Views.Camera
          * This does NOT change the production 30 m arrival radius or the real
          * evacuation-center destination used for routing. When armed, only
          * SafeZoneConfirmationService evaluation is temporarily pointed at a
-         * test coordinate 42 m ahead along the CURRENT active route. Because
-         * The DEV target is intentionally placed only 20 m ahead, which starts
+         * test coordinate 20 m ahead along the CURRENT active route. The DEV
+         * target intentionally starts inside the unchanged 30 m arrival radius,
          * inside the unchanged 30 m production arrival radius. This controlled
          * validation is for the real 3-distinct-GPS-fix confirmation path and UI,
          * not for natural destination-distance validation. Disable after Stage 5 validation.
@@ -428,6 +445,7 @@ namespace RescuAR.App.Views.Camera
 #endif
 
             SubscribeDestinationChanged();
+            SubscribeEmergencyAdvisories();
 
             _headingAlignmentService.Start();
 
@@ -470,6 +488,10 @@ namespace RescuAR.App.Views.Camera
                 null;
 
             UnsubscribeDestinationChanged();
+            UnsubscribeEmergencyAdvisories();
+            HideEmergencyAdvisoryOverlay(
+                "Camera tab exited",
+                restoreTurnGuidance: false);
 
             if (diagnosticTimer.IsRunning)
             {
@@ -2626,7 +2648,9 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
-                    if (!guidance.IsAvailable)
+                    if (!guidance.IsAvailable ||
+                        emergencyAdvisoryVisible ||
+                        safeZoneConfirmed)
                     {
                         turnGuidancePanel.IsVisible =
                             false;
@@ -2727,6 +2751,10 @@ namespace RescuAR.App.Views.Camera
 
             safeZoneConfirmed =
                 true;
+
+            HideEmergencyAdvisoryOverlay(
+                "safe zone confirmed",
+                restoreTurnGuidance: false);
 
             StopRouteProgress(
                 "safe-zone arrival confirmed");
@@ -3013,6 +3041,1058 @@ namespace RescuAR.App.Views.Camera
                 points[^1].Coordinate;
 
             return coordinate.IsValid;
+        }
+
+        private void SubscribeEmergencyAdvisories()
+        {
+            if (emergencyAdvisoryEventSubscribed)
+            {
+                return;
+            }
+
+            RealtimeAdvisoryManager.OnNewAdvisoryPushed +=
+                OnNewEmergencyAdvisoryPushed;
+
+            emergencyAdvisoryEventSubscribed =
+                true;
+
+            /*
+             * CameraPage must not depend on Home having been instantiated.
+             * The existing manager is idempotent and starts only one timer.
+             */
+            RealtimeAdvisoryManager.StartRealtimeListener();
+
+#if ANDROID
+            Log.Debug(
+                EmergencyAlertLogTag,
+                "Camera subscribed to the existing real-time emergency advisory source.");
+#endif
+        }
+
+        private void UnsubscribeEmergencyAdvisories()
+        {
+            if (!emergencyAdvisoryEventSubscribed)
+            {
+                return;
+            }
+
+            RealtimeAdvisoryManager.OnNewAdvisoryPushed -=
+                OnNewEmergencyAdvisoryPushed;
+
+            emergencyAdvisoryEventSubscribed =
+                false;
+
+#if ANDROID
+            Log.Debug(
+                EmergencyAlertLogTag,
+                "Camera unsubscribed from real-time emergency advisories.");
+#endif
+        }
+
+        private void OnNewEmergencyAdvisoryPushed(
+            DisasterAdvisory advisory)
+        {
+            if (advisory is null ||
+                !pageIsVisible ||
+                safeZoneConfirmed)
+            {
+                return;
+            }
+
+            ShowEmergencyAdvisoryOverlay(
+                advisory);
+        }
+
+        private void ShowEmergencyAdvisoryOverlay(
+            DisasterAdvisory advisory)
+        {
+            CancelEmergencyAdvisoryAutoStart(
+                "replacing/refreshing emergency advisory");
+
+            currentEmergencyAdvisory =
+                advisory;
+
+            emergencyAdvisoryVisible =
+                true;
+
+            bool isHighSeverity =
+                IsHighSeverityAdvisory(
+                    advisory);
+
+            string categoryLabel =
+                GetEmergencyCategoryLabel(
+                    advisory);
+
+            string severityLabel =
+                GetEmergencySeverityLabel(
+                    advisory);
+
+            string descriptor =
+                $"{categoryLabel} Advisory - {severityLabel} Severity";
+
+            string heroTitle =
+                GetEmergencyHeroTitle(
+                    advisory);
+
+            string bodyMessage =
+                GetEmergencyBodyMessage(
+                    advisory);
+
+            bool isFlood =
+                IsFloodAdvisory(
+                    advisory);
+
+            bool isEarthquake =
+                IsEarthquakeAdvisory(
+                    advisory);
+
+#if ANDROID
+            Log.Info(
+                EmergencyAlertLogTag,
+                "CAMERA EMERGENCY ADVISORY SHOWN: " +
+                $"id='{advisory.Id}', " +
+                $"level='{advisory.DisplayAlertLevel}', " +
+                $"category='{advisory.Category}', " +
+                $"title='{advisory.Title}', " +
+                $"highSeverity={isHighSeverity}, " +
+                $"autoStartSeconds=" +
+                $"{(isHighSeverity ? HighSeverityEmergencyAutoStartSeconds : 0)}.");
+#endif
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    if (!pageIsVisible ||
+                        safeZoneConfirmed ||
+                        !IsCurrentEmergencyAdvisory(
+                            advisory))
+                    {
+                        emergencyAdvisoryVisible =
+                            false;
+
+                        return;
+                    }
+
+                    emergencyAdvisoryTopSeverityLabel.Text =
+                        descriptor;
+
+                    emergencyAdvisoryBodySeverityLabel.Text =
+                        descriptor;
+
+                    emergencyAdvisoryHeroTitleLabel.Text =
+                        heroTitle;
+
+                    emergencyAdvisoryBodyMessageLabel.Text =
+                        bodyMessage;
+
+                    ApplyEmergencySeverityTheme(
+                        advisory);
+
+                    emergencyFloodIcon.IsVisible =
+                        isFlood;
+
+                    emergencyEarthquakeIcon.IsVisible =
+                        isEarthquake;
+
+                    emergencyGenericIcon.IsVisible =
+                        !isFlood &&
+                        !isEarthquake;
+
+                    emergencyAdvisoryCountdownLabel.IsVisible =
+                        isHighSeverity;
+
+                    emergencyAdvisoryCountdownLabel.Text =
+                        $"Popup will close in {HighSeverityEmergencyAutoStartSeconds} seconds. " +
+                        "AR Evacuation Guidance will proceed...";
+
+                    emergencyStartGuidanceButton.IsEnabled =
+                        true;
+
+                    emergencyStartGuidanceButton.Text =
+                        "Start AR Evacuation Guidance  >";
+
+                    /*
+                     * Avoid competing navigation and emergency banners. AR,
+                     * GPS, and PDR continue behind the full-screen treatment.
+                     */
+                    turnGuidancePanel.IsVisible =
+                        false;
+
+                    emergencyAdvisoryOverlay.IsVisible =
+                        true;
+                });
+
+            if (isHighSeverity)
+            {
+                StartEmergencyAdvisoryAutoStart(
+                    advisory);
+            }
+        }
+
+        private static bool IsModerateSeverityAdvisory(
+            DisasterAdvisory advisory)
+        {
+            string severity =
+                advisory.DisplayAlertLevel?.Trim().ToLowerInvariant() ??
+                string.Empty;
+
+            return
+                severity is "moderate" or
+                    "medium" or
+                    "warning" or
+                    "level 2" or
+                    "alarm" ||
+                severity.Contains(
+                    "moderate",
+                    StringComparison.Ordinal) ||
+                severity.Contains(
+                    "medium",
+                    StringComparison.Ordinal) ||
+                severity.Contains(
+                    "warning",
+                    StringComparison.Ordinal) ||
+                severity.Contains(
+                    "level 2",
+                    StringComparison.Ordinal);
+        }
+
+        private void ApplyEmergencySeverityTheme(
+            DisasterAdvisory advisory)
+        {
+            /*
+             * Match the existing RescuAR advisory palette:
+             *
+             * Moderate / Warning
+             *   normal popup badge background = #FEF3C7
+             *   normal popup badge text       = #D97706
+             *
+             * The AR treatment uses the same amber/orange family with
+             * translucency so the live camera remains visible underneath.
+             * High/Critical retains the approved red treatment.
+             */
+            bool isModerate =
+                IsModerateSeverityAdvisory(
+                    advisory);
+
+            if (isModerate)
+            {
+                emergencyAdvisoryOverlay.BackgroundColor =
+                    Color.FromArgb(
+                        "#D0D97706");
+
+                emergencyAdvisoryTopBanner.BackgroundColor =
+                    Color.FromArgb(
+                        "#D9FEF3C7");
+
+                emergencyAdvisoryTopSeverityLabel.TextColor =
+                    Color.FromArgb(
+                        "#92400E");
+
+                emergencyAdvisoryBodySeverityLabel.TextColor =
+                    Colors.White;
+
+                emergencyStartGuidanceButton.BackgroundColor =
+                    Color.FromArgb(
+                        "#F59E0B");
+
+#if ANDROID
+                Log.Debug(
+                    EmergencyAlertLogTag,
+                    "Camera emergency advisory theme applied: MODERATE/ORANGE.");
+#endif
+                return;
+            }
+
+            emergencyAdvisoryOverlay.BackgroundColor =
+                Color.FromArgb(
+                    "#D0B00000");
+
+            emergencyAdvisoryTopBanner.BackgroundColor =
+                Color.FromArgb(
+                    "#70FF5A5A");
+
+            emergencyAdvisoryTopSeverityLabel.TextColor =
+                Color.FromArgb(
+                    "#8E1010");
+
+            emergencyAdvisoryBodySeverityLabel.TextColor =
+                Colors.White;
+
+            emergencyStartGuidanceButton.BackgroundColor =
+                Color.FromArgb(
+                    "#FF3B43");
+
+#if ANDROID
+            Log.Debug(
+                EmergencyAlertLogTag,
+                "Camera emergency advisory theme applied: HIGH/DEFAULT RED.");
+#endif
+        }
+
+        private void StartEmergencyAdvisoryAutoStart(
+            DisasterAdvisory advisory)
+        {
+            CancelEmergencyAdvisoryAutoStart(
+                "starting a new high-severity countdown");
+
+            CancellationTokenSource cancellation =
+                new();
+
+            emergencyAdvisoryAutoStartCancellation =
+                cancellation;
+
+#if ANDROID
+            Log.Warn(
+                EmergencyAlertLogTag,
+                "HIGH-SEVERITY AR AUTO-START ARMED: " +
+                $"id='{advisory.Id}', " +
+                $"countdown={HighSeverityEmergencyAutoStartSeconds}s.");
+#endif
+
+            _ =
+                RunEmergencyAdvisoryAutoStartAsync(
+                    advisory,
+                    cancellation);
+        }
+
+        private async Task RunEmergencyAdvisoryAutoStartAsync(
+            DisasterAdvisory advisory,
+            CancellationTokenSource cancellation)
+        {
+            try
+            {
+                for (int secondsRemaining =
+                         HighSeverityEmergencyAutoStartSeconds;
+                     secondsRemaining > 0;
+                     secondsRemaining--)
+                {
+                    if (!pageIsVisible ||
+                        safeZoneConfirmed ||
+                        !emergencyAdvisoryVisible ||
+                        !IsCurrentEmergencyAdvisory(
+                            advisory))
+                    {
+                        return;
+                    }
+
+                    int countdownValue =
+                        secondsRemaining;
+
+                    Dispatcher.Dispatch(
+                        () =>
+                        {
+                            if (emergencyAdvisoryVisible &&
+                                IsCurrentEmergencyAdvisory(
+                                    advisory))
+                            {
+                                emergencyAdvisoryCountdownLabel.Text =
+                                    $"Popup will close in {countdownValue} seconds. " +
+                                    "AR Evacuation Guidance will proceed...";
+                            }
+                        });
+
+#if ANDROID
+                    Log.Debug(
+                        EmergencyAlertLogTag,
+                        "High-severity AR auto-start countdown: " +
+                        $"{countdownValue}s remaining, " +
+                        $"id='{advisory.Id}'.");
+#endif
+
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(1),
+                        cancellation.Token);
+                }
+
+                cancellation.Token.ThrowIfCancellationRequested();
+
+                if (!pageIsVisible ||
+                    safeZoneConfirmed ||
+                    !emergencyAdvisoryVisible ||
+                    !IsCurrentEmergencyAdvisory(
+                        advisory))
+                {
+                    return;
+                }
+
+                if (ReferenceEquals(
+                        emergencyAdvisoryAutoStartCancellation,
+                        cancellation))
+                {
+                    emergencyAdvisoryAutoStartCancellation =
+                        null;
+                }
+
+#if ANDROID
+                Log.Warn(
+                    EmergencyAlertLogTag,
+                    "HIGH-SEVERITY AR AUTO-START COUNTDOWN COMPLETE. " +
+                    $"Starting evacuation guidance for advisory id='{advisory.Id}'.");
+#endif
+
+                await StartEmergencyArGuidanceAsync(
+                    advisory,
+                    "automatic high-severity 5-second countdown");
+            }
+            catch (OperationCanceledException)
+            {
+#if ANDROID
+                Log.Debug(
+                    EmergencyAlertLogTag,
+                    $"High-severity AR auto-start cancelled for advisory id='{advisory.Id}'.");
+#endif
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Error(
+                    EmergencyAlertLogTag,
+                    $"High-severity AR auto-start failed: {exception}");
+#endif
+            }
+            finally
+            {
+                if (ReferenceEquals(
+                        emergencyAdvisoryAutoStartCancellation,
+                        cancellation))
+                {
+                    emergencyAdvisoryAutoStartCancellation =
+                        null;
+                }
+
+                cancellation.Dispose();
+            }
+        }
+
+        private void CancelEmergencyAdvisoryAutoStart(
+            string reason)
+        {
+            CancellationTokenSource? cancellation =
+                emergencyAdvisoryAutoStartCancellation;
+
+            emergencyAdvisoryAutoStartCancellation =
+                null;
+
+            if (cancellation is null)
+            {
+                return;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch
+            {
+                // Best effort only.
+            }
+
+            cancellation.Dispose();
+
+#if ANDROID
+            Log.Debug(
+                EmergencyAlertLogTag,
+                $"Emergency AR auto-start countdown cancelled: {reason}.");
+#endif
+        }
+
+        private async void OnEmergencyStartGuidanceClicked(
+            object? sender,
+            EventArgs e)
+        {
+            DisasterAdvisory? advisory =
+                currentEmergencyAdvisory;
+
+            if (advisory is null)
+            {
+                return;
+            }
+
+            CancelEmergencyAdvisoryAutoStart(
+                "user selected Start AR Evacuation Guidance");
+
+            await StartEmergencyArGuidanceAsync(
+                advisory,
+                "user selected Start AR Evacuation Guidance");
+        }
+
+        private async Task<bool> StartEmergencyArGuidanceAsync(
+            DisasterAdvisory advisory,
+            string trigger)
+        {
+            if (emergencyGuidanceStartInProgress ||
+                !pageIsVisible ||
+                safeZoneConfirmed ||
+                !IsCurrentEmergencyAdvisory(advisory))
+            {
+                return false;
+            }
+
+            emergencyGuidanceStartInProgress =
+                true;
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    emergencyStartGuidanceButton.IsEnabled =
+                        false;
+                });
+
+            try
+            {
+#if ANDROID
+                Log.Warn(
+                    EmergencyAlertLogTag,
+                    "EMERGENCY AR GUIDANCE START REQUESTED: " +
+                    $"trigger='{trigger}', " +
+                    $"id='{advisory.Id}', " +
+                    $"level='{advisory.DisplayAlertLevel}', " +
+                    $"category='{advisory.Category}'.");
+#endif
+
+                /*
+                 * The user-visible commitment happens immediately. The
+                 * emergency screen must close at the end of the five-second
+                 * countdown (or as soon as the Start button is pressed), not
+                 * after a potentially slow GPS acquisition. Route setup then
+                 * continues asynchronously behind the live Camera page.
+                 */
+                HideEmergencyAdvisoryOverlay(
+                    $"AR evacuation guidance proceeding ({trigger})",
+                    restoreTurnGuidance: false);
+
+#if ANDROID
+                Log.Info(
+                    EmergencyAlertLogTag,
+                    "EMERGENCY OVERLAY CLOSED; route startup is continuing in the background.");
+#endif
+
+                /*
+                 * If the user is already navigating to a verified evacuation
+                 * destination, never silently replace it. The emergency action
+                 * simply resumes/reveals the existing AR guidance.
+                 */
+                NavigationDestinationBridge.DestinationSnapshot destination =
+                    NavigationDestinationBridge.Current;
+
+                if (destination.IsAvailable)
+                {
+#if ANDROID
+                    Log.Info(
+                        EmergencyAlertLogTag,
+                        "Emergency guidance will retain the existing destination: " +
+                        $"'{destination.Name}'.");
+#endif
+
+                    if (activeRoute is null &&
+                        !routeRequestInProgress)
+                    {
+                        StartRouteRequestIfPossible();
+                    }
+
+                    return true;
+                }
+
+                /*
+                 * No destination exists yet. Resolve the current position and
+                 * reuse the app's existing local evacuation-center repository
+                 * to choose the nearest verified center. This keeps Stage 6
+                 * dependent on the same destination/MLD pipeline as normal UI
+                 * navigation instead of creating a second routing path.
+                 */
+                if (!await _locationService.EnsurePermissionAsync())
+                {
+#if ANDROID
+                    Log.Warn(
+                        EmergencyAlertLogTag,
+                        "Emergency AR guidance could not start: location permission was not granted.");
+#endif
+
+                    await DisplayAlert(
+                        "Location Required",
+                        "Location permission is required to start AR evacuation guidance.",
+                        "OK");
+
+                    return false;
+                }
+
+                /*
+                 * Prefer the cached Android/MAUI location first. It normally
+                 * returns immediately and is sufficient for choosing the
+                 * nearest verified evacuation center. A fresh Best-accuracy
+                 * request can take the full 15-second service timeout, which
+                 * previously left the emergency overlay appearing frozen even
+                 * though the five-second countdown had completed.
+                 */
+                LocationReading? reading =
+                    await _locationService.GetLastKnownLocationAsync();
+
+                bool usedLastKnownLocation =
+                    reading is not null &&
+                    reading.Coordinate.IsValid &&
+                    DateTimeOffset.UtcNow - reading.Timestamp <=
+                        TimeSpan.FromMinutes(10) &&
+                    (!reading.AccuracyMeters.HasValue ||
+                     reading.AccuracyMeters.Value <= 250.0);
+
+                if (!usedLastKnownLocation)
+                {
+#if ANDROID
+                    if (reading is not null)
+                    {
+                        Log.Debug(
+                            EmergencyAlertLogTag,
+                            "Cached location is too old/inaccurate for emergency destination selection; requesting a fresh location.");
+                    }
+#endif
+
+                    reading =
+                        await _locationService.GetCurrentLocationAsync();
+                }
+
+#if ANDROID
+                if (reading is not null &&
+                    reading.Coordinate.IsValid)
+                {
+                    string locationSource =
+                        usedLastKnownLocation
+                            ? "LAST_KNOWN"
+                            : "CURRENT";
+
+                    string accuracyText =
+                        reading.AccuracyMeters.HasValue
+                            ? $"{reading.AccuracyMeters.Value:F1}m"
+                            : "<unknown>";
+
+                    Log.Info(
+                        EmergencyAlertLogTag,
+                        "Emergency destination selection location acquired: " +
+                        $"source='{locationSource}', " +
+                        $"accuracy={accuracyText}, " +
+                        $"timestamp={reading.Timestamp:O}.");
+                }
+#endif
+
+                if (reading is null ||
+                    !reading.Coordinate.IsValid)
+                {
+#if ANDROID
+                    Log.Warn(
+                        EmergencyAlertLogTag,
+                        "Emergency AR guidance could not start: no valid GPS location is available.");
+#endif
+
+                    await DisplayAlert(
+                        "Location Unavailable",
+                        "Your location could not be determined. Keep Location enabled and try Start AR Evacuation Guidance again.",
+                        "OK");
+
+                    return false;
+                }
+
+                /*
+                 * The overlay has already been intentionally closed, so the
+                 * advisory is no longer current UI state. Do not cancel the
+                 * committed navigation request merely because
+                 * currentEmergencyAdvisory was cleared by that close.
+                 */
+                if (!pageIsVisible ||
+                    safeZoneConfirmed)
+                {
+                    return false;
+                }
+
+                var nearest =
+                    AreaStatusService.Instance.GetNearestEvacuationCenter(
+                        reading.Coordinate.Latitude,
+                        reading.Coordinate.Longitude);
+
+                RescuAR.App.Models.EvacuationCenter? nearestCenter =
+                    nearest.Center;
+
+                if (nearestCenter is null ||
+                    !double.IsFinite(nearestCenter.Latitude) ||
+                    !double.IsFinite(nearestCenter.Longitude))
+                {
+#if ANDROID
+                    Log.Warn(
+                        EmergencyAlertLogTag,
+                        "Emergency AR guidance could not start: no verified evacuation center is available.");
+#endif
+
+                    await DisplayAlert(
+                        "Safe Zone Unavailable",
+                        "No verified evacuation center is currently available for AR guidance.",
+                        "OK");
+
+                    return false;
+                }
+
+                bool destinationPublished =
+                    CameraNavigationLauncher.Publish(
+                        nearestCenter);
+
+                if (!destinationPublished)
+                {
+#if ANDROID
+                    Log.Warn(
+                        EmergencyAlertLogTag,
+                        $"Emergency AR guidance destination publish failed for '{nearestCenter.Name}'.");
+#endif
+
+                    await DisplayAlert(
+                        "Guidance Unavailable",
+                        "The nearest evacuation center could not be prepared for AR navigation.",
+                        "OK");
+
+                    return false;
+                }
+
+#if ANDROID
+                Log.Info(
+                    EmergencyAlertLogTag,
+                    "EMERGENCY AR DESTINATION SELECTED: " +
+                    $"name='{nearestCenter.Name}', " +
+                    $"distance={nearest.DistanceInMeters:F1} m, " +
+                    $"origin=({reading.Coordinate.Latitude:F7},{reading.Coordinate.Longitude:F7}), " +
+                    $"destination=({nearestCenter.Latitude:F7},{nearestCenter.Longitude:F7}).");
+#endif
+
+                /*
+                 * CameraNavigationLauncher.Publish(...) raises
+                 * NavigationDestinationBridge.DestinationChanged. CameraPage's
+                 * existing handler resets stale navigation state and starts the
+                 * normal MLD request automatically.
+                 */
+#if ANDROID
+                Log.Info(
+                    EmergencyAlertLogTag,
+                    "EMERGENCY AR GUIDANCE STARTED through the existing navigation destination pipeline.");
+#endif
+
+                return true;
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Error(
+                    EmergencyAlertLogTag,
+                    $"Emergency AR guidance start failed: {exception}");
+#endif
+
+                if (pageIsVisible)
+                {
+                    await DisplayAlert(
+                        "AR Evacuation Guidance",
+                        "AR evacuation guidance could not be started. Please try again.",
+                        "OK");
+                }
+
+                return false;
+            }
+            finally
+            {
+                emergencyGuidanceStartInProgress =
+                    false;
+
+                Dispatcher.Dispatch(
+                    () =>
+                    {
+                        if (emergencyAdvisoryVisible)
+                        {
+                            emergencyStartGuidanceButton.IsEnabled =
+                                true;
+                        }
+                    });
+            }
+        }
+
+        private void HideEmergencyAdvisoryOverlay(
+            string reason,
+            bool restoreTurnGuidance = true)
+        {
+            CancelEmergencyAdvisoryAutoStart(
+                reason);
+
+            bool wasVisible =
+                emergencyAdvisoryVisible;
+
+            emergencyAdvisoryVisible =
+                false;
+
+            currentEmergencyAdvisory =
+                null;
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    emergencyAdvisoryOverlay.IsVisible =
+                        false;
+
+                    emergencyAdvisoryCountdownLabel.IsVisible =
+                        false;
+
+                    emergencyStartGuidanceButton.IsEnabled =
+                        true;
+
+                    if (!restoreTurnGuidance ||
+                        safeZoneConfirmed ||
+                        !pageIsVisible ||
+                        !lastTurnGuidance.IsAvailable)
+                    {
+                        return;
+                    }
+
+                    turnInstructionLabel.Text =
+                        lastTurnGuidance.DisplayText;
+
+                    if (double.IsFinite(
+                            lastTurnGuidance.DistanceToTurnMeters))
+                    {
+                        turnDistanceLabel.Text =
+                            $"In {Math.Max(0.0, lastTurnGuidance.DistanceToTurnMeters):F0} m";
+                    }
+                    else
+                    {
+                        turnDistanceLabel.Text =
+                            $"{Math.Max(0.0, lastTurnGuidance.RemainingRouteMeters):F0} m remaining";
+                    }
+
+                    turnGuidancePanel.IsVisible =
+                        true;
+                });
+
+#if ANDROID
+            if (wasVisible)
+            {
+                Log.Debug(
+                    EmergencyAlertLogTag,
+                    $"Camera emergency advisory hidden: {reason}.");
+            }
+#endif
+        }
+
+        private void OnEmergencyAdvisoryCloseClicked(
+            object? sender,
+            EventArgs e)
+        {
+            HideEmergencyAdvisoryOverlay(
+                "user dismissed advisory");
+        }
+
+        private bool IsCurrentEmergencyAdvisory(
+            DisasterAdvisory advisory,
+            bool requireVisible = false)
+        {
+            if (advisory is null ||
+                currentEmergencyAdvisory is null)
+            {
+                return false;
+            }
+
+            if (requireVisible &&
+                !emergencyAdvisoryVisible)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(advisory.Id) ||
+                !string.IsNullOrWhiteSpace(currentEmergencyAdvisory.Id))
+            {
+                return string.Equals(
+                    advisory.Id,
+                    currentEmergencyAdvisory.Id,
+                    StringComparison.Ordinal);
+            }
+
+            return ReferenceEquals(
+                advisory,
+                currentEmergencyAdvisory);
+        }
+
+        private static bool IsHighSeverityAdvisory(
+            DisasterAdvisory advisory)
+        {
+            static bool IsHighValue(
+                string? value)
+            {
+                string level =
+                    value?.Trim() ??
+                    string.Empty;
+
+                if (string.IsNullOrWhiteSpace(level))
+                {
+                    return false;
+                }
+
+                return level.Equals(
+                           "high",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "high severity",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "critical",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "critical severity",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "level 3",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "evacuate",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "severe",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Equals(
+                           "severe severity",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.Contains(
+                           "critical",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       level.StartsWith(
+                           "high",
+                           StringComparison.OrdinalIgnoreCase);
+            }
+
+            return IsHighValue(advisory.Severity) ||
+                   IsHighValue(advisory.AlertLevel) ||
+                   IsHighValue(advisory.DisplayAlertLevel);
+        }
+
+        private static bool IsFloodAdvisory(
+            DisasterAdvisory advisory)
+        {
+            string source =
+                $"{advisory.Category} {advisory.Title}";
+
+            return source.Contains(
+                       "flood",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   source.Contains(
+                       "river",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   source.Contains(
+                       "inundation",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsEarthquakeAdvisory(
+            DisasterAdvisory advisory)
+        {
+            string source =
+                $"{advisory.Category} {advisory.Title}";
+
+            return source.Contains(
+                       "earthquake",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   source.Contains(
+                       "seismic",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   source.Contains(
+                       "ground shaking",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetEmergencyCategoryLabel(
+            DisasterAdvisory advisory)
+        {
+            if (IsFloodAdvisory(advisory))
+            {
+                return "Flood";
+            }
+
+            if (IsEarthquakeAdvisory(advisory))
+            {
+                return "Earthquake";
+            }
+
+            string category =
+                advisory.Category?.Trim() ??
+                string.Empty;
+
+            return string.IsNullOrWhiteSpace(category)
+                ? "Emergency"
+                : category;
+        }
+
+        private static string GetEmergencySeverityLabel(
+            DisasterAdvisory advisory)
+        {
+            if (IsHighSeverityAdvisory(advisory))
+            {
+                return "High";
+            }
+
+            string level =
+                advisory.DisplayAlertLevel.Trim();
+
+            const string severitySuffix =
+                " Severity";
+
+            if (level.EndsWith(
+                    severitySuffix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                level =
+                    level[..^severitySuffix.Length]
+                        .Trim();
+            }
+
+            return string.IsNullOrWhiteSpace(level)
+                ? "Standby"
+                : level;
+        }
+
+        private static string GetEmergencyHeroTitle(
+            DisasterAdvisory advisory)
+        {
+            if (IsFloodAdvisory(advisory))
+            {
+                return "Flooding\nNearby!";
+            }
+
+            if (IsEarthquakeAdvisory(advisory))
+            {
+                return "Duck, Cover,\nand Hold!";
+            }
+
+            string title =
+                advisory.Title?.Trim() ??
+                string.Empty;
+
+            return string.IsNullOrWhiteSpace(title)
+                ? "Emergency Nearby!"
+                : title;
+        }
+
+        private static string GetEmergencyBodyMessage(
+            DisasterAdvisory advisory)
+        {
+            if (advisory.HasActionPlan)
+            {
+                return advisory.DisplayActionPlan;
+            }
+
+            if (!string.IsNullOrWhiteSpace(advisory.Message) ||
+                !string.IsNullOrWhiteSpace(advisory.Description))
+            {
+                return advisory.DisplayMessage;
+            }
+
+            if (IsFloodAdvisory(advisory))
+            {
+                return "Evacuate to the nearest safe zone when instructed by verified authorities and use AR Evacuation Guidance to assist your route.";
+            }
+
+            if (IsEarthquakeAdvisory(advisory))
+            {
+                return "Stay put while the ground is shaking. Duck, cover, and hold. Proceed with AR Evacuation Guidance only when it is safe to move.";
+            }
+
+            return "Follow the latest verified emergency guidance and use AR Evacuation Guidance when evacuation is required.";
         }
 
         private async void OnFinishNavigationClicked(

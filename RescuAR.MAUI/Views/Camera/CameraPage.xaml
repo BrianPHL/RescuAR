@@ -54,6 +54,194 @@
         </Border>
 
         <!--
+            Stage 6 Emergency Alert Overlay.
+
+            The alert presentation intentionally follows the approved Camera
+            mockups: live camera remains visible underneath a red emergency
+            treatment, the critical instruction is centered, and the only
+            actions are Start AR Evacuation Guidance and Dismiss.
+
+            HIGH/CRITICAL advisories additionally show the five-second
+            automatic-start notice. Lower severities never auto-start.
+
+            The Safe Zone completion overlay remains ZIndex=100 and therefore
+            has visual priority over this emergency advisory overlay.
+        -->
+        <Grid
+            x:Name="emergencyAdvisoryOverlay"
+            IsVisible="False"
+            ZIndex="80"
+            BackgroundColor="#D0B00000">
+
+            <Grid RowDefinitions="Auto,*,Auto">
+
+                <!-- Approved top emergency banner -->
+                <Border
+                    x:Name="emergencyAdvisoryTopBanner"
+                    Grid.Row="0"
+                    Margin="14,14,14,0"
+                    Padding="14,10"
+                    BackgroundColor="#70FF5A5A"
+                    StrokeThickness="0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="9" />
+                    </Border.StrokeShape>
+
+                    <VerticalStackLayout
+                        Spacing="0"
+                        HorizontalOptions="Center">
+                        <Label
+                            Text="Emergency Detected"
+                            TextColor="#8E1010"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            HorizontalTextAlignment="Center" />
+                        <Label
+                            x:Name="emergencyAdvisoryTopSeverityLabel"
+                            Text="Flood Advisory - High Severity"
+                            TextColor="#8E1010"
+                            FontSize="12"
+                            HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Main emergency message. Scrollable only on small screens. -->
+                <ScrollView Grid.Row="1">
+                    <VerticalStackLayout
+                        Padding="24,16,24,8"
+                        Spacing="13"
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Center">
+
+                        <!-- Flood icon from the approved mockup: up arrow + waves. -->
+                        <Grid
+                            x:Name="emergencyFloodIcon"
+                            IsVisible="False"
+                            WidthRequest="172"
+                            HeightRequest="144"
+                            HorizontalOptions="Center">
+                            <Path
+                                Data="M86,4 L118,38 L99,38 L99,78 L73,78 L73,38 L54,38 Z"
+                                Fill="White"
+                                Aspect="Uniform" />
+                            <Path
+                                Data="M12,94 C28,82 43,82 58,94 C73,106 88,106 103,94 C118,82 133,82 160,94"
+                                Stroke="White"
+                                StrokeThickness="10"
+                                Fill="Transparent"
+                                Aspect="Uniform" />
+                            <Path
+                                Data="M12,124 C28,112 43,112 58,124 C73,136 88,136 103,124 C118,112 133,112 160,124"
+                                Stroke="White"
+                                StrokeThickness="10"
+                                Fill="Transparent"
+                                Aspect="Uniform" />
+                        </Grid>
+
+                        <!-- Earthquake ECG-style icon from the approved mockup. -->
+                        <Grid
+                            x:Name="emergencyEarthquakeIcon"
+                            IsVisible="False"
+                            WidthRequest="172"
+                            HeightRequest="144"
+                            HorizontalOptions="Center">
+                            <Path
+                                Data="M8,78 L42,78 L58,28 L83,118 L108,66 L132,66 L142,48 L164,48"
+                                Stroke="White"
+                                StrokeThickness="10"
+                                Fill="Transparent"
+                                Aspect="Uniform" />
+                        </Grid>
+
+                        <!-- Generic emergency icon for non-flood/non-earthquake advisories. -->
+                        <Grid
+                            x:Name="emergencyGenericIcon"
+                            IsVisible="True"
+                            WidthRequest="146"
+                            HeightRequest="120"
+                            HorizontalOptions="Center">
+                            <Label
+                                Text="!"
+                                TextColor="White"
+                                FontSize="102"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center"
+                                VerticalTextAlignment="Center" />
+                        </Grid>
+
+                        <Label
+                            x:Name="emergencyAdvisoryHeroTitleLabel"
+                            Text="Emergency Nearby!"
+                            TextColor="White"
+                            FontSize="43"
+                            FontAttributes="Bold"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="WordWrap" />
+
+                        <Label
+                            x:Name="emergencyAdvisoryBodySeverityLabel"
+                            Text="Emergency Advisory - High Severity"
+                            TextColor="White"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            HorizontalTextAlignment="Center" />
+
+                        <Label
+                            x:Name="emergencyAdvisoryBodyMessageLabel"
+                            Text="Follow the latest verified emergency guidance."
+                            TextColor="White"
+                            FontSize="16"
+                            FontAttributes="Bold"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="WordWrap"
+                            Margin="8,14,8,0" />
+                    </VerticalStackLayout>
+                </ScrollView>
+
+                <!--
+                    HIGH severity only:
+                    this notice is hidden for Moderate/Low/etc. advisories.
+                -->
+                <VerticalStackLayout
+                    Grid.Row="2"
+                    Padding="20,0,20,18"
+                    Spacing="9">
+
+                    <Label
+                        x:Name="emergencyAdvisoryCountdownLabel"
+                        IsVisible="False"
+                        Text="Popup will close in 5 seconds. AR Evacuation Guidance will proceed..."
+                        TextColor="#F7FFFFFF"
+                        FontSize="12"
+                        HorizontalTextAlignment="Center"
+                        LineBreakMode="WordWrap" />
+
+                    <Button
+                        x:Name="emergencyStartGuidanceButton"
+                        Text="Start AR Evacuation Guidance  >"
+                        HeightRequest="50"
+                        CornerRadius="8"
+                        BackgroundColor="#FF3B43"
+                        TextColor="White"
+                        FontSize="14"
+                        FontAttributes="Bold"
+                        Clicked="OnEmergencyStartGuidanceClicked" />
+
+                    <Button
+                        x:Name="emergencyDismissButton"
+                        Text="Dismiss"
+                        HeightRequest="38"
+                        Padding="0"
+                        BackgroundColor="Transparent"
+                        TextColor="White"
+                        FontSize="14"
+                        FontAttributes="Bold"
+                        Clicked="OnEmergencyAdvisoryCloseClicked" />
+                </VerticalStackLayout>
+            </Grid>
+        </Grid>
+
+        <!--
             Stage 5 Safe Zone Confirmation.
             Full-screen completion state aligned with the approved green
             safe-zone UI direction. It is intentionally hidden until repeated
