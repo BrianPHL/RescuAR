@@ -184,6 +184,18 @@
 				<PackageReference Include="Evergine.Vulkan" Version="2025.10.21.3204" />
 
 				<PackageReference Include="Vapolia.Google.ARCore" Version="1.47.1" />
+
+				<PackageReference Include="BruTile.MbTiles" Version="5.0.6" />
+
+				<PackageReference Include="Mapsui.Maui" Version="5.1.0" />
+
+				<PackageReference Include="Mapsui.Nts" Version="5.1.0" />
+
+				<PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
+
+				<PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="3.119.2" />
+
+				<PackageReference Include="sqlite-net-pcl" Version="1.9.172" />
 			</ItemGroup>
 
 			<ItemGroup>
