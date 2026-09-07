@@ -165,11 +165,58 @@ public sealed partial class ArCoreService : IArCoreService
      * MyScene is approximately 1 meter tall after its 0.5 scene scale, so a
      * 0.5 meter vertical center offset keeps its bottom near the hit plane.
      */
-    private const float GroundHitViewportX =
-        0.50f;
+    /*
+     * Ground-plane acquisition used to raycast only one fixed screen point
+     * (50% X, 65% Y) on every ARCore frame. In real use that ray can miss an
+     * already-detected floor for a long time simply because the floor polygon
+     * is visible elsewhere in the lower camera view.
+     *
+     * Keep plane-only placement for accuracy, but sweep several prioritized
+     * lower-view points. The sweep is throttled so total HitTest pressure stays
+     * close to the old single-ray-per-frame implementation.
+     *
+     * Normalized coordinates are relative to the Evergine AR viewport supplied
+     * to Session.SetDisplayGeometry(), not to the camera HardwareBuffer.
+     */
+    private static readonly (float X, float Y)[] GroundPlaneSearchPattern =
+    {
+        // Original diagnostic ray first for behavioral continuity.
+        (0.50f, 0.65f),
 
-    private const float GroundHitViewportY =
-        0.65f;
+        // Central lower floor region.
+        (0.50f, 0.80f),
+        (0.35f, 0.74f),
+        (0.65f, 0.74f),
+
+        // Wider / lower rays catch floor polygons near screen edges.
+        (0.28f, 0.86f),
+        (0.72f, 0.86f),
+        (0.50f, 0.92f)
+    };
+
+    /*
+     * Seven rays every 250 ms ~= 28 hit tests/second, approximately the same
+     * native call rate as the previous one-ray-at-30-FPS search, but covering
+     * seven substantially different parts of the visible floor.
+     */
+    private const long GroundPlaneSearchIntervalMilliseconds =
+        250;
+
+    private const long GroundPlaneSearchProgressLogIntervalMilliseconds =
+        2000;
+
+    private long nextGroundPlaneSearchTimestamp =
+        long.MinValue;
+
+    private long groundPlaneSearchStartedTimestamp =
+        long.MinValue;
+
+    private long lastGroundPlaneSearchProgressLogTimestamp =
+        long.MinValue;
+
+    private int groundPlaneSearchSweepCount;
+
+    private int groundPlaneSearchHitTestCount;
 
     private const float GroundCapsuleCenterOffsetMeters =
         0.25f;
@@ -506,6 +553,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             hasLoggedGroundPlaneSearch =
                 false;
+
+            ResetGroundPlaneSearchState();
 
             lastSpatialPoseTelemetryLogTimestamp =
                 long.MinValue;
@@ -1671,11 +1720,35 @@ public sealed partial class ArCoreService : IArCoreService
 
         hasLoggedGroundPlaneSearch =
             false;
+
+        ResetGroundPlaneSearchState();
     }
 
     private void TryCreateSpatialGroundAnchor(
         Frame frame)
     {
+        long now =
+            Environment.TickCount64;
+
+        if (nextGroundPlaneSearchTimestamp !=
+                long.MinValue &&
+            now <
+                nextGroundPlaneSearchTimestamp)
+        {
+            return;
+        }
+
+        nextGroundPlaneSearchTimestamp =
+            now +
+            GroundPlaneSearchIntervalMilliseconds;
+
+        if (groundPlaneSearchStartedTimestamp ==
+            long.MinValue)
+        {
+            groundPlaneSearchStartedTimestamp =
+                now;
+        }
+
         int viewportWidth;
         int viewportHeight;
 
@@ -1694,18 +1767,7 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
-        float hitX =
-            viewportWidth *
-            GroundHitViewportX;
-
-        float hitY =
-            viewportHeight *
-            GroundHitViewportY;
-
-        var hitResults =
-            frame.HitTest(
-                hitX,
-                hitY);
+        groundPlaneSearchSweepCount++;
 
         if (!hasLoggedGroundPlaneSearch)
         {
@@ -1714,85 +1776,181 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Searching for ARCore floor plane at viewport point " +
-                $"X={hitX:F1}, Y={hitY:F1}. " +
-                "No distance gate is applied. " +
-                "Point the lower-middle camera view at the physical floor.");
+                "Searching for ARCore floor plane with an adaptive " +
+                $"{GroundPlaneSearchPattern.Length}-point lower-view sweep. " +
+                $"viewport={viewportWidth}x{viewportHeight}, " +
+                $"sweepInterval={GroundPlaneSearchIntervalMilliseconds}ms. " +
+                "Only real upward-facing horizontal Plane hits inside the " +
+                "detected polygon are accepted.");
         }
 
-        foreach (Google.AR.Core.HitResult hit in hitResults)
+        for (int sampleIndex = 0;
+             sampleIndex <
+                GroundPlaneSearchPattern.Length;
+             sampleIndex++)
         {
-            if (hit.Trackable is not ArCorePlane plane)
+            (float normalizedX,
+             float normalizedY) =
+                GroundPlaneSearchPattern[
+                    sampleIndex];
+
+            float hitX =
+                viewportWidth *
+                normalizedX;
+
+            float hitY =
+                viewportHeight *
+                normalizedY;
+
+            var hitResults =
+                frame.HitTest(
+                    hitX,
+                    hitY);
+
+            groundPlaneSearchHitTestCount++;
+
+            foreach (Google.AR.Core.HitResult hit in hitResults)
             {
-                continue;
+                if (hit.Trackable is not ArCorePlane plane)
+                {
+                    continue;
+                }
+
+                using Google.AR.Core.Pose? hitPose =
+                    hit.HitPose;
+
+                if (hitPose is null ||
+                    !plane.IsPoseInPolygon(
+                        hitPose))
+                {
+                    continue;
+                }
+
+                using Google.AR.Core.Pose? planeCenterPose =
+                    plane.CenterPose;
+
+                if (planeCenterPose is null)
+                {
+                    continue;
+                }
+
+                float[]? planeNormal =
+                    planeCenterPose.GetTransformedAxis(
+                        1,
+                        1.0f);
+
+                /*
+                 * Horizontal plane finding can expose both upward- and
+                 * downward-facing planes. Keep the existing conservative
+                 * floor requirement: local +Y must point mostly upward.
+                 */
+                if (planeNormal is null ||
+                    planeNormal.Length < 3 ||
+                    planeNormal[1] < 0.75f)
+                {
+                    continue;
+                }
+
+                float[] hitTranslation =
+                    new float[3];
+
+                hitPose.GetTranslation(
+                    hitTranslation,
+                    0);
+
+                Google.AR.Core.Anchor? newAnchor =
+                    hit.CreateAnchor();
+
+                if (newAnchor is null)
+                {
+                    continue;
+                }
+
+                spatialGroundAnchor =
+                    newAnchor;
+
+                long elapsedMilliseconds =
+                    Math.Max(
+                        0,
+                        now -
+                        groundPlaneSearchStartedTimestamp);
+
+                Log.Debug(
+                    SpatialPoseTag,
+                    "ARCore GROUND anchor created from detected floor plane " +
+                    "using adaptive multi-point acquisition.");
+
+                Log.Debug(
+                    SpatialPoseTag,
+                    "Ground plane acquisition = " +
+                    $"sample={sampleIndex + 1}/" +
+                    $"{GroundPlaneSearchPattern.Length}, " +
+                    $"normalized=({normalizedX:F2},{normalizedY:F2}), " +
+                    $"screen=({hitX:F1},{hitY:F1}), " +
+                    $"sweeps={groundPlaneSearchSweepCount}, " +
+                    $"hitTests={groundPlaneSearchHitTestCount}, " +
+                    $"elapsed={elapsedMilliseconds}ms.");
+
+                Log.Debug(
+                    SpatialPoseTag,
+                    "Ground hit pose (m) = " +
+                    $"X={hitTranslation[0]:F4}, " +
+                    $"Y={hitTranslation[1]:F4}, " +
+                    $"Z={hitTranslation[2]:F4}");
+
+                Log.Debug(
+                    SpatialPoseTag,
+                    "Capsule center vertical offset = " +
+                    $"{GroundCapsuleCenterOffsetMeters:F2} m.");
+
+                return;
             }
-
-            using Google.AR.Core.Pose? hitPose =
-                hit.HitPose;
-
-            if (hitPose is null ||
-                !plane.IsPoseInPolygon(
-                    hitPose))
-            {
-                continue;
-            }
-
-            using Google.AR.Core.Pose? planeCenterPose =
-                plane.CenterPose;
-
-            if (planeCenterPose is null)
-            {
-                continue;
-            }
-
-            float[]? planeNormal =
-                planeCenterPose.GetTransformedAxis(
-                    1,
-                    1.0f);
-
-            if (planeNormal is null ||
-                planeNormal.Length < 3 ||
-                planeNormal[1] < 0.75f)
-            {
-                continue;
-            }
-
-            float[] hitTranslation =
-                new float[3];
-
-            hitPose.GetTranslation(
-                hitTranslation,
-                0);
-
-            Google.AR.Core.Anchor? newAnchor =
-                hit.CreateAnchor();
-
-            if (newAnchor is null)
-            {
-                continue;
-            }
-
-            spatialGroundAnchor =
-                newAnchor;
-
-            Log.Debug(
-                SpatialPoseTag,
-                "ARCore GROUND anchor created from detected floor plane.");
-
-            Log.Debug(
-                SpatialPoseTag,
-                "Ground hit pose (m) = " +
-                $"X={hitTranslation[0]:F4}, " +
-                $"Y={hitTranslation[1]:F4}, " +
-                $"Z={hitTranslation[2]:F4}");
-
-            Log.Debug(
-                SpatialPoseTag,
-                "Capsule center vertical offset = " +
-                $"{GroundCapsuleCenterOffsetMeters:F2} m.");
-
-            break;
         }
+
+        if (lastGroundPlaneSearchProgressLogTimestamp ==
+                long.MinValue ||
+            now -
+                lastGroundPlaneSearchProgressLogTimestamp >=
+            GroundPlaneSearchProgressLogIntervalMilliseconds)
+        {
+            lastGroundPlaneSearchProgressLogTimestamp =
+                now;
+
+            long elapsedMilliseconds =
+                Math.Max(
+                    0,
+                    now -
+                    groundPlaneSearchStartedTimestamp);
+
+            Log.Debug(
+                SpatialPoseTag,
+                "Ground-plane sweep still searching: " +
+                $"sweeps={groundPlaneSearchSweepCount}, " +
+                $"hitTests={groundPlaneSearchHitTestCount}, " +
+                $"elapsed={elapsedMilliseconds}ms. " +
+                "ARCore camera is TRACKING, but no upward-facing Plane hit " +
+                "inside a detected polygon has been found yet. Move the " +
+                "device slowly and keep textured floor visible in the lower " +
+                "half of the camera view.");
+        }
+    }
+
+    private void ResetGroundPlaneSearchState()
+    {
+        nextGroundPlaneSearchTimestamp =
+            long.MinValue;
+
+        groundPlaneSearchStartedTimestamp =
+            long.MinValue;
+
+        lastGroundPlaneSearchProgressLogTimestamp =
+            long.MinValue;
+
+        groundPlaneSearchSweepCount =
+            0;
+
+        groundPlaneSearchHitTestCount =
+            0;
     }
 
     private bool TryGetSpatialGroundAnchorPose(
@@ -1858,6 +2016,8 @@ public sealed partial class ArCoreService : IArCoreService
 
         spatialAnchorRecoveryDeadlineTimestamp =
             long.MinValue;
+
+        ResetGroundPlaneSearchState();
 
         if (anchor is null)
         {
