@@ -95,9 +95,25 @@ namespace RescuAR.App.Views.Camera
 
         private DisasterAdvisory? currentEmergencyAdvisory;
 
+        // Retain the latest verified advisory for the compact Figma status
+        // banner even after the full-screen advisory treatment is dismissed.
+        private DisasterAdvisory? lastEmergencyAdvisoryForStatus;
+
+        private DateTimeOffset? navigationSessionStartedAt;
+
         private CancellationTokenSource? emergencyAdvisoryAutoStartCancellation;
 
         private bool emergencyGuidanceStartInProgress;
+
+        private enum CameraModuleViewMode
+        {
+            ArCamera = 0,
+            Map2D = 1,
+            FloodDepth = 2
+        }
+
+        private CameraModuleViewMode currentCameraModuleView =
+            CameraModuleViewMode.ArCamera;
 
         private FloodDepthVisualizationService.FloodVisualizationSnapshot
             currentFloodVisualization =
@@ -385,18 +401,6 @@ namespace RescuAR.App.Views.Camera
         {
             InitializeComponent();
 
-            developerRerouteTestButton.IsVisible =
-                EnableDeveloperOffRouteSimulation;
-
-            developerTurnTestButton.IsVisible =
-                EnableDeveloperTurnSimulation;
-
-            developerSafeZoneTestButton.IsVisible =
-                EnableDeveloperSafeZoneValidation;
-
-            developerFloodDepthTestButton.IsVisible =
-                EnableDeveloperFloodDepthValidation;
-
             this.evergineApplication =
                 new MyApplication();
 
@@ -453,6 +457,552 @@ namespace RescuAR.App.Views.Camera
 
             diagnosticTimer.Tick +=
                 OnDiagnosticTimerTick;
+
+            ApplyCameraModuleView(
+                CameraModuleViewMode.ArCamera,
+                "initial Camera module view");
+        }
+
+        private void ApplyCameraModuleView(
+            CameraModuleViewMode mode,
+            string reason)
+        {
+            currentCameraModuleView =
+                mode;
+
+            bool arCameraMode =
+                mode ==
+                    CameraModuleViewMode.ArCamera;
+
+            bool mapMode =
+                mode ==
+                    CameraModuleViewMode.Map2D;
+
+            bool floodMode =
+                mode ==
+                    CameraModuleViewMode.FloodDepth;
+
+            ARCameraSpatialController.SetRouteRenderingEnabled(
+                arCameraMode,
+                $"Camera module view = {mode}; {reason}");
+
+            SetFloodVisualizationVisibility(
+                floodMode &&
+                    currentFloodVisualization.IsAvailable,
+                $"Camera module view = {mode}; {reason}");
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    mapModeLayer.IsVisible =
+                        mapMode;
+
+                    cameraModeStatusBanner.IsVisible =
+                        arCameraMode;
+
+                    floodWaitingBanner.IsVisible =
+                        floodMode &&
+                        !currentFloodVisualization.IsAvailable &&
+                        !safeZoneConfirmed;
+
+                    floodVisualizationLayer.IsVisible =
+                        floodMode &&
+                        currentFloodVisualization.IsAvailable &&
+                        !safeZoneConfirmed;
+
+                    cameraHeaderBackGroup.IsVisible =
+                        !floodMode;
+
+                    cameraZoomControls.IsVisible =
+                        !mapMode;
+
+                    cameraModeSwitcherButton.IsVisible =
+                        !safeZoneConfirmed;
+
+                    navigationAwarenessSheet.IsVisible =
+                        false;
+
+                    floodSimulationConfigurationSheet.IsVisible =
+                        false;
+
+                    arGuidanceSelectedIcon.IsVisible =
+                        arCameraMode;
+
+                    mapGuidanceSelectedIcon.IsVisible =
+                        mapMode;
+
+                    floodGuidanceSelectedIcon.IsVisible =
+                        floodMode;
+
+                    cameraModeSwitcherMapIcon.IsVisible =
+                        !floodMode;
+
+                    cameraModeSwitcherFloodIcon.IsVisible =
+                        floodMode;
+
+                    arDeveloperControls.IsVisible =
+                        false;
+
+                    developerSafeZoneTestButton.IsVisible =
+                        EnableDeveloperSafeZoneValidation;
+
+                    developerTurnTestButton.IsVisible =
+                        false;
+
+                    developerRerouteTestButton.IsVisible =
+                        false;
+
+                    if (!arCameraMode)
+                    {
+                        turnGuidancePanel.IsVisible =
+                            false;
+                    }
+                    else if (!emergencyAdvisoryVisible &&
+                             !safeZoneConfirmed &&
+                             lastTurnGuidance.IsAvailable)
+                    {
+                        ApplyPrototypeTurnGuidance(
+                            lastTurnGuidance);
+
+                        turnGuidancePanel.IsVisible =
+                            true;
+                    }
+
+                    RefreshEmergencyStatusBanner();
+                    RefreshCameraModuleDynamicUi();
+                });
+
+#if ANDROID
+            Log.Debug(
+                "RescuAR-CameraUI",
+                "Camera module sub-tab changed: " +
+                $"mode={mode}, reason='{reason}'.");
+#endif
+        }
+
+        private void RefreshCameraModuleDynamicUi()
+        {
+            bool arCameraMode =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera;
+
+            bool floodMode =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.FloodDepth;
+
+            bool mapMode =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.Map2D;
+
+            bool hasDestination =
+                NavigationDestinationBridge.Current.IsAvailable;
+
+            endNavigationButton.IsVisible =
+                arCameraMode &&
+                hasDestination &&
+                !safeZoneConfirmed;
+
+            exploreSafeZonesButton.IsVisible =
+                arCameraMode &&
+                !hasDestination &&
+                !safeZoneConfirmed;
+
+            developerFloodDepthTestButton.IsVisible =
+                floodMode &&
+                EnableDeveloperFloodDepthValidation &&
+                !safeZoneConfirmed;
+
+            cameraModeSwitcherButton.IsVisible =
+                !safeZoneConfirmed;
+
+            mapModeStatusLabel.Text =
+                "Placeholder";
+
+            if (floodMode &&
+                currentFloodVisualization.IsAvailable)
+            {
+                floodModeDepthSummaryLabel.Text =
+                    currentFloodVisualization.PrimaryText;
+            }
+            else if (floodMode)
+            {
+                floodModeDepthSummaryLabel.Text =
+                    "Waiting for simulation...";
+            }
+
+            floodWaitingBanner.IsVisible =
+                floodMode &&
+                !currentFloodVisualization.IsAvailable &&
+                !safeZoneConfirmed;
+
+            RefreshEmergencyStatusBanner();
+        }
+
+        private void RefreshEmergencyStatusBanner()
+        {
+            if (currentCameraModuleView !=
+                    CameraModuleViewMode.ArCamera)
+            {
+                cameraModeStatusBanner.IsVisible =
+                    false;
+
+                return;
+            }
+
+            cameraModeStatusBanner.IsVisible =
+                !safeZoneConfirmed;
+
+            DisasterAdvisory? advisory =
+                lastEmergencyAdvisoryForStatus;
+
+            if (advisory is null)
+            {
+                cameraModeStatusBanner.BackgroundColor =
+                    Color.FromArgb("#DDF7E8");
+
+                cameraModeStatusBanner.Stroke =
+                    new SolidColorBrush(
+                        Color.FromArgb("#BDE9D0"));
+
+                cameraModeStatusTitleLabel.TextColor =
+                    Color.FromArgb("#07814D");
+
+                cameraModeStatusSubtitleLabel.TextColor =
+                    Color.FromArgb("#16815A");
+
+                cameraModeStatusTitleLabel.Text =
+                    "No Emergency";
+
+                cameraModeStatusSubtitleLabel.Text =
+                    "You will be notified if an emergency is detected nearby.";
+
+                return;
+            }
+
+            bool moderate =
+                IsModerateSeverityAdvisory(
+                    advisory);
+
+            if (moderate)
+            {
+                cameraModeStatusBanner.BackgroundColor =
+                    Color.FromArgb("#F9EBCB");
+
+                cameraModeStatusBanner.Stroke =
+                    new SolidColorBrush(
+                        Color.FromArgb("#F2CA73"));
+
+                cameraModeStatusTitleLabel.TextColor =
+                    Color.FromArgb("#9A6400");
+
+                cameraModeStatusSubtitleLabel.TextColor =
+                    Color.FromArgb("#9A6400");
+            }
+            else
+            {
+                cameraModeStatusBanner.BackgroundColor =
+                    Color.FromArgb("#FBE1E3");
+
+                cameraModeStatusBanner.Stroke =
+                    new SolidColorBrush(
+                        Color.FromArgb("#F2B4BA"));
+
+                cameraModeStatusTitleLabel.TextColor =
+                    Color.FromArgb("#D71920");
+
+                cameraModeStatusSubtitleLabel.TextColor =
+                    Color.FromArgb("#D71920");
+            }
+
+            cameraModeStatusTitleLabel.Text =
+                "Emergency Detected";
+
+            cameraModeStatusSubtitleLabel.Text =
+                $"{GetEmergencyCategoryLabel(advisory)} Advisory - " +
+                $"{GetEmergencySeverityLabel(advisory)} Severity";
+        }
+
+        private void OnArCameraModeClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.ArCamera,
+                "AR Camera sub-tab selected");
+        }
+
+        private void OnMapModeClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.Map2D,
+                "2D Map sub-tab selected");
+        }
+
+        private void OnFloodDepthModeClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.FloodDepth,
+                "Flood Depth sub-tab selected");
+        }
+
+        private void OnNavigationAwarenessClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            navigationAwarenessSheet.IsVisible =
+                true;
+
+            arDeveloperControls.IsVisible =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera &&
+                EnableDeveloperSafeZoneValidation;
+        }
+
+        private void OnNavigationAwarenessCloseClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            navigationAwarenessSheet.IsVisible =
+                false;
+        }
+
+        private void OnArGuidanceOptionClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            navigationAwarenessSheet.IsVisible =
+                false;
+
+            ApplyCameraModuleView(
+                CameraModuleViewMode.ArCamera,
+                "AR Evacuation Guidance selected from Navigation & Awareness");
+        }
+
+        private void OnMapGuidanceOptionClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            navigationAwarenessSheet.IsVisible =
+                false;
+
+            ApplyCameraModuleView(
+                CameraModuleViewMode.Map2D,
+                "2D Map Guidance selected from Navigation & Awareness");
+        }
+
+        private void OnFloodGuidanceOptionClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            navigationAwarenessSheet.IsVisible =
+                false;
+
+            ApplyCameraModuleView(
+                CameraModuleViewMode.FloodDepth,
+                "Flood Depth Visualization selected from Navigation & Awareness");
+        }
+
+        private async void OnExploreSafeZonesClicked(
+            object? sender,
+            EventArgs e)
+        {
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    await Shell.Current.GoToAsync(
+                        "Prepare/EvacuationCenterInfo");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    "RescuAR-CameraUI",
+                    $"Explore Safe Zones navigation failed: {exception.Message}");
+#endif
+            }
+        }
+
+        private void OnFloodSimulationConfigureClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (!EnableDeveloperFloodDepthValidation)
+            {
+                return;
+            }
+
+            navigationAwarenessSheet.IsVisible =
+                false;
+
+            if (currentFloodVisualization.LocalDepthMeters.HasValue)
+            {
+                floodSimulationDepthSlider.Value =
+                    Math.Clamp(
+                        currentFloodVisualization.LocalDepthMeters.Value,
+                        floodSimulationDepthSlider.Minimum,
+                        floodSimulationDepthSlider.Maximum);
+            }
+
+            floodSimulationDepthValueLabel.Text =
+                floodSimulationDepthSlider.Value.ToString("0.0");
+
+            floodSimulationConfigurationSheet.IsVisible =
+                true;
+        }
+
+        private void OnFloodSimulationSliderChanged(
+            object? sender,
+            ValueChangedEventArgs e)
+        {
+            if (floodSimulationDepthValueLabel is null)
+            {
+                return;
+            }
+
+            floodSimulationDepthValueLabel.Text =
+                e.NewValue.ToString("0.0");
+        }
+
+        private void OnFloodSimulationSheetCloseClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            floodSimulationConfigurationSheet.IsVisible =
+                false;
+        }
+
+        private void OnSaveFloodSimulationClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (!EnableDeveloperFloodDepthValidation)
+            {
+                return;
+            }
+
+            double depth =
+                Math.Clamp(
+                    floodSimulationDepthSlider.Value,
+                    0.1,
+                    3.0);
+
+            FloodDepthVisualizationService.FloodVisualizationSnapshot snapshot =
+                _floodDepthVisualizationService.FromLocalDepth(
+                    depth,
+                    "DEV synthetic local depth",
+                    "Camera simulation");
+
+            ApplyFloodVisualization(
+                snapshot,
+                "Figma flood-depth simulation configuration");
+
+            floodSimulationConfigurationSheet.IsVisible =
+                false;
+
+#if ANDROID
+            Log.Info(
+                FloodDepthLogTag,
+                "[DEV FLOOD] FIGMA CONFIGURATION APPLIED: " +
+                $"depth={depth:F2}m, groundRelative=True.");
+#endif
+        }
+
+        private async void OnCameraHeaderBackClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    await Shell.Current.GoToAsync(
+                        "//Home");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    "RescuAR-CameraUI",
+                    $"Camera header Back navigation failed: {exception.Message}");
+#endif
+            }
+        }
+
+        private async void OnCameraSettingsClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    /*
+                     * The current source does not expose a dedicated Settings
+                     * route. Profile is the existing account/settings entry
+                     * point, so the reference gear uses that destination.
+                     */
+                    await Shell.Current.GoToAsync(
+                        "//Profile");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    "RescuAR-CameraUI",
+                    $"Camera settings navigation failed: {exception.Message}");
+#endif
+            }
+        }
+
+        private async void OnCameraNotificationsClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    await Shell.Current.GoToAsync(
+                        "AdvisoryFeedPage");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    "RescuAR-CameraUI",
+                    $"Camera notifications navigation failed: {exception.Message}");
+#endif
+            }
+        }
+
+        private void OnEndNavigationClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (!NavigationDestinationBridge.Current.IsAvailable)
+            {
+                return;
+            }
+
+#if ANDROID
+            Log.Info(
+                "RescuAR-CameraUI",
+                "User ended active navigation from the Camera reference UI.");
+#endif
+
+            NavigationDestinationBridge.Clear();
+
+            Dispatcher.Dispatch(
+                RefreshCameraModuleDynamicUi);
         }
 
         protected override void OnAppearing()
@@ -461,6 +1011,10 @@ namespace RescuAR.App.Views.Camera
 
             pageIsVisible =
                 true;
+
+            ApplyCameraModuleView(
+                currentCameraModuleView,
+                "Camera tab entered");
 
 #if ANDROID
             Log.Debug(
@@ -537,6 +1091,12 @@ namespace RescuAR.App.Views.Camera
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
+
+            navigationAwarenessSheet.IsVisible =
+                false;
+
+            floodSimulationConfigurationSheet.IsVisible =
+                false;
 
             SetFloodVisualizationVisibility(
                 false,
@@ -1149,6 +1709,9 @@ namespace RescuAR.App.Views.Camera
                 activeRoute =
                     route;
 
+                navigationSessionStartedAt ??=
+                    DateTimeOffset.UtcNow;
+
                 activeDestinationName =
                     destination.Name;
 
@@ -1359,6 +1922,9 @@ namespace RescuAR.App.Views.Camera
             activeRoute =
                 null;
 
+            navigationSessionStartedAt =
+                null;
+
             activeDestinationName =
                 string.Empty;
 
@@ -1435,6 +2001,9 @@ namespace RescuAR.App.Views.Camera
              */
             lastHeadingAlignment =
                 _headingAlignmentService.LastResult;
+
+            Dispatcher.Dispatch(
+                RefreshCameraModuleDynamicUi);
 
             StartRouteRequestIfPossible();
         }
@@ -2474,6 +3043,8 @@ namespace RescuAR.App.Views.Camera
                     $"destination='{destinationName}'. " +
                     "The current AR route remains visible until a replacement route is ready.");
 
+                ApplyPrototypeReroutingState();
+
                 RouteResult? replacementRoute =
                     await _mldArIntegrationService.RequestRouteAsync(
                         origin,
@@ -2640,6 +3211,27 @@ namespace RescuAR.App.Views.Camera
 
                 routeRequestInProgress =
                     false;
+
+                if (lastRerouteResult !=
+                        "Complete" &&
+                    lastTurnGuidance.IsAvailable)
+                {
+                    Dispatcher.Dispatch(
+                        () =>
+                        {
+                            if (currentCameraModuleView ==
+                                    CameraModuleViewMode.ArCamera &&
+                                !emergencyAdvisoryVisible &&
+                                !safeZoneConfirmed)
+                            {
+                                ApplyPrototypeTurnGuidance(
+                                    lastTurnGuidance);
+
+                                turnGuidancePanel.IsVisible =
+                                    true;
+                            }
+                        });
+                }
             }
 #else
             await Task.CompletedTask;
@@ -2698,6 +3290,8 @@ namespace RescuAR.App.Views.Camera
                 () =>
                 {
                     if (!guidance.IsAvailable ||
+                        currentCameraModuleView !=
+                            CameraModuleViewMode.ArCamera ||
                         emergencyAdvisoryVisible ||
                         safeZoneConfirmed)
                     {
@@ -2707,23 +3301,172 @@ namespace RescuAR.App.Views.Camera
                         return;
                     }
 
+                    ApplyPrototypeTurnGuidance(
+                        guidance);
+
                     turnGuidancePanel.IsVisible =
                         true;
+                });
+        }
+
+        private void ApplyPrototypeTurnGuidance(
+            PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance)
+        {
+            double instructionDistance =
+                double.IsFinite(guidance.DistanceToTurnMeters)
+                    ? Math.Max(0.0, guidance.DistanceToTurnMeters)
+                    : Math.Max(0.0, guidance.RemainingRouteMeters);
+
+            string distanceText =
+                $"{instructionDistance:F0} meters";
+
+            bool correctiveGuidance =
+                guidance.Instruction ==
+                    PedestrianTurnGuidanceService.TurnInstruction.UTurn;
+
+            /*
+             * The Figma prototype uses a pale green corrective card for
+             * "Go back" while ordinary route instructions use the neutral
+             * translucent white card. Keep this strictly presentation-only;
+             * the underlying turn classifier and navigation thresholds are
+             * unchanged.
+             */
+            if (correctiveGuidance)
+            {
+                turnGuidancePanel.BackgroundColor =
+                    Color.FromArgb("#DCEFE5");
+
+                turnGuidancePanel.Stroke =
+                    new SolidColorBrush(
+                        Color.FromArgb("#BBDCC9"));
+
+                turnInstructionLabel.TextColor =
+                    Color.FromArgb("#08723F");
+
+                turnDistanceLabel.TextColor =
+                    Color.FromArgb("#176A43");
+
+                turnChevronImage.Source =
+                    "lucide_chevron_down_green.png";
+            }
+            else
+            {
+                turnGuidancePanel.BackgroundColor =
+                    Color.FromArgb("#E8FFFFFF");
+
+                turnGuidancePanel.Stroke =
+                    new SolidColorBrush(
+                        Color.FromArgb("#D7DADD"));
+
+                turnInstructionLabel.TextColor =
+                    Color.FromArgb("#151515");
+
+                turnDistanceLabel.TextColor =
+                    Color.FromArgb("#222222");
+
+                turnChevronImage.Source =
+                    "lucide_chevron_down_black.png";
+            }
+
+            switch (guidance.Instruction)
+            {
+                case PedestrianTurnGuidanceService.TurnInstruction.SlightLeft:
+                    turnDirectionIconLabel.Source =
+                        "lucide_arrow_up_left_teal.png";
+                    turnInstructionLabel.Text =
+                        $"Bear left for {distanceText}";
+                    break;
+
+                case PedestrianTurnGuidanceService.TurnInstruction.Left:
+                case PedestrianTurnGuidanceService.TurnInstruction.SharpLeft:
+                    turnDirectionIconLabel.Source =
+                        "lucide_corner_up_left_teal.png";
+                    turnInstructionLabel.Text =
+                        $"Turn left in {distanceText}";
+                    break;
+
+                case PedestrianTurnGuidanceService.TurnInstruction.SlightRight:
+                    turnDirectionIconLabel.Source =
+                        "lucide_arrow_up_right_teal.png";
+                    turnInstructionLabel.Text =
+                        $"Bear right for {distanceText}";
+                    break;
+
+                case PedestrianTurnGuidanceService.TurnInstruction.Right:
+                case PedestrianTurnGuidanceService.TurnInstruction.SharpRight:
+                    turnDirectionIconLabel.Source =
+                        "lucide_corner_up_right_teal.png";
+                    turnInstructionLabel.Text =
+                        $"Turn right in {distanceText}";
+                    break;
+
+                case PedestrianTurnGuidanceService.TurnInstruction.UTurn:
+                    turnDirectionIconLabel.Source =
+                        "lucide_undo_2_green.png";
+                    turnInstructionLabel.Text =
+                        $"Go back for {distanceText}";
+                    break;
+
+                case PedestrianTurnGuidanceService.TurnInstruction.Arrive:
+                    turnDirectionIconLabel.Source =
+                        "lucide_circle_check_big_teal.png";
+                    turnInstructionLabel.Text =
+                        "Safe zone is just ahead";
+                    break;
+
+                default:
+                    turnDirectionIconLabel.Source =
+                        "lucide_arrow_up_teal.png";
+                    turnInstructionLabel.Text =
+                        $"Proceed straight for {distanceText}";
+                    break;
+            }
+
+            turnDistanceLabel.Text =
+                $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} meters away from the " +
+                "nearest evacuation center";
+        }
+
+        private void ApplyPrototypeReroutingState()
+        {
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    if (currentCameraModuleView !=
+                            CameraModuleViewMode.ArCamera ||
+                        emergencyAdvisoryVisible ||
+                        safeZoneConfirmed)
+                    {
+                        return;
+                    }
+
+                    turnGuidancePanel.BackgroundColor =
+                        Color.FromArgb("#E8E3D0");
+
+                    turnGuidancePanel.Stroke =
+                        new SolidColorBrush(
+                            Color.FromArgb("#D8CFA6"));
+
+                    turnInstructionLabel.TextColor =
+                        Color.FromArgb("#8A6500");
+
+                    turnDistanceLabel.TextColor =
+                        Color.FromArgb("#8A6500");
+
+                    turnDirectionIconLabel.Source =
+                        "lucide_ellipsis_amber.png";
+
+                    turnChevronImage.Source =
+                        "lucide_chevron_down_amber.png";
 
                     turnInstructionLabel.Text =
-                        guidance.DisplayText;
+                        "Recalculating route...";
 
-                    if (double.IsFinite(
-                            guidance.DistanceToTurnMeters))
-                    {
-                        turnDistanceLabel.Text =
-                            $"In {Math.Max(0.0, guidance.DistanceToTurnMeters):F0} m";
-                    }
-                    else
-                    {
-                        turnDistanceLabel.Text =
-                            $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m remaining";
-                    }
+                    turnDistanceLabel.Text =
+                        "Please wait while guidance is updated.";
+
+                    turnGuidancePanel.IsVisible =
+                        true;
                 });
         }
 
@@ -2744,8 +3487,27 @@ namespace RescuAR.App.Views.Camera
                     turnGuidancePanel.IsVisible =
                         false;
 
+                    turnDirectionIconLabel.Source =
+                        "lucide_arrow_up_teal.png";
+
+                    turnGuidancePanel.BackgroundColor =
+                        Color.FromArgb("#E8FFFFFF");
+
+                    turnGuidancePanel.Stroke =
+                        new SolidColorBrush(
+                            Color.FromArgb("#D7DADD"));
+
+                    turnInstructionLabel.TextColor =
+                        Color.FromArgb("#151515");
+
+                    turnDistanceLabel.TextColor =
+                        Color.FromArgb("#222222");
+
+                    turnChevronImage.Source =
+                        "lucide_chevron_down_black.png";
+
                     turnInstructionLabel.Text =
-                        "Continue straight";
+                        "Proceed straight";
 
                     turnDistanceLabel.Text =
                         string.Empty;
@@ -2801,6 +3563,9 @@ namespace RescuAR.App.Views.Camera
             safeZoneConfirmed =
                 true;
 
+            Dispatcher.Dispatch(
+                RefreshCameraModuleDynamicUi);
+
             HideEmergencyAdvisoryOverlay(
                 "safe zone confirmed",
                 restoreTurnGuidance: false);
@@ -2848,6 +3613,30 @@ namespace RescuAR.App.Views.Camera
 
                     safeZoneDestinationLabel.Text =
                         destinationName;
+
+                    RouteProgressTracker.ProgressSnapshot safeZoneProgress =
+                        _routeProgressTracker.Current;
+
+                    double travelledMeters =
+                        safeZoneProgress.HasProgress
+                            ? Math.Max(0.0, safeZoneProgress.CommittedProgressMeters)
+                            : 0.0;
+
+                    safeZoneDistanceTravelledLabel.Text =
+                        $"{travelledMeters:F0} meters";
+
+                    TimeSpan elapsed =
+                        navigationSessionStartedAt.HasValue
+                            ? DateTimeOffset.UtcNow - navigationSessionStartedAt.Value
+                            : TimeSpan.Zero;
+
+                    int elapsedMinutes =
+                        Math.Max(
+                            1,
+                            (int)Math.Ceiling(elapsed.TotalMinutes));
+
+                    safeZoneTimeTakenLabel.Text =
+                        $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
                         $"Arrival confirmed about " +
@@ -2908,6 +3697,12 @@ namespace RescuAR.App.Views.Camera
                     safeZoneDetailsLabel.Text =
                         "Arrival confirmed.";
 
+                    safeZoneDistanceTravelledLabel.Text =
+                        "0 meters";
+
+                    safeZoneTimeTakenLabel.Text =
+                        "0 minutes";
+
                     if (developerSafeZoneTestButton is not null)
                     {
                         developerSafeZoneTestButton.Text =
@@ -2916,6 +3711,8 @@ namespace RescuAR.App.Views.Camera
                         developerSafeZoneTestButton.IsEnabled =
                             true;
                     }
+
+                    RefreshCameraModuleDynamicUi();
                 });
         }
 
@@ -3128,7 +3925,13 @@ namespace RescuAR.App.Views.Camera
                 snapshot.LocalDepthMeters.Value >
                     0.0;
 
-            if (hasLocalArDepth)
+            bool renderLocalDepthInAr =
+                hasLocalArDepth &&
+                currentCameraModuleView ==
+                    CameraModuleViewMode.FloodDepth &&
+                pageIsVisible;
+
+            if (renderLocalDepthInAr)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     snapshot.LocalDepthMeters!.Value,
@@ -3137,7 +3940,9 @@ namespace RescuAR.App.Views.Camera
             else
             {
                 ARFloodDepthBridge.Clear(
-                    $"{snapshot.Mode} has no trusted local street-depth value");
+                    hasLocalArDepth
+                        ? "local depth retained; Flood Depth sub-tab is not active"
+                        : $"{snapshot.Mode} has no trusted local street-depth value");
             }
 
             Dispatcher.Dispatch(
@@ -3147,7 +3952,9 @@ namespace RescuAR.App.Views.Camera
                         snapshot.Title;
 
                     floodVisualizationPrimaryLabel.Text =
-                        snapshot.PrimaryText;
+                        hasLocalArDepth
+                            ? $"Simulating {snapshot.LocalDepthMeters!.Value:0.0#} meters of flood depth near you"
+                            : snapshot.PrimaryText;
 
                     floodVisualizationSecondaryLabel.Text =
                         snapshot.SecondaryText;
@@ -3164,7 +3971,17 @@ namespace RescuAR.App.Views.Camera
                      */
                     floodVisualizationLayer.IsVisible =
                         pageIsVisible &&
+                        currentCameraModuleView ==
+                            CameraModuleViewMode.FloodDepth &&
                         !safeZoneConfirmed;
+
+                    floodWaitingBanner.IsVisible =
+                        false;
+
+                    floodModeDepthSummaryLabel.Text =
+                        snapshot.PrimaryText;
+
+                    RefreshCameraModuleDynamicUi();
                 });
 
 #if ANDROID
@@ -3184,7 +4001,7 @@ namespace RescuAR.App.Views.Camera
                 $"mode={snapshot.Mode}, " +
                 $"localDepth={localDepthText}, " +
                 $"reportedRiverLevel={riverLevelText}, " +
-                $"arSpaceWater={hasLocalArDepth}, " +
+                $"arSpaceWater={renderLocalDepthInAr}, " +
                 $"reason='{reason}'.");
 #endif
         }
@@ -3201,7 +4018,15 @@ namespace RescuAR.App.Views.Camera
                 currentFloodVisualization.LocalDepthMeters.Value >
                     0.0;
 
-            if (!visible)
+            bool floodModeActive =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.FloodDepth;
+
+            bool shouldShow =
+                visible &&
+                floodModeActive;
+
+            if (!shouldShow)
             {
                 ARFloodDepthBridge.Clear(
                     reason);
@@ -3212,20 +4037,33 @@ namespace RescuAR.App.Views.Camera
                     currentFloodVisualization.LocalDepthMeters!.Value,
                     currentFloodVisualization.SourceText);
             }
+            else
+            {
+                ARFloodDepthBridge.Clear(
+                    "Flood Depth sub-tab has context but no trusted local depth");
+            }
 
             Dispatcher.Dispatch(
                 () =>
+                {
                     floodVisualizationLayer.IsVisible =
-                        visible &&
+                        shouldShow &&
                         currentFloodVisualization.IsAvailable &&
                         pageIsVisible &&
-                        !safeZoneConfirmed);
+                        !safeZoneConfirmed;
+
+                    floodWaitingBanner.IsVisible =
+                        floodModeActive &&
+                        !currentFloodVisualization.IsAvailable &&
+                        pageIsVisible &&
+                        !safeZoneConfirmed;
+                });
 
 #if ANDROID
             Log.Debug(
                 FloodDepthLogTag,
-                $"Flood visualization visibility={visible}; " +
-                $"arSpaceWater={(visible && hasLocalArDepth)}; " +
+                $"Flood visualization visibility={shouldShow}; " +
+                $"arSpaceWater={(shouldShow && hasLocalArDepth)}; " +
                 $"reason='{reason}'.");
 #endif
         }
@@ -3244,8 +4082,21 @@ namespace RescuAR.App.Views.Camera
 
             Dispatcher.Dispatch(
                 () =>
+                {
                     floodVisualizationLayer.IsVisible =
-                        false);
+                        false;
+
+                    floodWaitingBanner.IsVisible =
+                        currentCameraModuleView ==
+                            CameraModuleViewMode.FloodDepth &&
+                        pageIsVisible &&
+                        !safeZoneConfirmed;
+
+                    floodModeDepthSummaryLabel.Text =
+                        "No trusted local depth is currently available";
+
+                    RefreshCameraModuleDynamicUi();
+                });
 
 #if ANDROID
             if (wasAvailable)
@@ -3399,6 +4250,9 @@ namespace RescuAR.App.Views.Camera
             currentEmergencyAdvisory =
                 advisory;
 
+            lastEmergencyAdvisoryForStatus =
+                advisory;
+
             emergencyAdvisoryVisible =
                 true;
 
@@ -3507,6 +4361,8 @@ namespace RescuAR.App.Views.Camera
 
                     emergencyAdvisoryOverlay.IsVisible =
                         true;
+
+                    RefreshEmergencyStatusBanner();
                 });
 
             if (isHighSeverity)
@@ -3848,6 +4704,10 @@ namespace RescuAR.App.Views.Camera
                     $"AR evacuation guidance proceeding ({trigger})",
                     restoreTurnGuidance: false);
 
+                ApplyCameraModuleView(
+                    CameraModuleViewMode.ArCamera,
+                    "emergency AR evacuation guidance proceeding");
+
 #if ANDROID
                 Log.Info(
                     EmergencyAlertLogTag,
@@ -4123,6 +4983,8 @@ namespace RescuAR.App.Views.Camera
                         true;
 
                     if (!restoreTurnGuidance ||
+                        currentCameraModuleView !=
+                            CameraModuleViewMode.ArCamera ||
                         safeZoneConfirmed ||
                         !pageIsVisible ||
                         !lastTurnGuidance.IsAvailable)
@@ -4130,24 +4992,17 @@ namespace RescuAR.App.Views.Camera
                         return;
                     }
 
-                    turnInstructionLabel.Text =
-                        lastTurnGuidance.DisplayText;
-
-                    if (double.IsFinite(
-                            lastTurnGuidance.DistanceToTurnMeters))
-                    {
-                        turnDistanceLabel.Text =
-                            $"In {Math.Max(0.0, lastTurnGuidance.DistanceToTurnMeters):F0} m";
-                    }
-                    else
-                    {
-                        turnDistanceLabel.Text =
-                            $"{Math.Max(0.0, lastTurnGuidance.RemainingRouteMeters):F0} m remaining";
-                    }
+                    ApplyPrototypeTurnGuidance(
+                        lastTurnGuidance);
 
                     turnGuidancePanel.IsVisible =
                         true;
+
+                    RefreshEmergencyStatusBanner();
                 });
+
+            Dispatcher.Dispatch(
+                RefreshEmergencyStatusBanner);
 
 #if ANDROID
             if (wasVisible)
@@ -4380,6 +5235,28 @@ namespace RescuAR.App.Views.Camera
             }
 
             return "Follow the latest verified emergency guidance and use AR Evacuation Guidance when evacuation is required.";
+        }
+
+        private async void OnViewGuidanceSessionDetailsClicked(
+            object? sender,
+            EventArgs e)
+        {
+            try
+            {
+                if (Shell.Current is not null)
+                {
+                    await Shell.Current.GoToAsync(
+                        "SummaryPage");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    SafeZoneLogTag,
+                    $"Opening guidance session details failed: {exception.Message}");
+#endif
+            }
         }
 
         private async void OnFinishNavigationClicked(
@@ -5604,10 +6481,14 @@ namespace RescuAR.App.Views.Camera
             RouteProgressTracker.ProgressSnapshot progress =
                 _routeProgressTracker.Current;
 
+            Dispatcher.Dispatch(
+                RefreshCameraModuleDynamicUi);
+
             Log.Debug(
                 RouteLogTag,
                 "STATUS: " +
                 $"cameraPageActive={pageIsVisible}, " +
+                $"cameraModuleView={currentCameraModuleView}, " +
                 $"sessionPaused={_arCoreService.IsSessionPaused}, " +
                 $"frameLoop={_arCoreService.IsFrameLoopRunning}, " +
                 $"tracking={tracking}, " +

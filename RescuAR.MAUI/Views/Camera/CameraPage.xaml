@@ -5,451 +5,998 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine"
     Title="Camera"
-    BackgroundColor="Black">
+    BackgroundColor="White"
+    Shell.NavBarIsVisible="False"
+    Shell.TabBarBackgroundColor="White"
+    Shell.TabBarForegroundColor="#078F99"
+    Shell.TabBarTitleColor="#078F99"
+    Shell.TabBarUnselectedColor="#7D7D7D">
 
-    <Grid>
-        <evergine:EvergineView
-            x:Name="evergineView"
-            HorizontalOptions="Fill"
-            VerticalOptions="Fill" />
+    <!--
+        Camera module UI refinement aligned to the supplied Figma prototype.
+        All ordinary interface glyphs in this page now use Lucide-compatible
+        SVG assets rather than Unicode symbols or hand-drawn substitutes.
+    -->
+    <Grid RowDefinitions="60,*">
 
-        <!--
-            Milestone 3 pedestrian turn guidance.
-            InputTransparent keeps the overlay from interfering with AR touch
-            handling or MAUI navigation gestures.
-        -->
-        <Border
-            x:Name="turnGuidancePanel"
-            IsVisible="False"
-            InputTransparent="True"
-            ZIndex="10"
-            Margin="16,18,16,0"
-            Padding="16,10"
-            HorizontalOptions="Center"
-            VerticalOptions="Start"
-            BackgroundColor="#CC111111"
-            StrokeThickness="0">
-            <Border.StrokeShape>
-                <RoundRectangle CornerRadius="12" />
-            </Border.StrokeShape>
-
-            <VerticalStackLayout
-                Spacing="2"
-                HorizontalOptions="Center">
-                <Label
-                    x:Name="turnInstructionLabel"
-                    Text="Continue straight"
-                    TextColor="White"
-                    FontSize="20"
-                    FontAttributes="Bold"
-                    HorizontalTextAlignment="Center" />
-
-                <Label
-                    x:Name="turnDistanceLabel"
-                    Text=""
-                    TextColor="#E6FFFFFF"
-                    FontSize="13"
-                    HorizontalTextAlignment="Center" />
-            </VerticalStackLayout>
-        </Border>
-
-        <!--
-            Stage 7B Flood Depth Visualization.
-
-            The actual water body is now rendered in Evergine AR space using
-            the frame-coherent ARCore ground anchor and meter scale. This MAUI
-            layer intentionally contains ONLY the compact information card.
-
-            River-gauge values remain informational and never become a fake
-            local water depth. Only an explicitly local depth can create the
-            world-space water volume.
-        -->
+        <!-- ============================================================= -->
+        <!-- TOP APP BAR                                                   -->
+        <!-- ============================================================= -->
         <Grid
-            x:Name="floodVisualizationLayer"
-            IsVisible="False"
-            InputTransparent="True"
-            ZIndex="6">
+            Grid.Row="0"
+            ZIndex="200"
+            BackgroundColor="White"
+            Padding="18,0,15,0"
+            ColumnDefinitions="92,*,40,40"
+            ColumnSpacing="2">
+
+            <Grid
+                x:Name="cameraHeaderBackGroup"
+                Grid.Column="0"
+                ColumnDefinitions="22,*"
+                ColumnSpacing="2"
+                VerticalOptions="Center">
+                <Grid.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCameraHeaderBackClicked" />
+                </Grid.GestureRecognizers>
+                <Image
+                    Source="lucide_chevron_left_black.png"
+                    WidthRequest="20"
+                    HeightRequest="20"
+                    HorizontalOptions="Start"
+                    VerticalOptions="Center" />
+                <Label
+                    Grid.Column="1"
+                    Text="Back"
+                    TextColor="#121212"
+                    FontSize="15"
+                    FontAttributes="Bold"
+                    VerticalTextAlignment="Center" />
+            </Grid>
+
+            <Label
+                Grid.Column="1"
+                Text="RescuAR"
+                TextColor="#111111"
+                FontSize="14"
+                FontAttributes="Bold"
+                HorizontalOptions="Center"
+                VerticalOptions="Center" />
 
             <Border
-                x:Name="floodVisualizationBanner"
-                Margin="14,84,14,0"
-                Padding="12,10"
+                Grid.Column="2"
+                WidthRequest="38"
+                HeightRequest="38"
+                BackgroundColor="Transparent"
+                StrokeThickness="0"
+                VerticalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCameraSettingsClicked" />
+                </Border.GestureRecognizers>
+                <Image
+                    Source="lucide_settings_black.png"
+                    WidthRequest="23"
+                    HeightRequest="23"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center" />
+            </Border>
+
+            <Border
+                Grid.Column="3"
+                WidthRequest="38"
+                HeightRequest="38"
+                BackgroundColor="Transparent"
+                StrokeThickness="0"
+                VerticalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnCameraNotificationsClicked" />
+                </Border.GestureRecognizers>
+                <Image
+                    Source="lucide_bell_black.png"
+                    WidthRequest="23"
+                    HeightRequest="23"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center" />
+            </Border>
+
+            <BoxView
+                Grid.ColumnSpan="4"
+                HeightRequest="1"
+                BackgroundColor="#E8EAEC"
+                VerticalOptions="End" />
+        </Grid>
+
+        <!-- ============================================================= -->
+        <!-- CAMERA / AR WORKSPACE                                         -->
+        <!-- ============================================================= -->
+        <Grid
+            x:Name="cameraWorkspace"
+            Grid.Row="1"
+            BackgroundColor="Black">
+
+            <evergine:EvergineView
+                x:Name="evergineView"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill" />
+
+            <!-- 2D Map submodule belongs elsewhere; no fake map is shown. -->
+            <Grid
+                x:Name="mapModeLayer"
+                IsVisible="False"
+                ZIndex="6"
+                BackgroundColor="#F4F5F6">
+                <VerticalStackLayout
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    Spacing="6"
+                    Margin="32">
+                    <Label
+                        Text="2D Map Guidance"
+                        TextColor="#1A1A1A"
+                        FontSize="21"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center" />
+                    <Label
+                        x:Name="mapModeStatusLabel"
+                        Text="Placeholder"
+                        TextColor="#777777"
+                        FontSize="14"
+                        HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Grid>
+
+            <!-- ========================================================= -->
+            <!-- AR CAMERA STATUS + TURN GUIDANCE                          -->
+            <!-- ========================================================= -->
+            <Border
+                x:Name="cameraModeStatusBanner"
+                ZIndex="20"
+                Margin="16,16,16,0"
+                Padding="10,6"
+                MinimumHeightRequest="42"
                 VerticalOptions="Start"
-                BackgroundColor="#E8E0F2FE"
-                Stroke="#7DD3FC"
-                StrokeThickness="1">
-                <Border.StrokeShape>
-                    <RoundRectangle CornerRadius="10" />
-                </Border.StrokeShape>
-
-                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                    <Grid
-                        WidthRequest="34"
-                        HeightRequest="34"
-                        VerticalOptions="Center">
-                        <Path
-                            Data="M17,2 L27,12 L22,12 L22,21 L12,21 L12,12 L7,12 Z"
-                            Fill="#0284C7"
-                            Aspect="Uniform" />
-                        <Path
-                            Data="M2,25 C7,21 12,21 17,25 C22,29 27,29 32,25"
-                            Stroke="#0284C7"
-                            StrokeThickness="3"
-                            Fill="Transparent"
-                            Aspect="Uniform" />
-                        <Path
-                            Data="M2,31 C7,27 12,27 17,31 C22,35 27,35 32,31"
-                            Stroke="#0284C7"
-                            StrokeThickness="3"
-                            Fill="Transparent"
-                            Aspect="Uniform" />
-                    </Grid>
-
+                BackgroundColor="#DDF7E8"
+                Stroke="#BDE9D0"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8">
+                <Grid>
+                    <!-- Compatibility field retained; status-dot is not part of Figma. -->
+                    <Border
+                        x:Name="cameraModeStatusDot"
+                        IsVisible="False"
+                        WidthRequest="1"
+                        HeightRequest="1"
+                        StrokeThickness="0" />
                     <VerticalStackLayout
-                        Grid.Column="1"
-                        Spacing="1">
+                        Spacing="0"
+                        HorizontalOptions="Fill"
+                        VerticalOptions="Center">
                         <Label
-                            x:Name="floodVisualizationTitleLabel"
-                            Text="Flood depth visualization"
-                            TextColor="#075985"
-                            FontSize="13"
-                            FontAttributes="Bold" />
-
+                            x:Name="cameraModeStatusTitleLabel"
+                            Text="No Emergency"
+                            TextColor="#07814D"
+                            FontSize="12"
+                            FontAttributes="Bold"
+                            HorizontalTextAlignment="Center" />
                         <Label
-                            x:Name="floodVisualizationPrimaryLabel"
-                            Text="Estimated local depth: 0.60 m"
-                            TextColor="#0C4A6E"
-                            FontSize="16"
-                            FontAttributes="Bold" />
-
-                        <Label
-                            x:Name="floodVisualizationSecondaryLabel"
-                            Text="Water surface is rendered at the measured height above the detected ARCore ground plane."
-                            TextColor="#075985"
-                            FontSize="11"
-                            LineBreakMode="WordWrap" />
-
-                        <Label
-                            x:Name="floodVisualizationSourceLabel"
-                            Text="DEV synthetic local depth • AR ground-relative visualization"
-                            TextColor="#0369A1"
+                            x:Name="cameraModeStatusSubtitleLabel"
+                            Text="You will be notified if an emergency is detected nearby."
+                            TextColor="#16815A"
                             FontSize="10"
-                            Margin="0,2,0,0" />
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="TailTruncation" />
                     </VerticalStackLayout>
                 </Grid>
             </Border>
-        </Grid>
 
-        <!--
-            Stage 6 Emergency Alert Overlay.
-
-            The alert presentation intentionally follows the approved Camera
-            mockups: live camera remains visible underneath a red emergency
-            treatment, the critical instruction is centered, and the only
-            actions are Start AR Evacuation Guidance and Dismiss.
-
-            HIGH/CRITICAL advisories additionally show the five-second
-            automatic-start notice. Lower severities never auto-start.
-
-            The Safe Zone completion overlay remains ZIndex=100 and therefore
-            has visual priority over this emergency advisory overlay.
-        -->
-        <Grid
-            x:Name="emergencyAdvisoryOverlay"
-            IsVisible="False"
-            ZIndex="80"
-            BackgroundColor="#D0B00000">
-
-            <Grid RowDefinitions="Auto,*,Auto">
-
-                <!-- Approved top emergency banner -->
-                <Border
-                    x:Name="emergencyAdvisoryTopBanner"
-                    Grid.Row="0"
-                    Margin="14,14,14,0"
-                    Padding="14,10"
-                    BackgroundColor="#70FF5A5A"
-                    StrokeThickness="0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="9" />
-                    </Border.StrokeShape>
+            <Border
+                x:Name="turnGuidancePanel"
+                IsVisible="False"
+                InputTransparent="True"
+                ZIndex="21"
+                Margin="16,72,16,0"
+                Padding="16,14"
+                MinimumHeightRequest="136"
+                VerticalOptions="Start"
+                BackgroundColor="#E8FFFFFF"
+                Stroke="#D7DADD"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8">
+                <Border.Shadow>
+                    <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
+                </Border.Shadow>
+                <Grid ColumnDefinitions="62,*,26" ColumnSpacing="10">
+                    <Image
+                        x:Name="turnDirectionIconLabel"
+                        Source="lucide_arrow_up_teal.png"
+                        WidthRequest="54"
+                        HeightRequest="54"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
 
                     <VerticalStackLayout
-                        Spacing="0"
-                        HorizontalOptions="Center">
-                        <Label
-                            Text="Emergency Detected"
-                            TextColor="#8E1010"
-                            FontSize="13"
-                            FontAttributes="Bold"
-                            HorizontalTextAlignment="Center" />
-                        <Label
-                            x:Name="emergencyAdvisoryTopSeverityLabel"
-                            Text="Flood Advisory - High Severity"
-                            TextColor="#8E1010"
-                            FontSize="12"
-                            HorizontalTextAlignment="Center" />
-                    </VerticalStackLayout>
-                </Border>
-
-                <!-- Main emergency message. Scrollable only on small screens. -->
-                <ScrollView Grid.Row="1">
-                    <VerticalStackLayout
-                        Padding="24,16,24,8"
-                        Spacing="13"
-                        HorizontalOptions="Fill"
+                        Grid.Column="1"
+                        Spacing="2"
                         VerticalOptions="Center">
-
-                        <!-- Flood icon from the approved mockup: up arrow + waves. -->
-                        <Grid
-                            x:Name="emergencyFloodIcon"
-                            IsVisible="False"
-                            WidthRequest="172"
-                            HeightRequest="144"
-                            HorizontalOptions="Center">
-                            <Path
-                                Data="M86,4 L118,38 L99,38 L99,78 L73,78 L73,38 L54,38 Z"
-                                Fill="White"
-                                Aspect="Uniform" />
-                            <Path
-                                Data="M12,94 C28,82 43,82 58,94 C73,106 88,106 103,94 C118,82 133,82 160,94"
-                                Stroke="White"
-                                StrokeThickness="10"
-                                Fill="Transparent"
-                                Aspect="Uniform" />
-                            <Path
-                                Data="M12,124 C28,112 43,112 58,124 C73,136 88,136 103,124 C118,112 133,112 160,124"
-                                Stroke="White"
-                                StrokeThickness="10"
-                                Fill="Transparent"
-                                Aspect="Uniform" />
-                        </Grid>
-
-                        <!-- Earthquake ECG-style icon from the approved mockup. -->
-                        <Grid
-                            x:Name="emergencyEarthquakeIcon"
-                            IsVisible="False"
-                            WidthRequest="172"
-                            HeightRequest="144"
-                            HorizontalOptions="Center">
-                            <Path
-                                Data="M8,78 L42,78 L58,28 L83,118 L108,66 L132,66 L142,48 L164,48"
-                                Stroke="White"
-                                StrokeThickness="10"
-                                Fill="Transparent"
-                                Aspect="Uniform" />
-                        </Grid>
-
-                        <!-- Generic emergency icon for non-flood/non-earthquake advisories. -->
-                        <Grid
-                            x:Name="emergencyGenericIcon"
-                            IsVisible="True"
-                            WidthRequest="146"
-                            HeightRequest="120"
-                            HorizontalOptions="Center">
-                            <Label
-                                Text="!"
-                                TextColor="White"
-                                FontSize="102"
-                                FontAttributes="Bold"
-                                HorizontalTextAlignment="Center"
-                                VerticalTextAlignment="Center" />
-                        </Grid>
-
                         <Label
-                            x:Name="emergencyAdvisoryHeroTitleLabel"
-                            Text="Emergency Nearby!"
-                            TextColor="White"
-                            FontSize="43"
+                            x:Name="turnInstructionLabel"
+                            Text="Proceed straight for 120 meters"
+                            TextColor="#151515"
+                            FontSize="23"
                             FontAttributes="Bold"
-                            HorizontalTextAlignment="Center"
-                            LineBreakMode="WordWrap" />
-
-                        <Label
-                            x:Name="emergencyAdvisoryBodySeverityLabel"
-                            Text="Emergency Advisory - High Severity"
-                            TextColor="White"
-                            FontSize="14"
-                            FontAttributes="Bold"
-                            HorizontalTextAlignment="Center" />
-
-                        <Label
-                            x:Name="emergencyAdvisoryBodyMessageLabel"
-                            Text="Follow the latest verified emergency guidance."
-                            TextColor="White"
-                            FontSize="16"
-                            FontAttributes="Bold"
-                            HorizontalTextAlignment="Center"
                             LineBreakMode="WordWrap"
-                            Margin="8,14,8,0" />
+                            LineHeight="1.0" />
+                        <Label
+                            x:Name="turnDistanceLabel"
+                            Text="877 meters away from the nearest evacuation center"
+                            TextColor="#222222"
+                            FontSize="15"
+                            LineBreakMode="WordWrap"
+                            LineHeight="1.08" />
                     </VerticalStackLayout>
-                </ScrollView>
 
-                <!--
-                    HIGH severity only:
-                    this notice is hidden for Moderate/Low/etc. advisories.
-                -->
-                <VerticalStackLayout
-                    Grid.Row="2"
-                    Padding="20,0,20,18"
-                    Spacing="9">
+                    <Image
+                        x:Name="turnChevronImage"
+                        Grid.Column="2"
+                        Source="lucide_chevron_down_black.png"
+                        WidthRequest="20"
+                        HeightRequest="20"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
+                </Grid>
+            </Border>
 
-                    <Label
-                        x:Name="emergencyAdvisoryCountdownLabel"
-                        IsVisible="False"
-                        Text="Popup will close in 5 seconds. AR Evacuation Guidance will proceed..."
-                        TextColor="#F7FFFFFF"
-                        FontSize="12"
-                        HorizontalTextAlignment="Center"
-                        LineBreakMode="WordWrap" />
+            <!-- ========================================================= -->
+            <!-- FLOOD DEPTH SUB-TAB                                      -->
+            <!-- ========================================================= -->
+            <Border
+                x:Name="floodWaitingBanner"
+                IsVisible="False"
+                ZIndex="20"
+                Margin="16,16,16,0"
+                Padding="16,14"
+                MinimumHeightRequest="58"
+                VerticalOptions="Start"
+                BackgroundColor="#D8EDF8"
+                Stroke="#94C7E2"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 8">
+                <Label
+                    Text="Waiting for simulation..."
+                    TextColor="#0876B9"
+                    FontSize="20"
+                    FontAttributes="Bold"
+                    VerticalTextAlignment="Center" />
+            </Border>
 
-                    <Button
-                        x:Name="emergencyStartGuidanceButton"
-                        Text="Start AR Evacuation Guidance  >"
-                        HeightRequest="50"
-                        CornerRadius="8"
-                        BackgroundColor="#FF3B43"
-                        TextColor="White"
-                        FontSize="14"
-                        FontAttributes="Bold"
-                        Clicked="OnEmergencyStartGuidanceClicked" />
-
-                    <Button
-                        x:Name="emergencyDismissButton"
-                        Text="Dismiss"
-                        HeightRequest="38"
-                        Padding="0"
-                        BackgroundColor="Transparent"
-                        TextColor="White"
-                        FontSize="14"
-                        FontAttributes="Bold"
-                        Clicked="OnEmergencyAdvisoryCloseClicked" />
-                </VerticalStackLayout>
-            </Grid>
-        </Grid>
-
-        <!--
-            Stage 5 Safe Zone Confirmation.
-            Full-screen completion state aligned with the approved green
-            safe-zone UI direction. It is intentionally hidden until repeated
-            GPS + route-progress checks confirm arrival.
-        -->
-        <Grid
-            x:Name="safeZoneConfirmationOverlay"
-            IsVisible="False"
-            ZIndex="100"
-            BackgroundColor="#F20C6B43"
-            Padding="28">
-
-            <VerticalStackLayout
-                Spacing="16"
-                HorizontalOptions="Center"
-                VerticalOptions="Center"
-                MaximumWidthRequest="420">
-
+            <Grid
+                x:Name="floodVisualizationLayer"
+                IsVisible="False"
+                InputTransparent="True"
+                ZIndex="20">
                 <Border
-                    WidthRequest="96"
-                    HeightRequest="96"
-                    HorizontalOptions="Center"
-                    BackgroundColor="#26FFFFFF"
-                    Stroke="#B3FFFFFF"
-                    StrokeThickness="2">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="48" />
-                    </Border.StrokeShape>
+                    x:Name="floodVisualizationBanner"
+                    Margin="16,16,16,0"
+                    Padding="15,11"
+                    MinimumHeightRequest="82"
+                    VerticalOptions="Start"
+                    BackgroundColor="#D8EDF8"
+                    Stroke="#94C7E2"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 8">
+                    <Grid ColumnDefinitions="52,*" ColumnSpacing="11">
+                        <Image
+                            Source="lucide_waves_arrow_up_teal.png"
+                            WidthRequest="46"
+                            HeightRequest="46"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                        <VerticalStackLayout
+                            Grid.Column="1"
+                            Spacing="0"
+                            VerticalOptions="Center">
+                            <Label
+                                x:Name="floodVisualizationPrimaryLabel"
+                                Text="Simulating 0.60 meters of flood depth near you"
+                                TextColor="#0876B9"
+                                FontSize="19"
+                                FontAttributes="Bold"
+                                LineBreakMode="WordWrap"
+                                LineHeight="1.05" />
+                            <!-- Service fields retained but intentionally hidden from Figma UI. -->
+                            <Label x:Name="floodVisualizationTitleLabel" IsVisible="False" />
+                            <Label x:Name="floodVisualizationSecondaryLabel" IsVisible="False" />
+                            <Label x:Name="floodVisualizationSourceLabel" IsVisible="False" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ========================================================= -->
+            <!-- CAMERA FLOATING CONTROLS                                 -->
+            <!-- ========================================================= -->
+            <VerticalStackLayout
+                x:Name="cameraZoomControls"
+                ZIndex="30"
+                Margin="16,0,0,16"
+                Spacing="5"
+                HorizontalOptions="Start"
+                VerticalOptions="End">
+                <Border
+                    WidthRequest="64"
+                    HeightRequest="32"
+                    BackgroundColor="#ECFFFFFF"
+                    Stroke="#F4FFFFFF"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 7">
                     <Label
-                        Text="✓"
-                        TextColor="White"
-                        FontSize="58"
+                        Text="1x"
+                        TextColor="#111111"
+                        FontSize="13"
                         FontAttributes="Bold"
                         HorizontalTextAlignment="Center"
                         VerticalTextAlignment="Center" />
                 </Border>
 
-                <Label
-                    Text="You've Reached a Safe Zone"
-                    TextColor="White"
-                    FontSize="30"
-                    FontAttributes="Bold"
-                    HorizontalTextAlignment="Center" />
-
-                <Label
-                    x:Name="safeZoneDestinationLabel"
-                    Text="Evacuation Center"
-                    TextColor="White"
-                    FontSize="18"
-                    FontAttributes="Bold"
-                    HorizontalTextAlignment="Center" />
-
-                <Label
-                    x:Name="safeZoneDetailsLabel"
-                    Text="Arrival confirmed."
-                    TextColor="#E6FFFFFF"
-                    FontSize="14"
-                    HorizontalTextAlignment="Center" />
-
-                <Button
-                    Text="Finish Navigation"
-                    Margin="0,12,0,0"
-                    Padding="18,12"
-                    BackgroundColor="White"
-                    TextColor="#0C6B43"
-                    FontAttributes="Bold"
-                    Clicked="OnFinishNavigationClicked" />
+                <Border
+                    WidthRequest="64"
+                    HeightRequest="126"
+                    BackgroundColor="#ECFFFFFF"
+                    Stroke="#F4FFFFFF"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 7">
+                    <Grid RowDefinitions="*,1,*">
+                        <Image
+                            Grid.Row="0"
+                            Source="lucide_zoom_in_black.png"
+                            WidthRequest="21"
+                            HeightRequest="21"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                        <BoxView Grid.Row="1" BackgroundColor="#CFD2D4" />
+                        <Image
+                            Grid.Row="2"
+                            Source="lucide_zoom_out_black.png"
+                            WidthRequest="21"
+                            HeightRequest="21"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                    </Grid>
+                </Border>
             </VerticalStackLayout>
-        </Grid>
 
-        <!--
-            TEMPORARY developer validation controls.
-            Stage 5 safe-zone validation is enabled for the current test build;
-            the older Milestone 3 controls remain disabled.
-        -->
-        <VerticalStackLayout
-            ZIndex="20"
-            Margin="20,0,20,28"
-            Spacing="8"
-            HorizontalOptions="Center"
-            VerticalOptions="End">
+            <Button
+                x:Name="exploreSafeZonesButton"
+                ZIndex="31"
+                Text="Explore Safe Zones"
+                ImageSource="lucide_external_link_white.png"
+                ContentLayout="Left,8"
+                HeightRequest="52"
+                WidthRequest="228"
+                Margin="0,0,0,16"
+                HorizontalOptions="Center"
+                VerticalOptions="End"
+                BackgroundColor="#0A929C"
+                BorderColor="#087A83"
+                BorderWidth="1"
+                TextColor="White"
+                FontSize="13"
+                FontAttributes="Bold"
+                CornerRadius="8"
+                Clicked="OnExploreSafeZonesClicked" />
+
+            <Button
+                x:Name="endNavigationButton"
+                IsVisible="False"
+                ZIndex="31"
+                Text="Stop Guidance"
+                ImageSource="lucide_square_white.png"
+                ContentLayout="Left,8"
+                HeightRequest="52"
+                WidthRequest="228"
+                Margin="0,0,0,16"
+                HorizontalOptions="Center"
+                VerticalOptions="End"
+                BackgroundColor="#E84343"
+                BorderColor="#C51F25"
+                BorderWidth="1"
+                TextColor="White"
+                FontSize="13"
+                FontAttributes="Bold"
+                CornerRadius="7"
+                Clicked="OnEndNavigationClicked" />
 
             <Button
                 x:Name="developerFloodDepthTestButton"
-                Text="DEV: AR Flood Depth 0.60 m"
                 IsVisible="False"
-                Padding="14,10"
-                BackgroundColor="#CC0284C7"
+                ZIndex="31"
+                Text="Simulate Flood Depth"
+                ImageSource="lucide_arrow_up_right_white.png"
+                ContentLayout="Left,8"
+                HeightRequest="52"
+                WidthRequest="220"
+                Margin="0,0,0,16"
+                HorizontalOptions="Center"
+                VerticalOptions="End"
+                BackgroundColor="#0A929C"
+                BorderColor="#08757D"
+                BorderWidth="1"
                 TextColor="White"
+                FontSize="13"
                 FontAttributes="Bold"
-                Clicked="OnDeveloperFloodDepthTestClicked" />
+                CornerRadius="7"
+                Clicked="OnFloodSimulationConfigureClicked" />
 
-            <Button
-                x:Name="developerSafeZoneTestButton"
-                Text="DEV: Arm Safe Zone Test"
-                IsVisible="False"
-                Padding="14,10"
-                BackgroundColor="#CC0C6B43"
-                TextColor="White"
-                FontAttributes="Bold"
-                Clicked="OnDeveloperSafeZoneTestClicked" />
+            <!-- Navigation & Awareness selector. -->
+            <Border
+                x:Name="cameraModeSwitcherButton"
+                ZIndex="32"
+                WidthRequest="64"
+                HeightRequest="64"
+                Margin="0,0,16,16"
+                HorizontalOptions="End"
+                VerticalOptions="End"
+                BackgroundColor="#ECFFFFFF"
+                Stroke="#F4FFFFFF"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 7">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnNavigationAwarenessClicked" />
+                </Border.GestureRecognizers>
+                <Grid>
+                    <Image
+                        x:Name="cameraModeSwitcherMapIcon"
+                        Source="lucide_map_black.png"
+                        WidthRequest="24"
+                        HeightRequest="24"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
+                    <Image
+                        x:Name="cameraModeSwitcherFloodIcon"
+                        IsVisible="False"
+                        Source="lucide_waves_arrow_up_black.png"
+                        WidthRequest="25"
+                        HeightRequest="25"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
+                </Grid>
+            </Border>
 
-            <Button
-                x:Name="developerTurnTestButton"
-                Text="DEV: Validate Turn States"
+            <!-- ========================================================= -->
+            <!-- NAVIGATION & AWARENESS BOTTOM SHEET                       -->
+            <!-- ========================================================= -->
+            <Grid
+                x:Name="navigationAwarenessSheet"
                 IsVisible="False"
-                Padding="14,10"
-                BackgroundColor="#CC1F4F7A"
-                TextColor="White"
-                FontAttributes="Bold"
-                Clicked="OnDeveloperTurnTestClicked" />
+                ZIndex="55"
+                BackgroundColor="Transparent"
+                VerticalOptions="End">
+                <Border
+                    Padding="16,15,16,16"
+                    BackgroundColor="White"
+                    Stroke="#E5E7E9"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 14">
+                    <Border.Shadow>
+                        <Shadow Brush="#30000000" Offset="0,-3" Radius="10" Opacity="0.18" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="11">
+                        <Grid ColumnDefinitions="*,36">
+                            <Label
+                                Text="Navigation &amp; Awareness"
+                                TextColor="#858585"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                VerticalOptions="Center" />
+                            <Border
+                                Grid.Column="1"
+                                WidthRequest="36"
+                                HeightRequest="36"
+                                BackgroundColor="Transparent"
+                                StrokeThickness="0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnNavigationAwarenessCloseClicked" />
+                                </Border.GestureRecognizers>
+                                <Image
+                                    Source="lucide_x_gray.png"
+                                    WidthRequest="20"
+                                    HeightRequest="20"
+                                    HorizontalOptions="Center"
+                                    VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
 
-            <Button
-                x:Name="developerRerouteTestButton"
-                Text="DEV: Simulate Off-Route Reroute"
+                        <Border
+                            Stroke="#DFE1E3"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8">
+                            <Grid RowDefinitions="64,1,64,1,64">
+                                <Grid Grid.Row="0" Padding="14,8" ColumnDefinitions="40,*,30">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnArGuidanceOptionClicked" />
+                                    </Grid.GestureRecognizers>
+                                    <Border
+                                        WidthRequest="30"
+                                        HeightRequest="30"
+                                        Stroke="#D7DBDE"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 4"
+                                        VerticalOptions="Center">
+                                        <Image
+                                            Source="lucide_scan_line_teal.png"
+                                            WidthRequest="18"
+                                            HeightRequest="18"
+                                            HorizontalOptions="Center"
+                                            VerticalOptions="Center" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                                        <Label Text="AR Evacuation Guidance" TextColor="#151515" FontSize="14" />
+                                        <Label Text="View evacuation routes on an AR space" TextColor="#888888" FontSize="11" />
+                                    </VerticalStackLayout>
+                                    <Image
+                                        x:Name="arGuidanceSelectedIcon"
+                                        Grid.Column="2"
+                                        Source="lucide_circle_check_big_teal.png"
+                                        WidthRequest="20"
+                                        HeightRequest="20"
+                                        HorizontalOptions="Center"
+                                        VerticalOptions="Center" />
+                                </Grid>
+
+                                <BoxView Grid.Row="1" BackgroundColor="#E5E5E5" />
+
+                                <Grid Grid.Row="2" Padding="14,8" ColumnDefinitions="40,*,30">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnMapGuidanceOptionClicked" />
+                                    </Grid.GestureRecognizers>
+                                    <Border
+                                        WidthRequest="30"
+                                        HeightRequest="30"
+                                        Stroke="#D7DBDE"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 4"
+                                        VerticalOptions="Center">
+                                        <Image
+                                            Source="lucide_map_teal.png"
+                                            WidthRequest="18"
+                                            HeightRequest="18"
+                                            HorizontalOptions="Center"
+                                            VerticalOptions="Center" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                                        <Label Text="2D Map Guidance" TextColor="#151515" FontSize="14" />
+                                        <Label Text="View evacuation routes on a map" TextColor="#888888" FontSize="11" />
+                                    </VerticalStackLayout>
+                                    <Image
+                                        x:Name="mapGuidanceSelectedIcon"
+                                        Grid.Column="2"
+                                        IsVisible="False"
+                                        Source="lucide_circle_check_big_teal.png"
+                                        WidthRequest="20"
+                                        HeightRequest="20"
+                                        HorizontalOptions="Center"
+                                        VerticalOptions="Center" />
+                                </Grid>
+
+                                <BoxView Grid.Row="3" BackgroundColor="#E5E5E5" />
+
+                                <Grid Grid.Row="4" Padding="14,8" ColumnDefinitions="40,*,30">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnFloodGuidanceOptionClicked" />
+                                    </Grid.GestureRecognizers>
+                                    <Border
+                                        WidthRequest="30"
+                                        HeightRequest="30"
+                                        Stroke="#D7DBDE"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 4"
+                                        VerticalOptions="Center">
+                                        <Image
+                                            Source="lucide_waves_arrow_up_teal.png"
+                                            WidthRequest="19"
+                                            HeightRequest="19"
+                                            HorizontalOptions="Center"
+                                            VerticalOptions="Center" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                                        <Label Text="Flood Depth Visualization" TextColor="#151515" FontSize="14" />
+                                        <Label Text="View projected flood depth at your location" TextColor="#888888" FontSize="11" />
+                                    </VerticalStackLayout>
+                                    <Image
+                                        x:Name="floodGuidanceSelectedIcon"
+                                        Grid.Column="2"
+                                        IsVisible="False"
+                                        Source="lucide_circle_check_big_teal.png"
+                                        WidthRequest="20"
+                                        HeightRequest="20"
+                                        HorizontalOptions="Center"
+                                        VerticalOptions="Center" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <!-- Validated short-range developer controls remain hidden inside sheet. -->
+                        <VerticalStackLayout x:Name="arDeveloperControls" IsVisible="False" Spacing="4">
+                            <Button
+                                x:Name="developerSafeZoneTestButton"
+                                Text="DEV: Arm Safe Zone Test"
+                                IsVisible="False"
+                                HeightRequest="34"
+                                Padding="10,4"
+                                BackgroundColor="#EEF8F4"
+                                TextColor="#0C6B43"
+                                FontSize="10"
+                                CornerRadius="6"
+                                Clicked="OnDeveloperSafeZoneTestClicked" />
+                            <Button
+                                x:Name="developerTurnTestButton"
+                                IsVisible="False"
+                                Text="DEV: Validate Turn States"
+                                Clicked="OnDeveloperTurnTestClicked" />
+                            <Button
+                                x:Name="developerRerouteTestButton"
+                                IsVisible="False"
+                                Text="DEV: Simulate Off-Route Reroute"
+                                Clicked="OnDeveloperRerouteTestClicked" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
+
+            <!-- ========================================================= -->
+            <!-- FLOOD SIMULATION CONFIGURATION SHEET                      -->
+            <!-- ========================================================= -->
+            <Grid
+                x:Name="floodSimulationConfigurationSheet"
                 IsVisible="False"
-                Padding="14,10"
-                BackgroundColor="#CC7A1F1F"
-                TextColor="White"
-                FontAttributes="Bold"
-                Clicked="OnDeveloperRerouteTestClicked" />
-        </VerticalStackLayout>
+                ZIndex="58"
+                VerticalOptions="End">
+                <Border
+                    Padding="16,15,16,16"
+                    BackgroundColor="White"
+                    Stroke="#E5E7E9"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 14">
+                    <Border.Shadow>
+                        <Shadow Brush="#30000000" Offset="0,-3" Radius="10" Opacity="0.18" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="13">
+                        <Grid ColumnDefinitions="*,36">
+                            <Label
+                                Text="Flood Depth Simulation Configuration"
+                                TextColor="#858585"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                VerticalOptions="Center" />
+                            <Border
+                                Grid.Column="1"
+                                WidthRequest="36"
+                                HeightRequest="36"
+                                BackgroundColor="Transparent"
+                                StrokeThickness="0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnFloodSimulationSheetCloseClicked" />
+                                </Border.GestureRecognizers>
+                                <Image
+                                    Source="lucide_x_gray.png"
+                                    WidthRequest="20"
+                                    HeightRequest="20"
+                                    HorizontalOptions="Center"
+                                    VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+
+                        <Label
+                            Text="Flood Depth (in meters)"
+                            TextColor="#171717"
+                            FontSize="12" />
+
+                        <Grid ColumnDefinitions="*,48" ColumnSpacing="10">
+                            <Slider
+                                x:Name="floodSimulationDepthSlider"
+                                Minimum="0.1"
+                                Maximum="3.0"
+                                Value="0.6"
+                                MinimumTrackColor="#0A929C"
+                                MaximumTrackColor="#D9D9D9"
+                                ThumbColor="#0A929C"
+                                ValueChanged="OnFloodSimulationSliderChanged" />
+                            <Border
+                                Grid.Column="1"
+                                HeightRequest="34"
+                                BackgroundColor="White"
+                                Stroke="#D0D0D0"
+                                StrokeThickness="1.5"
+                                StrokeShape="RoundRectangle 8">
+                                <Label
+                                    x:Name="floodSimulationDepthValueLabel"
+                                    Text="0.6"
+                                    TextColor="#111111"
+                                    FontSize="14"
+                                    FontAttributes="Bold"
+                                    HorizontalTextAlignment="Center"
+                                    VerticalTextAlignment="Center" />
+                            </Border>
+                        </Grid>
+
+                        <Button
+                            Text="Save Changes &amp; Simulate"
+                            ImageSource="lucide_circle_check_big_white.png"
+                            ContentLayout="Left,8"
+                            HeightRequest="48"
+                            BackgroundColor="#0A929C"
+                            BorderColor="#08757D"
+                            BorderWidth="1"
+                            TextColor="White"
+                            FontSize="13"
+                            FontAttributes="Bold"
+                            CornerRadius="7"
+                            Clicked="OnSaveFloodSimulationClicked" />
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
+
+            <!-- Hidden compatibility controls for existing code paths. -->
+            <Grid IsVisible="False" InputTransparent="True">
+                <Border x:Name="arCameraModeButton"><Label x:Name="arCameraModeIconLabel" /></Border>
+                <Border x:Name="mapModeButton" />
+                <Border x:Name="floodModeButton" />
+                <Border x:Name="floodDepthModeControlPanel"><Label x:Name="floodModeDepthSummaryLabel" /></Border>
+            </Grid>
+
+            <!-- ========================================================= -->
+            <!-- STAGE 6 EMERGENCY ALERT OVERLAY                           -->
+            <!-- ========================================================= -->
+            <Grid
+                x:Name="emergencyAdvisoryOverlay"
+                IsVisible="False"
+                ZIndex="80"
+                BackgroundColor="#D0B00000">
+                <Grid RowDefinitions="Auto,*,Auto">
+                    <Border
+                        x:Name="emergencyAdvisoryTopBanner"
+                        Grid.Row="0"
+                        Margin="16,16,16,0"
+                        Padding="12,7"
+                        BackgroundColor="#70FF5A5A"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 8">
+                        <VerticalStackLayout Spacing="0" HorizontalOptions="Center">
+                            <Label
+                                Text="Emergency Detected"
+                                TextColor="#8E1010"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center" />
+                            <Label
+                                x:Name="emergencyAdvisoryTopSeverityLabel"
+                                Text="Flood Advisory - High Severity"
+                                TextColor="#8E1010"
+                                FontSize="11"
+                                HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <ScrollView Grid.Row="1">
+                        <VerticalStackLayout
+                            Padding="24,8,24,4"
+                            Spacing="11"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="Center">
+
+                            <!-- Figma flood hero: Lucide ArrowUp + Waves. -->
+                            <Grid
+                                x:Name="emergencyFloodIcon"
+                                IsVisible="False"
+                                WidthRequest="176"
+                                HeightRequest="148"
+                                HorizontalOptions="Center">
+                                <Image
+                                    Source="lucide_arrow_up_white.png"
+                                    WidthRequest="86"
+                                    HeightRequest="86"
+                                    Margin="0,0,0,46"
+                                    HorizontalOptions="Center"
+                                    VerticalOptions="Center" />
+                                <Image
+                                    Source="lucide_waves_white.png"
+                                    WidthRequest="170"
+                                    HeightRequest="80"
+                                    Margin="0,68,0,0"
+                                    HorizontalOptions="Center"
+                                    VerticalOptions="Center" />
+                            </Grid>
+
+                            <Image
+                                x:Name="emergencyEarthquakeIcon"
+                                IsVisible="False"
+                                Source="lucide_activity_white.png"
+                                WidthRequest="166"
+                                HeightRequest="136"
+                                HorizontalOptions="Center" />
+
+                            <Image
+                                x:Name="emergencyGenericIcon"
+                                IsVisible="True"
+                                Source="lucide_triangle_alert_white.png"
+                                WidthRequest="132"
+                                HeightRequest="116"
+                                HorizontalOptions="Center" />
+
+                            <Label
+                                x:Name="emergencyAdvisoryHeroTitleLabel"
+                                Text="Emergency Nearby!"
+                                TextColor="White"
+                                FontSize="43"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center"
+                                LineBreakMode="WordWrap"
+                                LineHeight="1.02" />
+                            <Label
+                                x:Name="emergencyAdvisoryBodySeverityLabel"
+                                Text="Emergency Advisory - High Severity"
+                                TextColor="White"
+                                FontSize="14"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center" />
+                            <Label
+                                x:Name="emergencyAdvisoryBodyMessageLabel"
+                                Text="Follow the latest verified emergency guidance."
+                                TextColor="White"
+                                FontSize="16"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center"
+                                LineBreakMode="WordWrap"
+                                LineHeight="1.1"
+                                Margin="8,12,8,0" />
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <VerticalStackLayout
+                        Grid.Row="2"
+                        Padding="20,0,20,14"
+                        Spacing="7">
+                        <Label
+                            x:Name="emergencyAdvisoryCountdownLabel"
+                            IsVisible="False"
+                            Text="Popup will close in 5 seconds. AR Evacuation Guidance will proceed..."
+                            TextColor="#F7FFFFFF"
+                            FontSize="11"
+                            HorizontalTextAlignment="Center"
+                            LineBreakMode="WordWrap" />
+                        <Button
+                            x:Name="emergencyStartGuidanceButton"
+                            Text="Start AR Evacuation Guidance"
+                            ImageSource="lucide_chevron_right_white.png"
+                            ContentLayout="Right,8"
+                            HeightRequest="50"
+                            CornerRadius="8"
+                            BackgroundColor="#FF3B43"
+                            TextColor="White"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Clicked="OnEmergencyStartGuidanceClicked" />
+                        <Button
+                            x:Name="emergencyDismissButton"
+                            Text="Dismiss"
+                            HeightRequest="38"
+                            Padding="0"
+                            BackgroundColor="Transparent"
+                            TextColor="White"
+                            FontSize="14"
+                            FontAttributes="Bold"
+                            Clicked="OnEmergencyAdvisoryCloseClicked" />
+                    </VerticalStackLayout>
+                </Grid>
+            </Grid>
+
+            <!-- ========================================================= -->
+            <!-- STAGE 5 SAFE ZONE CONFIRMATION                            -->
+            <!-- ========================================================= -->
+            <Grid
+                x:Name="safeZoneConfirmationOverlay"
+                IsVisible="False"
+                ZIndex="100"
+                BackgroundColor="#CE0F7C49"
+                Padding="26,20">
+                <VerticalStackLayout
+                    Spacing="7"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    MaximumWidthRequest="420">
+
+                    <Image
+                        Source="lucide_shield_check_white.png"
+                        WidthRequest="142"
+                        HeightRequest="142"
+                        HorizontalOptions="Center" />
+
+                    <Label
+                        Text="You've Reached a&#10;Safe Zone"
+                        TextColor="White"
+                        FontSize="34"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        LineBreakMode="WordWrap"
+                        LineHeight="1.0"
+                        Margin="0,3,0,0" />
+
+                    <Label
+                        x:Name="safeZoneDestinationLabel"
+                        Text="Malanday Elementary School"
+                        TextColor="White"
+                        FontSize="16"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        Margin="0,5,0,0" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="30" Margin="0,7,0,4">
+                        <VerticalStackLayout Spacing="0" HorizontalOptions="End">
+                            <Label
+                                x:Name="safeZoneDistanceTravelledLabel"
+                                Text="0 meters"
+                                TextColor="White"
+                                FontSize="15"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center" />
+                            <Label
+                                Text="Distance Traveled"
+                                TextColor="#E8FFFFFF"
+                                FontSize="11"
+                                HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="0" HorizontalOptions="Start">
+                            <Label
+                                x:Name="safeZoneTimeTakenLabel"
+                                Text="0 minutes"
+                                TextColor="White"
+                                FontSize="15"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center" />
+                            <Label
+                                Text="Time Taken"
+                                TextColor="#E8FFFFFF"
+                                FontSize="11"
+                                HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <Label
+                        x:Name="safeZoneDetailsLabel"
+                        Text="Arrival confirmed."
+                        IsVisible="False" />
+
+                    <Label
+                        Text="Advisories remain active in surrounding areas."
+                        TextColor="White"
+                        FontSize="15"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        Margin="0,12,0,10" />
+
+                    <Button
+                        Text="End Guidance Session"
+                        ImageSource="lucide_chevron_right_green.png"
+                        ContentLayout="Right,8"
+                        HeightRequest="50"
+                        BackgroundColor="#CDEFD9"
+                        TextColor="#086A3C"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        CornerRadius="8"
+                        Clicked="OnFinishNavigationClicked" />
+
+                    <Button
+                        Text="View Guidance Session Details"
+                        HeightRequest="38"
+                        Padding="0"
+                        BackgroundColor="Transparent"
+                        TextColor="White"
+                        FontSize="13"
+                        FontAttributes="Bold"
+                        Clicked="OnViewGuidanceSessionDetailsClicked" />
+                </VerticalStackLayout>
+            </Grid>
+        </Grid>
     </Grid>
 </ContentPage>
