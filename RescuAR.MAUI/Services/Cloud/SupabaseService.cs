@@ -58,6 +58,42 @@ public class SupabaseService
         InitializeClient();
     }
 
+    public async Task<Client?> GetClientAsync()
+    {
+        if (IsMockMode)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (Client is null)
+            {
+                var options = new SupabaseOptions
+                {
+                    AutoRefreshToken = true,
+                    AutoConnectRealtime = true
+                };
+
+                Client = new Client(
+                    SupabaseUrl,
+                    SupabaseKey,
+                    options);
+            }
+
+            await Client.InitializeAsync();
+
+            return Client;
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Supabase GetClientAsync Error: {exception.Message}");
+
+            return Client;
+        }
+    }
+
     public void InitializeClient()
     {
         if (IsMockMode)
