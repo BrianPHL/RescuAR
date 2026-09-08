@@ -38,7 +38,7 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
     private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string _moduleRoute = "//Map";
+    private string _moduleRoute = "SafetyCirclePage";
 
     [ObservableProperty]
     private string _moduleName = string.Empty;
@@ -62,7 +62,7 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
             Groups.Add(group);
         }
         ActionText = data.ActionText;
-        ModuleRoute = "//Map";
+        ModuleRoute = "SafetyCirclePage";
         ModuleName = data.ModuleName;
 
         OnPropertyChanged(
@@ -82,7 +82,7 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
         {
             try
             {
-                await Shell.Current.GoToAsync("//Map");
+                await Shell.Current.GoToAsync("SafetyCirclePage");
             }
             catch (Exception ex)
             {
