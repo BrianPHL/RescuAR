@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp.Views.Maui.Controls.Hosting;
 using RescuAR.MAUI.Evergine;
 using RescuAR.MAUI.Services;
@@ -180,6 +181,20 @@ public static class MauiProgram
         builder.Services.AddTransient<TermsConditionsPage>();
         builder.Services.AddTransient<SystemInformationPage>();
 
+
+        // Final composition: preserve the source Entry presentation behavior
+        // without importing its Unity/WebView permission configuration.
+        Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping(
+            "NoUnderline",
+            (handler, view) =>
+            {
+#if ANDROID
+                handler.PlatformView.BackgroundTintList =
+                    global::Android.Content.Res.ColorStateList.ValueOf(
+                        global::Android.Graphics.Color.Transparent);
+#endif
+            });
+
 #if DEBUG
         builder.Logging.AddDebug();
 #endif
@@ -187,6 +202,15 @@ public static class MauiProgram
         var app = builder.Build();
 
         Services = app.Services;
+
+        // Several migrated ViewModels still expose the source's static
+        // Instance accessors. Point those accessors at the same DI singletons
+        // so the application does not create parallel service instances.
+        DashboardDataService.Instance =
+            app.Services.GetRequiredService<IDashboardDataService>();
+
+        WeatherService.Instance =
+            app.Services.GetRequiredService<IWeatherService>();
 
         return app;
     }
