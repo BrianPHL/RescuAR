@@ -20,29 +20,23 @@ public partial class AdvisoryFeedViewModel : ObservableObject
 
     [ObservableProperty]
     private bool isRefreshing;
-
     [ObservableProperty]
     private string selectedFilter = "All";
-
     [ObservableProperty]
     private string latestWaterLevelText = "16.5 m";
-
     [ObservableProperty]
     private string currentAlertStatus = "Level 2 — Warning";
-
     [ObservableProperty]
     private string currentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
-
     [ObservableProperty]
     private DisasterAdvisory? selectedAdvisory;
-
     [ObservableProperty]
     private bool isPopupVisible;
-
     public AdvisoryFeedViewModel()
     {
         _advisoryService = new AdvisoryService();
         _ = LoadAdvisoriesAsync();
+        _ = LoadInitialWaterLevelAsync();
         StartClockTicker();
 
         // Real-time listener for new admin advisories
@@ -52,8 +46,34 @@ public partial class AdvisoryFeedViewModel : ObservableObject
             IsPopupVisible = true;
             _ = LoadAdvisoriesAsync();
         };
-
         RealtimeAdvisoryManager.StartRealtimeListener();
+
+        // Real-time listener for Sto. Nino Water Level
+        RealtimeWaterLevelManager.OnWaterLevelUpdated += UpdateWaterLevelUI;
+        RealtimeWaterLevelManager.StartRealtimeListener();
+    }
+
+    private async Task LoadInitialWaterLevelAsync()
+    {
+        var latestLog = await RealtimeWaterLevelManager.GetLatestWaterLevelAsync();
+        if (latestLog != null)
+        {
+            UpdateWaterLevelUI(latestLog);
+        }
+    }
+
+    private void UpdateWaterLevelUI(MonitoringStation station)
+    {
+        LatestWaterLevelText = $"{station.Level:F1} m";
+        
+        if (station.Level >= 18.0)
+            CurrentAlertStatus = "Level 3 — Critical";
+        else if (station.Level >= 16.0)
+            CurrentAlertStatus = "Level 2 — Warning";
+        else if (station.Level >= 15.0)
+            CurrentAlertStatus = "Level 1 — Standby";
+        else
+            CurrentAlertStatus = "Low Alert";
     }
 
     private void StartClockTicker()
@@ -81,17 +101,6 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     private async Task LoadAdvisoriesAsync()
     {
         _allAdvisories = await _advisoryService.GetAdvisoriesAsync();
-
-        if (_allAdvisories.Count > 0)
-        {
-            var top = _allAdvisories.FirstOrDefault();
-            if (top != null)
-            {
-                LatestWaterLevelText = $"{top.WaterLevel:F1} m";
-                CurrentAlertStatus = $"{top.DisplayAlertLevel} Alert";
-            }
-        }
-
         ApplyFilter();
     }
 
@@ -132,6 +141,23 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     private void ClosePopup()
     {
         IsPopupVisible = false;
+        RealtimeAdvisoryManager.StopAlarmAudio();
+    }
+
+    [RelayCommand]
+    private async Task OpenTranslationMenuAsync()
+    {
+        if (SelectedAdvisory == null || Shell.Current == null) return;
+
+        string result = await Shell.Current.DisplayActionSheet("Translation", "Cancel", null, "English", "Tagalog");
+        if (result == "Tagalog")
+        {
+            SelectedAdvisory.SetLanguage(true);
+        }
+        else if (result == "English")
+        {
+            SelectedAdvisory.SetLanguage(false);
+        }
     }
 
     [RelayCommand]
