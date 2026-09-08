@@ -1,11 +1,28 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Profile.EmergencyContactsPage"
+    Title="Emergency Contacts"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ScrollView>
+        <VerticalStackLayout Spacing="20" Padding="20">
+            <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="White" Padding="15">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Emergency Contacts" FontAttributes="Bold" FontSize="18" TextColor="Black" />
+                    
+                    <Label Text="Contact 1" FontAttributes="Bold" TextColor="Gray" FontSize="12" />
+                    <Entry Placeholder="Name" Text="{Binding CurrentUser.EmergencyContact1Name}" TextColor="Black" />
+                    <Entry Placeholder="Phone" Text="{Binding CurrentUser.EmergencyContact1Phone}" Keyboard="Telephone" TextColor="Black" />
 
+                    <Label Text="Contact 2" FontAttributes="Bold" TextColor="Gray" FontSize="12" Margin="0,10,0,0"/>
+                    <Entry Placeholder="Name" Text="{Binding CurrentUser.EmergencyContact2Name}" TextColor="Black" />
+                    <Entry Placeholder="Phone" Text="{Binding CurrentUser.EmergencyContact2Phone}" Keyboard="Telephone" TextColor="Black" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Save Contacts" Command="{Binding SaveProfileCommand}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" />
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

@@ -19,3 +19,5 @@ public partial class SplashPage : ContentPage
         }
     }
 }
+
+

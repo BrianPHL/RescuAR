@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Authentication.TermsAndConditionsPage"
+    NavigationPage.HasNavigationBar="False"
+    BackgroundColor="#F7F7F7">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
+            <!-- Back button on top left -->
+            <Border Grid.Column="0" StrokeThickness="0" BackgroundColor="Transparent" WidthRequest="40" HeightRequest="40" VerticalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackTapped" />
+                </Border.GestureRecognizers>
+                <Label Text="&lt;" FontFamily="OpenSansSemibold" FontSize="20" TextColor="#00848E" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-2,0,0" />
+            </Border>
+
+            <!-- Centered Title -->
+            <Label Grid.Column="1"
+                   Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   Margin="-40, 0, 0, 0" />
+        </Grid>
+
+        <!-- Main Content (Scrollable) -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="24" Spacing="16">
+
+                <Label Text="Terms &amp;&#10;Conditions"
+                       FontSize="32"
+                       FontFamily="OpenSansSemibold"
+                       TextColor="#1E1E1E"
+                       LineHeight="1.2"
+                       Margin="0, 0, 0, 16" />
+
+                <!-- Item 1 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="1" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Use of the Application" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="This application is intended to assist users in disaster preparedness and evacuation. It should be used as a support tool, not as a sole source of decision-making during emergencies." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 2 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="2" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Accuracy of Information" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="While the app uses verified data sources, real-time conditions may change rapidly. Users are advised to remain aware of their surroundings at all times." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 3 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="3" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="AR Guidance Limitations" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="Augmented Reality (AR) navigation depends on device sensors and environmental conditions." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Accuracy may be affected by poor lighting, obstructions, or signal loss" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Directions provided should be followed with caution" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 4 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="4" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Connectivity Requirements" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="Some features require internet access, including hazard updates and route recalculations. Limited functionality may be available offline." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 5 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="5" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="User Responsibility" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="Users are responsible for:" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Staying alert during evacuation" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Following official instructions from authorities" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Using the app appropriately in emergency situations" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 6 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="6" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Limitation of Liability" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="The developers are not liable for any damages, injuries, or losses resulting from the use or inability to use the application." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 7 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="7" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Updates and Changes" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="The application may be updated to improve performance and features. Continued use signifies acceptance of any changes." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

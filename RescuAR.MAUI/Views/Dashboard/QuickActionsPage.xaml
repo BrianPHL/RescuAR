@@ -3,7 +3,9 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
     x:Class="RescuAR.App.Views.Dashboard.QuickActionsPage"
+    x:Name="QuickActionsRoot"
     x:DataType="vm:QuickActionsViewModel">
 
     <VerticalStackLayout Spacing="12">
@@ -30,15 +32,15 @@
         <!-- Actions List -->
         <VerticalStackLayout BindableLayout.ItemsSource="{Binding Actions}" Spacing="8">
             <BindableLayout.ItemTemplate>
-                <DataTemplate x:DataType="vm:QuickActionItem">
+                <DataTemplate x:DataType="models:QuickActionItem">
                     <Border StrokeShape="RoundRectangle 12"
                             StrokeThickness="1"
                             Stroke="#E5E5EA"
                             BackgroundColor="#FFFFFF"
                             Padding="12">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer 
-                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:QuickActionsViewModel}}, Path=ExecuteActionCommand}"
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference QuickActionsRoot}, Path=BindingContext.ExecuteActionCommand}"
                                 CommandParameter="{Binding .}" />
                         </Border.GestureRecognizers>
                         

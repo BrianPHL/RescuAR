@@ -4,26 +4,9 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
+using RescuAR.App.Models;
 
 namespace RescuAR.App.ViewModels.Dashboard;
-
-public partial class QuickActionItem : ObservableObject
-{
-    [ObservableProperty]
-    private string title = string.Empty;
-
-    [ObservableProperty]
-    private string subtitle = string.Empty;
-
-    [ObservableProperty]
-    private string iconData = string.Empty;
-
-    [ObservableProperty]
-    private string targetRoute = string.Empty;
-
-    [ObservableProperty]
-    private string moduleName = string.Empty;
-}
 
 public partial class QuickActionsViewModel : ObservableObject
 {
@@ -38,29 +21,34 @@ public partial class QuickActionsViewModel : ObservableObject
     {
         Actions.Add(new QuickActionItem
         {
+            Title = "Flashlight",
+            Subtitle = "Tap to turn phone flashlight ON / OFF",
+            IconData = "M9,2A1,1 0 0,0 8,3V8.5L10.5,11V21A1,1 0 0,0 11.5,22H12.5A1,1 0 0,0 13.5,21V11L16,8.5V3A1,1 0 0,0 15,2H9M10,4H14V6H10V4Z",
+            ActionType = "Flashlight"
+        });
+
+        Actions.Add(new QuickActionItem
+        {
             Title = "Report Incident",
-            Subtitle = "Report / Create a Report",
-            IconData = "M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z",
-            TargetRoute = "//Reports/CommunityPosting",
-            ModuleName = "Report Incident Module"
+            Subtitle = "Report / Community Reports Feed",
+            IconData = "M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M11,15H13V17H11V15M11,11H13V13H11V11Z",
+            TargetRoute = "//Reports"
         });
 
         Actions.Add(new QuickActionItem
         {
             Title = "Emergency Hotlines",
             Subtitle = "Prepare / Emergency Hotlines",
-            IconData = "M12,2A10,10 0 0,0 2,12V17A3,3 0 0,0 5,20H8V12H4V12A8,8 0 0,1 12,4A8,8 0 0,1 20,12V12H16V20H19A3,3 0 0,0 22,17V12A10,10 0 0,0 12,2Z",
-            TargetRoute = "//Prepare/HotlineDirectory",
-            ModuleName = "Emergency Hotlines Directory"
+            IconData = "M6.62,10.79C8.06,13.62 10.38,15.94 13.21,17.38L15.41,15.18C15.69,14.9 16.08,14.82 16.43,14.93C17.55,15.3 18.75,15.5 20,15.5A1,1 0 0,1 21,16.5V20A1,1 0 0,1 20,21C10.61,21 3,13.39 3,4A1,1 0 0,1 4,3H7.5A1,1 0 0,1 8.5,4C8.5,5.25 8.7,6.45 9.07,7.57C9.18,7.92 9.1,8.31 8.82,8.59L6.62,10.79Z",
+            TargetRoute = "Prepare/HotlineDirectory"
         });
 
         Actions.Add(new QuickActionItem
         {
             Title = "Find Nearest Evacuation Center",
             Subtitle = "Prepare / Evacuation Centers",
-            IconData = "M12,2C8.13,2 5,5.13 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9C19,5.13 15.87,2 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z",
-            TargetRoute = "//Prepare/EvacuationCenterInfo",
-            ModuleName = "Evacuation Center Info"
+            IconData = "M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z",
+            TargetRoute = "Prepare/EvacuationCenterInfo"
         });
 
         Actions.Add(new QuickActionItem
@@ -68,8 +56,7 @@ public partial class QuickActionsViewModel : ObservableObject
             Title = "Safety Circle",
             Subtitle = "Map / Safety Circle",
             IconData = "M16,13C15.71,13 15.42,13.04 15.15,13.11C14.07,12.38 12.77,12 11.33,12C7.03,12 3,15.5 3,19H19.67C18.66,17.2 17.5,15.2 16,13Z M11.33,4A4,4 0 0,0 7.33,8A4,4 0 0,0 11.33,12A4,4 0 0,0 15.33,8A4,4 0 0,0 11.33,4Z",
-            TargetRoute = "//Map/SafetyCircle",
-            ModuleName = "Safety Circle Module"
+            TargetRoute = "SafetyCirclePage"
         });
     }
 
@@ -82,19 +69,28 @@ public partial class QuickActionsViewModel : ObservableObject
         {
             try
             {
-                string route = action.TargetRoute;
-                if (route.StartsWith("//") && !route.Equals("//Camera") && !route.Equals("//Home"))
+                if (action.TargetRoute == "//Reports" || action.TargetRoute == "Reports")
                 {
-                    route = route.Substring(2);
+                    foreach (var item in Shell.Current.Items)
+                    {
+                        foreach (var section in item.Items)
+                        {
+                            foreach (var content in section.Items)
+                            {
+                                if (content.Route == "Reports" || content.Title == "Reports")
+                                {
+                                    Shell.Current.CurrentItem = content;
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
-                await Shell.Current.GoToAsync(route);
+                await Shell.Current.GoToAsync(action.TargetRoute);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{action.TargetRoute}\n\nTarget Module: {action.ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

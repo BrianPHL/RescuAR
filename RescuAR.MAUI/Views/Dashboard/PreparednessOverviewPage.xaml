@@ -18,21 +18,10 @@
 
         <VerticalStackLayout Spacing="8" VerticalOptions="Center">
             <!-- Title & Subtitle -->
-            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
-                <!-- Lucide Check Circle Icon -->
-                <Path Data="M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3"
-                      Stroke="#15803D"
-                      StrokeThickness="2.5"
-                      WidthRequest="22"
-                      HeightRequest="22"
-                      Aspect="Uniform"
-                      VerticalOptions="Center" />
-                <Label Text="{Binding Title}"
-                       TextColor="#15803D"
-                       FontSize="22"
-                       FontAttributes="Bold"
-                       VerticalOptions="Center" />
-            </HorizontalStackLayout>
+            <Label Text="{Binding Title}"
+                   TextColor="#15803D"
+                   FontSize="22"
+                   FontAttributes="Bold" />
             
             <Label Text="{Binding Subtitle}"
                    TextColor="#166534"

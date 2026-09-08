@@ -1,36 +1,33 @@
-using Microsoft.Maui.Storage;
-
 using RescuAR.App.Views.Authentication;
 
 namespace RescuAR.MAUI;
 
 public partial class App : Application
 {
-    private readonly OnboardingPage onboardingPage;
+    private readonly SplashPage splashPage;
 
     public App(
-        OnboardingPage onboardingPage)
+        SplashPage splashPage)
     {
         InitializeComponent();
 
-        this.onboardingPage =
-            onboardingPage;
+        this.splashPage =
+            splashPage;
     }
 
     protected override Window CreateWindow(
         IActivationState? activationState)
     {
-        bool isLoggedIn =
-            Preferences.Default.Get(
-                "IsLoggedIn",
-                false);
-
-        Page rootPage =
-            isLoggedIn
-                ? new AppShell()
-                : onboardingPage;
-
+        /*
+         * Keep the .NET 9 Window-based application architecture.
+         *
+         * SplashViewModel owns the updated source startup decision:
+         * - logged in + permissions complete -> AppShell
+         * - logged in + permissions incomplete -> PermissionsPage
+         * - signed up but logged out -> LoginPage
+         * - first run -> OnboardingPage
+         */
         return new Window(
-            rootPage);
+            splashPage);
     }
 }

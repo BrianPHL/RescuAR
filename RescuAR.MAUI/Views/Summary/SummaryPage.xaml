@@ -4,59 +4,70 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Summary"
     x:Class="RescuAR.App.Views.Summary.SummaryPage"
+    x:Name="SummaryPageRoot"
     x:DataType="vm:SummaryViewModel"
-    Title="Summary"
-    BackgroundColor="#F2F2F7"
+    Title="Emergency Summary"
+    BackgroundColor="#F8FAFC"
     Shell.NavBarIsVisible="False">
+
+    <ContentPage.BindingContext>
+        <vm:SummaryViewModel />
+    </ContentPage.BindingContext>
 
     <Grid RowDefinitions="Auto,*">
         <!-- Top App Bar -->
         <Border Grid.Row="0"
                 BackgroundColor="#FFFFFF"
                 StrokeThickness="0"
-                Padding="16,12">
+                Padding="16,14">
+            <Border.Shadow>
+                <Shadow Brush="#0F172A" Offset="0,2" Radius="6" Opacity="0.04" />
+            </Border.Shadow>
             <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
                 <!-- Back Button -->
-                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
                     <HorizontalStackLayout.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding GoBackCommand}" />
                     </HorizontalStackLayout.GestureRecognizers>
                     <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
-                          Fill="#000000"
-                          WidthRequest="16"
-                          HeightRequest="16"
+                          Fill="#0F172A"
+                          WidthRequest="18"
+                          HeightRequest="18"
                           Aspect="Uniform"
                           VerticalOptions="Center" />
                     <Label Text="Back"
-                           TextColor="#000000"
-                           FontSize="16"
+                           TextColor="#0F172A"
+                           FontSize="15"
                            FontAttributes="Bold"
                            VerticalOptions="Center" />
                 </HorizontalStackLayout>
 
-                <!-- App Title -->
+                <!-- Page Title -->
                 <Label Grid.Column="1"
-                       Text="RescuAR"
-                       TextColor="#000000"
-                       FontSize="16"
+                       Text="Emergency Summary"
+                       TextColor="#0F172A"
+                       FontSize="17"
                        FontAttributes="Bold"
                        HorizontalOptions="Center"
                        VerticalOptions="Center" />
 
-                <!-- Bell Icon -->
+                <!-- Bell / Alerts Icon -->
                 <Border Grid.Column="2"
                         StrokeThickness="0"
-                        BackgroundColor="Transparent"
-                        Padding="4"
+                        BackgroundColor="#F1F5F9"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
                         VerticalOptions="Center">
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
                     </Border.GestureRecognizers>
                     <Path Data="M12,2A2,2 0 0,0 10,4A7,7 0 0,0 3,11V16L1,18V19H23V18L21,16V11A7,7 0 0,0 14,4A2,2 0 0,0 12,2M10,20A2,2 0 0,0 12,22A2,2 0 0,0 14,20H10Z"
-                          Fill="#000000"
-                          WidthRequest="22"
-                          HeightRequest="22"
+                          Fill="#0F766E"
+                          WidthRequest="18"
+                          HeightRequest="18"
                           Aspect="Uniform"
+                          HorizontalOptions="Center"
                           VerticalOptions="Center" />
                 </Border>
             </Grid>
@@ -64,214 +75,246 @@
 
         <!-- Scrollable Main Content -->
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Spacing="16" Padding="16">
+            <VerticalStackLayout Spacing="18" Padding="18">
 
-                <!-- Header Title Section -->
+                <!-- Header Breadcrumb & Title Section -->
                 <VerticalStackLayout Spacing="4">
-                    <Label Text="Home/" TextColor="#7F7F7F" FontSize="13" />
-                    <Label Text="Summary" TextColor="#000000" FontSize="32" FontAttributes="Bold" />
-                    <Label Text="Your emergency overview and recommendations." TextColor="#7F7F7F" FontSize="15" />
+                    <Label Text="Home / Emergency Overview" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                    <Label Text="Emergency Summary" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" CharacterSpacing="-0.5" />
+                    <Label Text="Live disaster updates and severity action recommendations from Marikina LGU." TextColor="#475569" FontSize="13" />
                 </VerticalStackLayout>
 
-                <!-- Increased Risk Banner Card -->
-                <Border StrokeShape="RoundRectangle 16"
-                        StrokeThickness="0"
-                        BackgroundColor="#FFFFFF"
-                        Padding="16">
-                    <VerticalStackLayout Spacing="10">
-                        <Border StrokeShape="RoundRectangle 8"
-                                BackgroundColor="#FAF2DB"
-                                Padding="10,4"
-                                HorizontalOptions="Start"
-                                StrokeThickness="0">
-                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                <Ellipse WidthRequest="8" HeightRequest="8" Fill="#7E5B12" VerticalOptions="Center" />
-                                <Label Text="Increased Risk" TextColor="#7E5B12" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
-                            </HorizontalStackLayout>
-                        </Border>
+                <!-- 1. Hero Live Risk Level Banner Card -->
+                <Border StrokeShape="RoundRectangle 20"
+                        StrokeThickness="1"
+                        Stroke="#E2E8F0"
+                        BackgroundColor="{Binding CardBgColor}"
+                        Padding="18">
+                    <Border.Shadow>
+                        <Shadow Brush="#0F172A" Offset="0,4" Radius="8" Opacity="0.04" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="12">
+                        <!-- Top Pill Row -->
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <Border StrokeShape="RoundRectangle 8"
+                                    BackgroundColor="{Binding BadgeBgColor}"
+                                    Padding="10,5"
+                                    HorizontalOptions="Start"
+                                    StrokeThickness="0">
+                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                    <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding BadgeTextColor}" VerticalOptions="Center" />
+                                    <Label Text="{Binding RiskBadgeText}" TextColor="{Binding BadgeTextColor}" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
 
-                        <Label Text="{Binding RiskTitle}" TextColor="#000000" FontSize="16" FontAttributes="Bold" LineBreakMode="WordWrap" />
-                        <Label Text="{Binding NearestCenterSummary}" TextColor="#555555" FontSize="13" LineBreakMode="WordWrap" />
-                        <Label Text="{Binding LastUpdatedText}" TextColor="#999999" FontSize="12" />
+                            <Label Grid.Column="1" Text="{Binding LastUpdatedText}" TextColor="#94A3B8" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                        </Grid>
+
+                        <Label Text="{Binding RiskTitle}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                        <Label Text="{Binding NearestCenterSummary}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" />
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- Situation Assessment Section -->
+                <!-- 2. Situation Assessment Card -->
                 <VerticalStackLayout Spacing="8">
-                    <Label Text="Situation Assessment" TextColor="#000000" FontSize="14" FontAttributes="Bold" />
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                        <Path Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                              Fill="#0A8491" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Text="SITUATION ASSESSMENT" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
                     
                     <Border StrokeShape="RoundRectangle 16"
-                            StrokeThickness="0"
-                            BackgroundColor="#FAF2DB"
+                            StrokeThickness="1"
+                            Stroke="#E2E8F0"
+                            BackgroundColor="#FFFFFF"
                             Padding="16">
-                        <VerticalStackLayout Spacing="12">
-                            <!-- Warning Triangle Icon -->
-                            <Path Data="M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z"
-                                  Fill="#7E5B12"
-                                  WidthRequest="32"
-                                  HeightRequest="32"
-                                  Aspect="Uniform"
-                                  HorizontalOptions="Start" />
-
+                        <VerticalStackLayout Spacing="10">
                             <Label Text="{Binding SituationAssessmentText}"
-                                   TextColor="#7E5B12"
-                                   FontSize="14"
-                                   FontAttributes="Bold"
-                                   LineBreakMode="WordWrap" />
+                                   TextColor="#334155"
+                                   FontSize="13"
+                                   LineBreakMode="WordWrap"
+                                   CharacterSpacing="0.2" />
                         </VerticalStackLayout>
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Recommended Actions Section -->
-                <VerticalStackLayout Spacing="8">
-                    <Label Text="Recommended Actions" TextColor="#000000" FontSize="14" FontAttributes="Bold" />
+                <!-- 3. Severity Recommendations & Action Plan Section -->
+                <VerticalStackLayout Spacing="10">
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                        <Path Data="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"
+                              Fill="#B45309" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Text="SEVERITY RECOMMENDATIONS &amp; ACTION PLAN" TextColor="#B45309" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
 
-                    <!-- Standard Actions Checklist -->
-                    <Border StrokeShape="RoundRectangle 16"
+                    <!-- Recommended Actions Checklist -->
+                    <Border StrokeShape="RoundRectangle 18"
                             StrokeThickness="1"
-                            Stroke="#E5E5EA"
-                            BackgroundColor="#FFFFFF"
+                            Stroke="#FDE68A"
+                            BackgroundColor="#FFFBEB"
                             Padding="16">
                         <VerticalStackLayout BindableLayout.ItemsSource="{Binding StandardActions}" Spacing="12">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ChecklistActionItem">
-                                    <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                                        <HorizontalStackLayout.GestureRecognizers>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalOptions="Center">
+                                        <Grid.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SummaryViewModel}}, Path=ToggleActionItemCommand}"
+                                                Command="{Binding BindingContext.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}}"
                                                 CommandParameter="{Binding .}" />
-                                        </HorizontalStackLayout.GestureRecognizers>
+                                        </Grid.GestureRecognizers>
                                         <!-- Checkmark Circle Icon -->
-                                        <Path Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M10,17L5,12L6.41,10.59L10,14.17L17.59,6.58L19,8L10,17Z"
+                                        <Path Grid.Column="0"
+                                              Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M10,17L5,12L6.41,10.59L10,14.17L17.59,6.58L19,8L10,17Z"
                                               Fill="{Binding CheckIconColor}"
                                               WidthRequest="20"
                                               HeightRequest="20"
                                               Aspect="Uniform"
                                               VerticalOptions="Center" />
-                                        <Label Text="{Binding Text}" TextColor="{Binding TextColor}" FontSize="13" VerticalOptions="Center" />
-                                    </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="{Binding Text}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" LineBreakMode="WordWrap" VerticalOptions="Center" />
+                                    </Grid>
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </VerticalStackLayout>
                     </Border>
 
-                    <!-- If Conditions Worsen Sub-section -->
-                    <Label Text="If conditions worsen:" TextColor="#7F7F7F" FontSize="13" Margin="0,4,0,0" />
+                    <!-- Escalation Section: If conditions worsen -->
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,6,0,0">
+                        <Path Data="M12 2L1 21h22M12 6l7.53 13H4.47M11 10v4h2v-4m-2 6v2h2v-2" Fill="#DC2626" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Text="If conditions worsen:" TextColor="#DC2626" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
 
-                    <Border StrokeShape="RoundRectangle 16"
+                    <Border StrokeShape="RoundRectangle 18"
                             StrokeThickness="1"
-                            Stroke="#E5E5EA"
-                            BackgroundColor="#FFFFFF"
+                            Stroke="#FCA5A5"
+                            BackgroundColor="#FEF2F2"
                             Padding="16">
                         <VerticalStackLayout BindableLayout.ItemsSource="{Binding WorsenedConditionsActions}" Spacing="12">
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:ChecklistActionItem">
-                                    <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                                        <HorizontalStackLayout.GestureRecognizers>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalOptions="Center">
+                                        <Grid.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:SummaryViewModel}}, Path=ToggleActionItemCommand}"
+                                                Command="{Binding BindingContext.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}}"
                                                 CommandParameter="{Binding .}" />
-                                        </HorizontalStackLayout.GestureRecognizers>
+                                        </Grid.GestureRecognizers>
                                         <!-- Checkmark Circle Icon -->
-                                        <Path Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,10,10 0 0,0 12,2M10,17L5,12L6.41,10.59L10,14.17L17.59,6.58L19,8L10,17Z"
+                                        <Path Grid.Column="0"
+                                              Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M10,17L5,12L6.41,10.59L10,14.17L17.59,6.58L19,8L10,17Z"
                                               Fill="{Binding CheckIconColor}"
                                               WidthRequest="20"
                                               HeightRequest="20"
                                               Aspect="Uniform"
                                               VerticalOptions="Center" />
-                                        <Label Text="{Binding Text}" TextColor="{Binding TextColor}" FontSize="13" VerticalOptions="Center" />
-                                    </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="{Binding Text}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" LineBreakMode="WordWrap" VerticalOptions="Center" />
+                                    </Grid>
                                 </DataTemplate>
                             </BindableLayout.ItemTemplate>
                         </VerticalStackLayout>
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Nearest Safe Zone Section -->
+                <!-- 4. Nearest Safe Zone Area Card -->
                 <VerticalStackLayout Spacing="8">
-                    <Label Text="Nearest Safe Zone" TextColor="#000000" FontSize="14" FontAttributes="Bold" />
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                        <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                              Fill="#0F766E" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Text="NEAREST SAFE ZONE AREA" TextColor="#0F766E" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
 
-                    <Border StrokeShape="RoundRectangle 16"
+                    <Border StrokeShape="RoundRectangle 18"
                             StrokeThickness="1"
-                            Stroke="#E5E5EA"
-                            BackgroundColor="#FFFFFF"
-                            Padding="16">
+                            Stroke="#CCFBF1"
+                            BackgroundColor="#F0FDFA"
+                            Padding="18">
                         <VerticalStackLayout Spacing="12">
                             <!-- Center Name & Distance -->
-                            <Label Text="{Binding SafeZoneName}" TextColor="#000000" FontSize="18" FontAttributes="Bold" />
-                            <Label Text="{Binding SafeZoneDistance}" TextColor="#7F7F7F" FontSize="13" />
-
-                            <!-- Details Grid -->
-                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="6">
-                                <Label Grid.Row="0" Grid.Column="0" Text="Address" TextColor="#999999" FontSize="13" />
-                                <Label Grid.Row="0" Grid.Column="1" Text="{Binding SafeZoneAddress}" TextColor="#000000" FontSize="13" HorizontalOptions="End" HorizontalTextAlignment="End" />
-
-                                <Label Grid.Row="1" Grid.Column="0" Text="Verified by" TextColor="#999999" FontSize="13" />
-                                <Label Grid.Row="1" Grid.Column="1" Text="{Binding SafeZoneVerifiedBy}" TextColor="#000000" FontSize="13" HorizontalOptions="End" />
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Label Grid.Column="0" Text="{Binding SafeZoneName}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                <Border Grid.Column="1" BackgroundColor="#0F766E" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" VerticalOptions="Center">
+                                    <Label Text="{Binding SafeZoneDistance}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                </Border>
                             </Grid>
 
-                            <!-- Interactive Links -->
-                            <HorizontalStackLayout Spacing="4">
-                                <HorizontalStackLayout.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding ViewSafeZoneDetailsCommand}" />
-                                </HorizontalStackLayout.GestureRecognizers>
-                                <Label Text="View more details" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
-                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
-                            </HorizontalStackLayout>
+                            <!-- Address & Verified Info -->
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="6" ColumnSpacing="12">
+                                <Label Grid.Row="0" Grid.Column="0" Text="Address:" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                                <Label Grid.Row="0" Grid.Column="1" Text="{Binding SafeZoneAddress}" TextColor="#0F172A" FontSize="12" LineBreakMode="WordWrap" HorizontalOptions="End" HorizontalTextAlignment="End" />
 
-                            <HorizontalStackLayout Spacing="4">
-                                <HorizontalStackLayout.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding StartArEvacuationCommand}" />
-                                </HorizontalStackLayout.GestureRecognizers>
-                                <Label Text="Start practice AR evacuation route" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
-                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
-                            </HorizontalStackLayout>
+                                <Label Grid.Row="1" Grid.Column="0" Text="Verification:" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                                <Label Grid.Row="1" Grid.Column="1" Text="{Binding SafeZoneVerifiedBy}" TextColor="#166534" FontSize="12" FontAttributes="Bold" HorizontalOptions="End" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#CCFBF1" Margin="0,4" />
+
+                            <!-- Interactive Action Links -->
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                <!-- Link 1: View Center Details -->
+                                <Border Grid.Column="0" BackgroundColor="#FFFFFF" Stroke="#CCFBF1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding ViewSafeZoneDetailsCommand}" />
+                                    </Border.GestureRecognizers>
+                                    <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" VerticalOptions="Center">
+                                        <Label Text="Center Info" TextColor="#0F766E" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Label Text="↗" TextColor="#0F766E" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                </Border>
+
+                                <!-- Link 2: Practice AR Route -->
+                                <Border Grid.Column="1" BackgroundColor="#0F766E" StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding StartArEvacuationCommand}" />
+                                    </Border.GestureRecognizers>
+                                    <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" VerticalOptions="Center">
+                                        <Label Text="Start AR Route" TextColor="#FFFFFF" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Label Text="↗" TextColor="#FFFFFF" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                </Border>
+                            </Grid>
                         </VerticalStackLayout>
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Your Activity Section -->
+                <!-- 5. User Activity Section -->
                 <VerticalStackLayout Spacing="8" Margin="0,0,0,16">
-                    <Label Text="Your Activity" TextColor="#000000" FontSize="14" FontAttributes="Bold" />
+                    <Label Text="YOUR ACTIVITY &amp; QUICK LINKS" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
 
-                    <Border StrokeShape="RoundRectangle 16"
+                    <Border StrokeShape="RoundRectangle 18"
                             StrokeThickness="1"
-                            Stroke="#E5E5EA"
+                            Stroke="#E2E8F0"
                             BackgroundColor="#FFFFFF"
                             Padding="16">
-                        <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="12">
-                            <!-- Last AR Guidance Session -->
-                            <Label Grid.Row="0" Grid.Column="0" Text="Last AR Guidance Session" TextColor="#999999" FontSize="13" VerticalOptions="Center" />
-                            <Label Grid.Row="0" Grid.Column="1" Text="{Binding LastArSession}" TextColor="#000000" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" VerticalOptions="Center" />
+                        <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="14">
+                            <!-- Last AR Session -->
+                            <Label Grid.Row="0" Grid.Column="0" Text="Last AR Guidance Session" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
+                            <Label Grid.Row="0" Grid.Column="1" Text="{Binding LastArSession}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" VerticalOptions="Center" />
 
                             <!-- Preparedness Progress -->
-                            <Label Grid.Row="1" Grid.Column="0" Text="Preparedness Progress" TextColor="#999999" FontSize="13" VerticalOptions="Center" />
+                            <Label Grid.Row="1" Grid.Column="0" Text="Preparedness Progress" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
                             <HorizontalStackLayout Grid.Row="1" Grid.Column="1" HorizontalOptions="End" Spacing="4" VerticalOptions="Center">
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenPreparednessChecklistCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
                                 <Label Text="{Binding PreparednessProgressText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
-                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
+                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
 
                             <!-- Last Viewed Evacuation Center -->
-                            <Label Grid.Row="2" Grid.Column="0" Text="Last Viewed Evacuation Center" TextColor="#999999" FontSize="13" VerticalOptions="Center" />
+                            <Label Grid.Row="2" Grid.Column="0" Text="Last Viewed Evacuation Hub" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
                             <HorizontalStackLayout Grid.Row="2" Grid.Column="1" HorizontalOptions="End" Spacing="4" VerticalOptions="Center">
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenLastViewedCenterCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
                                 <Label Text="{Binding LastViewedCenterText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
-                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
+                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
 
                             <!-- Last Viewed Advisory -->
-                            <Label Grid.Row="3" Grid.Column="0" Text="Last Viewed Advisory" TextColor="#999999" FontSize="13" VerticalOptions="Center" />
+                            <Label Grid.Row="3" Grid.Column="0" Text="Last Viewed Advisory" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
                             <HorizontalStackLayout Grid.Row="3" Grid.Column="1" HorizontalOptions="End" Spacing="4" VerticalOptions="Center">
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenLastViewedAdvisoryCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
                                 <Label Text="{Binding LastViewedAdvisoryText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
-                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" />
+                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
                         </Grid>
                     </Border>

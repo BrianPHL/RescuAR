@@ -17,8 +17,12 @@ public static class ARFloodDepthBridge
     private const string LogTag =
         "RescuAR-FloodDepth";
 
+    // Figma refinement / device feedback: the original 10 m square made the
+    // flood-volume side edges noticeable in the camera. A 60 m square keeps
+    // the nearby view visually continuous while still using only two reusable
+    // Evergine cube entities.
     public const float DefaultHorizontalExtentMeters =
-        10.0f;
+        60.0f;
 
     public const float MaximumSupportedDepthMeters =
         3.0f;

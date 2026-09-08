@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using RescuAR.App.Views.Authentication;
 
+using RescuAR.App.Services.Authentication;
+
 namespace RescuAR.App.ViewModels.Authentication
 {
     public partial class RegistrationSuccessViewModel : ObservableObject
@@ -24,7 +26,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.Windows[0].Page = loginPage;
+                    AuthenticationNavigation.TrySetRootPage(loginPage);
                 }
             });
         }

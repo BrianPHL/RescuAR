@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using RescuAR.App.Views.Authentication;
 
+using RescuAR.App.Services.Authentication;
+
 namespace RescuAR.App.ViewModels.Authentication
 {
     public partial class OnboardingViewModel : ObservableObject
@@ -34,10 +36,7 @@ namespace RescuAR.App.ViewModels.Authentication
         [ObservableProperty]
         private string _versionText = "v0.0.1a";
 
-        public bool IsBackButtonVisible => CurrentSlideIndex == 1 || CurrentSlideIndex == 2;
-        public bool IsSkipButtonVisible => CurrentSlideIndex < 3;
-        public bool IsOnboardingVisible => CurrentSlideIndex < 3;
-        public bool IsEntryVisible => CurrentSlideIndex == 3;
+        public bool IsOnboardingVisible => true;
 
         public bool IsDot1Active => CurrentSlideIndex == 0;
         public bool IsDot2Active => CurrentSlideIndex == 1;
@@ -89,10 +88,6 @@ namespace RescuAR.App.ViewModels.Authentication
             }
 
             // Notify UI of visibility changes
-            OnPropertyChanged(nameof(IsBackButtonVisible));
-            OnPropertyChanged(nameof(IsSkipButtonVisible));
-            OnPropertyChanged(nameof(IsOnboardingVisible));
-            OnPropertyChanged(nameof(IsEntryVisible));
             OnPropertyChanged(nameof(IsDot1Active));
             OnPropertyChanged(nameof(IsDot2Active));
             OnPropertyChanged(nameof(IsDot3Active));
@@ -108,60 +103,24 @@ namespace RescuAR.App.ViewModels.Authentication
             }
             else
             {
-                NavigateToSplash();
-            }
-        }
-
-        [RelayCommand]
-        private void Back()
-        {
-            if (CurrentSlideIndex > 0)
-            {
-                CurrentSlideIndex--;
-                UpdateSlideData();
+                NavigateToLogin();
             }
         }
 
         [RelayCommand]
         private void Skip()
         {
-            NavigateToSplash();
+            NavigateToLogin();
         }
 
-        private void NavigateToSplash()
-        {
-            var splashPage = _serviceProvider.GetRequiredService<SplashPage>();
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (Application.Current != null)
-                {
-                    Application.Current.Windows[0].Page = splashPage;
-                }
-            });
-        }
-
-        [RelayCommand]
-        private void CreateAccount()
-        {
-            var registrationPage = _serviceProvider.GetRequiredService<RegistrationPage>();
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (Application.Current != null)
-                {
-                    Application.Current.Windows[0].Page = registrationPage;
-                }
-            });
-        }
-
-        [RelayCommand]
-        private void SignIn()
+        private void NavigateToLogin()
         {
             var loginPage = _serviceProvider.GetRequiredService<LoginPage>();
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.Windows[0].Page = loginPage;
+                    AuthenticationNavigation.TrySetRootPage(new NavigationPage(loginPage));
                 }
             });
         }

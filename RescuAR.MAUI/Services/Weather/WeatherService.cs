@@ -91,7 +91,7 @@ public class WeatherService : IWeatherService
 
         try
         {
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={latitude:F4}&longitude={longitude:F4}&current=temperature_2m,weather_code&timezone=auto";
+            var url = $"https://api.open-meteo.com/v1/forecast?latitude={latitude:F4}&longitude={longitude:F4}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto";
             var response = await _httpClient.GetAsync(url);
             if (response.IsSuccessStatusCode)
             {
@@ -102,7 +102,18 @@ public class WeatherService : IWeatherService
                 {
                     double temp = current.GetProperty("temperature_2m").GetDouble();
                     int code = current.GetProperty("weather_code").GetInt32();
-                    return CreateWeatherData(temp, code, locationName);
+                    double maxTemp = temp + 3.0;
+                    double minTemp = temp - 4.0;
+
+                    if (root.TryGetProperty("daily", out var daily))
+                    {
+                        if (daily.TryGetProperty("temperature_2m_max", out var maxArr) && maxArr.GetArrayLength() > 0)
+                            maxTemp = maxArr[0].GetDouble();
+                        if (daily.TryGetProperty("temperature_2m_min", out var minArr) && minArr.GetArrayLength() > 0)
+                            minTemp = minArr[0].GetDouble();
+                    }
+
+                    return CreateWeatherData(temp, maxTemp, minTemp, code, locationName);
                 }
             }
         }
@@ -114,15 +125,17 @@ public class WeatherService : IWeatherService
 #endif
         }
 
-        return CreateWeatherData(24.0, 0, locationName);
+        return CreateWeatherData(28.0, 31.0, 24.0, 0, locationName);
     }
 
-    private WeatherData CreateWeatherData(double temp, int code, string locationName)
+    private WeatherData CreateWeatherData(double temp, double maxTemp, double minTemp, int code, string locationName)
     {
         var data = new WeatherData
         {
             LocationName = locationName,
             TemperatureCelsius = Math.Round(temp),
+            MaxTempCelsius = Math.Round(maxTemp),
+            MinTempCelsius = Math.Round(minTemp),
             WeatherCode = code
         };
 

@@ -154,7 +154,8 @@ public static class ARFloodDepthRenderer
         AndroidLog.Debug(
             LogTag,
             "AR flood-depth renderer created: transparent water volume + " +
-            "surface, AlphaDoubleSided layer, initially disabled.");
+            "surface, AlphaDoubleSided layer, initially disabled; " +
+            $"defaultExtent={ARFloodDepthBridge.DefaultHorizontalExtentMeters:F0}m.");
 
         return root;
     }

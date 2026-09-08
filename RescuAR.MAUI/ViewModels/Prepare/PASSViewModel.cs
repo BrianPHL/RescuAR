@@ -19,37 +19,37 @@ public class AssessmentHistoryItem
 public partial class PASSViewModel : ObservableObject
 {
     [ObservableProperty]
-    private bool isModalVisible = false;
+    private bool _isModalVisible = false;
 
     [ObservableProperty]
-    private int scorePercentage = 100;
+    private int _scorePercentage = 72;
 
     [ObservableProperty]
-    private double progressValue = 1.0;
+    private double _progressValue = 0.72;
 
     [ObservableProperty]
-    private string scoreStatus = "Highly Prepared";
+    private string _scoreStatus = "Prepared";
 
     [ObservableProperty]
-    private string statusColor = "#15803D";
+    private string _statusColor = "#385723";
 
     [ObservableProperty]
-    private string statusBadgeBg = "#DCFCE7";
+    private string _statusBadgeBg = "#E2F0D9";
 
     [ObservableProperty]
-    private string lastAssessedText = "Last assessed August 03, 2026";
+    private string _lastAssessedText = "Last assessed June 15, 2026";
 
     [ObservableProperty]
-    private bool isEmergencySuppliesExpanded = true;
+    private bool _isEmergencySuppliesExpanded = true;
 
     [ObservableProperty]
-    private bool isEvacuationReadinessExpanded = true;
+    private bool _isEvacuationReadinessExpanded = true;
 
     [ObservableProperty]
-    private bool isEmergencyCommunicationExpanded = false;
+    private bool _isEmergencyCommunicationExpanded = false;
 
     [ObservableProperty]
-    private bool isHouseholdPreparednessExpanded = false;
+    private bool _isHouseholdPreparednessExpanded = false;
 
     public List<AssessmentHistoryItem> History { get; } = new();
 
@@ -61,9 +61,9 @@ public partial class PASSViewModel : ObservableObject
 
     public void RefreshScore()
     {
-        ScorePercentage = Preferences.Get("PASS_Score", 100);
+        ScorePercentage = Preferences.Get("PASS_Score", 72);
         ProgressValue = ScorePercentage / 100.0;
-        ScoreStatus = Preferences.Get("PASS_Status", "Highly Prepared");
+        ScoreStatus = Preferences.Get("PASS_Status", "Prepared");
         string date = Preferences.Get("PASS_LastDate", "June 15, 2026");
         LastAssessedText = $"Last assessed {date}";
 

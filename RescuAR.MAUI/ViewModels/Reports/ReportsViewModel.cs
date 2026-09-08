@@ -18,6 +18,13 @@ namespace RescuAR.App.ViewModels.Reports
         private readonly CommunityReportService _reportService;
         private readonly IOsmGeocodingService _osmService;
 
+        private readonly HashSet<string> _seenReportIds = new();
+        [ObservableProperty]
+        private ObservableCollection<ReportNotification> notifications = new();
+
+        [ObservableProperty]
+        private int unreadNotificationsCount;
+
         [ObservableProperty]
         private ObservableCollection<CommunityReport> reports = new();
 
@@ -117,7 +124,15 @@ namespace RescuAR.App.ViewModels.Reports
         {
             _reportService = reportService;
             _osmService = osmService;
+
+            // Fetch reports initially when VM is created
             _ = LoadReportsAsync();
+
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+            {
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
+            };
         }
 
         partial void OnSearchQueryChanged(string value)
@@ -167,6 +182,26 @@ namespace RescuAR.App.ViewModels.Reports
             try
             {
                 var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter);
+                
+                foreach (var report in list)
+                {
+                    if (!_seenReportIds.Contains(report.Id))
+                    {
+                        var notification = new ReportNotification
+                        {
+                            Title = report.PostedBy,
+                            Message = $"reports all about {report.Title}",
+                            Timestamp = report.CreatedAt
+                        };
+                        Notifications.Insert(0, notification);
+                        UnreadNotificationsCount++;
+                    }
+                }
+                
+                foreach (var report in list)
+                {
+                    _seenReportIds.Add(report.Id);
+                }
                 Reports = new ObservableCollection<CommunityReport>(list);
             }
             catch (Exception ex)
@@ -244,56 +279,53 @@ namespace RescuAR.App.ViewModels.Reports
             }
         }
 
+        private FileResult? _selectedMediaFile;
+
         [RelayCommand]
         private async Task PickMediaAsync()
         {
             try
             {
-                var action = await Shell.Current.DisplayActionSheet("Upload Media", "Cancel", null, "Take Photo", "Choose Photo from Gallery", "Pick Video");
+                var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
+                if (status != PermissionStatus.Granted)
+                {
+                    status = await Permissions.RequestAsync<Permissions.Camera>();
+                }
 
-                if (action == "Take Photo")
+                if (status == PermissionStatus.Granted)
                 {
                     if (MediaPicker.Default.IsCaptureSupported)
                     {
                         var photo = await MediaPicker.Default.CapturePhotoAsync();
                         if (photo != null)
                         {
+                            _selectedMediaFile = photo;
                             NewReportMediaUrl = photo.FullPath;
                             NewReportMediaType = "Image";
                             NewReportHasMedia = true;
                         }
                     }
-                }
-                else if (action == "Choose Photo from Gallery")
-                {
-                    var photo = await MediaPicker.Default.PickPhotoAsync();
-                    if (photo != null)
+                    else
                     {
-                        NewReportMediaUrl = photo.FullPath;
-                        NewReportMediaType = "Image";
-                        NewReportHasMedia = true;
+                        await Shell.Current.DisplayAlert("Camera Unavailable", "Camera capture is not supported on this device.", "OK");
                     }
                 }
-                else if (action == "Pick Video")
+                else
                 {
-                    var video = await MediaPicker.Default.PickVideoAsync();
-                    if (video != null)
-                    {
-                        NewReportMediaUrl = video.FullPath;
-                        NewReportMediaType = "Video";
-                        NewReportHasMedia = true;
-                    }
+                    await Shell.Current.DisplayAlert("Permission Denied", "Camera permission is required to take photos.", "OK");
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Media pick error: {ex.Message}");
+                await Shell.Current.DisplayAlert("Camera Error", ex.Message, "OK");
             }
         }
 
         [RelayCommand]
         private void RemoveMedia()
         {
+            _selectedMediaFile = null;
             NewReportMediaUrl = string.Empty;
             NewReportHasMedia = false;
         }
@@ -359,6 +391,34 @@ namespace RescuAR.App.ViewModels.Reports
                 return;
             }
 
+            string publicMediaUrl = string.Empty;
+
+            if (_selectedMediaFile != null)
+            {
+                try
+                {
+                    using var stream = await _selectedMediaFile.OpenReadAsync();
+                    var uploadedUrl = await RescuAR.App.Services.Cloud.CloudinaryService.UploadImageStreamAsync(stream, _selectedMediaFile.FileName);
+                    if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                    {
+                        publicMediaUrl = uploadedUrl;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Stream upload error: {ex.Message}");
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(publicMediaUrl) && !string.IsNullOrWhiteSpace(NewReportMediaUrl))
+            {
+                var uploadedUrl = await RescuAR.App.Services.Cloud.CloudinaryService.UploadImageAsync(NewReportMediaUrl);
+                if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                {
+                    publicMediaUrl = uploadedUrl;
+                }
+            }
+
             var report = new CommunityReport
             {
                 Title = NewReportTitle.Trim(),
@@ -369,11 +429,12 @@ namespace RescuAR.App.ViewModels.Reports
                 Longitude = NewReportLongitude,
                 DistanceText = "50 meters away",
                 PostedBy = "Aubrey T.",
-                CreatedAt = DateTime.Now,
-                MediaUrl = NewReportMediaUrl,
+                CreatedAt = DateTime.UtcNow,
+                MediaUrl = publicMediaUrl,
                 MediaType = NewReportMediaType,
-                HasMedia = NewReportHasMedia,
-                AllowComments = NewReportAllowComments
+                HasMedia = !string.IsNullOrWhiteSpace(publicMediaUrl),
+                AllowComments = NewReportAllowComments,
+                Status = "Pending"
             };
 
             await _reportService.AddReportAsync(report);
@@ -406,7 +467,79 @@ namespace RescuAR.App.ViewModels.Reports
         private async Task ToggleLikeAsync(CommunityReport report)
         {
             if (report == null) return;
+
             await _reportService.ToggleLikeAsync(report.Id);
+
+            var updatedReport = _reportService.Reports.FirstOrDefault(r => r.Id == report.Id);
+            if (updatedReport != null && updatedReport != report)
+            {
+                report.IsLikedByCurrentUser = updatedReport.IsLikedByCurrentUser;
+                report.LikeCount = updatedReport.LikeCount;
+            }
+
+            var index = Reports.IndexOf(report);
+            if (index >= 0)
+            {
+                Reports[index] = null!;
+                Reports[index] = report;
+            }
+        }
+
+        [RelayCommand]
+        private async Task OpenNotificationsAsync()
+        {
+            foreach (var notif in Notifications)
+            {
+                notif.IsRead = true;
+            }
+            UnreadNotificationsCount = 0;
+            
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("NotificationsPage");
+            }
+        }
+
+        [RelayCommand]
+        private void ClearNotifications()
+        {
+            Notifications.Clear();
+            UnreadNotificationsCount = 0;
+        }
+
+        // --- Advisory Popup ---
+        [ObservableProperty]
+        private RescuAR.App.Models.DisasterAdvisory? _selectedAdvisory;
+
+        [ObservableProperty]
+        private bool _isPopupVisible;
+
+        [RelayCommand]
+        private void ClosePopup()
+        {
+            IsPopupVisible = false;
+            SelectedAdvisory = null;
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.StopAlarmAudio();
+        }
+
+        [RelayCommand]
+        private async Task GoToAdvisoriesFeedAsync()
+        {
+            ClosePopup();
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("AdvisoryFeedPage");
+            }
         }
     }
+
+    public class ReportNotification
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Title { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public bool IsRead { get; set; } = false;
+        public string TimestampText => Timestamp.ToString("MMM dd, yyyy - hh:mm tt");
+  }
 }

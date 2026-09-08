@@ -1,9 +1,14 @@
-﻿namespace RescuAR.App.Views.Authentication;
+using Microsoft.Maui.Controls;
+using RescuAR.App.ViewModels.Authentication;
 
-public partial class PermissionsPage : ContentPage
+namespace RescuAR.App.Views.Authentication
 {
-    public PermissionsPage()
+    public partial class PermissionsPage : ContentPage
     {
-        InitializeComponent();
+        public PermissionsPage(PermissionsViewModel viewModel)
+        {
+            InitializeComponent();
+            BindingContext = viewModel;
+        }
     }
 }

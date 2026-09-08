@@ -12,19 +12,19 @@ public partial class PreparednessOverviewViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    private string title = string.Empty;
+    private string _title = string.Empty;
 
     [ObservableProperty]
-    private string subtitle = string.Empty;
+    private string _subtitle = string.Empty;
 
     [ObservableProperty]
-    private string actionText = string.Empty;
+    private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string moduleRoute = "//Prepare/Checklist";
+    private string _moduleRoute = "Prepare/Checklist";
 
     [ObservableProperty]
-    private string moduleName = string.Empty;
+    private string _moduleName = string.Empty;
 
     public PreparednessOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -42,7 +42,7 @@ public partial class PreparednessOverviewViewModel : ObservableObject
         Title = $"{data.PercentReady}% Ready";
         Subtitle = $"{data.PreparedItems} of {data.TotalItems} items prepared";
         ActionText = data.ActionText;
-        ModuleRoute = data.ModuleRoute;
+        ModuleRoute = "Prepare/Checklist";
         ModuleName = data.ModuleName;
     }
 
@@ -53,19 +53,16 @@ public partial class PreparednessOverviewViewModel : ObservableObject
         {
             try
             {
-                string route = ModuleRoute;
-                if (route.StartsWith("//") && !route.Equals("//Camera") && !route.Equals("//Home"))
+                if (Shell.Current.Navigation != null)
                 {
-                    route = route.Substring(2);
+                    await Shell.Current.Navigation.PushAsync(new Views.Prepare.ChecklistPage());
+                    return;
                 }
-                await Shell.Current.GoToAsync(route);
+                await Shell.Current.GoToAsync("Prepare/Checklist");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

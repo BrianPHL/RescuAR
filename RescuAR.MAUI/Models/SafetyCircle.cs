@@ -1,10 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+using System;
 
 namespace RescuAR.App.Models
 {
-    internal class SafetyCircle
+    public class SafetyCircle
     {
+        public string CircleId { get; set; } = string.Empty;
+        public string CircleName { get; set; } = string.Empty;
+        public string InviteLink { get; set; } = string.Empty;
     }
 }

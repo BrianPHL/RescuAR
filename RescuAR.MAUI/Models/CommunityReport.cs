@@ -49,12 +49,16 @@ public class CommunityReport : BaseModel
     public string MediaType { get; set; } = "Image";
 
     [JsonIgnore]
-    public bool HasMedia { get; set; }
+    public bool HasMedia
+    {
+        get => !string.IsNullOrWhiteSpace(MediaUrl);
+        set { }
+    }
 
     [JsonIgnore]
     public bool AllowComments { get; set; } = true;
 
-    [JsonIgnore]
+    [Column("like_count")]
     public int LikeCount { get; set; }
 
     [JsonIgnore]
@@ -65,6 +69,32 @@ public class CommunityReport : BaseModel
 
     [JsonIgnore]
     public ObservableCollection<CommunityComment> Comments { get; set; } = new();
+
+    [Column("comments_json")]
+    public string CommentsJson
+    {
+        get => JsonConvert.SerializeObject(Comments);
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                try
+                {
+                    var deserialized = JsonConvert.DeserializeObject<ObservableCollection<CommunityComment>>(value);
+                    if (deserialized != null)
+                    {
+                        Comments = deserialized;
+                        return;
+                    }
+                }
+                catch
+                {
+                    // Fallback on error
+                }
+            }
+            Comments = new ObservableCollection<CommunityComment>();
+        }
+    }
 
     [JsonIgnore]
     public int CommentCount => Comments.Count;

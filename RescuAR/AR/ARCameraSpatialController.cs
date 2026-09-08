@@ -28,6 +28,19 @@ public static class ARCameraSpatialController
     private static Entity? routeEntity;
     private static Transform3D? routeTransform;
 
+    /*
+     * Camera-module view gate.
+     *
+     * Route navigation state remains retained while the user switches to the
+     * Camera module's 2D Map or Flood Depth sub-tabs, but the cyan AR route
+     * itself must only render on the AR Camera sub-tab.
+     *
+     * MAUI only writes this flag. Evergine entities are still changed solely
+     * on the draw thread inside ProcessDrawThreadWork().
+     */
+    private static bool routeRenderingEnabled =
+        true;
+
     private static Entity? floodDepthEntity;
     private static Transform3D? floodDepthTransform;
 
@@ -188,6 +201,9 @@ public static class ARCameraSpatialController
             routeTransform =
                 resolvedRouteTransform;
 
+            routeRenderingEnabled =
+                true;
+
             floodDepthEntity =
                 arFloodDepthEntity;
 
@@ -235,6 +251,23 @@ public static class ARCameraSpatialController
         }
     }
 
+    public static void SetRouteRenderingEnabled(
+        bool enabled,
+        string reason)
+    {
+        lock (sync)
+        {
+            routeRenderingEnabled =
+                enabled;
+        }
+
+        AndroidLog.Debug(
+            RouteLogTag,
+            "AR route rendering gate changed: " +
+            $"enabled={enabled}, " +
+            $"reason='{(string.IsNullOrWhiteSpace(reason) ? "<unspecified>" : reason)}'.");
+    }
+
     /// <summary>
     /// Invalidates only the route-root placement state.
     ///
@@ -279,6 +312,7 @@ public static class ARCameraSpatialController
         Transform3D? capsuleTransform;
         Entity? route;
         Transform3D? routeRootTransform;
+        bool routeRenderingAllowed;
 
         Entity? floodDepthRoot;
         Transform3D? floodDepthRootTransform;
@@ -307,6 +341,9 @@ public static class ARCameraSpatialController
 
             routeRootTransform =
                 routeTransform;
+
+            routeRenderingAllowed =
+                routeRenderingEnabled;
 
             floodDepthRoot =
                 floodDepthEntity;
@@ -483,7 +520,8 @@ public static class ARCameraSpatialController
         if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
-            routeRootHorizontalLocked)
+            routeRootHorizontalLocked &&
+            routeRenderingAllowed)
         {
             routeRootTransform.Position =
                 new Vector3(
@@ -538,8 +576,9 @@ public static class ARCameraSpatialController
         else
         {
             /*
-             * Keep the horizontal lock through temporary tracking/anchor loss,
-             * but hide route guidance until spatial validity returns.
+             * Keep the horizontal lock through temporary tracking/anchor loss
+             * or Camera sub-tab suppression, but hide route guidance until the
+             * AR Camera view and spatial validity are both active again.
              */
             route.IsEnabled =
                 false;

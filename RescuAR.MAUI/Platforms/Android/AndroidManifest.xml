@@ -24,13 +24,27 @@
         android:name="android.permission.CAMERA" />
 
 	<uses-permission
+        android:name="android.permission.FLASHLIGHT" />
+
+	<uses-permission
         android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
 	<uses-permission
         android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+	<uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS" />
+
 	<uses-feature
         android:name="android.hardware.camera.ar"
+        android:required="false" />
+
+	<uses-feature
+        android:name="android.hardware.camera.flash"
+        android:required="false" />
+
+	<uses-feature
+        android:name="android.hardware.camera.autofocus"
         android:required="false" />
 
 	<queries>

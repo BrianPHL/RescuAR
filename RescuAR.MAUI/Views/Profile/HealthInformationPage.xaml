@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Profile"
+    x:Class="RescuAR.App.Views.Profile.HealthInformationPage"
+    Title="Health Information"
+    BackgroundColor="#F2F2F7">
+
+    <Grid>
+        <!-- Main Content -->
+        <ScrollView>
+            <VerticalStackLayout Spacing="20" Padding="20">
+                <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="White" Padding="15">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Health &amp; Medical Information" FontAttributes="Bold" FontSize="18" TextColor="Black" />
+                        
+                        <Entry Placeholder="Health Card Number" Text="{Binding CurrentUser.HealthCardNumber}" TextColor="Black" />
+                        <Picker Title="Blood Type" ItemsSource="{Binding BloodTypes}" SelectedItem="{Binding CurrentUser.BloodType}" TextColor="Black" TitleColor="Gray" />
+                        <Entry Placeholder="Allergies (comma separated)" Text="{Binding CurrentUser.Allergies}" TextColor="Black" />
+                        <Entry Placeholder="Maintenance Medications" Text="{Binding CurrentUser.MaintenanceMedications}" TextColor="Black" />
+                        <Entry Placeholder="Average Blood Pressure" Text="{Binding CurrentUser.AverageBloodPressure}" TextColor="Black" />
+                        <Entry Placeholder="Disability / Special Needs" Text="{Binding CurrentUser.DisabilityOrSpecialNeeds}" TextColor="Black" />
+                        <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                            <Switch IsToggled="{Binding CurrentUser.IsOrganDonor}" />
+                            <Label Text="Organ Donor" VerticalOptions="Center" TextColor="Black" />
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Button Text="Save Health Profile" Command="{Binding SaveProfileCommand}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Tutorial Overlay -->
+        <Grid BackgroundColor="#B3000000" IsVisible="{Binding IsTutorialVisible, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" ZIndex="10">
+            <!-- Center Card -->
+            <Border StrokeShape="RoundRectangle 12" StrokeThickness="0" BackgroundColor="White" Padding="20" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="300">
+                <VerticalStackLayout Spacing="15">
+                    <Label Text="Welcome to Health Info" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" HorizontalOptions="Center" />
+                    <Label Text="{Binding TutorialMessage, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" TextColor="Black" HorizontalTextAlignment="Center" />
+                    
+                    <!-- Indicator dots -->
+                    <HorizontalStackLayout Spacing="5" HorizontalOptions="Center">
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step1Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step2Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step3Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
+                    </HorizontalStackLayout>
+
+                    <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
+                        <Button Text="Skip" Clicked="OnSkipTutorialClicked" BackgroundColor="Transparent" TextColor="Gray" FontAttributes="Bold" />
+                        <Button Text="{Binding NextButtonText, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" Clicked="OnNextTutorialClicked" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentPage>

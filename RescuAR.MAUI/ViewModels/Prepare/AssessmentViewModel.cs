@@ -31,50 +31,50 @@ public partial class AssessmentViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanGoPrevious))]
     [NotifyPropertyChangedFor(nameof(IsLastQuestion))]
     [NotifyPropertyChangedFor(nameof(IsNotLastQuestion))]
-    private int currentIndex = 0;
+    private int _currentIndex = 0;
 
     [ObservableProperty]
-    private AssessmentQuestion currentQuestion = null!;
+    private AssessmentQuestion _currentQuestion = null!;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(isNotFinished))]
-    private bool isFinished = false;
+    [NotifyPropertyChangedFor(nameof(IsNotFinished))]
+    private bool _isFinished = false;
 
-    private bool isNotFinished => !IsFinished;
-
-    [ObservableProperty]
-    private int finalScorePercentage = 0;
+    public bool IsNotFinished => !IsFinished;
 
     [ObservableProperty]
-    private string finalScoreStatus = "Prepared";
+    private int _finalScorePercentage = 0;
+
+    [ObservableProperty]
+    private string _finalScoreStatus = "Prepared";
 
     // Option Properties for UI binding
     [ObservableProperty]
-    private string option1Text = string.Empty;
+    private string _option1Text = string.Empty;
 
     [ObservableProperty]
-    private string option2Text = string.Empty;
+    private string _option2Text = string.Empty;
 
     [ObservableProperty]
-    private string option3Text = string.Empty;
+    private string _option3Text = string.Empty;
 
     [ObservableProperty]
-    private bool isOption1Selected = false;
+    private bool _isOption1Selected;
 
     [ObservableProperty]
-    private bool isOption2Selected = false;
+    private bool _isOption2Selected;
 
     [ObservableProperty]
-    private bool isOption3Selected = false;
+    private bool _isOption3Selected;
 
     [ObservableProperty]
-    private bool isOption3Visible = false;
+    private bool _isOption3Visible;
 
     [ObservableProperty]
-    private bool canGoNext = false;
+    private bool _canGoNext;
 
     [ObservableProperty]
-    private bool canSubmit;
+    private bool _canSubmit;
 
     public double ProgressValue => (CurrentIndex + 1) / (double)_questions.Count;
 

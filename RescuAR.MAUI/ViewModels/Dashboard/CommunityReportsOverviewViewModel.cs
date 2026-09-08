@@ -12,25 +12,25 @@ public partial class CommunityReportsOverviewViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    private string report1Title = string.Empty;
+    private string _report1Title = string.Empty;
 
     [ObservableProperty]
-    private string report1Distance = string.Empty;
+    private string _report1Distance = string.Empty;
 
     [ObservableProperty]
-    private string report2Title = string.Empty;
+    private string _report2Title = string.Empty;
 
     [ObservableProperty]
-    private string report2Distance = string.Empty;
+    private string _report2Distance = string.Empty;
 
     [ObservableProperty]
-    private string actionText = string.Empty;
+    private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string moduleRoute = "//Reports/CommunityPosting";
+    private string _moduleRoute = "//Reports";
 
     [ObservableProperty]
-    private string moduleName = string.Empty;
+    private string _moduleName = string.Empty;
 
     public CommunityReportsOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -64,14 +64,25 @@ public partial class CommunityReportsOverviewViewModel : ObservableObject
         {
             try
             {
-                await Shell.Current.GoToAsync(ModuleRoute);
+                foreach (var item in Shell.Current.Items)
+                {
+                    foreach (var section in item.Items)
+                    {
+                        foreach (var content in section.Items)
+                        {
+                            if (content.Route == "Reports" || content.Title == "Reports")
+                            {
+                                Shell.Current.CurrentItem = content;
+                                return;
+                            }
+                        }
+                    }
+                }
+                await Shell.Current.GoToAsync("//Reports");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

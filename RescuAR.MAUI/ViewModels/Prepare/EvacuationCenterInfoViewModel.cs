@@ -1,405 +1,355 @@
-#if ANDROID
-using Android.Util;
-#endif
-
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using RescuAR.MAUI.Services.Navigation;
+using Microsoft.Maui.ApplicationModel.Communication;
+using Microsoft.Maui.Devices.Sensors;
+using Microsoft.Maui.Controls;
+using Microsoft.Maui.Storage;
+using RescuAR.App.Models;
+using RescuAR.Services;
 
 namespace RescuAR.App.ViewModels.Prepare;
 
 public class EmergencyHotlineItem
 {
-    public string Name { get; set; } =
-        string.Empty;
-
-    public string Number { get; set; } =
-        string.Empty;
-
-    public string Type { get; set; } =
-        string.Empty;
-
-    public string BadgeText { get; set; } =
-        "EMS";
-
-    public string IconEmoji { get; set; } =
-        "🚑";
-
-    public string IconBg { get; set; } =
-        "#FEE2E2";
+    public string Name { get; set; } = string.Empty;
+    public string Number { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public string BadgeText { get; set; } = "EMS";
 }
 
 public partial class EvacuationCenterItem : ObservableObject
 {
-    public string Name { get; set; } =
-        string.Empty;
-
-    public string Distance { get; set; } =
-        string.Empty;
-
-    public string Address { get; set; } =
-        string.Empty;
-
-    public string VerifiedBy { get; set; } =
-        string.Empty;
-
-    public string MapImageSource { get; set; } =
-        string.Empty;
-
+    public string Name { get; set; } = string.Empty;
+    public string Distance { get; set; } = string.Empty;
+    public double DistanceKm { get; set; }
+    public string DetailedDistanceString { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
+    public string VerifiedBy { get; set; } = string.Empty;
+    public string FacilityImageUrl { get; set; } = string.Empty;
+    public string MapImageSource { get; set; } = string.Empty;
     public double Latitude { get; set; }
-
     public double Longitude { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CapacityText))]
-    [NotifyPropertyChangedFor(nameof(ProgressValue))]
-    [NotifyPropertyChangedFor(nameof(StatusPillBg))]
-    [NotifyPropertyChangedFor(nameof(StatusPillText))]
-    [NotifyPropertyChangedFor(nameof(StatusLabel))]
-    private int currentOccupancy;
+    [NotifyPropertyChangedFor(nameof(BookmarkFill))]
+    [NotifyPropertyChangedFor(nameof(BookmarkStroke))]
+    private bool _isBookmarked;
 
-    public int MaxCapacity { get; set; } =
-        500;
+    public string BookmarkFill => IsBookmarked ? "#007E8A" : "Transparent";
+    public string BookmarkStroke => IsBookmarked ? "#007E8A" : "#0F172A";
 
-    public string Status { get; set; } =
-        "Open";
+    public bool HasFacilityImage => !string.IsNullOrWhiteSpace(FacilityImageUrl);
 
-    public string CapacityText =>
-        $"{CurrentOccupancy} / {MaxCapacity} evacuees";
+    public string Status { get; set; } = "Open";
+    public string StatusPillBg => "#DCFCE7";
+    public string StatusPillText => "#16A34A";
+    public string StatusLabel => "Open / Operational";
 
-    public double ProgressValue =>
-        MaxCapacity <=
-            0
-            ? 0.0
-            : Math.Clamp(
-                (double)CurrentOccupancy /
-                MaxCapacity,
-                0.0,
-                1.0);
-
-    public string StatusPillBg =>
-        ProgressValue switch
+    [RelayCommand]
+    public void ToggleBookmark()
+    {
+        IsBookmarked = !IsBookmarked;
+        try
         {
-            >= 0.9 => "#FEE2E2",
-            >= 0.7 => "#FEF3C7",
-            _ => "#DCFCE7"
-        };
-
-    public string StatusPillText =>
-        ProgressValue switch
+            Preferences.Default.Set($"bookmark_{Name}", IsBookmarked);
+        }
+        catch (Exception ex)
         {
-            >= 0.9 => "#DC2626",
-            >= 0.7 => "#D97706",
-            _ => "#16A34A"
-        };
+            System.Diagnostics.Debug.WriteLine($"Error saving bookmark: {ex.Message}");
+        }
+    }
 
-    public string StatusLabel =>
-        ProgressValue switch
+    public void LoadBookmarkState()
+    {
+        try
         {
-            >= 0.9 => "Near Full",
-            >= 0.7 => "Moderate",
-            _ => "Open / Space Available"
-        };
+            IsBookmarked = Preferences.Default.Get($"bookmark_{Name}", false);
+        }
+        catch
+        {
+            IsBookmarked = false;
+        }
+    }
 }
 
 public partial class EvacuationCenterInfoViewModel : ObservableObject
 {
-    private const string MldLogTag =
-        "RescuAR-MLD";
-
-    public ObservableCollection<EmergencyHotlineItem> Hotlines { get; } =
-        new();
-
-    public ObservableCollection<EvacuationCenterItem> EvacuationCenters { get; } =
-        new();
+    public ObservableCollection<EmergencyHotlineItem> Hotlines { get; } = new();
+    public ObservableCollection<EvacuationCenterItem> EvacuationCenters { get; } = new();
 
     [ObservableProperty]
-    private string selectedFilter =
-        "Nearest";
+    private string _selectedFilter = "Nearest";
 
     [ObservableProperty]
-    private bool isStartingNavigation;
+    private bool _isDetailsPopupVisible;
+
+    [ObservableProperty]
+    private EvacuationCenterItem? _selectedCenter;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PassScoreText))]
+    private int _passScore = Preferences.Default.Get("PASS_Score", 72);
+
+    public string PassScoreText => $"{PassScore}% prepared";
 
     public EvacuationCenterInfoViewModel()
     {
         LoadData();
+        _ = FetchHotlinesFromSupabaseAsync();
+        _ = FilterEvacuationCentersByGpsAsync();
     }
 
     private void LoadData()
     {
         Hotlines.Clear();
+        // Fallback default emergency hotlines
+        Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina Rescue 161", Number = "(02) 161", Type = "24/7 Emergency Medical & Rescue", BadgeText = "EMS" });
+        Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina PNP Central", Number = "(02) 8405-0091", Type = "Police Emergency Hotline", BadgeText = "PNP" });
+        Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina BFP Fire Dept", Number = "(02) 8646-0427", Type = "Fire & Rescue Brigade", BadgeText = "BFP" });
+        Hotlines.Add(new EmergencyHotlineItem { Name = "Red Cross Marikina", Number = "(02) 8681-3442", Type = "Disaster Relief & Blood Bank", BadgeText = "PRC" });
 
-        Hotlines.Add(
-            new EmergencyHotlineItem
-            {
-                Name =
-                    "Marikina Rescue 161",
-                Number =
-                    "(02) 161",
-                Type =
-                    "24/7 Emergency Medical & Rescue",
-                BadgeText =
-                    "EMS",
-                IconEmoji =
-                    "🚑",
-                IconBg =
-                    "#FEE2E2"
-            });
+        // Load all available candidate centers
+        PopulateMasterCenters(14.6612, 121.0963);
+    }
 
-        Hotlines.Add(
-            new EmergencyHotlineItem
+    public async Task FetchHotlinesFromSupabaseAsync()
+    {
+        try
+        {
+            var client = await SupabaseService.Instance.GetClientAsync();
+            if (client != null)
             {
-                Name =
-                    "Marikina PNP Central",
-                Number =
-                    "(02) 8405-0091",
-                Type =
-                    "Police Emergency Hotline",
-                BadgeText =
-                    "PNP",
-                IconEmoji =
-                    "🚓",
-                IconBg =
-                    "#DBEAFE"
-            });
+                var response = await client.From<SupabaseEmergencyHotline>()
+                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Ascending)
+                    .Get();
 
-        Hotlines.Add(
-            new EmergencyHotlineItem
-            {
-                Name =
-                    "Marikina BFP Fire Dept",
-                Number =
-                    "(02) 8646-0427",
-                Type =
-                    "Fire & Rescue Brigade",
-                BadgeText =
-                    "BFP",
-                IconEmoji =
-                    "🚒",
-                IconBg =
-                    "#FFEDD5"
-            });
+                if (response?.Models != null && response.Models.Count > 0)
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        Hotlines.Clear();
+                        foreach (var h in response.Models)
+                        {
+                            Hotlines.Add(new EmergencyHotlineItem
+                            {
+                                Name = h.Agency,
+                                Number = h.PrimaryNumber,
+                                Type = string.IsNullOrWhiteSpace(h.Coverage) ? h.Availability : $"{h.Availability} • {h.Coverage}",
+                                BadgeText = string.IsNullOrWhiteSpace(h.Category) ? "EMS" : h.Category.ToUpper()
+                            });
+                        }
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to fetch live hotlines from Supabase: {ex.Message}");
+        }
+    }
 
-        Hotlines.Add(
-            new EmergencyHotlineItem
+    private async Task FilterEvacuationCentersByGpsAsync()
+    {
+        try
+        {
+            var location = await Geolocation.Default.GetLastKnownLocationAsync();
+            if (location != null)
             {
-                Name =
-                    "Red Cross Marikina",
-                Number =
-                    "(02) 8681-3442",
-                Type =
-                    "Disaster Relief & Blood Bank",
-                BadgeText =
-                    "PRC",
-                IconEmoji =
-                    "🏥",
-                IconBg =
-                    "#FFE4E6"
+                PopulateMasterCenters(location.Latitude, location.Longitude);
+            }
+
+            // Perform high accuracy GPS fix in background without delaying page navigation
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var freshLoc = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Low, TimeSpan.FromSeconds(1)));
+                    if (freshLoc != null)
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            PopulateMasterCenters(freshLoc.Latitude, freshLoc.Longitude);
+                        });
+                    }
+                }
+                catch { }
             });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"GPS location error: {ex.Message}");
+        }
+    }
+
+    private void PopulateMasterCenters(double userLat, double userLng)
+    {
+        var masterList = new List<EvacuationCenterItem>
+        {
+            new EvacuationCenterItem 
+            { 
+                Name = "Malanday Elementary School", 
+                Address = "48 Visayas St., Malanday, 1805 Marikina City, Philippines", 
+                VerifiedBy = "Marikina LGU",
+                Latitude = 14.6612,
+                Longitude = 121.0963,
+                FacilityImageUrl = "https://pbs.twimg.com/media/Emm23rQVQAAbUe3?format=jpg&name=large",
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6612,121.0963&zoom=16&size=600x300&markers=14.6612,121.0963,red-pushpin"
+            },
+            new EvacuationCenterItem 
+            { 
+                Name = "San Roque High School", 
+                Address = "Abad Santos Street, San Roque, 1801 Marikina City, Philippines", 
+                VerifiedBy = "Marikina LGU",
+                Latitude = 14.6258,
+                Longitude = 121.1042,
+                FacilityImageUrl = "https://www.airesingegneria.it/site/assets/files/1208/metro-manila-edifici.jpg",
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6258,121.1042&zoom=16&size=600x300&markers=14.6258,121.1042,red-pushpin"
+            },
+            new EvacuationCenterItem 
+            { 
+                Name = "Concepcion Uno Covered Court", 
+                Address = "J.P. Rizal St., Concepcion Uno, 1807 Marikina City, Philippines", 
+                VerifiedBy = "Red Cross PH Verified",
+                Latitude = 14.6521,
+                Longitude = 121.1084,
+                FacilityImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Barangay_Concepcion_Uno%2C_Marikina_City_%28Rizal%2C_Metro_Manila%3B_2023-08-07%29_E911a_22.jpg/3840px-Barangay_Concepcion_Uno%2C_Marikina_City_%28Rizal%2C_Metro_Manila%3B_2023-08-07%29_E911a_22.jpg",
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6521,121.1084&zoom=16&size=600x300&markers=14.6521,121.1084,red-pushpin"
+            },
+            new EvacuationCenterItem 
+            { 
+                Name = "Marikina Elementary School", 
+                Address = "W.C. Paz St., Sta. Elena, 1800 Marikina City, Philippines", 
+                VerifiedBy = "Marikina LGU",
+                Latitude = 14.6335,
+                Longitude = 121.0968,
+                FacilityImageUrl = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgfm1_L35DOsZzEP6Op7KXLa44OxSrijBZ3zuIF4bczTgTQvA4c2GWNhzxlmy1UqFaZz47_IyXrAWuM6zZv8CDTR7ZwVITldWURKjINOxGi94kvfhRuN5mXYWT3geYrG3KJmemaYDL7hKc/w1200-h630-p-k-no-nu/2018-02-25_05.54.17_1%255B1%255D.jpg",
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6335,121.0968&zoom=16&size=600x300&markers=14.6335,121.0968,red-pushpin"
+            }
+        };
+
+        var userLoc = new Location(userLat, userLng);
+
+        foreach (var center in masterList)
+        {
+            center.LoadBookmarkState();
+
+            var centerLoc = new Location(center.Latitude, center.Longitude);
+            double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
+            center.DistanceKm = distKm;
+            center.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
+            
+            int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
+            center.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
+        }
+
+        // Filter strictly for nearby evacuation centers (within 2.5 km of user's GPS location) and sort by distance
+        var nearbyCenters = masterList
+            .Where(c => c.DistanceKm <= 2.5)
+            .OrderBy(c => c.DistanceKm)
+            .ToList();
+
+        // Fallback: If no center is within 2.5 km, show top 2 closest centers
+        if (nearbyCenters.Count == 0)
+        {
+            nearbyCenters = masterList.OrderBy(c => c.DistanceKm).Take(2).ToList();
+        }
 
         EvacuationCenters.Clear();
-
-        EvacuationCenters.Add(
-            new EvacuationCenterItem
-            {
-                Name =
-                    "Malanday Elementary School",
-                Distance =
-                    "877 meters away",
-                Address =
-                    "48 Visayas St., Malanday\nMarikina City 1805",
-                VerifiedBy =
-                    "Marikina LGU",
-                CurrentOccupancy =
-                    210,
-                MaxCapacity =
-                    500,
-                Latitude =
-                    14.6612,
-                Longitude =
-                    121.0963,
-                MapImageSource =
-                    "https://staticmap.openstreetmap.de/staticmap.php?center=14.6612,121.0963&zoom=16&size=600x300&markers=14.6612,121.0963,red-pushpin"
-            });
-
-        EvacuationCenters.Add(
-            new EvacuationCenterItem
-            {
-                Name =
-                    "San Roque High School Evacuation Facility",
-                Distance =
-                    "1.2 km away",
-                Address =
-                    "Abad Santos St., San Roque\nMarikina City 1801",
-                VerifiedBy =
-                    "Marikina LGU",
-                CurrentOccupancy =
-                    380,
-                MaxCapacity =
-                    450,
-                Latitude =
-                    14.6258,
-                Longitude =
-                    121.1042,
-                MapImageSource =
-                    "https://staticmap.openstreetmap.de/staticmap.php?center=14.6258,121.1042&zoom=16&size=600x300&markers=14.6258,121.1042,red-pushpin"
-            });
-
-        EvacuationCenters.Add(
-            new EvacuationCenterItem
-            {
-                Name =
-                    "Concepcion Uno Covered Court",
-                Distance =
-                    "2.4 km away",
-                Address =
-                    "J.P. Rizal St., Concepcion Uno\nMarikina City 1807",
-                VerifiedBy =
-                    "Red Cross PH Verified",
-                CurrentOccupancy =
-                    120,
-                MaxCapacity =
-                    300,
-                Latitude =
-                    14.6521,
-                Longitude =
-                    121.1084,
-                MapImageSource =
-                    "https://staticmap.openstreetmap.de/staticmap.php?center=14.6521,121.1084&zoom=16&size=600x300&markers=14.6521,121.1084,red-pushpin"
-            });
+        foreach (var item in nearbyCenters)
+        {
+            EvacuationCenters.Add(item);
+        }
     }
 
     [RelayCommand]
-    private async Task StartArNavigationAsync(
-        EvacuationCenterItem center)
+    private void ToggleSelectedCenterBookmark()
     {
-        if (center is null ||
-            IsStartingNavigation)
+        SelectedCenter?.ToggleBookmark();
+    }
+
+    [RelayCommand]
+    private async Task OpenPASSAssessmentAsync()
+    {
+        try
         {
-            return;
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("Prepare/PASS");
+            }
         }
+        catch
+        {
+            if (Application.Current?.Windows.Count > 0 && Application.Current.Windows[0].Page?.Navigation != null)
+            {
+                await Application.Current.Windows[0].Page.Navigation.PushAsync(new Views.Prepare.PASSPage());
+            }
+        }
+    }
 
-        IsStartingNavigation =
-            true;
-
-#if ANDROID
-        Log.Debug(
-            MldLogTag,
-            "Evacuation-center AR navigation selected: " +
-            $"name='{center.Name}', " +
-            $"lat={center.Latitude:F7}, " +
-            $"lon={center.Longitude:F7}");
-#endif
+    [RelayCommand]
+    private async Task MakePhoneCall(string number)
+    {
+        if (string.IsNullOrWhiteSpace(number)) return;
 
         try
         {
-            bool opened =
-                await CameraNavigationLauncher.OpenAsync(
-                    center.Name,
-                    center.Latitude,
-                    center.Longitude);
-
-            if (!opened &&
-                Shell.Current is not null)
+            string cleanDigits = System.Text.RegularExpressions.Regex.Replace(number, @"[^\d+]", "");
+            if (!string.IsNullOrWhiteSpace(cleanDigits))
             {
-                await Shell.Current.DisplayAlert(
-                    "AR Navigation",
-                    "This evacuation center could not be used as a navigation destination. Check Logcat for RescuAR-MLD.",
-                    "OK");
+                var uri = new Uri($"tel:{cleanDigits}");
+                await Launcher.Default.OpenAsync(uri);
             }
         }
-        catch (Exception exception)
+        catch (Exception ex)
         {
-#if ANDROID
-            Log.Error(
-                MldLogTag,
-                $"Starting AR navigation failed: {exception}");
-#endif
-
-            if (Shell.Current is not null)
-            {
-                await Shell.Current.DisplayAlert(
-                    "AR Navigation",
-                    "Unable to start AR navigation.",
-                    "OK");
-            }
-        }
-        finally
-        {
-            IsStartingNavigation =
-                false;
+            System.Diagnostics.Debug.WriteLine($"Phone call error: {ex.Message}");
         }
     }
 
     [RelayCommand]
-    private async Task DialNumberAsync(
-        string number)
+    private void ViewMoreDetails(EvacuationCenterItem center)
     {
-        if (Shell.Current is not null)
+        SelectedCenter = center;
+        IsDetailsPopupVisible = true;
+    }
+
+    [RelayCommand]
+    private void CloseDetailsPopup()
+    {
+        IsDetailsPopupVisible = false;
+        SelectedCenter = null;
+    }
+
+    [RelayCommand]
+    private async Task NavigateToCameraAsync()
+    {
+        if (Shell.Current != null)
         {
-            await Shell.Current.DisplayAlert(
-                "Emergency Hotline",
-                $"Initiating call to {number}...",
-                "Call Now");
+            await Shell.Current.GoToAsync("//Camera");
         }
     }
 
     [RelayCommand]
-    private async Task CheckInEvacueeAsync(
-        EvacuationCenterItem center)
+    private async Task StartARNavigationAsync()
     {
-        if (center is null)
+        CloseDetailsPopup();
+        if (Shell.Current != null)
         {
-            return;
-        }
-
-        if (center.CurrentOccupancy <
-            center.MaxCapacity)
-        {
-            center.CurrentOccupancy +=
-                1;
-
-            if (Shell.Current is not null)
-            {
-                await Shell.Current.DisplayAlert(
-                    "Real-Time Check-In",
-                    $"You have successfully checked in at {center.Name}. Real-time capacity updated!",
-                    "OK");
-            }
-        }
-        else if (Shell.Current is not null)
-        {
-            await Shell.Current.DisplayAlert(
-                "Center Full",
-                $"{center.Name} has reached max capacity! Please check nearby centers.",
-                "OK");
-        }
-    }
-
-    [RelayCommand]
-    private async Task ViewMoreDetailsAsync(
-        EvacuationCenterItem center)
-    {
-        if (center is null)
-        {
-            return;
-        }
-
-        if (Shell.Current is not null)
-        {
-            await Shell.Current.GoToAsync(
-                "//Map");
+            await Shell.Current.GoToAsync("//Camera");
         }
     }
 
     [RelayCommand]
     private async Task NavigateToMapAsync()
     {
-        if (Shell.Current is not null)
+        if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync(
-                "//Map");
+            await Shell.Current.GoToAsync("//Map");
         }
     }
 }

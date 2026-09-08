@@ -23,7 +23,7 @@
                 <Label Text="Back" TextColor="#0A8491" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
             </HorizontalStackLayout>
 
-            <Label Grid.Column="1" Text="PASS Assessment Quiz" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+            <Label Grid.Column="1" Text="PASS Quiz" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
             <Label Grid.Column="2" Text="Quiz" TextColor="#64748B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
         </Grid>
 
