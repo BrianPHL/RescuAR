@@ -957,7 +957,7 @@ public partial class DashboardViewModel : ObservableObject
         {
             try
             {
-                await Shell.Current.GoToAsync("ProfilePage");
+                await Shell.Current.GoToAsync("//Profile");
             }
             catch (Exception)
             {

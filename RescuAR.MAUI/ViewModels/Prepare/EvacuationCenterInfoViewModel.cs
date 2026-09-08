@@ -1,3 +1,7 @@
+#if ANDROID
+using Android.Util;
+#endif
+
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,6 +14,7 @@ using Microsoft.Maui.Devices.Sensors;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
+using RescuAR.MAUI.Services.Navigation;
 using RescuAR.Services;
 
 namespace RescuAR.App.ViewModels.Prepare;
@@ -79,6 +84,8 @@ public partial class EvacuationCenterItem : ObservableObject
 
 public partial class EvacuationCenterInfoViewModel : ObservableObject
 {
+    private const string MldLogTag = "RescuAR-MLD";
+
     public ObservableCollection<EmergencyHotlineItem> Hotlines { get; } = new();
     public ObservableCollection<EvacuationCenterItem> EvacuationCenters { get; } = new();
 
@@ -90,6 +97,9 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     [ObservableProperty]
     private EvacuationCenterItem? _selectedCenter;
+
+    [ObservableProperty]
+    private bool _isStartingNavigation;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PassScoreText))]
@@ -326,9 +336,20 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task NavigateToCameraAsync()
+    private async Task NavigateToCameraAsync(EvacuationCenterItem? center = null)
     {
-        if (Shell.Current != null)
+        // A shelter-card action supplies the current center as a command
+        // parameter. In that case this is real evacuation guidance and the
+        // destination must be published before Camera opens.
+        if (center is not null)
+        {
+            await StartNavigationToCenterAsync(center, closeDetailsPopup: false);
+            return;
+        }
+
+        // The standalone AR Route Practice tool intentionally has no shelter
+        // destination, so preserve its existing Camera-only behavior.
+        if (Shell.Current is not null)
         {
             await Shell.Current.GoToAsync("//Camera");
         }
@@ -337,10 +358,79 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     [RelayCommand]
     private async Task StartARNavigationAsync()
     {
-        CloseDetailsPopup();
-        if (Shell.Current != null)
+        var center = SelectedCenter;
+
+        if (center is null)
         {
-            await Shell.Current.GoToAsync("//Camera");
+            return;
+        }
+
+        await StartNavigationToCenterAsync(center, closeDetailsPopup: true);
+    }
+
+    private async Task StartNavigationToCenterAsync(
+        EvacuationCenterItem center,
+        bool closeDetailsPopup)
+    {
+        if (IsStartingNavigation)
+        {
+            return;
+        }
+
+        IsStartingNavigation = true;
+
+#if ANDROID
+        Log.Debug(
+            MldLogTag,
+            "Evacuation-center AR navigation selected: " +
+            $"name='{center.Name}', " +
+            $"lat={center.Latitude:F7}, " +
+            $"lon={center.Longitude:F7}");
+#endif
+
+        try
+        {
+            // Opening the Camera tab directly is not sufficient. The Camera
+            // page only requests MLD routing after a verified destination has
+            // been published through NavigationDestinationBridge, which the
+            // established launcher performs for us.
+            if (closeDetailsPopup)
+            {
+                CloseDetailsPopup();
+            }
+
+            bool opened = await CameraNavigationLauncher.OpenAsync(
+                center.Name,
+                center.Latitude,
+                center.Longitude);
+
+            if (!opened && Shell.Current is not null)
+            {
+                await Shell.Current.DisplayAlert(
+                    "AR Navigation",
+                    "This evacuation center could not be used as a navigation destination.",
+                    "OK");
+            }
+        }
+        catch (Exception exception)
+        {
+#if ANDROID
+            Log.Error(
+                MldLogTag,
+                $"Starting AR navigation failed: {exception}");
+#endif
+
+            if (Shell.Current is not null)
+            {
+                await Shell.Current.DisplayAlert(
+                    "AR Navigation",
+                    "Unable to start AR navigation.",
+                    "OK");
+            }
+        }
+        finally
+        {
+            IsStartingNavigation = false;
         }
     }
 

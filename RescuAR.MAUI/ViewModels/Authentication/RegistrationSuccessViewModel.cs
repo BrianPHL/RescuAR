@@ -26,7 +26,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    AuthenticationNavigation.TrySetRootPage(loginPage);
+                    AuthenticationNavigation.TrySetRootPage(new NavigationPage(loginPage));
                 }
             });
         }
