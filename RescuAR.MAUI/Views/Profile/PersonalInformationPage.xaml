@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Profile.PersonalInformationPage"
+    Title="Personal Information"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ScrollView>
+        <VerticalStackLayout Spacing="20" Padding="20">
+            <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="White" Padding="15">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Personal Information" FontAttributes="Bold" FontSize="18" TextColor="Black" />
+                    <Label Text="Manage your public display name (username) and underlying identity details securely." FontSize="12" TextColor="Gray" Margin="0,0,0,10" />
+                    
+                    <Label Text="Username (Public Display Name)" FontAttributes="Bold" FontSize="14" TextColor="Black" />
+                    <Entry Placeholder="e.g. athenanagano" Text="{Binding CurrentUser.Username}" TextColor="Black" />
+                    
+                    <Label Text="First Name" FontAttributes="Bold" FontSize="14" TextColor="Black" Margin="0,10,0,0"/>
+                    <Entry Placeholder="First Name" Text="{Binding CurrentUser.FirstName}" TextColor="Black" />
+                    <Entry Placeholder="Middle Name" Text="{Binding CurrentUser.MiddleName}" TextColor="Black" />
+                    <Entry Placeholder="Last Name" Text="{Binding CurrentUser.LastName}" TextColor="Black" />
+                    <Entry Placeholder="Email" Text="{Binding CurrentUser.Email}" Keyboard="Email" TextColor="Black" />
+                    <Entry Placeholder="Phone Number" Text="{Binding CurrentUser.PhoneNumber}" Keyboard="Telephone" TextColor="Black" />
+                    <Entry Placeholder="Address" Text="{Binding CurrentUser.Address}" TextColor="Black" />
+                </VerticalStackLayout>
+            </Border>
 
+            <Button Text="Save Profile Changes" Command="{Binding SaveProfileCommand}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" />
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

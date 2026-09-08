@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Profile.SafetyCircleSettingsPage"
+    Title="Safety Circle"
+    BackgroundColor="#F2F2F7">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="20" Padding="20">
+            <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="#E5F3F4" Padding="15">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Safety Circle Management" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" />
+                    
+                    <!-- Not in circle -->
+                    <VerticalStackLayout Spacing="10" IsVisible="{Binding IsNotInCircle}">
+                        <Label Text="You are not in a Safety Circle. Create one to share your location with family and friends." TextColor="Black" />
+                        <Button Text="Create New Circle" Command="{Binding CreateCircleCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
+                        <Label Text="- OR -" HorizontalOptions="Center" TextColor="Gray" Margin="0,10" />
+                        <Button Text="Simulate Clicking Deep Invite Link" Command="{Binding ProcessDeepLinkCommand}" BackgroundColor="#5cb85c" TextColor="White" CornerRadius="8" />
+                    </VerticalStackLayout>
+
+                    <!-- In a circle -->
+                    <VerticalStackLayout Spacing="15" IsVisible="{Binding IsInCircle}">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Current Circle:" TextColor="Black" />
+                            <Label Text="{Binding CurrentCircle.CircleName}" FontAttributes="Bold" TextColor="Black" />
+                        </HorizontalStackLayout>
+
+                        <Label Text="Share this link to invite others:" TextColor="Gray" FontSize="12" />
+                        <Border StrokeShape="RoundRectangle 8" BackgroundColor="White" Padding="10">
+                            <Label Text="{Binding CurrentCircle.InviteLink}" TextColor="#0A8491" LineBreakMode="TailTruncation" />
+                        </Border>
+
+                        <Button Text="Copy Invite Link" Command="{Binding ShareInviteLinkCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
+                        <Button Text="Leave Circle" Command="{Binding LeaveCircleCommand}" BackgroundColor="#D9534F" TextColor="White" CornerRadius="8" Margin="0,10,0,0" />
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
