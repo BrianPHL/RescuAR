@@ -5,28 +5,15 @@
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
     x:DataType="vm:OnboardingViewModel"
     x:Class="RescuAR.App.Views.Authentication.OnboardingPage"
-    BackgroundColor="#F7F7F7">
+    NavigationPage.HasNavigationBar="False"
+    BackgroundColor="White">
 
     <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
 
         <!-- Header Bar -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
-            <!-- Back button on top left -->
-            <Label Grid.Column="0"
-                   Text="&lt; Back"
-                   FontFamily="OpenSansSemibold"
-                   FontSize="14"
-                   TextColor="#00848E"
-                   VerticalOptions="Center"
-                   IsVisible="{Binding IsBackButtonVisible}">
-                <Label.GestureRecognizers>
-                    <TapGestureRecognizer Command="{Binding BackCommand}" />
-                </Label.GestureRecognizers>
-            </Label>
-
+        <Grid Grid.Row="0" ColumnDefinitions="*" HeightRequest="60" BackgroundColor="White" Padding="16, 0">
             <!-- Centered Title -->
-            <Label Grid.Column="1"
-                   Text="RescuAR"
+            <Label Text="RescuAR"
                    FontFamily="OpenSansSemibold"
                    FontSize="18"
                    TextColor="#1E1E1E"
@@ -115,57 +102,6 @@
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
             </Grid>
-
-            <!-- Entry Layout -->
-            <Grid IsVisible="{Binding IsEntryVisible}" RowDefinitions="*, Auto" VerticalOptions="FillAndExpand">
-                
-                <!-- Centered Logo Card -->
-                <VerticalStackLayout Grid.Row="0" 
-                                     HorizontalOptions="Center" 
-                                     VerticalOptions="Center"
-                                     Spacing="20">
-                    
-                    <Border WidthRequest="300"
-                            HeightRequest="120"
-                            StrokeThickness="0"
-                            BackgroundColor="White"
-                            StrokeShape="RoundRectangle 12">
-                        <Border.Shadow>
-                            <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
-                        </Border.Shadow>
-                        
-                        <Image Source="rescuar_logo.jpg"
-                               Aspect="AspectFit"
-                               Margin="10"
-                               HorizontalOptions="Fill"
-                               VerticalOptions="Fill" />
-                    </Border>
-                    
-                </VerticalStackLayout>
-
-                <!-- Bottom Button Actions -->
-                <VerticalStackLayout Grid.Row="1" Spacing="16" Margin="0, 0, 0, 24">
-                    <Button Text="Create an Account"
-                            Command="{Binding CreateAccountCommand}"
-                            TextColor="White"
-                            BackgroundColor="#00848E"
-                            CornerRadius="8"
-                            HeightRequest="50"
-                            FontFamily="OpenSansSemibold"
-                            Margin="24, 0" />
-
-                    <Label Text="Sign In"
-                           FontFamily="OpenSansSemibold"
-                           FontSize="14"
-                           TextColor="#00848E"
-                           HorizontalOptions="Center">
-                        <Label.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding SignInCommand}" />
-                        </Label.GestureRecognizers>
-                    </Label>
-                </VerticalStackLayout>
-            </Grid>
-            
         </Grid>
 
         <!-- Footer Area -->
@@ -173,15 +109,21 @@
             
             <!-- Navigation controls for Onboarding -->
             <Grid IsVisible="{Binding IsOnboardingVisible}" ColumnDefinitions="Auto, *" ColumnSpacing="16" Margin="24, 0, 24, 12">
-                <Button Grid.Column="0"
-                        Text="Skip"
-                        Command="{Binding SkipCommand}"
-                        TextColor="#1E1E1E"
-                        BackgroundColor="#EAEAEA"
-                        CornerRadius="8"
+                <Border Grid.Column="0"
+                        StrokeThickness="1"
+                        Stroke="#EAEAEA"
+                        BackgroundColor="White"
+                        StrokeShape="RoundRectangle 8"
                         WidthRequest="100"
-                        HeightRequest="50"
-                        FontFamily="OpenSansSemibold" />
+                        HeightRequest="50">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding SkipCommand}" />
+                    </Border.GestureRecognizers>
+                    <HorizontalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="4">
+                        <Path Data="M4,5V19L11,12M11,5V19L18,12M18,5V19H20V5" Fill="#1E1E1E" VerticalOptions="Center" WidthRequest="18" HeightRequest="18" Aspect="Uniform"/>
+                        <Label Text="Skip" TextColor="#1E1E1E" FontFamily="OpenSansSemibold" FontSize="14" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </Border>
 
                 <Button Grid.Column="1"
                         Text="{Binding NextButtonText}"
@@ -205,4 +147,4 @@
 
     </Grid>
 
-</ContentPage>
+</ContentPage>

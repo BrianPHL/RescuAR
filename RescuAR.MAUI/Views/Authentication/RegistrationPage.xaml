@@ -5,275 +5,297 @@
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
     x:DataType="vm:RegistrationViewModel"
     x:Class="RescuAR.App.Views.Authentication.RegistrationPage"
-    BackgroundColor="#F7F7F7">
+    BackgroundColor="#FFFFFF"
+    NavigationPage.HasNavigationBar="False">
 
-    <Grid RowDefinitions="Auto, *, Auto">
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <x:String x:Key="LockIcon">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</x:String>
+        </ResourceDictionary>
+    </ContentPage.Resources>
 
-        <!-- Header Bar -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
-            <!-- Back button on top left -->
-            <Label Grid.Column="0"
-                   Text="&lt; Back"
-                   FontFamily="OpenSansSemibold"
-                   FontSize="14"
-                   TextColor="#00848E"
-                   VerticalOptions="Center">
-                <Label.GestureRecognizers>
-                    <TapGestureRecognizer Command="{Binding BackCommand}" />
-                </Label.GestureRecognizers>
-            </Label>
+    <Grid RowDefinitions="Auto, *">
 
-            <!-- Centered Title -->
-            <Label Grid.Column="1"
-                   Text="RescuAR"
-                   FontFamily="OpenSansSemibold"
-                   FontSize="18"
-                   TextColor="#1E1E1E"
-                   HorizontalOptions="Center"
-                   VerticalOptions="Center" />
-        </Grid>
+        <!-- Removed Top Navigation -->
 
-        <!-- Form Content (Scrollable) -->
+        <!-- Main Content -->
         <ScrollView Grid.Row="1">
-            <VerticalStackLayout Padding="24, 16" Spacing="16">
+            <VerticalStackLayout Padding="24, 10, 24, 40" Spacing="20">
 
-                <!-- Logo Header Card -->
-                <Border WidthRequest="300"
-                        HeightRequest="110"
-                        StrokeThickness="0"
-                        BackgroundColor="White"
-                        StrokeShape="RoundRectangle 12"
-                        HorizontalOptions="Center"
-                        Margin="0, 0, 0, 8">
-                    <Border.Shadow>
-                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
-                    </Border.Shadow>
-                    
-                    <Image Source="rescuar_logo.jpg"
-                           Aspect="AspectFit"
-                           Margin="10"
-                           HorizontalOptions="Fill"
-                           VerticalOptions="Fill" />
+                <!-- Header -->
+                <VerticalStackLayout Spacing="6" Margin="0, 10, 0, 10">
+                    <Label Text="Get Started Now" FontFamily="OpenSansSemibold" FontSize="26" TextColor="#1E1E1E" HorizontalOptions="Center" />
+                    <Label Text="Create an account or log in to explore about our app" FontFamily="OpenSansRegular" FontSize="14" TextColor="#757575" HorizontalOptions="Center" HorizontalTextAlignment="Center" Margin="20,0" />
+                </VerticalStackLayout>
+
+                <!-- Page Toggle (Sign Up / Log In) -->
+                <Border StrokeThickness="0" BackgroundColor="#EEEEEE" StrokeShape="RoundRectangle 25" HeightRequest="50" Margin="0, 10, 0, 10">
+                    <Grid ColumnDefinitions="*, *">
+                        <!-- Sign Up (Active) -->
+                        <Border Grid.Column="0" StrokeThickness="0" BackgroundColor="#00848E" StrokeShape="RoundRectangle 25" Margin="4">
+                            <Label Text="Sign Up" TextColor="White" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <!-- Log In -->
+                        <Label Grid.Column="1" Text="Log In" TextColor="#757575" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding GoToSignInCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
+                    </Grid>
                 </Border>
 
-                <!-- Error Message Display -->
-                <Label Text="{Binding ErrorMessage}"
-                       TextColor="#FF3333"
-                       FontSize="13"
-                       FontFamily="OpenSansRegular"
-                       HorizontalOptions="Center"
-                       HorizontalTextAlignment="Center"
-                       IsVisible="{Binding HasError}"
-                       LineBreakMode="WordWrap" />
+                <!-- Error Message Moved To Bottom -->
 
-                <!-- First Name and Middle Name Fields -->
-                <Grid ColumnDefinitions="*, *" ColumnSpacing="12">
-                    <!-- First Name -->
-                    <VerticalStackLayout Grid.Column="0" Spacing="4">
-                        <Label Text="Full Name"
-                               FontSize="12"
-                               FontFamily="OpenSansSemibold"
-                               TextColor="#5A5A5A" />
-                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                            <Entry Text="{Binding FirstName}"
-                                   Placeholder="Brian Lawrence"
-                                   TextColor="#1E1E1E"
-                                   FontSize="14"
-                                   FontFamily="OpenSansRegular"
-                                   VerticalOptions="Center"
-                                   Keyboard="Text" />
+                <!-- First Name and Last Name Fields (Side by Side) -->
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="10">
+                    <VerticalStackLayout Grid.Column="0" Spacing="6">
+                        <Label Text="First Name" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                        <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="16, 0">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference firstNameEntry}, Path=IsFocused}" Value="True">
+                                    <Setter Property="Stroke" Value="#00848E" />
+                                    <Setter Property="StrokeThickness" Value="1.5" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                            <Entry x:Name="firstNameEntry" Text="{Binding FirstName}" Placeholder="e.g. Juan Miguel" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
                         </Border>
                     </VerticalStackLayout>
 
-                    <!-- Middle Name -->
-                    <VerticalStackLayout Grid.Column="1" Spacing="4">
-                        <Label Text="Middle Name (Optional)"
-                               FontSize="12"
-                               FontFamily="OpenSansSemibold"
-                               TextColor="#5A5A5A" />
-                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                            <Entry Text="{Binding MiddleName}"
-                                   Placeholder="Cardoza"
-                                   TextColor="#1E1E1E"
-                                   FontSize="14"
-                                   FontFamily="OpenSansRegular"
-                                   VerticalOptions="Center"
-                                   Keyboard="Text" />
+                    <VerticalStackLayout Grid.Column="1" Spacing="6">
+                        <Label Text="Last Name" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                        <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="16, 0">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference lastNameEntry}, Path=IsFocused}" Value="True">
+                                    <Setter Property="Stroke" Value="#00848E" />
+                                    <Setter Property="StrokeThickness" Value="1.5" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                            <Entry x:Name="lastNameEntry" Text="{Binding LastName}" Placeholder="e.g. Dela Cruz" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
                         </Border>
                     </VerticalStackLayout>
                 </Grid>
 
-                <!-- Last Name Field -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Last Name"
-                           FontSize="12"
-                           FontFamily="OpenSansSemibold"
-                           TextColor="#5A5A5A" />
-                    <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                        <Entry Text="{Binding LastName}"
-                               Placeholder="Pasco"
-                               TextColor="#1E1E1E"
-                               FontSize="14"
-                               FontFamily="OpenSansRegular"
-                               VerticalOptions="Center"
-                               Keyboard="Text" />
+                <!-- Middle Name -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Middle Name (Optional)" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference middleNameEntry}, Path=IsFocused}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Entry x:Name="middleNameEntry" Text="{Binding MiddleName}" Placeholder="Middle Name" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Email Address Field -->
-                <VerticalStackLayout Spacing="4">
-                    <Label Text="Email Address"
-                           FontSize="12"
-                           FontFamily="OpenSansSemibold"
-                           TextColor="#5A5A5A" />
-                    <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                        <Entry Text="{Binding Email}"
-                               Placeholder="qblcpasco@tip.edu.ph"
-                               TextColor="#1E1E1E"
-                               FontSize="14"
-                               FontFamily="OpenSansRegular"
-                               VerticalOptions="Center"
-                               Keyboard="Email" />
+                <!-- Email Address -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Email" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Entry x:Name="emailEntry" Text="{Binding Email}" Placeholder="juanmigueldelacruz@gmail.com" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" Keyboard="Email" />
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Password and Confirm Password Fields -->
-                <Grid ColumnDefinitions="*, *" ColumnSpacing="12">
-                    <!-- Password -->
-                    <VerticalStackLayout Grid.Column="0" Spacing="4">
-                        <Label Text="Password"
-                               FontSize="12"
-                               FontFamily="OpenSansSemibold"
-                               TextColor="#5A5A5A" />
-                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                            <Grid ColumnDefinitions="*, Auto">
-                                <Entry Grid.Column="0"
-                                       Text="{Binding Password}"
-                                       IsPassword="{Binding IsPasswordHidden}"
-                                       Placeholder="••••••••"
-                                       TextColor="#1E1E1E"
-                                       FontSize="14"
-                                       FontFamily="OpenSansRegular"
-                                       VerticalOptions="Center" />
-                                <Button Grid.Column="1"
-                                        Text="{Binding PasswordToggleIcon}"
-                                        Command="{Binding TogglePasswordVisibilityCommand}"
-                                        BackgroundColor="Transparent"
-                                        TextColor="#00848E"
-                                        FontFamily="OpenSansRegular"
-                                        FontSize="14"
-                                        Padding="0"
-                                        WidthRequest="36"
-                                        HeightRequest="36"
-                                        VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
-                    </VerticalStackLayout>
+                <!-- Contact Number -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Contact Number" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference contactEntry}, Path=IsFocused}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Entry x:Name="contactEntry" Text="{Binding ContactNumber}" Placeholder="+63 912 345 6789" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" Keyboard="Telephone" />
+                    </Border>
+                </VerticalStackLayout>
 
-                    <!-- Confirm Password -->
-                    <VerticalStackLayout Grid.Column="1" Spacing="4">
-                        <Label Text="Confirm Password"
-                               FontSize="12"
-                               FontFamily="OpenSansSemibold"
-                               TextColor="#5A5A5A" />
-                        <Border StrokeThickness="1" Stroke="#CCCCCC" StrokeShape="RoundRectangle 8" BackgroundColor="White" HeightRequest="45" Padding="12, 0">
-                            <Grid ColumnDefinitions="*, Auto">
-                                <Entry Grid.Column="0"
-                                       Text="{Binding ConfirmPassword}"
-                                       IsPassword="{Binding IsConfirmPasswordHidden}"
-                                       Placeholder="••••••••"
-                                       TextColor="#1E1E1E"
-                                       FontSize="14"
-                                       FontFamily="OpenSansRegular"
-                                       VerticalOptions="Center" />
-                                <Button Grid.Column="1"
-                                        Text="{Binding ConfirmPasswordToggleIcon}"
-                                        Command="{Binding ToggleConfirmPasswordVisibilityCommand}"
-                                        BackgroundColor="Transparent"
-                                        TextColor="#00848E"
-                                        FontFamily="OpenSansRegular"
-                                        FontSize="14"
-                                        Padding="0"
-                                        WidthRequest="36"
-                                        HeightRequest="36"
-                                        VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
+                <!-- Password -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
+                            <Entry x:Name="passwordEntry" Grid.Column="0" Text="{Binding Password}" IsPassword="False" Placeholder="********" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
+                            <ContentView Grid.Column="1" WidthRequest="24" HeightRequest="24" VerticalOptions="Center" HorizontalOptions="Center">
+                                <ContentView.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding TogglePasswordVisibilityCommand}" />
+                                </ContentView.GestureRecognizers>
+                                <Grid>
+                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordHidden}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordVisible}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                </Grid>
+                            </ContentView>
+                        </Grid>
+                    </Border>
+                    <!-- Password Criteria Guide -->
+                    <VerticalStackLayout Spacing="2" Margin="5,0,0,0">
+                        <!-- Length -->
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="✓" TextColor="#27AE60" IsVisible="{Binding HasMinLength}" FontAttributes="Bold" />
+                            <Label Text="✗" TextColor="#C0392B" IsVisible="{Binding HasMinLength}" FontAttributes="Bold">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasMinLength}" Value="True">
+                                        <Setter Property="IsVisible" Value="False" />
+                                    </DataTrigger>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasMinLength}" Value="False">
+                                        <Setter Property="IsVisible" Value="True" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                            <Label Text="At least 10 characters" FontSize="11" TextColor="#C0392B" VerticalOptions="Center">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasMinLength}" Value="True">
+                                        <Setter Property="TextColor" Value="#27AE60" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                        </HorizontalStackLayout>
+                        
+                        <!-- Special Char -->
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="✓" TextColor="#27AE60" IsVisible="{Binding HasSpecialChar}" FontAttributes="Bold" />
+                            <Label Text="✗" TextColor="#C0392B" IsVisible="{Binding HasSpecialChar}" FontAttributes="Bold">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasSpecialChar}" Value="True">
+                                        <Setter Property="IsVisible" Value="False" />
+                                    </DataTrigger>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasSpecialChar}" Value="False">
+                                        <Setter Property="IsVisible" Value="True" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                            <Label Text="Contain special character !@#$%^&amp;*()" FontSize="11" TextColor="#C0392B" VerticalOptions="Center">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasSpecialChar}" Value="True">
+                                        <Setter Property="TextColor" Value="#27AE60" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                        </HorizontalStackLayout>
+                        
+                        <!-- Digit -->
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="✓" TextColor="#27AE60" IsVisible="{Binding HasDigit}" FontAttributes="Bold" />
+                            <Label Text="✗" TextColor="#C0392B" IsVisible="{Binding HasDigit}" FontAttributes="Bold">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasDigit}" Value="True">
+                                        <Setter Property="IsVisible" Value="False" />
+                                    </DataTrigger>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasDigit}" Value="False">
+                                        <Setter Property="IsVisible" Value="True" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                            <Label Text="At least one digit" FontSize="11" TextColor="#C0392B" VerticalOptions="Center">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasDigit}" Value="True">
+                                        <Setter Property="TextColor" Value="#27AE60" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                        </HorizontalStackLayout>
+                        
+                        <!-- Upper Case -->
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="✓" TextColor="#27AE60" IsVisible="{Binding HasUpperCase}" FontAttributes="Bold" />
+                            <Label Text="✗" TextColor="#C0392B" IsVisible="{Binding HasUpperCase}" FontAttributes="Bold">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasUpperCase}" Value="True">
+                                        <Setter Property="IsVisible" Value="False" />
+                                    </DataTrigger>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasUpperCase}" Value="False">
+                                        <Setter Property="IsVisible" Value="True" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                            <Label Text="At least one upper case letter" FontSize="11" TextColor="#C0392B" VerticalOptions="Center">
+                                <Label.Triggers>
+                                    <DataTrigger TargetType="Label" Binding="{Binding HasUpperCase}" Value="True">
+                                        <Setter Property="TextColor" Value="#27AE60" />
+                                    </DataTrigger>
+                                </Label.Triggers>
+                            </Label>
+                        </HorizontalStackLayout>
                     </VerticalStackLayout>
-                </Grid>
+                </VerticalStackLayout>
+
+                <!-- Confirm Password -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Confirm Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference confirmPasswordEntry}, Path=IsFocused}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
+                            <Entry x:Name="confirmPasswordEntry" Grid.Column="0" Text="{Binding ConfirmPassword}" IsPassword="{Binding IsConfirmPasswordHidden}" Placeholder="********" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
+                            <ContentView Grid.Column="1" WidthRequest="24" HeightRequest="24" VerticalOptions="Center" HorizontalOptions="Center">
+                                <ContentView.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleConfirmPasswordVisibilityCommand}" />
+                                </ContentView.GestureRecognizers>
+                                <Grid>
+                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsConfirmPasswordHidden}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsConfirmPasswordVisible}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                </Grid>
+                            </ContentView>
+                        </Grid>
+                    </Border>
+                </VerticalStackLayout>
 
                 <!-- Terms and Conditions Checkbox -->
-                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" Margin="0, 4">
-                    <CheckBox Grid.Column="0"
-                              IsChecked="{Binding IsTermsAccepted}"
-                              Color="#00848E"
-                              VerticalOptions="Center" />
-                    <Label Grid.Column="1"
-                           FontSize="12"
-                           FontFamily="OpenSansRegular"
-                           TextColor="#5A5A5A"
-                           LineBreakMode="WordWrap"
-                           VerticalOptions="Center">
+                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" Margin="0, 8">
+                    <CheckBox Grid.Column="0" IsChecked="{Binding IsTermsAccepted}" Color="#00848E" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
+                    <Label Grid.Column="1" FontSize="13" FontFamily="OpenSansRegular" TextColor="#757575" VerticalOptions="Center" LineBreakMode="WordWrap">
                         <Label.FormattedText>
                             <FormattedString>
-                                <Span Text="I read and agree to the " />
-                                <Span Text="Terms &amp; Conditions" TextColor="#00848E" FontFamily="OpenSansSemibold" />
+                                <Span Text="I agree to the " />
+                                <Span Text="Terms and Conditions" TextColor="#5A67D8" FontFamily="OpenSansSemibold">
+                                    <Span.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding GoToTermsCommand}" />
+                                    </Span.GestureRecognizers>
+                                </Span>
                                 <Span Text=" and " />
-                                <Span Text="Privacy Policy" TextColor="#00848E" FontFamily="OpenSansSemibold" />
+                                <Span Text="Privacy Policy" TextColor="#5A67D8" FontFamily="OpenSansSemibold">
+                                    <Span.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding GoToPrivacyCommand}" />
+                                    </Span.GestureRecognizers>
+                                </Span>
                             </FormattedString>
                         </Label.FormattedText>
                     </Label>
                 </Grid>
 
-                <!-- Create Account Button -->
-                <Grid Margin="0, 8, 0, 0">
-                    <Button Text="→ Create an Account"
-                            Command="{Binding CreateAccountCommand}"
-                            TextColor="White"
-                            BackgroundColor="#00848E"
-                            CornerRadius="8"
-                            HeightRequest="50"
-                            FontFamily="OpenSansSemibold"
-                            FontSize="15"
-                            IsVisible="{Binding IsNotLoading}" />
-                    
-                    <ActivityIndicator IsRunning="{Binding IsLoading}"
-                                       Color="#00848E"
-                                       HeightRequest="50"
-                                       HorizontalOptions="Center"
-                                       IsVisible="{Binding IsLoading}" />
-                </Grid>
+                <!-- Error Message -->
+                <Label Text="{Binding ErrorMessage}" TextColor="#D8000C" FontSize="13" FontFamily="OpenSansSemibold" HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="{Binding HasError}" Margin="0, 5, 0, 5" />
 
-                <!-- Already have an account? Sign In -->
-                <Label HorizontalOptions="Center"
-                       FontSize="13"
-                       FontFamily="OpenSansRegular"
-                       TextColor="#5A5A5A"
-                       Margin="0, 8, 0, 16">
-                    <Label.FormattedText>
-                        <FormattedString>
-                            <Span Text="Already have an account? " />
-                            <Span Text="Sign in" TextColor="#00848E" FontFamily="OpenSansSemibold">
-                                <Span.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding GoToSignInCommand}" />
-                                </Span.GestureRecognizers>
-                            </Span>
-                        </FormattedString>
-                    </Label.FormattedText>
-                </Label>
+
+                <!-- Sign Up Button -->
+                <Grid Margin="0, 10, 0, 0">
+                    <Button Text="Sign Up" BackgroundColor="#00848E" TextColor="White" FontFamily="OpenSansSemibold" FontSize="16" CornerRadius="25" HeightRequest="50" Command="{Binding CreateAccountCommand}" IsVisible="{Binding IsNotLoading}" />
+                    <ActivityIndicator IsRunning="{Binding IsLoading}" Color="#00848E" HeightRequest="50" HorizontalOptions="Center" IsVisible="{Binding IsLoading}" />
+                </Grid>
 
             </VerticalStackLayout>
         </ScrollView>
-
-        <!-- Footer Area -->
-        <VerticalStackLayout Grid.Row="2" Padding="0, 0, 0, 16">
-            <Label Text="v0.0.1s"
-                   FontSize="12"
-                   FontFamily="OpenSansRegular"
-                   TextColor="#A0A0A0"
-                   HorizontalOptions="Center" />
-        </VerticalStackLayout>
-
     </Grid>
 
 </ContentPage>

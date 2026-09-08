@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Authentication.AddressInputPage"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
+
+    <Grid>
+        <ScrollView>
+            <VerticalStackLayout Spacing="15" Padding="20, 60, 20, 20">
+                <Label Text="Your Address" TextColor="Black" FontSize="36" FontAttributes="Bold" HorizontalOptions="Center" />
+                <Label Text="This application is tailored exclusively for Marikina City residents." TextColor="Gray" FontSize="14" HorizontalOptions="Center" HorizontalTextAlignment="Center" Margin="0,0,0,10" />
+
+                <!-- Error Message -->
+                <Border StrokeShape="RoundRectangle 8" BackgroundColor="#FADBD8" Stroke="#E74C3C" Padding="15" Margin="0,0,0,10" IsVisible="{Binding HasError}">
+                    <Label Text="{Binding ErrorMessage}" TextColor="#C0392B" FontSize="14" HorizontalOptions="Center" />
+                </Border>
+
+                <!-- Address Map Auto-fill Button -->
+                <Button Text="Use Current Location (Auto-fill)" Command="{Binding GetLocationFromMapCommand}" BackgroundColor="#E0F2F1" TextColor="#0A8491" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" Margin="0,0,0,15" />
+
+                <Label Text="House / Lot / Block No." TextColor="Black" FontAttributes="Bold" />
+                <Border StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#E0E0E0" BackgroundColor="White" Padding="15,5">
+                    <Entry Placeholder="e.g. Blk 1 Lot 2" Text="{Binding HouseLotBlock}" TextColor="Black" />
+                </Border>
+
+                <Label Text="Street" TextColor="Black" FontAttributes="Bold" />
+                <Border StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#E0E0E0" BackgroundColor="White" Padding="15,5">
+                    <Entry Placeholder="e.g. Shoe Ave" Text="{Binding Street}" TextColor="Black" />
+                </Border>
+                
+                <Label Text="Barangay" TextColor="Black" FontAttributes="Bold" />
+                <Border StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#E0E0E0" BackgroundColor="White" Padding="15,5">
+                    <Entry Placeholder="e.g. Sto. Niño" Text="{Binding Barangay}" TextColor="Black" />
+                </Border>
+
+                <Label Text="City (Locked to Marikina)" TextColor="Gray" FontAttributes="Bold" />
+                <Border StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#E0E0E0" BackgroundColor="#EFEFEF" Padding="15,5">
+                    <Entry Text="{Binding City}" IsReadOnly="True" TextColor="Gray" />
+                </Border>
+
+                <Label Text="Province" TextColor="Gray" FontAttributes="Bold" />
+                <Border StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#E0E0E0" BackgroundColor="#EFEFEF" Padding="15,5">
+                    <Entry Text="{Binding Province}" IsReadOnly="True" TextColor="Gray" />
+                </Border>
+                
+                <!-- Save Button -->
+                <Button Text="Complete Setup" Command="{Binding SaveAddressCommand}" IsVisible="{Binding IsNotLoading}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" Margin="0,20,0,0" />
+                
+                <!-- Loading Indicator -->
+                <ActivityIndicator IsRunning="{Binding IsLoading}" IsVisible="{Binding IsLoading}" Color="#0A8491" HorizontalOptions="Center" Margin="0,20,0,0" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Custom Styled Confirm Address Popup Overlay -->
+        <ContentView BackgroundColor="#99000000" IsVisible="{Binding IsConfirmPopupVisible}">
+            <Grid>
+                <!-- Popup Card -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 24" Padding="30" Margin="30,0" VerticalOptions="Center" HorizontalOptions="Center" WidthRequest="320">
+                    <Border.Shadow>
+                        <Shadow Brush="Black" Offset="0,15" Radius="30" Opacity="0.3" />
+                    </Border.Shadow>
+                    
+                    <VerticalStackLayout Spacing="15">
+                        
+                        <!-- Map Icon Container -->
+                        <Border StrokeShape="RoundRectangle 40" StrokeThickness="0" BackgroundColor="#E0F2F1" WidthRequest="80" HeightRequest="80" HorizontalOptions="Center" Margin="0,0,0,5">
+                            <!-- SVG Map Pin Icon -->
+                            <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" 
+                                  Fill="#00848E" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="40" HeightRequest="40" Aspect="Uniform" />
+                        </Border>
+
+                        <Label Text="Confirm Address" TextColor="#1E1E1E" FontSize="24" FontFamily="OpenSansSemibold" HorizontalOptions="Center" />
+                        
+                        <Label Text="Are all your inputs correct? You can still edit your address later in the profile section." TextColor="#757575" FontSize="15" FontFamily="OpenSansRegular" HorizontalTextAlignment="Center" LineHeight="1.3" />
+                        
+                        <VerticalStackLayout Spacing="10" Margin="0,15,0,0">
+                            <!-- Yes Button -->
+                            <Border StrokeThickness="0" BackgroundColor="#00848E" StrokeShape="RoundRectangle 25" HeightRequest="50">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ConfirmAndSaveAddressCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Yes, Complete Setup" TextColor="White" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            
+                            <!-- No Button -->
+                            <Border StrokeThickness="1" Stroke="#BDBDBD" BackgroundColor="Transparent" StrokeShape="RoundRectangle 25" HeightRequest="50">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding CancelConfirmCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="No, Edit Address" TextColor="#757575" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+                        
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
+        </ContentView>
+
+    </Grid>
+</ContentPage>

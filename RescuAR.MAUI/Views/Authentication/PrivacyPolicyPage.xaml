@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Authentication.PrivacyPolicyPage"
+    NavigationPage.HasNavigationBar="False"
+    BackgroundColor="#F7F7F7">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
+            <!-- Back button on top left -->
+            <Border Grid.Column="0" StrokeThickness="0" BackgroundColor="Transparent" WidthRequest="40" HeightRequest="40" VerticalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackTapped" />
+                </Border.GestureRecognizers>
+                <Label Text="&lt;" FontFamily="OpenSansSemibold" FontSize="20" TextColor="#00848E" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-2,0,0" />
+            </Border>
+
+            <!-- Centered Title -->
+            <Label Grid.Column="1"
+                   Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   Margin="-40, 0, 0, 0" />
+        </Grid>
+
+        <!-- Main Content (Scrollable) -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="24" Spacing="16">
+
+                <Label Text="Privacy Policy"
+                       FontSize="32"
+                       FontFamily="OpenSansSemibold"
+                       TextColor="#1E1E1E"
+                       LineHeight="1.2"
+                       Margin="0, 0, 0, 16" />
+
+                <!-- Item 1 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="1" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Information We Collect" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="We collect limited data necessary to provide evacuation guidance:" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Location Data – to determine your position and nearby evacuation routes" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Camera Access – to enable Augmented Reality (AR) navigation" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Motion &amp; Orientation Data – to align AR directions with your movement" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Device Information – for system performance and compatibility" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 2 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="2" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="How We Use Your Information" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="Your data is used solely to:" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Provide real-time evacuation guidance" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Display hazard alerts and safe routes" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="6" Margin="12, 0, 0, 0">
+                                <BoxView Color="#5A5A5A" WidthRequest="4" HeightRequest="4" CornerRadius="2" VerticalOptions="Center" />
+                                <Label Text="Improve navigation accuracy and system performance" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 3 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="3" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Data Storage and Security" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="We do not store personal location data permanently. All data is used in real-time and handled securely to prevent unauthorized access." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 4 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="4" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Data Sharing" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="We do not sell or share your personal data with third parties. Data may only be used with verified sources for disaster-related updates." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <!-- Item 5 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="5" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="User Control" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="You may disable permissions (location, camera, motion) at any time through your device settings. However, doing so may limit core app functionality." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+                
+                <!-- Item 6 -->
+                <Border StrokeThickness="0" BackgroundColor="White" StrokeShape="RoundRectangle 8" Padding="16">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Border Grid.Column="0" Stroke="#EAEAEA" StrokeThickness="1" BackgroundColor="White" WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 4" VerticalOptions="Start" Margin="0, 0, 12, 0">
+                            <Label Text="6" FontSize="12" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="Updates to This Policy" FontSize="14" FontFamily="OpenSansSemibold" TextColor="#00848E" />
+                            <Label Text="This policy may be updated to reflect improvements in the system. Continued use of the app means you accept these updates." FontSize="13" FontFamily="OpenSansRegular" TextColor="#5A5A5A" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

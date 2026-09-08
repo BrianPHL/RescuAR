@@ -2,10 +2,117 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    x:Class="RescuAR.App.Views.Authentication.PermissionsPage">
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:PermissionsViewModel"
+    x:Class="RescuAR.App.Views.Authentication.PermissionsPage"
+    NavigationPage.HasNavigationBar="False"
+    BackgroundColor="#F8F9FA">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
+
+        <!-- Top Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="*" HeightRequest="60" BackgroundColor="White" Padding="16, 0">
+            <Label Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand">
+            
+            <!-- Large Background Watermark Icon -->
+            <Path Data="{Binding WatermarkPath}"
+                  Fill="#00848E"
+                  Opacity="0.07"
+                  Aspect="Uniform"
+                  HorizontalOptions="Center"
+                  VerticalOptions="Center"
+                  WidthRequest="260"
+                  HeightRequest="260"
+                  Margin="0, 0, 0, 40" />
+
+            <!-- Foreground Content -->
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="4" Margin="24, 0">
+                
+                <Label Text="{Binding SubHeader}"
+                       FontSize="15"
+                       FontFamily="OpenSansRegular"
+                       TextColor="#333333"
+                       HorizontalTextAlignment="Center" />
+
+                <Label Text="{Binding Title}"
+                       FontSize="32"
+                       FontFamily="OpenSansSemibold"
+                       TextColor="#00848E"
+                       HorizontalTextAlignment="Center"
+                       Margin="0, 2, 0, 12" />
+
+                <Label Text="{Binding Description}"
+                       FontSize="13.5"
+                       FontFamily="OpenSansRegular"
+                       TextColor="#666666"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap"
+                       LineHeight="1.3"
+                       Margin="16, 0" />
+
+            </VerticalStackLayout>
+
+        </Grid>
+
+        <!-- Bottom Action Controls -->
+        <VerticalStackLayout Grid.Row="2" Spacing="8" Margin="24, 0, 24, 24">
+
+            <!-- Primary Allow / Enable Button -->
+            <Border StrokeThickness="0"
+                    BackgroundColor="#00848E"
+                    StrokeShape="RoundRectangle 10"
+                    HeightRequest="52"
+                    HorizontalOptions="FillAndExpand">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding RequestCurrentPermissionCommand}" />
+                </Border.GestureRecognizers>
+                
+                <Grid ColumnDefinitions="Auto, Auto" HorizontalOptions="Center" VerticalOptions="Center" ColumnSpacing="10">
+                    <Path Grid.Column="0"
+                          Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M10,17L5,12L6.41,10.59L10,14.17L17.59,6.58L19,8L10,17Z"
+                          Fill="White"
+                          Aspect="Uniform"
+                          WidthRequest="20"
+                          HeightRequest="20"
+                          VerticalOptions="Center" />
+                    
+                    <Label Grid.Column="1"
+                           Text="{Binding ActionButtonText}"
+                           TextColor="White"
+                           FontFamily="OpenSansSemibold"
+                           FontSize="15"
+                           VerticalOptions="Center" />
+                </Grid>
+            </Border>
+
+            <!-- Secondary Not Now Button -->
+            <Border StrokeThickness="0"
+                    BackgroundColor="Transparent"
+                    HeightRequest="44"
+                    HorizontalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding SkipCurrentPermissionCommand}" />
+                </Border.GestureRecognizers>
+                
+                <Label Text="Not Now"
+                       TextColor="#333333"
+                       FontFamily="OpenSansSemibold"
+                       FontSize="14"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
+            </Border>
+
+        </VerticalStackLayout>
+
+    </Grid>
 
 </ContentPage>

@@ -5,19 +5,19 @@
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
     x:DataType="vm:SplashViewModel"
     x:Class="RescuAR.App.Views.Authentication.SplashPage"
-    BackgroundColor="#F7F7F7">
+    BackgroundColor="White">
 
     <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
         
         <!-- Header Bar -->
-        <Border Grid.Row="0" Grid.Column="0" HeightRequest="60" StrokeThickness="0" BackgroundColor="#EAEAEA">
+        <Grid Grid.Row="0" Grid.Column="0" HeightRequest="60" BackgroundColor="White">
             <Label Text="RescuAR"
                    FontFamily="OpenSansSemibold"
                    FontSize="18"
                    TextColor="#1E1E1E"
                    HorizontalOptions="Center"
                    VerticalOptions="Center" />
-        </Border>
+        </Grid>
 
         <!-- Center Content: Logo Card -->
         <VerticalStackLayout Grid.Row="1" 
@@ -50,6 +50,12 @@
                              Margin="0,0,0,40"
                              Spacing="12">
             
+            <ActivityIndicator IsRunning="True"
+                               Color="#00848E"
+                               WidthRequest="24"
+                               HeightRequest="24"
+                               HorizontalOptions="Center" />
+            
             <Label Text="{Binding StatusText}"
                    FontSize="14"
                    FontFamily="OpenSansRegular"
@@ -66,4 +72,5 @@
         
     </Grid>
 
-</ContentPage>
+</ContentPage>
+

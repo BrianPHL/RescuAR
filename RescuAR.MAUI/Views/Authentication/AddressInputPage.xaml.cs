@@ -3,9 +3,9 @@ using RescuAR.App.ViewModels.Authentication;
 
 namespace RescuAR.App.Views.Authentication
 {
-    public partial class PermissionsPage : ContentPage
+    public partial class AddressInputPage : ContentPage
     {
-        public PermissionsPage(PermissionsViewModel viewModel)
+        public AddressInputPage(AddressInputViewModel viewModel)
         {
             InitializeComponent();
             BindingContext = viewModel;
