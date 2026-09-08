@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
+             x:Class="RescuAR.App.Views.Reports.NotificationsPage"
+             x:DataType="vm:ReportsViewModel"
+             Title="Notifications"
+             BackgroundColor="#F8FAFC">
+
+    <Grid RowDefinitions="*, Auto">
+        <ScrollView Grid.Row="0" Padding="20">
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Notifications}" Spacing="10">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ReportNotification">
+                        <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="12">
+                            <Grid ColumnDefinitions="Auto, *" ColumnSpacing="12">
+                                <!-- Notification Icon Indicator -->
+                                <Border Grid.Column="0" WidthRequest="36" HeightRequest="36" StrokeShape="RoundRectangle 18" StrokeThickness="0" BackgroundColor="#E0F2FE" VerticalOptions="Start">
+                                    <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                                          Fill="#0284C7"
+                                          WidthRequest="16"
+                                          HeightRequest="16"
+                                          Aspect="Uniform"
+                                          HorizontalOptions="Center"
+                                          VerticalOptions="Center" />
+                                </Border>
+                                
+                                <!-- Notification Content -->
+                                <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                    <Grid ColumnDefinitions="*, Auto">
+                                        <Label Grid.Column="0" Text="{Binding Title}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                        <Label Grid.Column="1" Text="{Binding TimestampText}" TextColor="#94A3B8" FontSize="11" />
+                                    </Grid>
+                                    <Label Text="{Binding Message}" TextColor="#475569" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+        </ScrollView>
+        
+        <Border Grid.Row="1" BackgroundColor="White" Padding="20,16" StrokeThickness="0">
+            <Border.Shadow>
+                <Shadow Brush="#000000" Offset="0,-4" Radius="8" Opacity="0.05" />
+            </Border.Shadow>
+            <Button Text="Clear All"
+                    Command="{Binding ClearNotificationsCommand}"
+                    TextColor="#EF4444"
+                    BackgroundColor="#FEE2E2"
+                    CornerRadius="10"
+                    HeightRequest="50"
+                    FontSize="14"
+                    FontFamily="OpenSansSemibold" />
+        </Border>
+    </Grid>
+</ContentPage>
