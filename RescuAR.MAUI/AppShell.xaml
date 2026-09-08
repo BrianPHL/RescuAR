@@ -11,32 +11,41 @@
     xmlns:reports="clr-namespace:RescuAR.App.Views.Reports"
     xmlns:profile="clr-namespace:RescuAR.App.Views.Profile"
 
-    Shell.FlyoutBehavior="Disabled">
+    Shell.FlyoutBehavior="Disabled"
+    Shell.TabBarBackgroundColor="White"
+    Shell.TabBarForegroundColor="#0A8491"
+    Shell.TabBarTitleColor="#0A8491"
+    Shell.TabBarUnselectedColor="#7F7F7F">
 
     <TabBar>
 
         <ShellContent
             Title="Home"
+            Icon="tab_home.png"
             Route="Home"
             ContentTemplate="{DataTemplate dashboard:DashboardPage}" />
 
         <ShellContent
             Title="Map"
+            Icon="tab_map.png"
             Route="Map"
             ContentTemplate="{DataTemplate map:MapPage}" />
 
         <ShellContent
             Title="Camera"
+            Icon="tab_camera.png"
             Route="Camera"
             ContentTemplate="{DataTemplate camera:CameraPage}" />
 
         <ShellContent
             Title="Reports"
+            Icon="tab_reports.png"
             Route="Reports"
             ContentTemplate="{DataTemplate reports:ReportsPage}" />
 
         <ShellContent
             Title="Profile"
+            Icon="tab_profile.png"
             Route="Profile"
             ContentTemplate="{DataTemplate profile:ProfilePage}" />
 
