@@ -14,10 +14,10 @@
             VerticalOptions="Fill">
 
         <Border.GestureRecognizers>
-            <TapGestureRecognizer Command="{Binding NavigateToSummaryCommand}" />
+            <TapGestureRecognizer Command="{Binding ViewEmergencySummaryCommand}" />
         </Border.GestureRecognizers>
 
-        <Grid RowDefinitions="*,Auto" RowSpacing="8">
+        <Grid RowDefinitions="*,Auto" RowSpacing="8" InputTransparent="True">
             <!-- Header & Subtitle -->
             <VerticalStackLayout Grid.Row="0" Spacing="6">
                 <Label Text="2 Advisories Active"
