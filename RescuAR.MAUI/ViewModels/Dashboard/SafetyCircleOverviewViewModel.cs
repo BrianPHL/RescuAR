@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,26 +12,36 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
 {
     private readonly IDashboardDataService _dataService;
 
-    [ObservableProperty]
-    private string circle1Name = string.Empty;
+    public ObservableCollection<SafetyCircleGroupItem> Groups { get; } = new();
+
+    public string Circle1Name =>
+        Groups.Count > 0
+            ? Groups[0].Name
+            : "No circle available";
+
+    public string Circle1Status =>
+        Groups.Count > 0
+            ? Groups[0].StatusText
+            : "No member status";
+
+    public string Circle2Name =>
+        Groups.Count > 1
+            ? Groups[1].Name
+            : "No second circle";
+
+    public string Circle2Status =>
+        Groups.Count > 1
+            ? Groups[1].StatusText
+            : "No member status";
 
     [ObservableProperty]
-    private string circle1Status = string.Empty;
+    private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string circle2Name = string.Empty;
+    private string _moduleRoute = "//Map";
 
     [ObservableProperty]
-    private string circle2Status = string.Empty;
-
-    [ObservableProperty]
-    private string actionText = string.Empty;
-
-    [ObservableProperty]
-    private string moduleRoute = "//Map/SafetyCircle";
-
-    [ObservableProperty]
-    private string moduleName = string.Empty;
+    private string _moduleName = string.Empty;
 
     public SafetyCircleOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -45,16 +56,23 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
     private async Task LoadDataAsync()
     {
         var data = await _dataService.GetSafetyCircleDataAsync();
-        if (data.Groups.Count >= 2)
+        Groups.Clear();
+        foreach (var group in data.Groups)
         {
-            Circle1Name = data.Groups[0].Name;
-            Circle1Status = data.Groups[0].StatusText;
-            Circle2Name = data.Groups[1].Name;
-            Circle2Status = data.Groups[1].StatusText;
+            Groups.Add(group);
         }
         ActionText = data.ActionText;
-        ModuleRoute = data.ModuleRoute;
+        ModuleRoute = "//Map";
         ModuleName = data.ModuleName;
+
+        OnPropertyChanged(
+            nameof(Circle1Name));
+        OnPropertyChanged(
+            nameof(Circle1Status));
+        OnPropertyChanged(
+            nameof(Circle2Name));
+        OnPropertyChanged(
+            nameof(Circle2Status));
     }
 
     [RelayCommand]
@@ -64,14 +82,11 @@ public partial class SafetyCircleOverviewViewModel : ObservableObject
         {
             try
             {
-                await Shell.Current.GoToAsync(ModuleRoute);
+                await Shell.Current.GoToAsync("//Map");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

@@ -12,22 +12,25 @@ public partial class PASSOverviewViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    private string title = string.Empty;
+    private string _title = "Preparation Assessment";
 
     [ObservableProperty]
-    private string scoreText = string.Empty;
+    [NotifyPropertyChangedFor(nameof(ScoreText))]
+    private int _scorePercentage = 72;
+
+    public string ScoreText => $"{ScorePercentage}% prepared";
 
     [ObservableProperty]
-    private string description = string.Empty;
+    private string _description = "Evaluate your overall preparedness for emergencies and evacuation.";
 
     [ObservableProperty]
-    private string buttonText = string.Empty;
+    private string _buttonText = "Take Assessment";
 
     [ObservableProperty]
-    private string moduleRoute = "//Prepare/PASS";
+    private string _moduleRoute = "Prepare/PASS";
 
     [ObservableProperty]
-    private string moduleName = string.Empty;
+    private string _moduleName = "Preparation Assessment";
 
     public PASSOverviewViewModel() : this(DashboardDataService.Instance)
     {
@@ -41,13 +44,25 @@ public partial class PASSOverviewViewModel : ObservableObject
 
     private async Task LoadDataAsync()
     {
-        var data = await _dataService.GetPASSDataAsync();
-        Title = data.Title;
-        ScoreText = $"{data.ScorePercentage}% prepared";
-        Description = data.Description;
-        ButtonText = data.ButtonText;
-        ModuleRoute = data.ModuleRoute;
-        ModuleName = data.ModuleName;
+        try
+        {
+            int savedScore = Preferences.Get("PASS_Score", 72);
+            ScorePercentage = savedScore;
+
+            var data = await _dataService.GetPASSDataAsync();
+            if (data != null)
+            {
+                if (!string.IsNullOrWhiteSpace(data.Title)) Title = data.Title;
+                if (data.ScorePercentage > 0 && savedScore == 72) ScorePercentage = data.ScorePercentage;
+                if (!string.IsNullOrWhiteSpace(data.Description)) Description = data.Description;
+                if (!string.IsNullOrWhiteSpace(data.ButtonText)) ButtonText = data.ButtonText;
+                if (!string.IsNullOrWhiteSpace(data.ModuleName)) ModuleName = data.ModuleName;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"PASSOverviewViewModel error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -57,19 +72,16 @@ public partial class PASSOverviewViewModel : ObservableObject
         {
             try
             {
-                string route = ModuleRoute;
-                if (route.StartsWith("//") && !route.Equals("//Camera") && !route.Equals("//Home"))
+                if (Shell.Current.Navigation != null)
                 {
-                    route = route.Substring(2);
+                    await Shell.Current.Navigation.PushAsync(new Views.Prepare.PASSPage());
+                    return;
                 }
-                await Shell.Current.GoToAsync(route);
+                await Shell.Current.GoToAsync("Prepare/PASS");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

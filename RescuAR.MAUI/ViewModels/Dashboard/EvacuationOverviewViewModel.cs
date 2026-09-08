@@ -2,10 +2,7 @@ using System;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
-using Microsoft.Maui.Devices.Sensors;
-using RescuAR.App.Services.AreaStatus;
 using RescuAR.App.Services.Dashboard;
 
 namespace RescuAR.App.ViewModels.Dashboard;
@@ -13,75 +10,42 @@ namespace RescuAR.App.ViewModels.Dashboard;
 public partial class EvacuationOverviewViewModel : ObservableObject
 {
     private readonly IDashboardDataService _dataService;
-    private readonly IAreaStatusService _areaStatusService;
 
     [ObservableProperty]
-    private string distanceText = "Calculating...";
+    private string _centerName = string.Empty;
 
     [ObservableProperty]
-    private string centerName = "Locating nearest shelter...";
+    private string _distanceText = string.Empty;
 
     [ObservableProperty]
-    private string actionText = "Nearest Evacuation Center";
+    private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string moduleRoute = "//Map";
+    private string _moduleRoute = "Prepare/EvacuationCenterInfo";
 
     [ObservableProperty]
-    private string moduleName = "Evacuation Center Info";
+    private string _moduleName = string.Empty;
 
-    public EvacuationOverviewViewModel() : this(DashboardDataService.Instance, AreaStatusService.Instance)
+    public EvacuationOverviewViewModel() : this(DashboardDataService.Instance)
     {
     }
 
-    public EvacuationOverviewViewModel(IDashboardDataService dataService, IAreaStatusService areaStatusService)
+    public EvacuationOverviewViewModel(IDashboardDataService dataService)
     {
         _dataService = dataService;
-        _areaStatusService = areaStatusService;
-
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            await Task.Delay(300);
-            await LoadDataAsync();
-        });
+        _ = LoadDataAsync();
     }
 
     private async Task LoadDataAsync()
     {
-        double lat = 14.6507;
-        double lon = 121.1029;
-
-        try
-        {
-            var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
-            if (status == PermissionStatus.Granted)
-            {
-                var lastLoc = await Geolocation.Default.GetLastKnownLocationAsync();
-                if (lastLoc != null)
-                {
-                    lat = lastLoc.Latitude;
-                    lon = lastLoc.Longitude;
-                }
-            }
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            var (centerName, distanceMeters) = await _areaStatusService.GetRealNearestEvacuationCenterAsync(lat, lon);
-            CenterName = centerName;
-            DistanceText = distanceMeters >= 1000 
-                ? $"{distanceMeters / 1000:F1} km away" 
-                : $"{(int)distanceMeters} meters away";
-        }
-        catch (Exception)
-        {
-            var data = await _dataService.GetEvacuationDataAsync();
-            DistanceText = data.DistanceMeters >= 1000 ? $"{data.DistanceMeters / 1000:F1} km away" : $"{data.DistanceMeters:F0} meters away";
-            CenterName = data.CenterName;
-        }
+        var data = await _dataService.GetEvacuationDataAsync();
+        CenterName = data.CenterName;
+        DistanceText = data.DistanceMeters >= 1000
+            ? $"{data.DistanceMeters / 1000:F1} km away"
+            : $"{data.DistanceMeters:F0} meters away";
+        ActionText = data.ActionText;
+        ModuleRoute = "Prepare/EvacuationCenterInfo";
+        ModuleName = data.ModuleName;
     }
 
     [RelayCommand]
@@ -91,14 +55,16 @@ public partial class EvacuationOverviewViewModel : ObservableObject
         {
             try
             {
-                await Shell.Current.GoToAsync(ModuleRoute);
+                if (Shell.Current.Navigation != null)
+                {
+                    await Shell.Current.Navigation.PushAsync(new Views.Prepare.EvacuationCenterInfoPage());
+                    return;
+                }
+                await Shell.Current.GoToAsync("Prepare/EvacuationCenterInfo");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
+                System.Diagnostics.Debug.WriteLine($"Navigation error: {ex.Message}");
             }
         }
     }

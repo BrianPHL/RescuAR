@@ -19,38 +19,38 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
     private readonly AdvisoryService _advisoryService;
 
     [ObservableProperty]
-    private string riskTitle = "Critical Flood Risk";
+    private string _riskTitle = "Critical Flood Risk";
 
     [ObservableProperty]
-    private string advisoriesText = "1 active advisory within 0.5 km. Evacuation guidance available.";
+    private string _advisoriesText = "1 Active Advisory within 0.5 km. Evacuation guidance available.";
 
     [ObservableProperty]
-    private string nearestCenterName = "Marikina City Hall";
+    private string _nearestCenterName = "Marikina City Hall";
 
     [ObservableProperty]
-    private string nearestCenterDistance = "0.5km";
+    private string _nearestCenterDistance = "0.5km";
 
     [ObservableProperty]
-    private string recommendedAction = "Evacuate immediately to safe shelter";
+    private string _recommendedAction = "Evacuate immediately to safe shelter";
 
     [ObservableProperty]
-    private string updatedText = "Just now";
+    private string _updatedText = "Just now";
 
     // Styling bindings for exact match
     [ObservableProperty]
-    private string backgroundColor = "#FEE2E2";
+    private string _backgroundColor = "#FEE2E2";
 
     [ObservableProperty]
-    private string textColor = "#991B1B";
+    private string _textColor = "#991B1B";
 
     [ObservableProperty]
-    private string subtitleColor = "#B91C1C";
+    private string _subtitleColor = "#B91C1C";
 
     [ObservableProperty]
-    private string labelColor = "#64748B";
+    private string _labelColor = "#64748B";
 
     [ObservableProperty]
-    private string linkColor = "#0A8491";
+    private string _linkColor = "#0A8491";
 
     // Dynamic User Coordinates
     public double UserLatitude { get; set; } = 14.6340;
@@ -114,7 +114,8 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
                 if (top != null)
                 {
                     int totalCount = advisories.Count;
-                    AdvisoriesText = $"{totalCount} active advisory{(totalCount > 1 ? "ies" : "")} for {top.DisplayAffectedArea}. Evacuation guidance available.";
+                    string advisoryWord = totalCount == 1 ? "Active Advisory" : "Active Advisories";
+                    AdvisoriesText = $"{totalCount} {advisoryWord} for {top.DisplayAffectedArea}. Evacuation guidance available.";
                     
                     if (top.HasActionPlan)
                     {
@@ -156,7 +157,8 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
                 // Fallback to local status
                 var areaStatus = _statusService.GetCurrentAreaStatus();
                 RiskTitle = $"{areaStatus.RiskLevel} Flood Risk";
-                AdvisoriesText = $"{areaStatus.ActiveAdvisoriesCount} active advisories within 0.5 km.";
+                string fallbackWord = areaStatus.ActiveAdvisoriesCount == 1 ? "Active Advisory" : "Active Advisories";
+                AdvisoriesText = $"{areaStatus.ActiveAdvisoriesCount} {fallbackWord} within 0.5 km.";
                 RecommendedAction = areaStatus.RecommendedAction;
                 UpdatedText = "Just now";
                 UpdateThemeColors(areaStatus.RiskLevel);
@@ -184,7 +186,7 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
         catch (Exception)
         {
             RiskTitle = "Critical Flood Risk";
-            AdvisoriesText = "1 active advisory within 0.5 km. Evacuation guidance available.";
+            AdvisoriesText = "1 Active Advisory within 0.5 km. Evacuation guidance available.";
             RecommendedAction = "Evacuate immediately to safe shelter";
             UpdatedText = "Just now";
             UpdateThemeColors(FloodRiskLevel.Critical);
@@ -236,7 +238,7 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("AdvisoryFeedPage");
+            await Shell.Current.GoToAsync("SummaryPage");
         }
     }
 
@@ -245,7 +247,7 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("AdvisoryFeedPage");
+            await Shell.Current.GoToAsync("SummaryPage");
         }
     }
 

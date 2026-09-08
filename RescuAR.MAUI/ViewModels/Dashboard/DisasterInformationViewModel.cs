@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using RescuAR.App.Services.Dashboard;
 
@@ -12,19 +13,19 @@ public partial class DisasterInformationViewModel : ObservableObject
     private readonly IDashboardDataService _dataService;
 
     [ObservableProperty]
-    private string title = string.Empty;
+    private string _title = string.Empty;
 
     [ObservableProperty]
-    private string description = string.Empty;
+    private string _description = string.Empty;
 
     [ObservableProperty]
-    private string actionText = string.Empty;
+    private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string moduleRoute = "//Reports/AdvisoryFeed";
+    private string _moduleRoute = "AdvisoryFeedPage";
 
     [ObservableProperty]
-    private string moduleName = string.Empty;
+    private string _moduleName = string.Empty;
 
     public DisasterInformationViewModel() : this(DashboardDataService.Instance)
     {
@@ -42,26 +43,27 @@ public partial class DisasterInformationViewModel : ObservableObject
         Title = data.Title;
         Description = data.Description;
         ActionText = data.ActionText;
-        ModuleRoute = data.ModuleRoute;
+        ModuleRoute = "AdvisoryFeedPage";
         ModuleName = data.ModuleName;
     }
 
     [RelayCommand]
-    private async Task NavigateToDisasterUpdatesAsync()
+    private void NavigateToDisasterUpdates()
     {
-        if (Shell.Current != null)
+        MainThread.BeginInvokeOnMainThread(async () =>
         {
-            try
+            if (Shell.Current != null)
             {
-                await Shell.Current.GoToAsync(ModuleRoute);
+                try
+                {
+                    await Shell.Current.Navigation.PushAsync(new Views.Dashboard.AdvisoryFeedPage());
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"AdvisoryFeed Nav Error: {ex.Message}");
+                    await Shell.Current.GoToAsync("AdvisoryFeedPage");
+                }
             }
-            catch (Exception)
-            {
-                await Shell.Current.DisplayAlert(
-                    "Link Redirection",
-                    $"Redirecting to link reference:\n{ModuleRoute}\n\nTarget Module: {ModuleName}",
-                    "OK");
-            }
-        }
+        });
     }
 }
