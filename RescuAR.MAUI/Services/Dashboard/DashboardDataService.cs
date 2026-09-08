@@ -18,7 +18,7 @@ public class PreparednessData
     public int PreparedItems { get; set; } = 6;
     public int TotalItems { get; set; } = 10;
     public string ActionText { get; set; } = "Preparation Progress";
-    public string ModuleRoute { get; set; } = "//Prepare/Checklist";
+    public string ModuleRoute { get; set; } = "Prepare/Checklist";
     public string ModuleName { get; set; } = "Preparation Progress / Checklist";
 }
 
@@ -27,7 +27,7 @@ public class EvacuationData
     public string CenterName { get; set; } = "Malanday Elementary School";
     public double DistanceMeters { get; set; } = 877;
     public string ActionText { get; set; } = "Nearest Evacuation Center";
-    public string ModuleRoute { get; set; } = "//Prepare/EvacuationCenterInfo";
+    public string ModuleRoute { get; set; } = "Prepare/EvacuationCenterInfo";
     public string ModuleName { get; set; } = "Evacuation Center Info";
 }
 
@@ -42,7 +42,7 @@ public class SafetyCircleOverviewData
 {
     public List<SafetyCircleGroupItem> Groups { get; set; } = new();
     public string ActionText { get; set; } = "Safety Circle";
-    public string ModuleRoute { get; set; } = "//Map/SafetyCircle";
+    public string ModuleRoute { get; set; } = "SafetyCirclePage";
     public string ModuleName { get; set; } = "Safety Circle Module";
 }
 
@@ -66,7 +66,7 @@ public class PASSData
     public int ScorePercentage { get; set; } = 72;
     public string Description { get; set; } = "Evaluate your overall preparedness for emergencies and evacuation.";
     public string ButtonText { get; set; } = "Take Assessment";
-    public string ModuleRoute { get; set; } = "//Prepare/PASS";
+    public string ModuleRoute { get; set; } = "Prepare/PASS";
     public string ModuleName { get; set; } = "Preparation Assessment (PASS)";
 }
 
