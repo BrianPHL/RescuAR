@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SkiaSharp.Views.Maui.Controls.Hosting;
 using RescuAR.MAUI.Evergine;
 using RescuAR.MAUI.Services;
 using RescuAR.MAUI.Services.Location;
@@ -36,6 +37,7 @@ public static class MauiProgram
         builder
             .UseMauiApp<App>()
             .UseMauiEvergine()
+            .UseSkiaSharp()
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont(
@@ -155,6 +157,15 @@ public static class MauiProgram
         builder.Services.AddTransient<RescuAR.App.ViewModels.Reports.AdvisoryFeedViewModel>();
         builder.Services.AddTransient<RescuAR.App.Views.Reports.AdvisoryFeedPage>();
         builder.Services.AddTransient<NotificationsPage>();
+
+        // Batch 6: Map + Safety Circle
+        builder.Services.AddSingleton<RescuAR.App.Services.Cloud.SafetyCircleService>();
+        builder.Services.AddTransient<RescuAR.App.ViewModels.Map.MapViewModel>();
+        builder.Services.AddTransient<RescuAR.App.Views.Map.MapPage>();
+        builder.Services.AddTransient<RescuAR.App.ViewModels.Map.SafetyCircleViewModel>();
+        builder.Services.AddTransient<RescuAR.App.Views.Map.SafetyCirclePage>();
+        builder.Services.AddTransient<RescuAR.App.ViewModels.Map.CircleChatViewModel>();
+        builder.Services.AddTransient<RescuAR.App.Views.Map.CircleChatPage>();
 
         // Batch 5: Profile
         builder.Services.AddTransient<ProfileViewModel>();
