@@ -2,6 +2,7 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Summary"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Summary"
     x:Class="RescuAR.App.Views.Summary.SummaryPage"
     x:Name="SummaryPageRoot"
@@ -9,10 +10,6 @@
     Title="Emergency Summary"
     BackgroundColor="#F8FAFC"
     Shell.NavBarIsVisible="False">
-
-    <ContentPage.BindingContext>
-        <vm:SummaryViewModel />
-    </ContentPage.BindingContext>
 
     <Grid RowDefinitions="Auto,*">
         <!-- Top App Bar -->
@@ -158,7 +155,7 @@
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalOptions="Center">
                                         <Grid.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding BindingContext.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}}"
+                                                Command="{Binding ViewModel.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}, x:DataType=local:SummaryPage}"
                                                 CommandParameter="{Binding .}" />
                                         </Grid.GestureRecognizers>
                                         <!-- Checkmark Circle Icon -->
@@ -193,7 +190,7 @@
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalOptions="Center">
                                         <Grid.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding BindingContext.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}}"
+                                                Command="{Binding ViewModel.ToggleActionItemCommand, Source={x:Reference SummaryPageRoot}, x:DataType=local:SummaryPage}"
                                                 CommandParameter="{Binding .}" />
                                         </Grid.GestureRecognizers>
                                         <!-- Checkmark Circle Icon -->

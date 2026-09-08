@@ -52,12 +52,18 @@ namespace RescuAR.App.ViewModels.Profile
                 if (client != null && client.Auth.CurrentSession != null)
                 {
                     var authUser = client.Auth.CurrentSession.User;
+                    var authUserId = authUser?.Id;
+                    if (authUser == null || string.IsNullOrWhiteSpace(authUserId))
+                    {
+                        return;
+                    }
+
                     Models.User? dbUser = null;
-                    
+
                     try
                     {
                         // Try to get the user from the custom User table
-                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUser.Id).Single();
+                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUserId).Single();
                     }
                     catch { } // Ignore if not found, we will use Auth metadata
 
@@ -70,18 +76,18 @@ namespace RescuAR.App.ViewModels.Profile
                         // Fallback to extracting from the Auth session metadata
                         var user = new Models.User
                         {
-                            Id = authUser.Id,
+                            Id = authUserId,
                             Email = authUser.Email ?? string.Empty
                         };
 
                         if (authUser.UserMetadata != null)
                         {
                             if (authUser.UserMetadata.TryGetValue("first_name", out var fn))
-                                user.FirstName = fn.ToString();
+                                user.FirstName = fn?.ToString() ?? string.Empty;
                             if (authUser.UserMetadata.TryGetValue("last_name", out var ln))
-                                user.LastName = ln.ToString();
+                                user.LastName = ln?.ToString() ?? string.Empty;
                             if (authUser.UserMetadata.TryGetValue("phone", out var ph))
-                                user.PhoneNumber = ph.ToString();
+                                user.PhoneNumber = ph?.ToString() ?? string.Empty;
                         }
 
                         // If it's still completely empty, apply some defaults
@@ -166,7 +172,13 @@ namespace RescuAR.App.ViewModels.Profile
                         await stream.CopyToAsync(memoryStream);
                         var bytes = memoryStream.ToArray();
 
-                        var fileName = $"{client.Auth.CurrentSession.User.Id}-{Guid.NewGuid()}.jpg";
+                        var currentUserId = client.Auth.CurrentSession.User?.Id;
+                        if (string.IsNullOrWhiteSpace(currentUserId))
+                        {
+                            throw new InvalidOperationException("The authenticated Supabase user is unavailable.");
+                        }
+
+                        var fileName = $"{currentUserId}-{Guid.NewGuid()}.jpg";
                         
                         // Save locally first so the UI works even if Supabase Storage fails
                         var localPath = Path.Combine(FileSystem.AppDataDirectory, fileName);

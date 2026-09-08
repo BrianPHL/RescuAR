@@ -105,9 +105,10 @@ namespace RescuAR.App.ViewModels.Authentication
                     try
                     {
                         var client = RescuAR.Services.SupabaseService.Instance.Client;
-                        if (client?.Auth.CurrentUser != null)
+                        var authUser = client?.Auth.CurrentUser;
+                        var authUserId = authUser?.Id;
+                        if (client != null && authUser != null && !string.IsNullOrWhiteSpace(authUserId))
                         {
-                            var authUser = client.Auth.CurrentUser;
                             string fn = "";
                             string ln = "";
                             if (authUser.UserMetadata != null)
@@ -123,7 +124,7 @@ namespace RescuAR.App.ViewModels.Authentication
 
                                 var userRecord = new Models.User
                                 {
-                                    Id = authUser.Id,
+                                    Id = authUserId,
                                     Email = authUser.Email ?? Email.Trim(),
                                     FirstName = fn,
                                     LastName = ln

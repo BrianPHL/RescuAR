@@ -43,13 +43,17 @@ namespace RescuAR.App.Services.Authentication
                 options.Data.Add("contact_number", contactNumber);
             }
 
-            return await client.Auth.SignUp(email, password, options);
+            var session = await client.Auth.SignUp(email, password, options);
+            return session
+                ?? throw new InvalidOperationException("Supabase sign-up completed without returning an authentication session.");
         }
 
         public async Task<Session> SignInWithEmailAsync(string email, string password)
         {
             var client = GetClient();
-            return await client.Auth.SignIn(email, password);
+            var session = await client.Auth.SignIn(email, password);
+            return session
+                ?? throw new InvalidOperationException("Supabase sign-in completed without returning an authentication session.");
         }
 
         public async Task<Session> SignInWithGoogleAsync()
@@ -89,7 +93,12 @@ namespace RescuAR.App.Services.Authentication
                 throw new InvalidOperationException("No authorization code returned from Google Authentication.");
             }
 
-            // Exchange the code and the original PKCEVerifier for a session
+            // Exchange the code and the original PKCE verifier for a session.
+            if (string.IsNullOrWhiteSpace(state.PKCEVerifier))
+            {
+                throw new InvalidOperationException("Supabase did not return the PKCE verifier required to complete Google authentication.");
+            }
+
             var session = await client.Auth.ExchangeCodeForSession(state.PKCEVerifier, code);
 
             if (session == null)

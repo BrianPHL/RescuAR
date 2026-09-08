@@ -294,9 +294,10 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         }
         catch
         {
-            if (Application.Current?.Windows.Count > 0 && Application.Current.Windows[0].Page?.Navigation != null)
+            var fallbackPage = Application.Current?.Windows.FirstOrDefault()?.Page;
+            if (fallbackPage != null)
             {
-                await Application.Current.Windows[0].Page.Navigation.PushAsync(new Views.Prepare.PASSPage());
+                await fallbackPage.Navigation.PushAsync(new Views.Prepare.PASSPage());
             }
         }
     }

@@ -5,10 +5,13 @@ namespace RescuAR.App.Views.Summary
 {
     public partial class SummaryPage : ContentPage
     {
+        public SummaryViewModel ViewModel { get; }
+
         public SummaryPage()
         {
+            ViewModel = new SummaryViewModel();
             InitializeComponent();
-            BindingContext = new SummaryViewModel();
+            BindingContext = ViewModel;
         }
     }
 }

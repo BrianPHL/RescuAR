@@ -267,19 +267,18 @@ public partial class SafetyCircleViewModel : ObservableObject
             using var textPaint = new SkiaSharp.SKPaint
             {
                 Color = SkiaSharp.SKColors.White,
-                TextSize = 24,
-                IsAntialias = true,
-                TextAlign = SkiaSharp.SKTextAlign.Center,
-                Typeface = SkiaSharp.SKTypeface.FromFamilyName("sans-serif", SkiaSharp.SKFontStyle.Bold)
+                IsAntialias = true
             };
-            canvas.DrawText(initials, circleCenterX, circleCenterY + 9, textPaint);
+            using var textTypeface = SkiaSharp.SKTypeface.FromFamilyName("sans-serif", SkiaSharp.SKFontStyle.Bold);
+            using var textFont = new SkiaSharp.SKFont(textTypeface, 24);
+            canvas.DrawText(initials, circleCenterX, circleCenterY + 9, SkiaSharp.SKTextAlign.Center, textFont, textPaint);
         }
 
         // 5. Draw Name Pill Tag at the bottom
         string rawFirstName = (name ?? string.Empty).Replace("(You)", "").Trim().Split(' ')[0].Trim();
         if (string.IsNullOrWhiteSpace(rawFirstName) || rawFirstName.Equals("Member", StringComparison.OrdinalIgnoreCase))
         {
-            rawFirstName = isMe ? "You" : name;
+            rawFirstName = isMe ? "You" : (name ?? "Member");
         }
 
         string displayName = isMe ? $"{rawFirstName} (You)" : rawFirstName;
@@ -289,13 +288,12 @@ public partial class SafetyCircleViewModel : ObservableObject
         using var pillTextPaint = new SkiaSharp.SKPaint
         {
             Color = SkiaSharp.SKColors.White,
-            TextSize = 16,
-            IsAntialias = true,
-            TextAlign = SkiaSharp.SKTextAlign.Center,
-            Typeface = SkiaSharp.SKTypeface.FromFamilyName("sans-serif", SkiaSharp.SKFontStyle.Bold)
+            IsAntialias = true
         };
+        using var pillTypeface = SkiaSharp.SKTypeface.FromFamilyName("sans-serif", SkiaSharp.SKFontStyle.Bold);
+        using var pillFont = new SkiaSharp.SKFont(pillTypeface, 16);
 
-        float textWidth = pillTextPaint.MeasureText(displayName);
+        float textWidth = pillFont.MeasureText(displayName);
         float pillWidth = Math.Max(70, textWidth + 24);
         float pillX = circleCenterX - (pillWidth / 2f);
 
@@ -310,7 +308,7 @@ public partial class SafetyCircleViewModel : ObservableObject
             canvas.DrawRoundRect(roundRect, pillPaint);
         }
 
-        canvas.DrawText(displayName, circleCenterX, pillY + 19, pillTextPaint);
+        canvas.DrawText(displayName, circleCenterX, pillY + 19, SkiaSharp.SKTextAlign.Center, pillFont, pillTextPaint);
 
         using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
@@ -685,7 +683,7 @@ public partial class SafetyCircleViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SelectCircleCommand(RescuAR.App.Models.SupabaseSafetyCircle circle)
+    private void SelectCircleFromList(RescuAR.App.Models.SupabaseSafetyCircle circle)
     {
         if (circle != null)
         {

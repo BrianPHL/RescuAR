@@ -2,16 +2,14 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Prepare"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
     x:Class="RescuAR.App.Views.Prepare.ChecklistPage"
+    x:DataType="vm:ChecklistViewModel"
     x:Name="thisPage"
     Title="Emergency Kit Checklist"
     Shell.NavBarIsVisible="False"
     BackgroundColor="#F8FAFC">
-
-    <ContentPage.BindingContext>
-        <vm:ChecklistViewModel />
-    </ContentPage.BindingContext>
 
     <Grid RowDefinitions="Auto,*">
         <!-- Top Custom Header Bar -->
@@ -169,7 +167,7 @@
                             <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,16">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer 
-                                        Command="{Binding BindingContext.ToggleItemCommand, Source={x:Reference thisPage}}"
+                                        Command="{Binding ViewModel.ToggleItemCommand, Source={x:Reference thisPage}, x:DataType=local:ChecklistPage}"
                                         CommandParameter="{Binding .}" />
                                 </Border.GestureRecognizers>
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" VerticalOptions="Center">

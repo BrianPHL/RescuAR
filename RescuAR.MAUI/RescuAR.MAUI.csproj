@@ -10,6 +10,15 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
+		<!--
+			Migration constraint: the current Evergine integration is pinned to
+			net9.0-android. Suppress the SDK end-of-support diagnostic until the
+			engine stack is validated on a newer target framework.
+		-->
+		<CheckEolTargetFramework>false</CheckEolTargetFramework>
+		<CheckEolWorkloads>false</CheckEolWorkloads>
+		<MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
+
 		<!-- Display name -->
 		<ApplicationTitle>RescuAR.MAUI</ApplicationTitle>
 

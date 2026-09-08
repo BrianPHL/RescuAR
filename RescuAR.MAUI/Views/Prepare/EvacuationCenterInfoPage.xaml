@@ -2,16 +2,14 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Prepare"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
     xmlns:mapsui="clr-namespace:Mapsui.UI.Maui;assembly=Mapsui.UI.Maui"
     x:Class="RescuAR.App.Views.Prepare.EvacuationCenterInfoPage"
+    x:DataType="vm:EvacuationCenterInfoViewModel"
     x:Name="thisPage"
     Title="Evacuation Centers"
     BackgroundColor="#F8FAFC">
-
-    <ContentPage.BindingContext>
-        <vm:EvacuationCenterInfoViewModel />
-    </ContentPage.BindingContext>
 
     <Grid>
         <!-- Main Scrollable Content -->
@@ -98,7 +96,7 @@
                                         <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
                                             <HorizontalStackLayout.GestureRecognizers>
                                                 <TapGestureRecognizer 
-                                                    Command="{Binding BindingContext.NavigateToCameraCommand, Source={x:Reference thisPage}}"
+                                                    Command="{Binding ViewModel.NavigateToCameraCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
                                                     CommandParameter="{Binding .}" />
                                             </HorizontalStackLayout.GestureRecognizers>
                                             <Label Text="Start practice AR evacuation route" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
@@ -109,7 +107,7 @@
                                         <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
                                             <HorizontalStackLayout.GestureRecognizers>
                                                 <TapGestureRecognizer 
-                                                    Command="{Binding BindingContext.ViewMoreDetailsCommand, Source={x:Reference thisPage}}"
+                                                    Command="{Binding ViewModel.ViewMoreDetailsCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
                                                     CommandParameter="{Binding .}" />
                                             </HorizontalStackLayout.GestureRecognizers>
                                             <Label Text="View more details" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />

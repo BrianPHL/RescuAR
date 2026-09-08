@@ -5,10 +5,13 @@ namespace RescuAR.App.Views.Map
 {
     public partial class SafetyCirclePage : ContentPage
     {
+        public SafetyCircleViewModel ViewModel { get; }
+
         public SafetyCirclePage(SafetyCircleViewModel viewModel)
         {
+            ViewModel = viewModel;
             InitializeComponent();
-            BindingContext = viewModel;
+            BindingContext = ViewModel;
         }
 
         protected override async void OnAppearing()

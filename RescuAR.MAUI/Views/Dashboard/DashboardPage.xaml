@@ -63,7 +63,7 @@
                                             HorizontalOptions="Fill"
                                             VerticalOptions="Fill">
                                         <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand}"
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
                                                                  CommandParameter="{Binding .}" />
                                         </Border.GestureRecognizers>
                                         <Grid>
@@ -107,7 +107,7 @@
                                                         Padding="14,6"
                                                         HorizontalOptions="Start">
                                                     <Border.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand}"
+                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
                                                                              CommandParameter="{Binding .}" />
                                                     </Border.GestureRecognizers>
                                                     <Label Text="{Binding ButtonText}"
@@ -228,7 +228,7 @@
                                               HorizontalOptions="Center"
                                               VerticalOptions="Start">
                                             <Grid.GestureRecognizers>
-                                                <TapGestureRecognizer Command="{Binding BindingContext.ExecuteQuickActionCommand, Source={x:Reference DashboardRoot}}"
+                                                <TapGestureRecognizer Command="{Binding ViewModel.ExecuteQuickActionCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
                                                                       CommandParameter="{Binding .}" />
                                             </Grid.GestureRecognizers>
 
@@ -546,7 +546,7 @@
                                                 <!-- Toggle Switch -->
                                                 <Switch Grid.Column="2" IsToggled="{Binding IsEnabled}" OnColor="#0A8491" VerticalOptions="Center">
                                                     <Switch.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding BindingContext.ToggleQuickActionItemCommand, Source={x:Reference DashboardRoot}}"
+                                                        <TapGestureRecognizer Command="{Binding ViewModel.ToggleQuickActionItemCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
                                                                               CommandParameter="{Binding .}" />
                                                     </Switch.GestureRecognizers>
                                                 </Switch>
@@ -554,7 +554,7 @@
                                                 <!-- Solid Trash Can Delete Button for Custom Actions -->
                                                 <Border Grid.Column="3" IsVisible="{Binding IsCustom}" BackgroundColor="#FEE2E2" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6" VerticalOptions="Center">
                                                     <Border.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding BindingContext.DeleteCustomQuickActionCommand, Source={x:Reference DashboardRoot}}"
+                                                        <TapGestureRecognizer Command="{Binding ViewModel.DeleteCustomQuickActionCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
                                                                               CommandParameter="{Binding .}" />
                                                     </Border.GestureRecognizers>
                                                     <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="#EF4444" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" HorizontalOptions="Center" />

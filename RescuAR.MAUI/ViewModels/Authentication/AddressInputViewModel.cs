@@ -101,6 +101,7 @@ namespace RescuAR.App.ViewModels.Authentication
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[AddressInput] Location detection failed: {ex.Message}");
                 ErrorMessage = "Could not detect location. Please type manually.";
                 OnPropertyChanged(nameof(HasError));
             }
@@ -149,13 +150,19 @@ namespace RescuAR.App.ViewModels.Authentication
                     // Build full address string
                     string fullAddress = $"{HouseLotBlock.Trim()}, {Street.Trim()}, {Barangay.Trim()}, {City}, {Province}, {ZipCode}";
 
-                    // Get or create current user record
+                    // Get or create current user record.
                     var authUser = client.Auth.CurrentSession.User;
+                    var authUserId = authUser?.Id;
+                    if (authUser == null || string.IsNullOrWhiteSpace(authUserId))
+                    {
+                        throw new InvalidOperationException("The authenticated Supabase user is unavailable.");
+                    }
+
                     Models.User? dbUser = null;
 
                     try
                     {
-                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUser.Id).Single();
+                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUserId).Single();
                     }
                     catch { }
 
@@ -163,18 +170,18 @@ namespace RescuAR.App.ViewModels.Authentication
                     {
                         dbUser = new Models.User
                         {
-                            Id = authUser.Id,
+                            Id = authUserId,
                             Email = authUser.Email ?? string.Empty
                         };
-                        
+
                         if (authUser.UserMetadata != null)
                         {
                             if (authUser.UserMetadata.TryGetValue("first_name", out var fn))
-                                dbUser.FirstName = fn.ToString();
+                                dbUser.FirstName = fn?.ToString() ?? string.Empty;
                             if (authUser.UserMetadata.TryGetValue("last_name", out var ln))
-                                dbUser.LastName = ln.ToString();
+                                dbUser.LastName = ln?.ToString() ?? string.Empty;
                             if (authUser.UserMetadata.TryGetValue("phone", out var ph))
-                                dbUser.PhoneNumber = ph.ToString();
+                                dbUser.PhoneNumber = ph?.ToString() ?? string.Empty;
                         }
                     }
 

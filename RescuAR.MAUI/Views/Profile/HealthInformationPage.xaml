@@ -2,8 +2,10 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     xmlns:local="clr-namespace:RescuAR.App.Views.Profile"
     x:Class="RescuAR.App.Views.Profile.HealthInformationPage"
+    x:DataType="vm:ProfileViewModel"
     Title="Health Information"
     BackgroundColor="#F2F2F7">
 
@@ -33,23 +35,23 @@
         </ScrollView>
 
         <!-- Tutorial Overlay -->
-        <Grid BackgroundColor="#B3000000" IsVisible="{Binding IsTutorialVisible, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" ZIndex="10">
+        <Grid BackgroundColor="#B3000000" IsVisible="{Binding IsTutorialVisible, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" ZIndex="10">
             <!-- Center Card -->
             <Border StrokeShape="RoundRectangle 12" StrokeThickness="0" BackgroundColor="White" Padding="20" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="300">
                 <VerticalStackLayout Spacing="15">
                     <Label Text="Welcome to Health Info" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" HorizontalOptions="Center" />
-                    <Label Text="{Binding TutorialMessage, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" TextColor="Black" HorizontalTextAlignment="Center" />
+                    <Label Text="{Binding TutorialMessage, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" TextColor="Black" HorizontalTextAlignment="Center" />
                     
                     <!-- Indicator dots -->
                     <HorizontalStackLayout Spacing="5" HorizontalOptions="Center">
-                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step1Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
-                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step2Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
-                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step3Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" />
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step1Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step2Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step3Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
                     </HorizontalStackLayout>
 
                     <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
                         <Button Text="Skip" Clicked="OnSkipTutorialClicked" BackgroundColor="Transparent" TextColor="Gray" FontAttributes="Bold" />
-                        <Button Text="{Binding NextButtonText, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}}" Clicked="OnNextTutorialClicked" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
+                        <Button Text="{Binding NextButtonText, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" Clicked="OnNextTutorialClicked" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
             </Border>

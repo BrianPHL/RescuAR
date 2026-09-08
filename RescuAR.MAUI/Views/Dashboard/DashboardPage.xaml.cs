@@ -5,10 +5,13 @@ namespace RescuAR.App.Views.Dashboard;
 
 public partial class DashboardPage : ContentPage
 {
+    public DashboardViewModel ViewModel { get; }
+
     public DashboardPage()
     {
+        ViewModel = new DashboardViewModel();
         InitializeComponent();
-        BindingContext = new DashboardViewModel();
+        BindingContext = ViewModel;
     }
 
     protected override void OnAppearing()

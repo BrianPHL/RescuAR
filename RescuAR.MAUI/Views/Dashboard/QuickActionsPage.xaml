@@ -2,6 +2,7 @@
 <ContentView
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:dashboard="clr-namespace:RescuAR.App.Views.Dashboard"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
     xmlns:models="clr-namespace:RescuAR.App.Models"
     x:Class="RescuAR.App.Views.Dashboard.QuickActionsPage"
@@ -40,7 +41,7 @@
                             Padding="12">
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer
-                                Command="{Binding Source={x:Reference QuickActionsRoot}, Path=BindingContext.ExecuteActionCommand}"
+                                Command="{Binding Source={x:Reference QuickActionsRoot}, Path=ViewModel.ExecuteActionCommand, x:DataType=dashboard:QuickActionsPage}"
                                 CommandParameter="{Binding .}" />
                         </Border.GestureRecognizers>
                         

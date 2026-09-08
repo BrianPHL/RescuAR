@@ -6,10 +6,13 @@ namespace RescuAR.App.Views.Reports
 {
     public partial class ReportsPage : ContentPage
     {
+        public ReportsViewModel ViewModel { get; }
+
         public ReportsPage(ReportsViewModel viewModel)
         {
+            ViewModel = viewModel;
             InitializeComponent();
-            BindingContext = viewModel;
+            BindingContext = ViewModel;
         }
 
         public ReportsPage() : this(new ReportsViewModel(new CommunityReportService(), new OsmGeocodingService()))

@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
     x:Class="RescuAR.App.Views.Prepare.PASSPage"
+    x:DataType="vm:PASSViewModel"
     Title="Preparation Assessment"
     BackgroundColor="#F8FAFC">
 

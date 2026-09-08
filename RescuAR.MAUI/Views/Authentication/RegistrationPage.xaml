@@ -52,7 +52,7 @@
                         <Label Text="First Name" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                         <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="16, 0">
                             <Border.Triggers>
-                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference firstNameEntry}, Path=IsFocused}" Value="True">
+                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference firstNameEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                     <Setter Property="Stroke" Value="#00848E" />
                                     <Setter Property="StrokeThickness" Value="1.5" />
                                 </DataTrigger>
@@ -65,7 +65,7 @@
                         <Label Text="Last Name" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                         <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="16, 0">
                             <Border.Triggers>
-                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference lastNameEntry}, Path=IsFocused}" Value="True">
+                                <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference lastNameEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                     <Setter Property="Stroke" Value="#00848E" />
                                     <Setter Property="StrokeThickness" Value="1.5" />
                                 </DataTrigger>
@@ -80,7 +80,7 @@
                     <Label Text="Middle Name (Optional)" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference middleNameEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference middleNameEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
@@ -94,7 +94,7 @@
                     <Label Text="Email" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
@@ -108,7 +108,7 @@
                     <Label Text="Contact Number" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference contactEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference contactEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
@@ -122,7 +122,7 @@
                     <Label Text="Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
@@ -239,7 +239,7 @@
                     <Label Text="Confirm Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference confirmPasswordEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference confirmPasswordEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>

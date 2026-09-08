@@ -2,6 +2,7 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Reports"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
     xmlns:models="clr-namespace:RescuAR.App.Models"
     x:Class="RescuAR.App.Views.Reports.AdvisoryFeedPage"
@@ -155,7 +156,7 @@
                                     </Border.Shadow>
                                     <Border.GestureRecognizers>
                                         <TapGestureRecognizer
-                                            Command="{Binding BindingContext.ShowAdvisoryDetailCommand, Source={x:Reference AdvisoryPageRoot}}"
+                                            Command="{Binding ViewModel.ShowAdvisoryDetailCommand, Source={x:Reference AdvisoryPageRoot}, x:DataType=local:AdvisoryFeedPage}"
                                             CommandParameter="{Binding .}" />
                                     </Border.GestureRecognizers>
                                     
@@ -229,7 +230,7 @@
 
                                                 <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
                                                     <HorizontalStackLayout.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding BindingContext.NavigateToEvacuationCentersCommand, Source={x:Reference AdvisoryPageRoot}}" />
+                                                        <TapGestureRecognizer Command="{Binding ViewModel.NavigateToEvacuationCentersCommand, Source={x:Reference AdvisoryPageRoot}, x:DataType=local:AdvisoryFeedPage}" />
                                                     </HorizontalStackLayout.GestureRecognizers>
                                                     <Label Text="View Safe Evacuation Hubs &amp; Route" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
                                                     <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />

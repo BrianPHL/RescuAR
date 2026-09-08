@@ -8,9 +8,13 @@ namespace RescuAR.App.Views.Prepare
 {
     public partial class EvacuationCenterInfoPage : ContentPage
     {
+        public EvacuationCenterInfoViewModel ViewModel { get; }
+
         public EvacuationCenterInfoPage()
         {
+            ViewModel = new EvacuationCenterInfoViewModel();
             InitializeComponent();
+            BindingContext = ViewModel;
 
             if (BindingContext is EvacuationCenterInfoViewModel vm)
             {

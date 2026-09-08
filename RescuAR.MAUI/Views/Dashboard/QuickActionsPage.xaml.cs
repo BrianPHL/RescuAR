@@ -5,9 +5,12 @@ namespace RescuAR.App.Views.Dashboard;
 
 public partial class QuickActionsPage : ContentView
 {
+    public QuickActionsViewModel ViewModel { get; }
+
     public QuickActionsPage()
     {
+        ViewModel = new QuickActionsViewModel();
         InitializeComponent();
-        BindingContext = new QuickActionsViewModel();
+        BindingContext = ViewModel;
     }
 }

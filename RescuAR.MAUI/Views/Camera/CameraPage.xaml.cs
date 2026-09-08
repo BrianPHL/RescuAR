@@ -141,7 +141,7 @@ namespace RescuAR.App.Views.Camera
          * Normal navigation baseline. Set true only for deliberate indoor
          * GPS-freeze diagnostics.
          */
-        private const bool IndoorRouteTestMode =
+        private static readonly bool IndoorRouteTestMode =
             false;
 
         /*
@@ -156,7 +156,7 @@ namespace RescuAR.App.Views.Camera
          *
          * Set false after Milestone 3 validation; the button then disappears.
          */
-        private const bool EnableDeveloperOffRouteSimulation =
+        private static readonly bool EnableDeveloperOffRouteSimulation =
             false;
 
         /*
@@ -170,7 +170,7 @@ namespace RescuAR.App.Views.Camera
          * Keep true only while running the classifier validation. Set false
          * afterward; the button then disappears.
          */
-        private const bool EnableDeveloperTurnSimulation =
+        private static readonly bool EnableDeveloperTurnSimulation =
             false;
 
         /*
@@ -185,7 +185,7 @@ namespace RescuAR.App.Views.Camera
          * validation is for the real 3-distinct-GPS-fix confirmation path and UI,
          * not for natural destination-distance validation. Disable after Stage 5 validation.
          */
-        private const bool EnableDeveloperSafeZoneValidation =
+        private static readonly bool EnableDeveloperSafeZoneValidation =
             true;
 
         private const double DeveloperSafeZoneTargetAheadMeters =
@@ -199,7 +199,7 @@ namespace RescuAR.App.Views.Camera
          * synthetic LOCAL depth values so the camera UI can be validated
          * without misrepresenting the live advisory data.
          */
-        private const bool EnableDeveloperFloodDepthValidation =
+        private static readonly bool EnableDeveloperFloodDepthValidation =
             true;
 
         private static readonly double?[] DeveloperFloodDepthSequenceMeters =
@@ -224,7 +224,7 @@ namespace RescuAR.App.Views.Camera
          *
          * Set IndoorRouteTestMode=false for real outdoor GPS progress.
          */
-        private const bool FreezeRouteProgressDuringIndoorTest =
+        private static readonly bool FreezeRouteProgressDuringIndoorTest =
             true;
 
         /*
@@ -234,7 +234,7 @@ namespace RescuAR.App.Views.Camera
          * This lets us validate physical step -> route progress -> moving AR
          * window without letting poor indoor GPS move the route.
          */
-        private const bool EnablePedestrianDeadReckoning =
+        private static readonly bool EnablePedestrianDeadReckoning =
             true;
 
         private const double PdrStepLengthMeters =

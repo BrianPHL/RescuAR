@@ -2,6 +2,7 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Reports"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
     xmlns:models="clr-namespace:RescuAR.App.Models"
     xmlns:services="clr-namespace:RescuAR.App.Services.Reports"
@@ -285,7 +286,7 @@
                                                         FontAttributes="Bold"
                                                         HorizontalOptions="Start"
                                                         Padding="0"
-                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=BindingContext.ViewReportDetailsCommand}"
+                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ViewReportDetailsCommand, x:DataType=local:ReportsPage}"
                                                         CommandParameter="{Binding .}" />
 
                                                 <!-- Comment Count Badge -->
@@ -323,7 +324,7 @@
                                                         FontAttributes="Bold"
                                                         HeightRequest="32"
                                                         Padding="12,0"
-                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=BindingContext.ToggleLikeCommand}"
+                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ToggleLikeCommand, x:DataType=local:ReportsPage}"
                                                         CommandParameter="{Binding .}">
                                                     <Button.Triggers>
                                                         <DataTrigger TargetType="Button" Binding="{Binding IsLikedByCurrentUser}" Value="True">
@@ -674,7 +675,7 @@
                                         <DataTemplate x:DataType="services:OsmSearchResult">
                                             <Border BackgroundColor="#F0FDF4" Stroke="#DCFCE7" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12" Margin="0,3">
                                                 <Border.GestureRecognizers>
-                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=BindingContext.SelectOsmLocationCommand}" CommandParameter="{Binding .}" />
+                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.SelectOsmLocationCommand, x:DataType=local:ReportsPage}" CommandParameter="{Binding .}" />
                                                 </Border.GestureRecognizers>
                                                 <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" VerticalOptions="Center">
                                                     <Path Grid.Column="0" Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#166534" WidthRequest="20" HeightRequest="20" Aspect="Uniform" VerticalOptions="Center" />
@@ -698,7 +699,7 @@
                                         <DataTemplate x:DataType="x:String">
                                             <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12" Margin="0,3">
                                                 <Border.GestureRecognizers>
-                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=BindingContext.SelectPresetLocationCommand}" CommandParameter="{Binding .}" />
+                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.SelectPresetLocationCommand, x:DataType=local:ReportsPage}" CommandParameter="{Binding .}" />
                                                 </Border.GestureRecognizers>
                                                 <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
                                                     <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#008080" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />

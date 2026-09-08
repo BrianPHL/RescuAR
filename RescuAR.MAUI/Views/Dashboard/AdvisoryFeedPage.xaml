@@ -126,7 +126,7 @@
                                             Padding="16,8">
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectCategoryCommand}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectCategoryCommand, x:DataType=vm:AdvisoryFeedViewModel}"
                                                 CommandParameter="{Binding Name}" />
                                         </Border.GestureRecognizers>
                                         <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
@@ -151,7 +151,7 @@
                                             Padding="16,8">
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectStatusCommand}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectStatusCommand, x:DataType=vm:AdvisoryFeedViewModel}"
                                                 CommandParameter="{Binding Name}" />
                                         </Border.GestureRecognizers>
                                         <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
@@ -220,7 +220,7 @@
                                     <HorizontalStackLayout Spacing="4" Margin="0,4,0,0">
                                         <HorizontalStackLayout.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ViewDetailsCommand}"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ViewDetailsCommand, x:DataType=vm:AdvisoryFeedViewModel}"
                                                 CommandParameter="{Binding .}" />
                                         </HorizontalStackLayout.GestureRecognizers>
                                         <Label Text="View details  ❯" TextColor="#008080" FontSize="14" FontAttributes="Bold" />

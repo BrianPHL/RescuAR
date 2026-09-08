@@ -172,7 +172,7 @@ namespace RescuAR.App.ViewModels.Authentication
                 bool isGpsEnabled = false;
                 if (locationManager != null)
                 {
-                    if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.P)
+                    if (OperatingSystem.IsAndroidVersionAtLeast(28))
                     {
                         isGpsEnabled = locationManager.IsLocationEnabled;
                     }

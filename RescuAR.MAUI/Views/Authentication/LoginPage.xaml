@@ -53,7 +53,7 @@
                     <Label Text="Email" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
@@ -67,7 +67,7 @@
                     <Label Text="Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
                     <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
                         <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused}" Value="True">
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
                                 <Setter Property="Stroke" Value="#00848E" />
                                 <Setter Property="StrokeThickness" Value="1.5" />
                             </DataTrigger>
