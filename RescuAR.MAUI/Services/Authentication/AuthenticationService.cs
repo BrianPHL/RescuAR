@@ -18,7 +18,7 @@ namespace RescuAR.App.Services.Authentication
             return client;
         }
 
-        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName)
+        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber)
         {
             var client = GetClient();
 
@@ -34,6 +34,13 @@ namespace RescuAR.App.Services.Authentication
             if (!string.IsNullOrWhiteSpace(middleName))
             {
                 options.Data.Add("middle_name", middleName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(contactNumber))
+            {
+                // Supabase standard user attribute for phone number
+                options.Data.Add("phone", contactNumber);
+                options.Data.Add("contact_number", contactNumber);
             }
 
             return await client.Auth.SignUp(email, password, options);
