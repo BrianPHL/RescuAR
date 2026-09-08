@@ -80,7 +80,7 @@ namespace RescuAR.App.Views.Profile
                 var loginPage = Application.Current?.Handler?.MauiContext?.Services.GetRequiredService<LoginPage>();
                 if (loginPage != null && Application.Current?.Windows.Count > 0)
                 {
-                    Application.Current.Windows[0].Page = loginPage;
+                    Application.Current.Windows[0].Page = new NavigationPage(loginPage);
                 }
             }
         }

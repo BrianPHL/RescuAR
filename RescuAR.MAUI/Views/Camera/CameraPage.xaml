@@ -26,30 +26,30 @@
             Grid.Row="0"
             ZIndex="200"
             BackgroundColor="White"
-            Padding="18,0,15,0"
-            ColumnDefinitions="92,*,40,40"
-            ColumnSpacing="2">
+            Padding="12,0"
+            ColumnDefinitions="68,*,34,34"
+            ColumnSpacing="0">
 
             <Grid
                 x:Name="cameraHeaderBackGroup"
                 Grid.Column="0"
-                ColumnDefinitions="22,*"
-                ColumnSpacing="2"
+                ColumnDefinitions="18,*"
+                ColumnSpacing="1"
                 VerticalOptions="Center">
                 <Grid.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnCameraHeaderBackClicked" />
                 </Grid.GestureRecognizers>
                 <Image
                     Source="lucide_chevron_left_black.png"
-                    WidthRequest="20"
-                    HeightRequest="20"
+                    WidthRequest="16"
+                    HeightRequest="16"
                     HorizontalOptions="Start"
                     VerticalOptions="Center" />
                 <Label
                     Grid.Column="1"
                     Text="Back"
                     TextColor="#121212"
-                    FontSize="15"
+                    FontSize="11"
                     FontAttributes="Bold"
                     VerticalTextAlignment="Center" />
             </Grid>
@@ -58,15 +58,15 @@
                 Grid.Column="1"
                 Text="RescuAR"
                 TextColor="#111111"
-                FontSize="14"
+                FontSize="11"
                 FontAttributes="Bold"
                 HorizontalOptions="Center"
                 VerticalOptions="Center" />
 
             <Border
                 Grid.Column="2"
-                WidthRequest="38"
-                HeightRequest="38"
+                WidthRequest="34"
+                HeightRequest="34"
                 BackgroundColor="Transparent"
                 StrokeThickness="0"
                 VerticalOptions="Center">
@@ -75,16 +75,16 @@
                 </Border.GestureRecognizers>
                 <Image
                     Source="lucide_settings_black.png"
-                    WidthRequest="23"
-                    HeightRequest="23"
+                    WidthRequest="18"
+                    HeightRequest="18"
                     HorizontalOptions="Center"
                     VerticalOptions="Center" />
             </Border>
 
             <Border
                 Grid.Column="3"
-                WidthRequest="38"
-                HeightRequest="38"
+                WidthRequest="34"
+                HeightRequest="34"
                 BackgroundColor="Transparent"
                 StrokeThickness="0"
                 VerticalOptions="Center">
@@ -93,8 +93,8 @@
                 </Border.GestureRecognizers>
                 <Image
                     Source="lucide_bell_black.png"
-                    WidthRequest="23"
-                    HeightRequest="23"
+                    WidthRequest="18"
+                    HeightRequest="18"
                     HorizontalOptions="Center"
                     VerticalOptions="Center" />
             </Border>
@@ -151,14 +151,14 @@
             <Border
                 x:Name="cameraModeStatusBanner"
                 ZIndex="20"
-                Margin="16,16,16,0"
-                Padding="10,6"
-                MinimumHeightRequest="42"
+                Margin="8,8,8,0"
+                Padding="8,4"
+                MinimumHeightRequest="34"
                 VerticalOptions="Start"
                 BackgroundColor="#DDF7E8"
                 Stroke="#BDE9D0"
                 StrokeThickness="1"
-                StrokeShape="RoundRectangle 8">
+                StrokeShape="RoundRectangle 5">
                 <Grid>
                     <!-- Compatibility field retained; status-dot is not part of Figma. -->
                     <Border
@@ -175,14 +175,14 @@
                             x:Name="cameraModeStatusTitleLabel"
                             Text="No Emergency"
                             TextColor="#07814D"
-                            FontSize="12"
+                            FontSize="10"
                             FontAttributes="Bold"
                             HorizontalTextAlignment="Center" />
                         <Label
                             x:Name="cameraModeStatusSubtitleLabel"
                             Text="You will be notified if an emergency is detected nearby."
                             TextColor="#16815A"
-                            FontSize="10"
+                            FontSize="8.5"
                             HorizontalTextAlignment="Center"
                             LineBreakMode="TailTruncation" />
                     </VerticalStackLayout>
@@ -194,23 +194,23 @@
                 IsVisible="False"
                 InputTransparent="True"
                 ZIndex="21"
-                Margin="16,72,16,0"
-                Padding="16,14"
-                MinimumHeightRequest="136"
+                Margin="8,48,8,0"
+                Padding="12,9"
+                MinimumHeightRequest="94"
                 VerticalOptions="Start"
                 BackgroundColor="#E8FFFFFF"
                 Stroke="#D7DADD"
                 StrokeThickness="1"
-                StrokeShape="RoundRectangle 8">
+                StrokeShape="RoundRectangle 6">
                 <Border.Shadow>
                     <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
                 </Border.Shadow>
-                <Grid ColumnDefinitions="62,*,26" ColumnSpacing="10">
+                <Grid ColumnDefinitions="46,*,22" ColumnSpacing="8">
                     <Image
                         x:Name="turnDirectionIconLabel"
                         Source="lucide_arrow_up_teal.png"
-                        WidthRequest="54"
-                        HeightRequest="54"
+                        WidthRequest="38"
+                        HeightRequest="38"
                         HorizontalOptions="Center"
                         VerticalOptions="Center" />
 
@@ -222,15 +222,15 @@
                             x:Name="turnInstructionLabel"
                             Text="Proceed straight for 120 meters"
                             TextColor="#151515"
-                            FontSize="23"
+                            FontSize="19"
                             FontAttributes="Bold"
                             LineBreakMode="WordWrap"
                             LineHeight="1.0" />
                         <Label
                             x:Name="turnDistanceLabel"
                             Text="877 meters away from the nearest evacuation center"
-                            TextColor="#222222"
-                            FontSize="15"
+                            TextColor="#3B3B3B"
+                            FontSize="11.5"
                             LineBreakMode="WordWrap"
                             LineHeight="1.08" />
                     </VerticalStackLayout>
@@ -239,8 +239,8 @@
                         x:Name="turnChevronImage"
                         Grid.Column="2"
                         Source="lucide_chevron_down_black.png"
-                        WidthRequest="20"
-                        HeightRequest="20"
+                        WidthRequest="16"
+                        HeightRequest="16"
                         HorizontalOptions="Center"
                         VerticalOptions="Center" />
                 </Grid>
@@ -253,9 +253,9 @@
                 x:Name="floodWaitingBanner"
                 IsVisible="False"
                 ZIndex="20"
-                Margin="16,16,16,0"
-                Padding="16,14"
-                MinimumHeightRequest="58"
+                Margin="8,8,8,0"
+                Padding="10,8"
+                MinimumHeightRequest="42"
                 VerticalOptions="Start"
                 BackgroundColor="#D8EDF8"
                 Stroke="#94C7E2"
@@ -264,7 +264,7 @@
                 <Label
                     Text="Waiting for simulation..."
                     TextColor="#0876B9"
-                    FontSize="20"
+                    FontSize="13"
                     FontAttributes="Bold"
                     VerticalTextAlignment="Center" />
             </Border>
@@ -276,19 +276,19 @@
                 ZIndex="20">
                 <Border
                     x:Name="floodVisualizationBanner"
-                    Margin="16,16,16,0"
-                    Padding="15,11"
-                    MinimumHeightRequest="82"
+                    Margin="8,8,8,0"
+                    Padding="10,8"
+                    MinimumHeightRequest="58"
                     VerticalOptions="Start"
                     BackgroundColor="#D8EDF8"
                     Stroke="#94C7E2"
                     StrokeThickness="1"
                     StrokeShape="RoundRectangle 8">
-                    <Grid ColumnDefinitions="52,*" ColumnSpacing="11">
+                    <Grid ColumnDefinitions="38,*" ColumnSpacing="8">
                         <Image
                             Source="lucide_waves_arrow_up_teal.png"
-                            WidthRequest="46"
-                            HeightRequest="46"
+                            WidthRequest="30"
+                            HeightRequest="30"
                             HorizontalOptions="Center"
                             VerticalOptions="Center" />
                         <VerticalStackLayout
@@ -299,7 +299,7 @@
                                 x:Name="floodVisualizationPrimaryLabel"
                                 Text="Simulating 0.60 meters of flood depth near you"
                                 TextColor="#0876B9"
-                                FontSize="19"
+                                FontSize="13"
                                 FontAttributes="Bold"
                                 LineBreakMode="WordWrap"
                                 LineHeight="1.05" />
@@ -318,29 +318,29 @@
             <VerticalStackLayout
                 x:Name="cameraZoomControls"
                 ZIndex="30"
-                Margin="16,0,0,16"
-                Spacing="5"
+                Margin="18,0,0,12"
+                Spacing="4"
                 HorizontalOptions="Start"
                 VerticalOptions="End">
                 <Border
-                    WidthRequest="64"
-                    HeightRequest="32"
+                    WidthRequest="58"
+                    HeightRequest="28"
                     BackgroundColor="#ECFFFFFF"
                     Stroke="#F4FFFFFF"
                     StrokeThickness="1"
-                    StrokeShape="RoundRectangle 7">
+                    StrokeShape="RoundRectangle 5">
                     <Label
                         Text="1x"
                         TextColor="#111111"
-                        FontSize="13"
+                        FontSize="12"
                         FontAttributes="Bold"
                         HorizontalTextAlignment="Center"
                         VerticalTextAlignment="Center" />
                 </Border>
 
                 <Border
-                    WidthRequest="64"
-                    HeightRequest="126"
+                    WidthRequest="58"
+                    HeightRequest="116"
                     BackgroundColor="#ECFFFFFF"
                     Stroke="#F4FFFFFF"
                     StrokeThickness="1"
@@ -349,16 +349,16 @@
                         <Image
                             Grid.Row="0"
                             Source="lucide_zoom_in_black.png"
-                            WidthRequest="21"
-                            HeightRequest="21"
+                            WidthRequest="22"
+                            HeightRequest="22"
                             HorizontalOptions="Center"
                             VerticalOptions="Center" />
                         <BoxView Grid.Row="1" BackgroundColor="#CFD2D4" />
                         <Image
                             Grid.Row="2"
                             Source="lucide_zoom_out_black.png"
-                            WidthRequest="21"
-                            HeightRequest="21"
+                            WidthRequest="22"
+                            HeightRequest="22"
                             HorizontalOptions="Center"
                             VerticalOptions="Center" />
                     </Grid>
@@ -370,19 +370,19 @@
                 ZIndex="31"
                 Text="Explore Safe Zones"
                 ImageSource="lucide_external_link_white.png"
-                ContentLayout="Left,8"
-                HeightRequest="52"
-                WidthRequest="228"
-                Margin="0,0,0,16"
+                ContentLayout="Left,10"
+                HeightRequest="48"
+                WidthRequest="204"
+                Margin="0,0,0,12"
                 HorizontalOptions="Center"
                 VerticalOptions="End"
                 BackgroundColor="#0A929C"
                 BorderColor="#087A83"
                 BorderWidth="1"
                 TextColor="White"
-                FontSize="13"
+                FontSize="14"
                 FontAttributes="Bold"
-                CornerRadius="8"
+                CornerRadius="7"
                 Clicked="OnExploreSafeZonesClicked" />
 
             <Button
@@ -391,17 +391,17 @@
                 ZIndex="31"
                 Text="Stop Guidance"
                 ImageSource="lucide_square_white.png"
-                ContentLayout="Left,8"
-                HeightRequest="52"
-                WidthRequest="228"
-                Margin="0,0,0,16"
+                ContentLayout="Left,10"
+                HeightRequest="48"
+                WidthRequest="204"
+                Margin="0,0,0,12"
                 HorizontalOptions="Center"
                 VerticalOptions="End"
                 BackgroundColor="#E84343"
                 BorderColor="#C51F25"
                 BorderWidth="1"
                 TextColor="White"
-                FontSize="13"
+                FontSize="14"
                 FontAttributes="Bold"
                 CornerRadius="7"
                 Clicked="OnEndNavigationClicked" />
@@ -412,17 +412,17 @@
                 ZIndex="31"
                 Text="Simulate Flood Depth"
                 ImageSource="lucide_arrow_up_right_white.png"
-                ContentLayout="Left,8"
-                HeightRequest="52"
-                WidthRequest="220"
-                Margin="0,0,0,16"
+                ContentLayout="Left,10"
+                HeightRequest="48"
+                WidthRequest="204"
+                Margin="0,0,0,12"
                 HorizontalOptions="Center"
                 VerticalOptions="End"
                 BackgroundColor="#0A929C"
                 BorderColor="#08757D"
                 BorderWidth="1"
                 TextColor="White"
-                FontSize="13"
+                FontSize="14"
                 FontAttributes="Bold"
                 CornerRadius="7"
                 Clicked="OnFloodSimulationConfigureClicked" />
@@ -431,9 +431,9 @@
             <Border
                 x:Name="cameraModeSwitcherButton"
                 ZIndex="32"
-                WidthRequest="64"
-                HeightRequest="64"
-                Margin="0,0,16,16"
+                WidthRequest="58"
+                HeightRequest="58"
+                Margin="0,0,18,12"
                 HorizontalOptions="End"
                 VerticalOptions="End"
                 BackgroundColor="#ECFFFFFF"
@@ -455,8 +455,8 @@
                         x:Name="cameraModeSwitcherFloodIcon"
                         IsVisible="False"
                         Source="lucide_waves_arrow_up_black.png"
-                        WidthRequest="25"
-                        HeightRequest="25"
+                        WidthRequest="24"
+                        HeightRequest="24"
                         HorizontalOptions="Center"
                         VerticalOptions="Center" />
                 </Grid>
@@ -472,16 +472,16 @@
                 BackgroundColor="Transparent"
                 VerticalOptions="End">
                 <Border
-                    Padding="16,15,16,16"
+                    Padding="14,12,14,14"
                     BackgroundColor="White"
                     Stroke="#E5E7E9"
                     StrokeThickness="1"
-                    StrokeShape="RoundRectangle 14">
+                    StrokeShape="RoundRectangle 10">
                     <Border.Shadow>
                         <Shadow Brush="#30000000" Offset="0,-3" Radius="10" Opacity="0.18" />
                     </Border.Shadow>
-                    <VerticalStackLayout Spacing="11">
-                        <Grid ColumnDefinitions="*,36">
+                    <VerticalStackLayout Spacing="9">
+                        <Grid ColumnDefinitions="*,30">
                             <Label
                                 Text="Navigation &amp; Awareness"
                                 TextColor="#858585"
@@ -490,8 +490,8 @@
                                 VerticalOptions="Center" />
                             <Border
                                 Grid.Column="1"
-                                WidthRequest="36"
-                                HeightRequest="36"
+                                WidthRequest="30"
+                                HeightRequest="30"
                                 BackgroundColor="Transparent"
                                 StrokeThickness="0">
                                 <Border.GestureRecognizers>
@@ -499,8 +499,8 @@
                                 </Border.GestureRecognizers>
                                 <Image
                                     Source="lucide_x_gray.png"
-                                    WidthRequest="20"
-                                    HeightRequest="20"
+                                    WidthRequest="16"
+                                    HeightRequest="16"
                                     HorizontalOptions="Center"
                                     VerticalOptions="Center" />
                             </Border>
@@ -510,105 +510,105 @@
                             Stroke="#DFE1E3"
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 8">
-                            <Grid RowDefinitions="64,1,64,1,64">
-                                <Grid Grid.Row="0" Padding="14,8" ColumnDefinitions="40,*,30">
+                            <Grid RowDefinitions="56,1,56,1,56">
+                                <Grid Grid.Row="0" Padding="10,6" ColumnDefinitions="34,*,24">
                                     <Grid.GestureRecognizers>
                                         <TapGestureRecognizer Tapped="OnArGuidanceOptionClicked" />
                                     </Grid.GestureRecognizers>
                                     <Border
-                                        WidthRequest="30"
-                                        HeightRequest="30"
+                                        WidthRequest="26"
+                                        HeightRequest="26"
                                         Stroke="#D7DBDE"
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 4"
                                         VerticalOptions="Center">
                                         <Image
                                             Source="lucide_scan_line_teal.png"
-                                            WidthRequest="18"
-                                            HeightRequest="18"
+                                            WidthRequest="15"
+                                            HeightRequest="15"
                                             HorizontalOptions="Center"
                                             VerticalOptions="Center" />
                                     </Border>
                                     <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
-                                        <Label Text="AR Evacuation Guidance" TextColor="#151515" FontSize="14" />
-                                        <Label Text="View evacuation routes on an AR space" TextColor="#888888" FontSize="11" />
+                                        <Label Text="AR Evacuation Guidance" TextColor="#151515" FontSize="12" />
+                                        <Label Text="View evacuation routes on an AR space" TextColor="#888888" FontSize="9.5" />
                                     </VerticalStackLayout>
                                     <Image
                                         x:Name="arGuidanceSelectedIcon"
                                         Grid.Column="2"
                                         Source="lucide_circle_check_big_teal.png"
-                                        WidthRequest="20"
-                                        HeightRequest="20"
+                                        WidthRequest="17"
+                                        HeightRequest="17"
                                         HorizontalOptions="Center"
                                         VerticalOptions="Center" />
                                 </Grid>
 
                                 <BoxView Grid.Row="1" BackgroundColor="#E5E5E5" />
 
-                                <Grid Grid.Row="2" Padding="14,8" ColumnDefinitions="40,*,30">
+                                <Grid Grid.Row="2" Padding="10,6" ColumnDefinitions="34,*,24">
                                     <Grid.GestureRecognizers>
                                         <TapGestureRecognizer Tapped="OnMapGuidanceOptionClicked" />
                                     </Grid.GestureRecognizers>
                                     <Border
-                                        WidthRequest="30"
-                                        HeightRequest="30"
+                                        WidthRequest="26"
+                                        HeightRequest="26"
                                         Stroke="#D7DBDE"
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 4"
                                         VerticalOptions="Center">
                                         <Image
                                             Source="lucide_map_teal.png"
-                                            WidthRequest="18"
-                                            HeightRequest="18"
+                                            WidthRequest="15"
+                                            HeightRequest="15"
                                             HorizontalOptions="Center"
                                             VerticalOptions="Center" />
                                     </Border>
                                     <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
-                                        <Label Text="2D Map Guidance" TextColor="#151515" FontSize="14" />
-                                        <Label Text="View evacuation routes on a map" TextColor="#888888" FontSize="11" />
+                                        <Label Text="2D Map Guidance" TextColor="#151515" FontSize="12" />
+                                        <Label Text="View evacuation routes on a map" TextColor="#888888" FontSize="9.5" />
                                     </VerticalStackLayout>
                                     <Image
                                         x:Name="mapGuidanceSelectedIcon"
                                         Grid.Column="2"
                                         IsVisible="False"
                                         Source="lucide_circle_check_big_teal.png"
-                                        WidthRequest="20"
-                                        HeightRequest="20"
+                                        WidthRequest="17"
+                                        HeightRequest="17"
                                         HorizontalOptions="Center"
                                         VerticalOptions="Center" />
                                 </Grid>
 
                                 <BoxView Grid.Row="3" BackgroundColor="#E5E5E5" />
 
-                                <Grid Grid.Row="4" Padding="14,8" ColumnDefinitions="40,*,30">
+                                <Grid Grid.Row="4" Padding="10,6" ColumnDefinitions="34,*,24">
                                     <Grid.GestureRecognizers>
                                         <TapGestureRecognizer Tapped="OnFloodGuidanceOptionClicked" />
                                     </Grid.GestureRecognizers>
                                     <Border
-                                        WidthRequest="30"
-                                        HeightRequest="30"
+                                        WidthRequest="26"
+                                        HeightRequest="26"
                                         Stroke="#D7DBDE"
                                         StrokeThickness="1"
                                         StrokeShape="RoundRectangle 4"
                                         VerticalOptions="Center">
                                         <Image
                                             Source="lucide_waves_arrow_up_teal.png"
-                                            WidthRequest="19"
-                                            HeightRequest="19"
+                                            WidthRequest="15"
+                                            HeightRequest="15"
                                             HorizontalOptions="Center"
                                             VerticalOptions="Center" />
                                     </Border>
                                     <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
-                                        <Label Text="Flood Depth Visualization" TextColor="#151515" FontSize="14" />
-                                        <Label Text="View projected flood depth at your location" TextColor="#888888" FontSize="11" />
+                                        <Label Text="Flood Depth Visualization" TextColor="#151515" FontSize="12" />
+                                        <Label Text="View projected flood depth at your location" TextColor="#888888" FontSize="9.5" />
                                     </VerticalStackLayout>
                                     <Image
                                         x:Name="floodGuidanceSelectedIcon"
                                         Grid.Column="2"
                                         IsVisible="False"
                                         Source="lucide_circle_check_big_teal.png"
-                                        WidthRequest="20"
-                                        HeightRequest="20"
+                                        WidthRequest="17"
+                                        HeightRequest="17"
                                         HorizontalOptions="Center"
                                         VerticalOptions="Center" />
                                 </Grid>
@@ -652,16 +652,16 @@
                 ZIndex="58"
                 VerticalOptions="End">
                 <Border
-                    Padding="16,15,16,16"
+                    Padding="14,12,14,14"
                     BackgroundColor="White"
                     Stroke="#E5E7E9"
                     StrokeThickness="1"
-                    StrokeShape="RoundRectangle 14">
+                    StrokeShape="RoundRectangle 10">
                     <Border.Shadow>
                         <Shadow Brush="#30000000" Offset="0,-3" Radius="10" Opacity="0.18" />
                     </Border.Shadow>
                     <VerticalStackLayout Spacing="13">
-                        <Grid ColumnDefinitions="*,36">
+                        <Grid ColumnDefinitions="*,30">
                             <Label
                                 Text="Flood Depth Simulation Configuration"
                                 TextColor="#858585"
@@ -670,8 +670,8 @@
                                 VerticalOptions="Center" />
                             <Border
                                 Grid.Column="1"
-                                WidthRequest="36"
-                                HeightRequest="36"
+                                WidthRequest="30"
+                                HeightRequest="30"
                                 BackgroundColor="Transparent"
                                 StrokeThickness="0">
                                 <Border.GestureRecognizers>
@@ -679,8 +679,8 @@
                                 </Border.GestureRecognizers>
                                 <Image
                                     Source="lucide_x_gray.png"
-                                    WidthRequest="20"
-                                    HeightRequest="20"
+                                    WidthRequest="16"
+                                    HeightRequest="16"
                                     HorizontalOptions="Center"
                                     VerticalOptions="Center" />
                             </Border>
@@ -722,7 +722,7 @@
                         <Button
                             Text="Save Changes &amp; Simulate"
                             ImageSource="lucide_circle_check_big_white.png"
-                            ContentLayout="Left,8"
+                            ContentLayout="Left,6"
                             HeightRequest="48"
                             BackgroundColor="#0A929C"
                             BorderColor="#08757D"
@@ -756,8 +756,8 @@
                     <Border
                         x:Name="emergencyAdvisoryTopBanner"
                         Grid.Row="0"
-                        Margin="16,16,16,0"
-                        Padding="12,7"
+                        Margin="8,8,8,0"
+                        Padding="8,4"
                         BackgroundColor="#70FF5A5A"
                         StrokeThickness="0"
                         StrokeShape="RoundRectangle 8">
@@ -765,22 +765,22 @@
                             <Label
                                 Text="Emergency Detected"
                                 TextColor="#8E1010"
-                                FontSize="12"
+                                FontSize="10"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center" />
                             <Label
                                 x:Name="emergencyAdvisoryTopSeverityLabel"
                                 Text="Flood Advisory - High Severity"
                                 TextColor="#8E1010"
-                                FontSize="11"
+                                FontSize="8.5"
                                 HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
                     </Border>
 
                     <ScrollView Grid.Row="1">
                         <VerticalStackLayout
-                            Padding="24,8,24,4"
-                            Spacing="11"
+                            Padding="20,6,20,4"
+                            Spacing="8"
                             HorizontalOptions="Fill"
                             VerticalOptions="Center">
 
@@ -788,21 +788,21 @@
                             <Grid
                                 x:Name="emergencyFloodIcon"
                                 IsVisible="False"
-                                WidthRequest="176"
-                                HeightRequest="148"
+                                WidthRequest="124"
+                                HeightRequest="106"
                                 HorizontalOptions="Center">
                                 <Image
                                     Source="lucide_arrow_up_white.png"
-                                    WidthRequest="86"
-                                    HeightRequest="86"
-                                    Margin="0,0,0,46"
+                                    WidthRequest="58"
+                                    HeightRequest="58"
+                                    Margin="0,0,0,34"
                                     HorizontalOptions="Center"
                                     VerticalOptions="Center" />
                                 <Image
                                     Source="lucide_waves_white.png"
-                                    WidthRequest="170"
-                                    HeightRequest="80"
-                                    Margin="0,68,0,0"
+                                    WidthRequest="120"
+                                    HeightRequest="58"
+                                    Margin="0,48,0,0"
                                     HorizontalOptions="Center"
                                     VerticalOptions="Center" />
                             </Grid>
@@ -811,23 +811,23 @@
                                 x:Name="emergencyEarthquakeIcon"
                                 IsVisible="False"
                                 Source="lucide_activity_white.png"
-                                WidthRequest="166"
-                                HeightRequest="136"
+                                WidthRequest="112"
+                                HeightRequest="92"
                                 HorizontalOptions="Center" />
 
                             <Image
                                 x:Name="emergencyGenericIcon"
                                 IsVisible="True"
                                 Source="lucide_triangle_alert_white.png"
-                                WidthRequest="132"
-                                HeightRequest="116"
+                                WidthRequest="92"
+                                HeightRequest="80"
                                 HorizontalOptions="Center" />
 
                             <Label
                                 x:Name="emergencyAdvisoryHeroTitleLabel"
                                 Text="Emergency Nearby!"
                                 TextColor="White"
-                                FontSize="43"
+                                FontSize="31"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center"
                                 LineBreakMode="WordWrap"
@@ -836,14 +836,14 @@
                                 x:Name="emergencyAdvisoryBodySeverityLabel"
                                 Text="Emergency Advisory - High Severity"
                                 TextColor="White"
-                                FontSize="14"
+                                FontSize="11"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center" />
                             <Label
                                 x:Name="emergencyAdvisoryBodyMessageLabel"
                                 Text="Follow the latest verified emergency guidance."
                                 TextColor="White"
-                                FontSize="16"
+                                FontSize="12.5"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center"
                                 LineBreakMode="WordWrap"
@@ -854,8 +854,8 @@
 
                     <VerticalStackLayout
                         Grid.Row="2"
-                        Padding="20,0,20,14"
-                        Spacing="7">
+                        Padding="18,0,18,12"
+                        Spacing="5">
                         <Label
                             x:Name="emergencyAdvisoryCountdownLabel"
                             IsVisible="False"
@@ -869,17 +869,17 @@
                             Text="Start AR Evacuation Guidance"
                             ImageSource="lucide_chevron_right_white.png"
                             ContentLayout="Right,8"
-                            HeightRequest="50"
-                            CornerRadius="8"
+                            HeightRequest="42"
+                            CornerRadius="6"
                             BackgroundColor="#FF3B43"
                             TextColor="White"
-                            FontSize="14"
+                            FontSize="12"
                             FontAttributes="Bold"
                             Clicked="OnEmergencyStartGuidanceClicked" />
                         <Button
                             x:Name="emergencyDismissButton"
                             Text="Dismiss"
-                            HeightRequest="38"
+                            HeightRequest="32"
                             Padding="0"
                             BackgroundColor="Transparent"
                             TextColor="White"
@@ -898,23 +898,23 @@
                 IsVisible="False"
                 ZIndex="100"
                 BackgroundColor="#CE0F7C49"
-                Padding="26,20">
+                Padding="22,18">
                 <VerticalStackLayout
-                    Spacing="7"
+                    Spacing="5"
                     HorizontalOptions="Center"
                     VerticalOptions="Center"
                     MaximumWidthRequest="420">
 
                     <Image
                         Source="lucide_shield_check_white.png"
-                        WidthRequest="142"
-                        HeightRequest="142"
+                        WidthRequest="104"
+                        HeightRequest="104"
                         HorizontalOptions="Center" />
 
                     <Label
                         Text="You've Reached a&#10;Safe Zone"
                         TextColor="White"
-                        FontSize="34"
+                        FontSize="27"
                         FontAttributes="Bold"
                         HorizontalTextAlignment="Center"
                         LineBreakMode="WordWrap"
@@ -925,24 +925,24 @@
                         x:Name="safeZoneDestinationLabel"
                         Text="Malanday Elementary School"
                         TextColor="White"
-                        FontSize="16"
+                        FontSize="13"
                         FontAttributes="Bold"
                         HorizontalTextAlignment="Center"
                         Margin="0,5,0,0" />
 
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="30" Margin="0,7,0,4">
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="24" Margin="0,6,0,3">
                         <VerticalStackLayout Spacing="0" HorizontalOptions="End">
                             <Label
                                 x:Name="safeZoneDistanceTravelledLabel"
                                 Text="0 meters"
                                 TextColor="White"
-                                FontSize="15"
+                                FontSize="12"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center" />
                             <Label
                                 Text="Distance Traveled"
                                 TextColor="#E8FFFFFF"
-                                FontSize="11"
+                                FontSize="9"
                                 HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
                         <VerticalStackLayout Grid.Column="1" Spacing="0" HorizontalOptions="Start">
@@ -950,13 +950,13 @@
                                 x:Name="safeZoneTimeTakenLabel"
                                 Text="0 minutes"
                                 TextColor="White"
-                                FontSize="15"
+                                FontSize="12"
                                 FontAttributes="Bold"
                                 HorizontalTextAlignment="Center" />
                             <Label
                                 Text="Time Taken"
                                 TextColor="#E8FFFFFF"
-                                FontSize="11"
+                                FontSize="9"
                                 HorizontalTextAlignment="Center" />
                         </VerticalStackLayout>
                     </Grid>
@@ -969,7 +969,7 @@
                     <Label
                         Text="Advisories remain active in surrounding areas."
                         TextColor="White"
-                        FontSize="15"
+                        FontSize="12"
                         FontAttributes="Bold"
                         HorizontalTextAlignment="Center"
                         Margin="0,12,0,10" />
@@ -978,17 +978,17 @@
                         Text="End Guidance Session"
                         ImageSource="lucide_chevron_right_green.png"
                         ContentLayout="Right,8"
-                        HeightRequest="50"
+                        HeightRequest="42"
                         BackgroundColor="#CDEFD9"
                         TextColor="#086A3C"
-                        FontSize="13"
+                        FontSize="11"
                         FontAttributes="Bold"
-                        CornerRadius="8"
+                        CornerRadius="6"
                         Clicked="OnFinishNavigationClicked" />
 
                     <Button
                         Text="View Guidance Session Details"
-                        HeightRequest="38"
+                        HeightRequest="32"
                         Padding="0"
                         BackgroundColor="Transparent"
                         TextColor="White"
