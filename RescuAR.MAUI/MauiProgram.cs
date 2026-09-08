@@ -5,6 +5,15 @@ using RescuAR.MAUI.Services.Location;
 using RescuAR.App.Services.Authentication;
 using RescuAR.App.ViewModels.Authentication;
 using RescuAR.App.Views.Authentication;
+using RescuAR.App.Services.Dashboard;
+using RescuAR.App.Services.Reports;
+using RescuAR.App.Services.Weather;
+using RescuAR.App.ViewModels.Dashboard;
+using RescuAR.App.ViewModels.Prepare;
+using RescuAR.App.ViewModels.Summary;
+using RescuAR.App.Views.Dashboard;
+using RescuAR.App.Views.Prepare;
+using RescuAR.App.Views.Summary;
 
 namespace RescuAR.MAUI;
 
@@ -70,6 +79,68 @@ public static class MauiProgram
 
         builder.Services.AddTransient<PermissionsPage>();
         builder.Services.AddTransient<PermissionsViewModel>();
+
+        // Batch 3: updated registration / verification / address flow
+        builder.Services.AddTransient<OtpVerificationPage>();
+        builder.Services.AddTransient<OtpVerificationViewModel>();
+
+        builder.Services.AddTransient<AddressInputPage>();
+        builder.Services.AddTransient<AddressInputViewModel>();
+
+        builder.Services.AddTransient<TermsAndConditionsPage>();
+        builder.Services.AddTransient<PrivacyPolicyPage>();
+
+        // Batch 4: Dashboard shared services
+        builder.Services.AddSingleton<IDashboardDataService, DashboardDataService>();
+        builder.Services.AddSingleton<CommunityReportService>();
+        builder.Services.AddSingleton<IWeatherService, WeatherService>();
+
+        // Batch 4: Dashboard pages / ViewModels
+        builder.Services.AddTransient<DashboardPage>();
+        builder.Services.AddTransient<DashboardViewModel>();
+        builder.Services.AddTransient<AreaStatusOverviewPage>();
+        builder.Services.AddTransient<AreaStatusOverviewViewModel>();
+        builder.Services.AddTransient<AdvisoriesActivePage>();
+        builder.Services.AddTransient<CommunityReportsOverviewPage>();
+        builder.Services.AddTransient<CommunityReportsOverviewViewModel>();
+        builder.Services.AddTransient<DisasterInformationPage>();
+        builder.Services.AddTransient<DisasterInformationViewModel>();
+        builder.Services.AddTransient<EvacuationOverviewPage>();
+        builder.Services.AddTransient<EvacuationOverviewViewModel>();
+        builder.Services.AddTransient<PASSOverviewPage>();
+        builder.Services.AddTransient<PASSOverviewViewModel>();
+        builder.Services.AddTransient<PreparednessOverviewPage>();
+        builder.Services.AddTransient<PreparednessOverviewViewModel>();
+        builder.Services.AddTransient<QuickActionsPage>();
+        builder.Services.AddTransient<QuickActionsViewModel>();
+        builder.Services.AddTransient<SafetyCircleOverviewPage>();
+        builder.Services.AddTransient<SafetyCircleOverviewViewModel>();
+        builder.Services.AddTransient<WeatherInformationPage>();
+        builder.Services.AddTransient<WeatherInformationViewModel>();
+
+        // Batch 4: Prepare pages / ViewModels
+        builder.Services.AddTransient<ChecklistPage>();
+        builder.Services.AddTransient<ChecklistViewModel>();
+        builder.Services.AddTransient<PASSPage>();
+        builder.Services.AddTransient<PASSViewModel>();
+        builder.Services.AddTransient<AssessmentPage>();
+        builder.Services.AddTransient<AssessmentViewModel>();
+        builder.Services.AddTransient<EvacuationCenterInfoPage>();
+        builder.Services.AddTransient<EvacuationCenterInfoViewModel>();
+        builder.Services.AddTransient<HotlineDirectoryPage>();
+        builder.Services.AddTransient<HotlineDirectoryViewModel>();
+        builder.Services.AddTransient<FloodHistoryPage>();
+        builder.Services.AddTransient<FloodHistoryViewModel>();
+        builder.Services.AddTransient<HistoricalPhotosPage>();
+        builder.Services.AddTransient<HistoricalPhotosViewModel>();
+        builder.Services.AddTransient<DocumentaryVideosPage>();
+        builder.Services.AddTransient<DocumentaryVideosViewModel>();
+        builder.Services.AddTransient<FloodTimelinePage>();
+        builder.Services.AddTransient<FloodTimelineViewModel>();
+
+        // Batch 4: Summary
+        builder.Services.AddTransient<SummaryPage>();
+        builder.Services.AddTransient<SummaryViewModel>();
 
 #if DEBUG
         builder.Logging.AddDebug();
