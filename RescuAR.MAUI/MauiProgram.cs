@@ -11,9 +11,13 @@ using RescuAR.App.Services.Weather;
 using RescuAR.App.ViewModels.Dashboard;
 using RescuAR.App.ViewModels.Prepare;
 using RescuAR.App.ViewModels.Summary;
+using RescuAR.App.ViewModels.Profile;
+using RescuAR.App.ViewModels.Reports;
 using RescuAR.App.Views.Dashboard;
 using RescuAR.App.Views.Prepare;
 using RescuAR.App.Views.Summary;
+using RescuAR.App.Views.Profile;
+using RescuAR.App.Views.Reports;
 
 namespace RescuAR.MAUI;
 
@@ -88,11 +92,12 @@ public static class MauiProgram
         builder.Services.AddTransient<AddressInputViewModel>();
 
         builder.Services.AddTransient<TermsAndConditionsPage>();
-        builder.Services.AddTransient<PrivacyPolicyPage>();
+        builder.Services.AddTransient<RescuAR.App.Views.Authentication.PrivacyPolicyPage>();
 
         // Batch 4: Dashboard shared services
         builder.Services.AddSingleton<IDashboardDataService, DashboardDataService>();
         builder.Services.AddSingleton<CommunityReportService>();
+        builder.Services.AddSingleton<IOsmGeocodingService, OsmGeocodingService>();
         builder.Services.AddSingleton<IWeatherService, WeatherService>();
 
         // Batch 4: Dashboard pages / ViewModels
@@ -141,6 +146,28 @@ public static class MauiProgram
         // Batch 4: Summary
         builder.Services.AddTransient<SummaryPage>();
         builder.Services.AddTransient<SummaryViewModel>();
+
+        // Batch 5: Reports
+        builder.Services.AddTransient<ReportsViewModel>();
+        builder.Services.AddTransient<ReportsPage>();
+        builder.Services.AddTransient<ReportDetailsViewModel>();
+        builder.Services.AddTransient<ReportDetailsPage>();
+        builder.Services.AddTransient<RescuAR.App.ViewModels.Reports.AdvisoryFeedViewModel>();
+        builder.Services.AddTransient<RescuAR.App.Views.Reports.AdvisoryFeedPage>();
+        builder.Services.AddTransient<NotificationsPage>();
+
+        // Batch 5: Profile
+        builder.Services.AddTransient<ProfileViewModel>();
+        builder.Services.AddTransient<ProfilePage>();
+        builder.Services.AddTransient<PersonalInformationPage>();
+        builder.Services.AddTransient<HealthInformationPage>();
+        builder.Services.AddTransient<SafetyCircleSettingsPage>();
+        builder.Services.AddTransient<EmergencyContactsPage>();
+        builder.Services.AddTransient<AppSettingsPage>();
+        builder.Services.AddTransient<HelpCenterPage>();
+        builder.Services.AddTransient<RescuAR.App.Views.Profile.PrivacyPolicyPage>();
+        builder.Services.AddTransient<TermsConditionsPage>();
+        builder.Services.AddTransient<SystemInformationPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();
