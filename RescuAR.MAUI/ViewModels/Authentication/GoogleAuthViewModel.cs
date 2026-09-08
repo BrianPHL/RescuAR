@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using RescuAR.App.Views.Authentication;
 using RescuAR.App.Services.Authentication;
+
 using RescuAR.MAUI;
 
 namespace RescuAR.App.ViewModels.Authentication
@@ -60,7 +61,16 @@ namespace RescuAR.App.ViewModels.Authentication
                     if (Application.Current != null)
                     {
                         Preferences.Default.Set("IsLoggedIn", true);
-                        Application.Current.Windows[0].Page = new AppShell();
+                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
+                        if (hasPermissions)
+                        {
+                            AuthenticationNavigation.TrySetRootPage(new AppShell());
+                        }
+                        else
+                        {
+                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
+                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
+                        }
                     }
                 });
             }
@@ -89,13 +99,22 @@ namespace RescuAR.App.ViewModels.Authentication
                 // Trigger the actual Supabase OAuth Google authentication flow (with browser + 2FA)
                 await _authService.SignInWithGoogleAsync();
 
-                // Navigate to Dashboard upon success
+                // Navigate to Permissions or Dashboard upon success
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
                     if (Application.Current != null)
                     {
                         Preferences.Default.Set("IsLoggedIn", true);
-                        Application.Current.Windows[0].Page = new AppShell();
+                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
+                        if (hasPermissions)
+                        {
+                            AuthenticationNavigation.TrySetRootPage(new AppShell());
+                        }
+                        else
+                        {
+                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
+                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
+                        }
                     }
                 });
             }
@@ -123,7 +142,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.Windows[0].Page = loginPage;
+                    AuthenticationNavigation.TrySetRootPage(loginPage);
                 }
             });
         }

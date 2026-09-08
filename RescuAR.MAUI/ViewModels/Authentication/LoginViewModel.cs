@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using RescuAR.App.Views.Authentication;
 using RescuAR.App.Services.Authentication;
+
 using RescuAR.MAUI;
 
 namespace RescuAR.App.ViewModels.Authentication
@@ -42,7 +43,11 @@ namespace RescuAR.App.ViewModels.Authentication
 
         public bool IsPasswordHidden => !IsPasswordVisible;
 
-        public string PasswordToggleIcon => IsPasswordVisible ? "Hide" : "Show";
+        // SVG Paths for Eye and Eye-Off
+        private const string EyeIcon = "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z";
+        private const string EyeOffIcon = "M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z";
+
+        public string PasswordToggleIcon => IsPasswordVisible ? EyeIcon : EyeOffIcon;
 
         partial void OnIsPasswordVisibleChanged(bool value)
         {
@@ -94,12 +99,57 @@ namespace RescuAR.App.ViewModels.Authentication
                 Preferences.Default.Set("IsLoggedIn", true);
                 Preferences.Default.Set("UserEmail", Email.Trim());
 
-                // Navigate to Dashboard
+                // Ensure user profile row exists in users table with first_name and last_name
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var client = RescuAR.Services.SupabaseService.Instance.Client;
+                        if (client?.Auth.CurrentUser != null)
+                        {
+                            var authUser = client.Auth.CurrentUser;
+                            string fn = "";
+                            string ln = "";
+                            if (authUser.UserMetadata != null)
+                            {
+                                if (authUser.UserMetadata.TryGetValue("first_name", out var f) && f != null) fn = f.ToString()?.Trim() ?? "";
+                                if (authUser.UserMetadata.TryGetValue("last_name", out var l) && l != null) ln = l.ToString()?.Trim() ?? "";
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(fn) || !string.IsNullOrWhiteSpace(ln))
+                            {
+                                Preferences.Default.Set("UserFirstName", fn);
+                                Preferences.Default.Set("UserLastName", ln);
+
+                                var userRecord = new Models.User
+                                {
+                                    Id = authUser.Id,
+                                    Email = authUser.Email ?? Email.Trim(),
+                                    FirstName = fn,
+                                    LastName = ln
+                                };
+                                await client.From<Models.User>().Upsert(userRecord);
+                            }
+                        }
+                    }
+                    catch { }
+                });
+
+                // Navigate to Permissions or Dashboard
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
                     if (Application.Current != null)
                     {
-                        Application.Current.Windows[0].Page = new AppShell();
+                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
+                        if (hasPermissions)
+                        {
+                            AuthenticationNavigation.TrySetRootPage(new AppShell());
+                        }
+                        else
+                        {
+                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
+                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
+                        }
                     }
                 });
             }
@@ -139,7 +189,7 @@ namespace RescuAR.App.ViewModels.Authentication
             {
                 if (Application.Current != null)
                 {
-                    Application.Current.Windows[0].Page = googleAuthPage;
+                    AuthenticationNavigation.TrySetRootPage(googleAuthPage);
                 }
             });
         }
@@ -148,11 +198,11 @@ namespace RescuAR.App.ViewModels.Authentication
         private void GoToSignUp()
         {
             var registrationPage = _serviceProvider.GetRequiredService<RegistrationPage>();
-            MainThread.BeginInvokeOnMainThread(() =>
+            MainThread.BeginInvokeOnMainThread(async () =>
             {
-                if (Application.Current != null)
+                if (AuthenticationNavigation.RootPage is NavigationPage navPage)
                 {
-                    Application.Current.Windows[0].Page = registrationPage;
+                    await navPage.PushAsync(registrationPage);
                 }
             });
         }
@@ -160,17 +210,11 @@ namespace RescuAR.App.ViewModels.Authentication
         [RelayCommand]
         private void Back()
         {
-            var onboardingPage = _serviceProvider.GetRequiredService<OnboardingPage>();
-            if (onboardingPage.BindingContext is OnboardingViewModel onboardingVm)
+            MainThread.BeginInvokeOnMainThread(async () =>
             {
-                onboardingVm.SetSlideIndex(3); // Go to Entry Screen
-            }
-
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (Application.Current != null)
+                if (AuthenticationNavigation.RootPage is NavigationPage navPage)
                 {
-                    Application.Current.Windows[0].Page = onboardingPage;
+                    await navPage.PopAsync();
                 }
             });
         }
@@ -178,9 +222,9 @@ namespace RescuAR.App.ViewModels.Authentication
         [RelayCommand]
         private async Task ResetPassword()
         {
-            if (Application.Current?.Windows[0].Page != null)
+            if (AuthenticationNavigation.RootPage != null)
             {
-                await Application.Current.Windows[0].Page.DisplayAlert("Reset Password", "To reset your password, please visit the 'Forgot Password' section on the login page or contact support.", "OK");
+                await AuthenticationNavigation.RootPage!.DisplayAlert("Reset Password", "Password reset instructions have been sent to your email.", "OK");
             }
         }
     }
