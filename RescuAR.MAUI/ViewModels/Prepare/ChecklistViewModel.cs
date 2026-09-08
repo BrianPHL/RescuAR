@@ -16,11 +16,9 @@ public partial class ChecklistItem : ObservableObject
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = "General";
-    public string IconEmoji { get; set; } = "💧";
-    public string IconBg { get; set; } = "#E0F2FE";
 
     [ObservableProperty]
-    private bool isCompleted;
+    private bool _isCompleted;
 }
 
 public partial class ChecklistViewModel : ObservableObject
@@ -30,28 +28,36 @@ public partial class ChecklistViewModel : ObservableObject
     public ObservableCollection<ChecklistItem> FilteredItems { get; } = new();
 
     [ObservableProperty]
-    private double progressValue = 0.6;
+    private double _progressValue = 0.6;
 
     [ObservableProperty]
-    private int percentReady = 60;
+    private int _percentReady = 60;
 
     [ObservableProperty]
-    private string preparedCountText = "6 of 10 items prepared";
+    private string _preparedCountText = "6 of 10 items prepared";
 
     [ObservableProperty]
-    private string selectedCategory = "All";
+    private string _selectedCategory = "All";
 
     [ObservableProperty]
-    private bool isAddModalVisible = false;
+    private bool _isAddModalVisible = false;
 
     [ObservableProperty]
-    private string newItemTitle = string.Empty;
+    private string _newItemTitle = string.Empty;
 
     [ObservableProperty]
-    private string newItemDescription = string.Empty;
+    private string _newItemDescription = string.Empty;
 
     [ObservableProperty]
-    private string newItemCategory = "Food & Water";
+    private string _newItemCategory = "Food & Water";
+
+    public List<string> AvailableCategories { get; } = new()
+    {
+        "Food & Water",
+        "Medical & Safety",
+        "Tools & Power",
+        "Documents"
+    };
 
     public ChecklistViewModel()
     {
@@ -60,100 +66,29 @@ public partial class ChecklistViewModel : ObservableObject
         UpdateProgress();
     }
 
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("..");
+        }
+    }
+
     private void InitializeItems()
     {
         _allMasterItems = new List<ChecklistItem>
         {
-            new ChecklistItem 
-            { 
-                Title = "Drinking Water (3-Day Supply)", 
-                Description = "At least 1 gallon per person per day.", 
-                Category = "Food & Water", 
-                IconEmoji = "💧",
-                IconBg = "#E0F2FE",
-                IsCompleted = Preferences.Get("item_1", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Non-perishable Food", 
-                Description = "Canned goods, protein bars, dry snacks.", 
-                Category = "Food & Water", 
-                IconEmoji = "🥫",
-                IconBg = "#FEF3C7",
-                IsCompleted = Preferences.Get("item_2", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "First Aid Kit", 
-                Description = "Bandages, antiseptics, gauze, tape, tweezers.", 
-                Category = "Medical & Safety", 
-                IconEmoji = "🩹",
-                IconBg = "#FEE2E2",
-                IsCompleted = Preferences.Get("item_3", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Prescription Medications", 
-                Description = "7-day essential personal medication supply.", 
-                Category = "Medical & Safety", 
-                IconEmoji = "💊",
-                IconBg = "#F3E8FF",
-                IsCompleted = Preferences.Get("item_4", false) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "LED Flashlight & Batteries", 
-                Description = "Bright flashlight with spare batteries.", 
-                Category = "Tools & Power", 
-                IconEmoji = "🔦",
-                IconBg = "#FEF9C3",
-                IsCompleted = Preferences.Get("item_5", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Power Bank (20,000 mAh)", 
-                Description = "Fully charged power bank for phone charging.", 
-                Category = "Tools & Power", 
-                IconEmoji = "🔋",
-                IconBg = "#EFF6FF",
-                IsCompleted = Preferences.Get("item_6", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Emergency Signal Whistle", 
-                Description = "Loud whistle for rescue signaling.", 
-                Category = "Tools & Power", 
-                IconEmoji = "📣",
-                IconBg = "#FFEDD5",
-                IsCompleted = Preferences.Get("item_7", true) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Waterproof Document Folder", 
-                Description = "IDs, insurance policies, medical certificates.", 
-                Category = "Documents", 
-                IconEmoji = "📁",
-                IconBg = "#CCFBF1",
-                IsCompleted = Preferences.Get("item_8", false) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Emergency Cash & Coins", 
-                Description = "Small denominations for power outages.", 
-                Category = "Documents", 
-                IconEmoji = "💵",
-                IconBg = "#DCFCE7",
-                IsCompleted = Preferences.Get("item_9", false) 
-            },
-            new ChecklistItem 
-            { 
-                Title = "Portable AM/FM Radio", 
-                Description = "Solar or battery operated radio for updates.", 
-                Category = "Tools & Power", 
-                IconEmoji = "📻",
-                IconBg = "#F1F5F9",
-                IsCompleted = Preferences.Get("item_10", false) 
-            }
+            new ChecklistItem { Title = "Drinking Water (3-Day Supply)", Description = "At least 1 gallon per person per day.", Category = "Food & Water", IsCompleted = Preferences.Get("item_1", true) },
+            new ChecklistItem { Title = "Non-perishable Food", Description = "Canned goods, protein bars, dry snacks.", Category = "Food & Water", IsCompleted = Preferences.Get("item_2", true) },
+            new ChecklistItem { Title = "First Aid Kit", Description = "Bandages, antiseptics, gauze, tape, tweezers.", Category = "Medical & Safety", IsCompleted = Preferences.Get("item_3", true) },
+            new ChecklistItem { Title = "Prescription Medications", Description = "7-day essential personal medication supply.", Category = "Medical & Safety", IsCompleted = Preferences.Get("item_4", false) },
+            new ChecklistItem { Title = "LED Flashlight & Batteries", Description = "Bright flashlight with spare batteries.", Category = "Tools & Power", IsCompleted = Preferences.Get("item_5", true) },
+            new ChecklistItem { Title = "Power Bank (20,000 mAh)", Description = "Fully charged power bank for phone charging.", Category = "Tools & Power", IsCompleted = Preferences.Get("item_6", true) },
+            new ChecklistItem { Title = "Emergency Signal Whistle", Description = "Loud whistle for rescue signaling.", Category = "Tools & Power", IsCompleted = Preferences.Get("item_7", true) },
+            new ChecklistItem { Title = "Waterproof Document Folder", Description = "IDs, insurance policies, medical certificates.", Category = "Documents", IsCompleted = Preferences.Get("item_8", false) },
+            new ChecklistItem { Title = "Emergency Cash & Coins", Description = "Small denominations for power outages.", Category = "Documents", IsCompleted = Preferences.Get("item_9", false) },
+            new ChecklistItem { Title = "Portable AM/FM Radio", Description = "Solar or battery operated radio for updates.", Category = "Tools & Power", IsCompleted = Preferences.Get("item_10", false) }
         };
     }
 
@@ -203,6 +138,8 @@ public partial class ChecklistViewModel : ObservableObject
             PreparedCountText = $"{completedCount} of {totalCount} emergency kit items ready";
 
             Preferences.Set("PASS_ChecklistScore", PercentReady);
+            Preferences.Set("PASS_ChecklistCompleted", completedCount);
+            Preferences.Set("PASS_ChecklistTotal", totalCount);
         }
     }
 
@@ -211,6 +148,7 @@ public partial class ChecklistViewModel : ObservableObject
     {
         NewItemTitle = string.Empty;
         NewItemDescription = string.Empty;
+        NewItemCategory = "Food & Water";
         IsAddModalVisible = true;
     }
 
