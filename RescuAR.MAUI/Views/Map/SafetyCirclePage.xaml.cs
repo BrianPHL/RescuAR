@@ -3,21 +3,22 @@ using RescuAR.App.ViewModels.Map;
 
 namespace RescuAR.App.Views.Map
 {
-    public partial class MapPage : ContentPage
+    public partial class SafetyCirclePage : ContentPage
     {
-        public MapPage()
+        public SafetyCirclePage(SafetyCircleViewModel viewModel)
         {
             InitializeComponent();
-            BindingContext = new MapViewModel();
+            BindingContext = viewModel;
         }
 
         protected override async void OnAppearing()
         {
             base.OnAppearing();
             
-            if (BindingContext is ViewModels.Map.MapViewModel vm)
+            if (BindingContext is SafetyCircleViewModel vm)
             {
                 await vm.InitializeMapAsync(MapControl);
+                await vm.LoadMyCirclesAsync();
             }
         }
     }
