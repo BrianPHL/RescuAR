@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using RescuAR.App.Models;
+using Microsoft.Maui.Storage;
 using RescuAR.Services;
 using Supabase.Realtime;
 using Supabase.Realtime.PostgresChanges;
