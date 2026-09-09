@@ -27,8 +27,15 @@ public sealed partial class ArCoreService
     private const string AnchorRecoveryLogTag =
         "RescuAR-AnchorRecovery";
 
+    /*
+     * PAUSED means ARCore may resume tracking the same anchor. Because the
+     * renderer now holds the last valid visual placement during temporary
+     * tracking loss, recovery can favor continuity over aggressive anchor
+     * replacement. Five seconds substantially reduces unnecessary detach /
+     * reacquire cycles after short lighting, feature, or motion failures.
+     */
     private const long GroundAnchorRecoveryGraceMilliseconds =
-        1250;
+        5000;
 
     /*
      * If the ordinary floor hit-test has not produced a replacement after a
@@ -41,6 +48,9 @@ public sealed partial class ArCoreService
         new();
 
     private Task? groundAnchorRecoveryTask;
+
+    private CancellationTokenSource?
+        groundAnchorRecoveryCancellation;
 
     /*
      * Incremented whenever CameraPage observes camera tracking unavailable.
@@ -124,12 +134,14 @@ public sealed partial class ArCoreService
                 StringComparison.OrdinalIgnoreCase))
         {
             bool wasRecovering;
+            CancellationTokenSource? cancellationToCancel;
 
             lock (groundAnchorRecoveryLock)
             {
                 wasRecovering =
                     groundAnchorReacquisitionArmed ||
-                    groundAnchorRecoveryTask is not null;
+                    (groundAnchorRecoveryTask is not null &&
+                     !groundAnchorRecoveryTask.IsCompleted);
 
                 groundAnchorReacquisitionArmed =
                     false;
@@ -139,29 +151,78 @@ public sealed partial class ArCoreService
 
                 replacementAnchorSearchNoticeLogged =
                     false;
+
+                if (wasRecovering)
+                {
+                    /*
+                     * Cancel the delayed stale-anchor worker immediately when
+                     * the same anchor naturally resumes TRACKING. Detach the
+                     * old worker from shared state before cancellation so a
+                     * later independent interruption can schedule immediately;
+                     * the old worker's generation check prevents it from
+                     * touching any newer recovery.
+                     */
+                    groundAnchorRecoveryGeneration++;
+
+                    cancellationToCancel =
+                        groundAnchorRecoveryCancellation;
+
+                    groundAnchorRecoveryCancellation =
+                        null;
+
+                    groundAnchorRecoveryTask =
+                        null;
+                }
+                else
+                {
+                    cancellationToCancel =
+                        null;
+                }
+            }
+
+            if (wasRecovering &&
+                cancellationToCancel is not null)
+            {
+                try
+                {
+                    cancellationToCancel.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Worker completed concurrently.
+                }
             }
 
             if (wasRecovering)
             {
                 Log.Debug(
                     AnchorRecoveryLogTag,
-                    "Retained/replacement ground anchor is TRACKING. " +
-                    "Recovery state cleared.");
+                    "Retained/replacement ground anchor naturally returned " +
+                    "to TRACKING. Pending stale-anchor replacement cancelled.");
             }
 
             return false;
         }
 
+        bool anchorStopped =
+            anchorTrackingState.Equals(
+                "Stopped",
+                StringComparison.OrdinalIgnoreCase);
+
         ScheduleStaleAnchorRecovery(
             anchor,
-            anchorTrackingState);
+            anchorTrackingState,
+            anchorStopped
+                ? 0
+                : GroundAnchorRecoveryGraceMilliseconds);
 
         return groundAnchorReacquisitionArmed;
     }
 
     private void ScheduleStaleAnchorRecovery(
         Google.AR.Core.Anchor expectedAnchor,
-        string observedTrackingState)
+        string observedTrackingState,
+        long graceMilliseconds)
     {
         lock (groundAnchorRecoveryLock)
         {
@@ -174,35 +235,66 @@ public sealed partial class ArCoreService
             long generation =
                 groundAnchorRecoveryGeneration;
 
-            Log.Warn(
-                AnchorRecoveryLogTag,
-                "ARCore camera is TRACKING but retained ground anchor is " +
-                $"{observedTrackingState}. Allowing " +
-                $"{GroundAnchorRecoveryGraceMilliseconds} ms for natural " +
-                "anchor relocalization.");
+            if (graceMilliseconds <= 0)
+            {
+                Log.Warn(
+                    AnchorRecoveryLogTag,
+                    "ARCore camera is TRACKING but retained ground anchor is " +
+                    $"{observedTrackingState}. STOPPED anchors cannot resume; " +
+                    "queueing immediate safe replacement.");
+            }
+            else
+            {
+                Log.Warn(
+                    AnchorRecoveryLogTag,
+                    "ARCore camera is TRACKING but retained ground anchor is " +
+                    $"{observedTrackingState}. Allowing " +
+                    $"{graceMilliseconds} ms for natural anchor relocalization " +
+                    "while the renderer keeps the last valid AR placement visible.");
+            }
+
+            CancellationTokenSource cancellation =
+                new();
+
+            groundAnchorRecoveryCancellation =
+                cancellation;
 
             groundAnchorRecoveryTask =
                 RunStaleAnchorRecoveryAsync(
                     expectedAnchor,
-                    generation);
+                    generation,
+                    graceMilliseconds,
+                    cancellation);
         }
     }
 
     private async Task RunStaleAnchorRecoveryAsync(
         Google.AR.Core.Anchor expectedAnchor,
-        long generation)
+        long generation,
+        long graceMilliseconds,
+        CancellationTokenSource cancellation)
     {
+        CancellationToken cancellationToken =
+            cancellation.Token;
+
         try
         {
-            await Task.Delay(
-                (int)GroundAnchorRecoveryGraceMilliseconds);
+            if (graceMilliseconds > 0)
+            {
+                await Task.Delay(
+                    (int)graceMilliseconds,
+                    cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             /*
              * Queue behind the current ARCore frame instead of repeatedly
              * timing out from the UI diagnostic thread. SemaphoreSlim will
              * hand the gate to this waiting operation between frame updates.
              */
-            await updateGate.WaitAsync();
+            await updateGate.WaitAsync(
+                cancellationToken);
 
             try
             {
@@ -275,10 +367,10 @@ public sealed partial class ArCoreService
 
                 Log.Warn(
                     AnchorRecoveryLogTag,
-                    "Retained ground anchor is still stale after camera " +
-                    "tracking recovery: " +
-                    $"state={currentState}. Releasing it so the existing " +
-                    "floor hit-test can reacquire.");
+                    "Retained ground anchor is still stale after the continuity " +
+                    "grace period: " +
+                    $"state={currentState}. Releasing it so the hybrid floor " +
+                    "search can reacquire without resetting navigation state.");
 
                 /*
                  * updateGate is held, so ReleaseSpatialGroundAnchor() cannot
@@ -332,6 +424,13 @@ public sealed partial class ArCoreService
                 updateGate.Release();
             }
         }
+        catch (OperationCanceledException)
+        {
+            Log.Debug(
+                AnchorRecoveryLogTag,
+                "Queued stale-anchor replacement cancelled because tracking " +
+                "state changed before replacement was necessary.");
+        }
         catch (Exception exception)
         {
             Log.Error(
@@ -342,9 +441,19 @@ public sealed partial class ArCoreService
         {
             lock (groundAnchorRecoveryLock)
             {
-                groundAnchorRecoveryTask =
-                    null;
+                if (ReferenceEquals(
+                        groundAnchorRecoveryCancellation,
+                        cancellation))
+                {
+                    groundAnchorRecoveryCancellation =
+                        null;
+
+                    groundAnchorRecoveryTask =
+                        null;
+                }
             }
+
+            cancellation.Dispose();
         }
     }
 
@@ -414,9 +523,9 @@ public sealed partial class ArCoreService
             Log.Warn(
                 AnchorRecoveryLogTag,
                 "Replacement anchor has not been acquired after " +
-                $"{searchDuration} ms. Recovery is still active. Point the " +
-                "lower-middle camera view at a well-lit, textured floor so " +
-                "the existing ARCore plane hit-test can succeed.");
+                $"{searchDuration} ms. Recovery is still active. Move slowly " +
+                "and keep a well-lit, textured floor visible while hybrid " +
+                "plane-only acquisition continues.");
         }
     }
 
@@ -441,9 +550,34 @@ public sealed partial class ArCoreService
 
     private void InvalidatePendingRecoveryCountdown()
     {
+        CancellationTokenSource? cancellationToCancel;
+
         lock (groundAnchorRecoveryLock)
         {
             groundAnchorRecoveryGeneration++;
+
+            cancellationToCancel =
+                groundAnchorRecoveryCancellation;
+
+            groundAnchorRecoveryCancellation =
+                null;
+
+            groundAnchorRecoveryTask =
+                null;
+        }
+
+        if (cancellationToCancel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellationToCancel.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Worker completed concurrently.
         }
     }
 }

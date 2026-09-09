@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine"
+    xmlns:camera="clr-namespace:RescuAR.App.Views.Camera"
     Title="Camera"
     BackgroundColor="White"
     Shell.NavBarIsVisible="False"
@@ -116,6 +117,19 @@
 
             <evergine:EvergineView
                 x:Name="evergineView"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill" />
+
+            <!--
+                V7 depth-aware flood compositor.
+                ARCore depth decides which visible real-world pixels are below
+                the selected metric water surface. This prevents the flood
+                tint from covering desks/chairs/monitors that are above water.
+            -->
+            <camera:FloodDepthOcclusionView
+                x:Name="floodDepthOcclusionView"
+                ZIndex="5"
+                InputTransparent="True"
                 HorizontalOptions="Fill"
                 VerticalOptions="Fill" />
 

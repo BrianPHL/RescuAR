@@ -147,6 +147,22 @@ public sealed partial class ArCoreService : IArCoreService
 
     private static bool textureIntrinsicsLogged;
 
+    /*
+     * V7 FLOOD DEPTH OCCLUSION
+     * -------------------------
+     * Smoothed ARCore depth is only copied while a local flood visualization
+     * is active. V7.3 caps depth-image copies at 10 Hz. The camera and ARCore
+     * tracking remain at their normal cadence; only the CPU-side occlusion
+     * handoff is throttled to reduce sustained thermal load.
+     */
+    private long lastDepthOcclusionPublishTimestamp =
+        long.MinValue;
+
+    private const long DepthOcclusionPublishIntervalNanoseconds =
+        100_000_000L;
+
+    private bool depthOcclusionAvailabilityLogged;
+
     private long processedFrameCount;
     private long fpsWindowStartTimestamp =
         Environment.TickCount64;
@@ -158,52 +174,68 @@ public sealed partial class ArCoreService : IArCoreService
         "RescuAR-ARPose";
 
     /*
-     * Ground-plane placement diagnostic.
+     * GROUND ACQUISITION V3
+     * ---------------------
+     * Prefer a real upward-facing ARCore Plane whenever one is available.
+     * On Depth-capable devices, a lower-center DepthPoint acts as a fallback
+     * for low-texture floors (for example glossy or repetitive tiles) where
+     * plane-polygon growth can otherwise take many seconds.
      *
-     * The placement ray uses a point slightly below viewport center so the
-     * user can aim the phone naturally toward the floor. The capsule mesh in
-     * MyScene is approximately 1 meter tall after its 0.5 scene scale, so a
-     * 0.5 meter vertical center offset keeps its bottom near the hit plane.
+     * Depth fallback is intentionally conservative: the candidate must be
+     * below the camera, approximately horizontal, and stable for several
+     * consecutive sweeps before an Anchor is created.
      */
-    /*
-     * Ground-plane acquisition used to raycast only one fixed screen point
-     * (50% X, 65% Y) on every ARCore frame. In real use that ray can miss an
-     * already-detected floor for a long time simply because the floor polygon
-     * is visible elsewhere in the lower camera view.
-     *
-     * Keep plane-only placement for accuracy, but sweep several prioritized
-     * lower-view points. The sweep is throttled so total HitTest pressure stays
-     * close to the old single-ray-per-frame implementation.
-     *
-     * Normalized coordinates are relative to the Evergine AR viewport supplied
-     * to Session.SetDisplayGeometry(), not to the camera HardwareBuffer.
-     */
-    private static readonly (float X, float Y)[] GroundPlaneSearchPattern =
+    private static readonly (float XOffset, float ZOffset)[]
+        GroundPlaneWorldDownSearchPattern =
     {
-        // Original diagnostic ray first for behavioral continuity.
-        (0.50f, 0.65f),
-
-        // Central lower floor region.
-        (0.50f, 0.80f),
-        (0.35f, 0.74f),
-        (0.65f, 0.74f),
-
-        // Wider / lower rays catch floor polygons near screen edges.
-        (0.28f, 0.86f),
-        (0.72f, 0.86f),
-        (0.50f, 0.92f)
+        // One direct world-down probe is enough once a floor Plane exists.
+        (0.00f, 0.00f)
     };
 
-    /*
-     * Seven rays every 250 ms ~= 28 hit tests/second, approximately the same
-     * native call rate as the previous one-ray-at-30-FPS search, but covering
-     * seven substantially different parts of the visible floor.
-     */
+    private static readonly float[] GroundPlaneWorldDownDirection =
+    {
+        0.0f,
+        -1.0f,
+        0.0f
+    };
+
+    private static readonly (float X, float Y)[] GroundPlaneSearchPattern =
+    {
+        // First sample is also the DepthPoint stability sample.
+        (0.50f, 0.80f),
+
+        // Additional lower-view samples are Plane-only fallbacks.
+        (0.34f, 0.76f),
+        (0.66f, 0.76f),
+        (0.50f, 0.90f)
+    };
+
+    private const int GroundDepthCandidateSampleIndex =
+        0;
+
     private const long GroundPlaneSearchIntervalMilliseconds =
-        250;
+        200;
 
     private const long GroundPlaneSearchProgressLogIntervalMilliseconds =
         2000;
+
+    private const int GroundDepthStableSweepsRequired =
+        3;
+
+    private const float GroundDepthMinimumNormalY =
+        0.70f;
+
+    private const float GroundDepthMaximumYDeltaMeters =
+        0.08f;
+
+    private const float GroundDepthMaximumHorizontalDeltaMeters =
+        0.35f;
+
+    private const float GroundDepthMinimumCameraHeightMeters =
+        0.30f;
+
+    private const float GroundDepthMaximumCameraHeightMeters =
+        2.50f;
 
     private long nextGroundPlaneSearchTimestamp =
         long.MinValue;
@@ -218,8 +250,15 @@ public sealed partial class ArCoreService : IArCoreService
 
     private int groundPlaneSearchHitTestCount;
 
-    private const float GroundCapsuleCenterOffsetMeters =
-        0.25f;
+    private bool depthModeEnabled;
+
+    private bool hasGroundDepthCandidate;
+
+    private float groundDepthCandidateX;
+    private float groundDepthCandidateY;
+    private float groundDepthCandidateZ;
+
+    private int groundDepthCandidateStableSweepCount;
 
     /*
      * Match the Camera3D clipping planes serialized in MyScene.wescene.
@@ -234,19 +273,11 @@ public sealed partial class ArCoreService : IArCoreService
     private Google.AR.Core.Anchor? spatialGroundAnchor;
 
     /*
-     * A local ARCore anchor can temporarily become PAUSED when the physical
-     * camera is paused and resumed. Give the existing anchor a short chance
-     * to recover. If it remains non-tracking after that grace period, discard
-     * only the AR presentation anchor and let the next tracked frame create a
-     * fresh one from the current floor plane.
-     *
-     * This does NOT cancel the logical navigation/guidance session.
+     * Ground-anchor recovery is owned exclusively by
+     * ArCoreService.AnchorRecovery.cs. Do not add a second resume-time
+     * deadline here: overlapping recovery policies previously detached
+     * anchors too aggressively after brief tracking interruptions.
      */
-    private const long SpatialAnchorResumeGraceMilliseconds =
-        1500;
-
-    private long spatialAnchorRecoveryDeadlineTimestamp =
-        long.MinValue;
 
     private bool hasLoggedGroundPlaneSearch;
 
@@ -501,7 +532,16 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "STEP 8: Applying ARCore configuration.");
+                "STEP 8: Configuring DepthMode when supported.");
+
+            depthModeEnabled =
+                TryConfigureAutomaticDepth(
+                    session,
+                    config);
+
+            Log.Debug(
+                Tag,
+                "STEP 9: Applying ARCore configuration.");
 
             session.Configure(
                 config);
@@ -512,7 +552,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "STEP 9: Applying initial display geometry.");
+                "STEP 10: Applying initial display geometry.");
 
             TryCaptureInitialDisplayGeometry();
 
@@ -521,7 +561,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "STEP 10: Resuming ARCore Session.");
+                "STEP 11: Resuming ARCore Session.");
 
             session.Resume();
 
@@ -548,9 +588,6 @@ public sealed partial class ArCoreService : IArCoreService
 
             ReleaseSpatialGroundAnchor();
 
-            spatialAnchorRecoveryDeadlineTimestamp =
-                long.MinValue;
-
             hasLoggedGroundPlaneSearch =
                 false;
 
@@ -566,6 +603,17 @@ public sealed partial class ArCoreService : IArCoreService
                 null;
 
             ARCameraPoseBridge.Clear();
+
+            // A new ARCore Session creates a new arbitrary world frame. Never
+            // carry a depth image/ground baseline from the previous Session
+            // into the new camera feed.
+            ARDepthOcclusionBridge.Clear();
+
+            lastDepthOcclusionPublishTimestamp =
+                long.MinValue;
+
+            depthOcclusionAvailabilityLogged =
+                false;
 
             Log.Debug(
                 Tag,
@@ -703,8 +751,6 @@ public sealed partial class ArCoreService : IArCoreService
                  * The anchor is intentionally retained across the pause.
                  * A recovery grace period is started only after Session.Resume().
                  */
-                spatialAnchorRecoveryDeadlineTimestamp =
-                    long.MinValue;
             }
             finally
             {
@@ -782,13 +828,12 @@ public sealed partial class ArCoreService : IArCoreService
                     false;
 
                 /*
-                 * Retain the current AR anchor initially. If it does not
-                 * return to TRACKING shortly after camera resume, the frame
-                 * pipeline will rebuild only that AR presentation anchor.
+                 * Retain the current AR anchor across Session.Resume(). The
+                 * queued recovery component gives PAUSED anchors a generous
+                 * relocalization grace period and only replaces a truly stale
+                 * anchor.
                  */
-                spatialAnchorRecoveryDeadlineTimestamp =
-                    Environment.TickCount64 +
-                    SpatialAnchorResumeGraceMilliseconds;
+                InvalidatePendingRecoveryCountdown();
 
                 hasLoggedGroundPlaneSearch =
                     false;
@@ -1190,6 +1235,11 @@ public sealed partial class ArCoreService : IArCoreService
             LogTextureIntrinsicsOnce(
                 camera);
 
+            TryPublishDepthOcclusionFrame(
+                frame,
+                camera,
+                timestamp);
+
             if (captureCpuDiagnosticRequested)
             {
                 bool captureFinished =
@@ -1524,6 +1574,13 @@ public sealed partial class ArCoreService : IArCoreService
                 "Tracking",
                 StringComparison.OrdinalIgnoreCase))
         {
+            /*
+             * Cancel any stale-anchor release countdown as soon as camera
+             * tracking itself becomes unavailable. A PAUSED camera cannot
+             * provide evidence that the retained anchor is permanently stale.
+             */
+            InvalidatePendingRecoveryCountdown();
+
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
                 timestamp);
@@ -1544,6 +1601,8 @@ public sealed partial class ArCoreService : IArCoreService
                 SpatialPoseTag,
                 "DisplayOrientedPose returned null while ARCore reported TRACKING. " +
                 "Holding the last valid Evergine camera pose.");
+
+            InvalidatePendingRecoveryCountdown();
 
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
@@ -1580,20 +1639,16 @@ public sealed partial class ArCoreService : IArCoreService
             SpatialProjectionFarPlane);
 
         /*
-         * Camera tracking may recover before an existing local anchor does.
-         * Never let a permanently PAUSED/STOPPED retained anchor prevent the
-         * AR path from being created again after returning to Camera.
-         */
-        RecoverSpatialGroundAnchorAfterCameraResumeIfNeeded();
-
-        /*
          * Keep searching until a real upward-facing horizontal floor plane
-         * is hit at the diagnostic location.
+         * is acquired. The fast path uses world-space downward rays around
+         * the tracked camera; the visible-floor screen sweep remains as a
+         * fallback.
          */
         if (spatialGroundAnchor is null)
         {
             TryCreateSpatialGroundAnchor(
-                frame);
+                frame,
+                translation);
         }
 
         bool anchorAvailable =
@@ -1625,107 +1680,25 @@ public sealed partial class ArCoreService : IArCoreService
             anchorZ,
             timestamp);
 
+        /*
+         * Start/clear retained-anchor recovery from the ARCore frame cadence
+         * rather than waiting for CameraPage's one-second diagnostics tick.
+         * The method is non-blocking here; any delayed release queues on the
+         * update gate asynchronously.
+         */
+        if (spatialGroundAnchor is not null)
+        {
+            TryRecoverGroundAnchorIfNeeded();
+        }
+
         LogSpatialPoseTelemetryIfNeeded(
             trackingState,
             trackingFailureReason);
     }
 
-    /// <summary>
-    /// Allows an existing local anchor a short grace period to recover after
-    /// Session.Resume(). If the camera itself is already TRACKING but the
-    /// retained anchor remains non-tracking, remove only that stale AR
-    /// presentation anchor so the current frame can create a fresh floor
-    /// anchor. Navigation/guidance state is deliberately unaffected.
-    /// </summary>
-    private void RecoverSpatialGroundAnchorAfterCameraResumeIfNeeded()
-    {
-        Google.AR.Core.Anchor? anchor =
-            spatialGroundAnchor;
-
-        if (anchor is null)
-        {
-            spatialAnchorRecoveryDeadlineTimestamp =
-                long.MinValue;
-
-            return;
-        }
-
-        string anchorTrackingState;
-
-        try
-        {
-            anchorTrackingState =
-                anchor.TrackingState.ToString();
-        }
-        catch (Exception exception)
-        {
-            Log.Warn(
-                SpatialPoseTag,
-                "Unable to read retained ARCore anchor tracking state. " +
-                $"Rebuilding AR presentation anchor. {exception.GetType().Name}: " +
-                $"{exception.Message}");
-
-            ReleaseSpatialGroundAnchor();
-
-            spatialAnchorRecoveryDeadlineTimestamp =
-                long.MinValue;
-
-            hasLoggedGroundPlaneSearch =
-                false;
-
-            return;
-        }
-
-        if (anchorTrackingState.Equals(
-                "Tracking",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            spatialAnchorRecoveryDeadlineTimestamp =
-                long.MinValue;
-
-            return;
-        }
-
-        bool anchorStopped =
-            anchorTrackingState.Equals(
-                "Stopped",
-                StringComparison.OrdinalIgnoreCase);
-
-        long recoveryDeadline =
-            spatialAnchorRecoveryDeadlineTimestamp;
-
-        bool gracePeriodExpired =
-            recoveryDeadline !=
-                long.MinValue &&
-            Environment.TickCount64 >=
-                recoveryDeadline;
-
-        if (!anchorStopped &&
-            !gracePeriodExpired)
-        {
-            return;
-        }
-
-        Log.Warn(
-            SpatialPoseTag,
-            "Retained ARCore ground anchor did not recover after camera " +
-            $"resume. TrackingState={anchorTrackingState}. " +
-            "Rebuilding only the AR presentation anchor; navigation " +
-            "guidance remains active.");
-
-        ReleaseSpatialGroundAnchor();
-
-        spatialAnchorRecoveryDeadlineTimestamp =
-            long.MinValue;
-
-        hasLoggedGroundPlaneSearch =
-            false;
-
-        ResetGroundPlaneSearchState();
-    }
-
     private void TryCreateSpatialGroundAnchor(
-        Frame frame)
+        Frame frame,
+        float[] cameraTranslation)
     {
         long now =
             Environment.TickCount64;
@@ -1762,7 +1735,9 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         if (viewportWidth <= 0 ||
-            viewportHeight <= 0)
+            viewportHeight <= 0 ||
+            cameraTranslation is null ||
+            cameraTranslation.Length < 3)
         {
             return;
         }
@@ -1776,14 +1751,70 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Searching for ARCore floor plane with an adaptive " +
-                $"{GroundPlaneSearchPattern.Length}-point lower-view sweep. " +
+                "Searching for ARCore ground with V3 acquisition: " +
+                $"depthEnabled={depthModeEnabled}, " +
+                $"{GroundPlaneWorldDownSearchPattern.Length} world-down Plane ray + " +
+                $"{GroundPlaneSearchPattern.Length} lower-view screen rays, " +
                 $"viewport={viewportWidth}x{viewportHeight}, " +
                 $"sweepInterval={GroundPlaneSearchIntervalMilliseconds}ms. " +
-                "Only real upward-facing horizontal Plane hits inside the " +
-                "detected polygon are accepted.");
+                "Preference=upward Plane; fallback=stable upward DepthPoint.");
         }
 
+        /*
+         * Plane fast path. Once ARCore has a horizontal floor model, a single
+         * gravity-aligned probe below the camera can acquire it immediately.
+         */
+        float[] worldRayOrigin =
+            new float[3];
+
+        for (int sampleIndex = 0;
+             sampleIndex <
+                GroundPlaneWorldDownSearchPattern.Length;
+             sampleIndex++)
+        {
+            (float xOffset,
+             float zOffset) =
+                GroundPlaneWorldDownSearchPattern[
+                    sampleIndex];
+
+            worldRayOrigin[0] =
+                cameraTranslation[0] +
+                xOffset;
+
+            worldRayOrigin[1] =
+                cameraTranslation[1];
+
+            worldRayOrigin[2] =
+                cameraTranslation[2] +
+                zOffset;
+
+            var hitResults =
+                frame.HitTest(
+                    worldRayOrigin,
+                    0,
+                    GroundPlaneWorldDownDirection,
+                    0);
+
+            groundPlaneSearchHitTestCount++;
+
+            if (TryCreatePlaneGroundAnchorFromHits(
+                    hitResults,
+                    now,
+                    "PLANE_WORLD_DOWN",
+                    sampleIndex,
+                    GroundPlaneWorldDownSearchPattern.Length,
+                    $"origin=({worldRayOrigin[0]:F2},{worldRayOrigin[1]:F2},{worldRayOrigin[2]:F2}), " +
+                    "direction=(0.00,-1.00,0.00)"))
+            {
+                return;
+            }
+        }
+
+        /*
+         * Lower-view samples. Every sample may acquire a real Plane. Only the
+         * first/central-lower sample is used for Depth stability so successive
+         * depth candidates describe approximately the same physical patch.
+         */
         for (int sampleIndex = 0;
              sampleIndex <
                 GroundPlaneSearchPattern.Length;
@@ -1809,100 +1840,32 @@ public sealed partial class ArCoreService : IArCoreService
 
             groundPlaneSearchHitTestCount++;
 
-            foreach (Google.AR.Core.HitResult hit in hitResults)
+            string sampleDescription =
+                $"normalized=({normalizedX:F2},{normalizedY:F2}), " +
+                $"screen=({hitX:F1},{hitY:F1})";
+
+            if (TryCreatePlaneGroundAnchorFromHits(
+                    hitResults,
+                    now,
+                    "PLANE_SCREEN",
+                    sampleIndex,
+                    GroundPlaneSearchPattern.Length,
+                    sampleDescription))
             {
-                if (hit.Trackable is not ArCorePlane plane)
-                {
-                    continue;
-                }
+                return;
+            }
 
-                using Google.AR.Core.Pose? hitPose =
-                    hit.HitPose;
-
-                if (hitPose is null ||
-                    !plane.IsPoseInPolygon(
-                        hitPose))
-                {
-                    continue;
-                }
-
-                using Google.AR.Core.Pose? planeCenterPose =
-                    plane.CenterPose;
-
-                if (planeCenterPose is null)
-                {
-                    continue;
-                }
-
-                float[]? planeNormal =
-                    planeCenterPose.GetTransformedAxis(
-                        1,
-                        1.0f);
-
-                /*
-                 * Horizontal plane finding can expose both upward- and
-                 * downward-facing planes. Keep the existing conservative
-                 * floor requirement: local +Y must point mostly upward.
-                 */
-                if (planeNormal is null ||
-                    planeNormal.Length < 3 ||
-                    planeNormal[1] < 0.75f)
-                {
-                    continue;
-                }
-
-                float[] hitTranslation =
-                    new float[3];
-
-                hitPose.GetTranslation(
-                    hitTranslation,
-                    0);
-
-                Google.AR.Core.Anchor? newAnchor =
-                    hit.CreateAnchor();
-
-                if (newAnchor is null)
-                {
-                    continue;
-                }
-
-                spatialGroundAnchor =
-                    newAnchor;
-
-                long elapsedMilliseconds =
-                    Math.Max(
-                        0,
-                        now -
-                        groundPlaneSearchStartedTimestamp);
-
-                Log.Debug(
-                    SpatialPoseTag,
-                    "ARCore GROUND anchor created from detected floor plane " +
-                    "using adaptive multi-point acquisition.");
-
-                Log.Debug(
-                    SpatialPoseTag,
-                    "Ground plane acquisition = " +
-                    $"sample={sampleIndex + 1}/" +
-                    $"{GroundPlaneSearchPattern.Length}, " +
-                    $"normalized=({normalizedX:F2},{normalizedY:F2}), " +
-                    $"screen=({hitX:F1},{hitY:F1}), " +
-                    $"sweeps={groundPlaneSearchSweepCount}, " +
-                    $"hitTests={groundPlaneSearchHitTestCount}, " +
-                    $"elapsed={elapsedMilliseconds}ms.");
-
-                Log.Debug(
-                    SpatialPoseTag,
-                    "Ground hit pose (m) = " +
-                    $"X={hitTranslation[0]:F4}, " +
-                    $"Y={hitTranslation[1]:F4}, " +
-                    $"Z={hitTranslation[2]:F4}");
-
-                Log.Debug(
-                    SpatialPoseTag,
-                    "Capsule center vertical offset = " +
-                    $"{GroundCapsuleCenterOffsetMeters:F2} m.");
-
+            if (depthModeEnabled &&
+                sampleIndex ==
+                    GroundDepthCandidateSampleIndex &&
+                TryCreateDepthGroundAnchorFromHits(
+                    hitResults,
+                    now,
+                    cameraTranslation[1],
+                    sampleIndex,
+                    GroundPlaneSearchPattern.Length,
+                    sampleDescription))
+            {
                 return;
             }
         }
@@ -1911,7 +1874,7 @@ public sealed partial class ArCoreService : IArCoreService
                 long.MinValue ||
             now -
                 lastGroundPlaneSearchProgressLogTimestamp >=
-            GroundPlaneSearchProgressLogIntervalMilliseconds)
+                GroundPlaneSearchProgressLogIntervalMilliseconds)
         {
             lastGroundPlaneSearchProgressLogTimestamp =
                 now;
@@ -1924,15 +1887,319 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Ground-plane sweep still searching: " +
+                "Ground acquisition still active: " +
+                $"depthEnabled={depthModeEnabled}, " +
+                $"depthStable={groundDepthCandidateStableSweepCount}/" +
+                $"{GroundDepthStableSweepsRequired}, " +
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms. " +
-                "ARCore camera is TRACKING, but no upward-facing Plane hit " +
-                "inside a detected polygon has been found yet. Move the " +
-                "device slowly and keep textured floor visible in the lower " +
-                "half of the camera view.");
+                (depthModeEnabled
+                    ? "Aim the lower-center camera region at the floor and move slowly."
+                    : "Depth unavailable; keep textured floor visible while ARCore expands its Plane polygon."));
         }
+    }
+
+    private bool TryCreatePlaneGroundAnchorFromHits(
+        IEnumerable<Google.AR.Core.HitResult> hitResults,
+        long acquisitionTimestamp,
+        string method,
+        int sampleIndex,
+        int sampleCount,
+        string sampleDescription)
+    {
+        foreach (Google.AR.Core.HitResult hit in hitResults)
+        {
+            if (hit.Trackable is not ArCorePlane plane)
+            {
+                continue;
+            }
+
+            using Google.AR.Core.Pose? hitPose =
+                hit.HitPose;
+
+            if (hitPose is null ||
+                !plane.IsPoseInPolygon(
+                    hitPose))
+            {
+                continue;
+            }
+
+            using Google.AR.Core.Pose? planeCenterPose =
+                plane.CenterPose;
+
+            if (planeCenterPose is null)
+            {
+                continue;
+            }
+
+            float[]? planeNormal =
+                planeCenterPose.GetTransformedAxis(
+                    1,
+                    1.0f);
+
+            if (planeNormal is null ||
+                planeNormal.Length < 3 ||
+                planeNormal[1] < 0.75f)
+            {
+                continue;
+            }
+
+            float[] hitTranslation =
+                new float[3];
+
+            hitPose.GetTranslation(
+                hitTranslation,
+                0);
+
+            if (!TryAssignGroundAnchorFromHit(
+                    hit,
+                    "Plane"))
+            {
+                continue;
+            }
+
+            long elapsedMilliseconds =
+                Math.Max(
+                    0,
+                    acquisitionTimestamp -
+                    groundPlaneSearchStartedTimestamp);
+
+            Log.Debug(
+                SpatialPoseTag,
+                "ARCore GROUND anchor created from detected floor Plane.");
+
+            Log.Debug(
+                SpatialPoseTag,
+                "Ground acquisition = " +
+                $"method={method}, " +
+                $"depthEnabled={depthModeEnabled}, " +
+                $"sample={sampleIndex + 1}/{sampleCount}, " +
+                $"{sampleDescription}, " +
+                $"sweeps={groundPlaneSearchSweepCount}, " +
+                $"hitTests={groundPlaneSearchHitTestCount}, " +
+                $"elapsed={elapsedMilliseconds}ms, " +
+                $"hit=({hitTranslation[0]:F2},{hitTranslation[1]:F2},{hitTranslation[2]:F2}), " +
+                $"normalY={planeNormal[1]:F2}.");
+
+            ResetGroundPlaneSearchState();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryCreateDepthGroundAnchorFromHits(
+        IEnumerable<Google.AR.Core.HitResult> hitResults,
+        long acquisitionTimestamp,
+        float cameraY,
+        int sampleIndex,
+        int sampleCount,
+        string sampleDescription)
+    {
+        foreach (Google.AR.Core.HitResult hit in hitResults)
+        {
+            if (hit.Trackable is not Google.AR.Core.DepthPoint)
+            {
+                continue;
+            }
+
+            using Google.AR.Core.Pose? hitPose =
+                hit.HitPose;
+
+            if (hitPose is null)
+            {
+                continue;
+            }
+
+            float[]? surfaceNormal =
+                hitPose.GetTransformedAxis(
+                    1,
+                    1.0f);
+
+            if (surfaceNormal is null ||
+                surfaceNormal.Length < 3 ||
+                surfaceNormal[1] <
+                    GroundDepthMinimumNormalY)
+            {
+                continue;
+            }
+
+            float[] hitTranslation =
+                new float[3];
+
+            hitPose.GetTranslation(
+                hitTranslation,
+                0);
+
+            float cameraHeight =
+                cameraY -
+                hitTranslation[1];
+
+            if (cameraHeight <
+                    GroundDepthMinimumCameraHeightMeters ||
+                cameraHeight >
+                    GroundDepthMaximumCameraHeightMeters)
+            {
+                continue;
+            }
+
+            bool stableWithPrevious =
+                false;
+
+            if (hasGroundDepthCandidate)
+            {
+                float deltaY =
+                    MathF.Abs(
+                        hitTranslation[1] -
+                        groundDepthCandidateY);
+
+                float deltaX =
+                    hitTranslation[0] -
+                    groundDepthCandidateX;
+
+                float deltaZ =
+                    hitTranslation[2] -
+                    groundDepthCandidateZ;
+
+                float horizontalDelta =
+                    MathF.Sqrt(
+                        deltaX * deltaX +
+                        deltaZ * deltaZ);
+
+                stableWithPrevious =
+                    deltaY <=
+                        GroundDepthMaximumYDeltaMeters &&
+                    horizontalDelta <=
+                        GroundDepthMaximumHorizontalDeltaMeters;
+            }
+
+            if (!hasGroundDepthCandidate ||
+                !stableWithPrevious)
+            {
+                hasGroundDepthCandidate =
+                    true;
+
+                groundDepthCandidateStableSweepCount =
+                    1;
+            }
+            else
+            {
+                groundDepthCandidateStableSweepCount++;
+            }
+
+            groundDepthCandidateX =
+                hitTranslation[0];
+
+            groundDepthCandidateY =
+                hitTranslation[1];
+
+            groundDepthCandidateZ =
+                hitTranslation[2];
+
+            if (groundDepthCandidateStableSweepCount <
+                GroundDepthStableSweepsRequired)
+            {
+                return false;
+            }
+
+            if (!TryAssignGroundAnchorFromHit(
+                    hit,
+                    "DepthPoint"))
+            {
+                ResetGroundDepthCandidate();
+                return false;
+            }
+
+            long elapsedMilliseconds =
+                Math.Max(
+                    0,
+                    acquisitionTimestamp -
+                    groundPlaneSearchStartedTimestamp);
+
+            Log.Debug(
+                SpatialPoseTag,
+                "ARCore GROUND anchor created from stable DepthPoint fallback.");
+
+            Log.Debug(
+                SpatialPoseTag,
+                "Ground acquisition = " +
+                "method=DEPTH_STABLE, " +
+                $"depthEnabled={depthModeEnabled}, " +
+                $"sample={sampleIndex + 1}/{sampleCount}, " +
+                $"{sampleDescription}, " +
+                $"stableSweeps={groundDepthCandidateStableSweepCount}/" +
+                $"{GroundDepthStableSweepsRequired}, " +
+                $"sweeps={groundPlaneSearchSweepCount}, " +
+                $"hitTests={groundPlaneSearchHitTestCount}, " +
+                $"elapsed={elapsedMilliseconds}ms, " +
+                $"hit=({hitTranslation[0]:F2},{hitTranslation[1]:F2},{hitTranslation[2]:F2}), " +
+                $"normalY={surfaceNormal[1]:F2}, " +
+                $"cameraToGroundVertical={cameraHeight:F2}m.");
+
+            ResetGroundPlaneSearchState();
+
+            return true;
+        }
+
+        /*
+         * The designated lower-center sample yielded no acceptable DepthPoint
+         * this sweep. Requiring consecutive valid sweeps prevents one noisy
+         * depth estimate from establishing the flood baseline.
+         */
+        ResetGroundDepthCandidate();
+        return false;
+    }
+
+    private bool TryAssignGroundAnchorFromHit(
+        Google.AR.Core.HitResult hit,
+        string source)
+    {
+        Google.AR.Core.Anchor? newAnchor;
+
+        try
+        {
+            newAnchor =
+                hit.CreateAnchor();
+        }
+        catch (Exception exception)
+        {
+            Log.Debug(
+                SpatialPoseTag,
+                $"Ground {source} hit could not create an anchor: " +
+                $"{exception.GetType().Name}: {exception.Message}");
+
+            return false;
+        }
+
+        if (newAnchor is null)
+        {
+            return false;
+        }
+
+        spatialGroundAnchor =
+            newAnchor;
+
+        return true;
+    }
+
+    private void ResetGroundDepthCandidate()
+    {
+        hasGroundDepthCandidate =
+            false;
+
+        groundDepthCandidateX =
+            0.0f;
+
+        groundDepthCandidateY =
+            0.0f;
+
+        groundDepthCandidateZ =
+            0.0f;
+
+        groundDepthCandidateStableSweepCount =
+            0;
     }
 
     private void ResetGroundPlaneSearchState()
@@ -1951,6 +2218,8 @@ public sealed partial class ArCoreService : IArCoreService
 
         groundPlaneSearchHitTestCount =
             0;
+
+        ResetGroundDepthCandidate();
     }
 
     private bool TryGetSpatialGroundAnchorPose(
@@ -1997,9 +2266,10 @@ public sealed partial class ArCoreService : IArCoreService
         anchorX =
             anchorTranslation[0];
 
+        // Publish the actual ARCore ground-anchor Y. Visual/debug offsets
+        // belong to the Evergine renderer, not to spatial truth.
         anchorY =
-            anchorTranslation[1] +
-            GroundCapsuleCenterOffsetMeters;
+            anchorTranslation[1];
 
         anchorZ =
             anchorTranslation[2];
@@ -2013,9 +2283,6 @@ public sealed partial class ArCoreService : IArCoreService
             Interlocked.Exchange(
                 ref spatialGroundAnchor,
                 null);
-
-        spatialAnchorRecoveryDeadlineTimestamp =
-            long.MinValue;
 
         ResetGroundPlaneSearchState();
 
@@ -2253,6 +2520,256 @@ public sealed partial class ArCoreService : IArCoreService
         Log.Debug(
             SpatialPoseTag,
             "====================================================");
+    }
+
+    /// <summary>
+    /// Copies ARCore's smoothed 16-bit depth map together with every value
+    /// needed to reconstruct depth pixels in the ARCore world frame.
+    ///
+    /// The depth map is intentionally acquired from the CURRENT Frame and is
+    /// immediately closed after copying. Google documents the image as one
+    /// little-endian 16-bit plane whose values are millimeters along the
+    /// camera principal axis.
+    /// </summary>
+    private void TryPublishDepthOcclusionFrame(
+        Frame frame,
+        ArCoreCamera camera,
+        long timestamp)
+    {
+        ARFloodDepthBridge.FloodDepthSnapshot flood =
+            ARFloodDepthBridge.Current;
+
+        if (!flood.IsAvailable)
+        {
+            if (ARDepthOcclusionBridge.Current.IsAvailable)
+            {
+                ARDepthOcclusionBridge.Clear();
+            }
+
+            lastDepthOcclusionPublishTimestamp =
+                long.MinValue;
+
+            return;
+        }
+
+        if (!camera.TrackingState.ToString().Equals(
+                "Tracking",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (lastDepthOcclusionPublishTimestamp != long.MinValue &&
+            timestamp > lastDepthOcclusionPublishTimestamp &&
+            timestamp - lastDepthOcclusionPublishTimestamp <
+                DepthOcclusionPublishIntervalNanoseconds)
+        {
+            return;
+        }
+
+        try
+        {
+            using global::Android.Media.Image depthImage =
+                frame.AcquireDepthImage16Bits();
+
+            int width =
+                depthImage.Width;
+
+            int height =
+                depthImage.Height;
+
+            if (width <= 0 ||
+                height <= 0)
+            {
+                return;
+            }
+
+            global::Android.Media.Image.Plane[]? planes =
+                depthImage.GetPlanes();
+
+            if (planes is null ||
+                planes.Length < 1)
+            {
+                return;
+            }
+
+            global::Android.Media.Image.Plane plane =
+                planes[0];
+
+            Java.Nio.ByteBuffer? buffer =
+                plane.Buffer;
+
+            if (buffer is null)
+            {
+                return;
+            }
+
+            int rowStride =
+                plane.RowStride;
+
+            int pixelStride =
+                plane.PixelStride;
+
+            if (rowStride <= 0 ||
+                pixelStride <= 0)
+            {
+                return;
+            }
+
+            ushort[] depthMillimeters =
+                new ushort[width * height];
+
+            for (int y = 0;
+                 y < height;
+                 y++)
+            {
+                int rowOffset =
+                    y * rowStride;
+
+                int destinationRow =
+                    y * width;
+
+                for (int x = 0;
+                     x < width;
+                     x++)
+                {
+                    int byteIndex =
+                        rowOffset +
+                        x * pixelStride;
+
+                    // D_16 is explicitly little-endian. Read the bytes
+                    // directly so this does not depend on ByteBuffer order.
+                    byte low =
+                        unchecked((byte)buffer.Get(byteIndex));
+
+                    byte high =
+                        unchecked((byte)buffer.Get(byteIndex + 1));
+
+                    depthMillimeters[
+                        destinationRow + x] =
+                        (ushort)(low | (high << 8));
+                }
+            }
+
+            using CameraIntrinsics? intrinsics =
+                camera.TextureIntrinsics;
+
+            if (intrinsics is null)
+            {
+                return;
+            }
+
+            float[]? focalLength =
+                intrinsics.GetFocalLength();
+
+            float[]? principalPoint =
+                intrinsics.GetPrincipalPoint();
+
+            int[]? dimensions =
+                intrinsics.GetImageDimensions();
+
+            if (focalLength is null ||
+                focalLength.Length < 2 ||
+                principalPoint is null ||
+                principalPoint.Length < 2 ||
+                dimensions is null ||
+                dimensions.Length < 2)
+            {
+                return;
+            }
+
+            using Google.AR.Core.Pose? physicalPose =
+                camera.Pose;
+
+            if (physicalPose is null)
+            {
+                return;
+            }
+
+            float[] translation =
+                new float[3];
+
+            float[] rotation =
+                new float[4];
+
+            physicalPose.GetTranslation(
+                translation,
+                0);
+
+            physicalPose.GetRotationQuaternion(
+                rotation,
+                0);
+
+            float[] viewToTextureUv =
+                TransformCameraUv(
+                    frame);
+
+            ARCameraPoseBridge.SpatialSnapshot spatial =
+                ARCameraPoseBridge.CurrentFrame;
+
+            bool groundAvailable =
+                spatial.FrameTimestamp == timestamp &&
+                spatial.Anchor.IsAvailable;
+
+            float groundWorldY =
+                groundAvailable
+                    ? spatial.Anchor.PositionY
+                    : 0.0f;
+
+            ARDepthOcclusionBridge.Publish(
+                timestamp,
+                width,
+                height,
+                depthMillimeters,
+                viewToTextureUv,
+                translation[0],
+                translation[1],
+                translation[2],
+                rotation[0],
+                rotation[1],
+                rotation[2],
+                rotation[3],
+                focalLength[0],
+                focalLength[1],
+                principalPoint[0],
+                principalPoint[1],
+                dimensions[0],
+                dimensions[1],
+                groundAvailable,
+                groundWorldY);
+
+            lastDepthOcclusionPublishTimestamp =
+                timestamp;
+
+            if (!depthOcclusionAvailabilityLogged)
+            {
+                depthOcclusionAvailabilityLogged =
+                    true;
+
+                Log.Info(
+                    "RescuAR-FloodDepth",
+                    "ARCore depth occlusion ACTIVE: " +
+                    $"depthImage={width}x{height}, " +
+                    $"textureIntrinsics={dimensions[0]}x{dimensions[1]}, " +
+                    $"pixelStride={pixelStride}, rowStride={rowStride}.");
+            }
+        }
+        catch (Exception exception)
+        {
+            /*
+             * NotYetAvailableException is expected while depth is warming up,
+             * and other ARCore depth exceptions can occur transiently during
+             * tracking loss. Keep the last good depth frame instead of
+             * tearing the user-facing flood visualization down.
+             */
+            if (!depthOcclusionAvailabilityLogged)
+            {
+                Log.Debug(
+                    "RescuAR-FloodDepth",
+                    "ARCore depth occlusion waiting for a usable depth frame: " +
+                    $"{exception.GetType().Name}: {exception.Message}");
+            }
+        }
     }
 
     /// <summary>
@@ -2614,6 +3131,61 @@ public sealed partial class ArCoreService : IArCoreService
 
         fpsWindowStartTimestamp =
             now;
+    }
+
+    private bool TryConfigureAutomaticDepth(
+        Session currentSession,
+        Google.AR.Core.Config config)
+    {
+        try
+        {
+            Google.AR.Core.Config.DepthMode automaticDepthMode =
+                Google.AR.Core.Config.DepthMode.Automatic;
+
+            bool isSupported =
+                currentSession.IsDepthModeSupported(
+                    automaticDepthMode);
+
+            config.SetDepthMode(
+                isSupported
+                    ? automaticDepthMode
+                    : Google.AR.Core.Config.DepthMode.Disabled);
+
+            Log.Debug(
+                Tag,
+                "ARCore Depth API configuration: " +
+                $"supported={isSupported}, " +
+                $"requested={(isSupported ? "AUTOMATIC" : "DISABLED")}. " +
+                "Ground acquisition uses Plane first and stable DepthPoint fallback when enabled.");
+
+            return isSupported;
+        }
+        catch (Exception exception)
+        {
+            /*
+             * Depth is an optimization, not a hard dependency. Keep the
+             * validated Plane path available on devices/configurations where
+             * ARCore refuses depth or a vendor implementation behaves
+             * unexpectedly.
+             */
+            try
+            {
+                config.SetDepthMode(
+                    Google.AR.Core.Config.DepthMode.Disabled);
+            }
+            catch
+            {
+                // Best effort: the default ARCore depth mode is disabled.
+            }
+
+            Log.Warn(
+                Tag,
+                "ARCore Depth API could not be enabled; continuing with " +
+                "Plane-only ground acquisition. " +
+                $"{exception.GetType().Name}: {exception.Message}");
+
+            return false;
+        }
     }
 
     private static void InspectSupportedCameraConfigurations(

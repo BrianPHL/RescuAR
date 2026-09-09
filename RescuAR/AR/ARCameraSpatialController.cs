@@ -17,6 +17,9 @@ public static class ARCameraSpatialController
 {
     private const string RouteLogTag =
         "RescuAR-ARRoute";
+
+    private const string ContinuityLogTag =
+        "RescuAR-ARContinuity";
     private static readonly object sync =
         new();
 
@@ -45,22 +48,23 @@ public static class ARCameraSpatialController
     private static Transform3D? floodDepthTransform;
 
     /*
-     * ArCoreService publishes AnchorSnapshot.PositionY as the diagnostic
-     * capsule center, 0.25 m above the actual detected floor plane. Route and
-     * flood rendering therefore convert that published Y back to ground Y.
+     * AnchorSnapshot.PositionY is now the actual ARCore ground-anchor height.
+     * Any visual offset belongs in this renderer so navigation/flood geometry
+     * remains metric and the bridge never publishes a display-specific Y.
      */
-    private const float PublishedAnchorCenterOffsetFromGroundMeters =
-        0.25f;
+    private const float RouteYOffsetAboveGroundMeters =
+        0.015f;
 
     /*
-     * ArCoreService publishes the diagnostic capsule CENTER at
-     * groundAnchorY + 0.25 m. The ribbon center should sit 0.015 m above the
-     * floor, therefore:
-     *
-     *   -0.25 + 0.015 = -0.235 m
+     * The legacy capsule is retained only as a development ground marker and
+     * flattened into a small disc-like shape. Its center sits slightly above
+     * the floor so the marker does not z-fight with the camera image.
      */
-    private const float RouteYOffsetFromPublishedAnchor =
-        -0.235f;
+    private const float GroundMarkerCenterOffsetMeters =
+        0.015f;
+
+    private static readonly Vector3 GroundMarkerScale =
+        new(0.18f, 0.02f, 0.18f);
 
     /*
      * V5 ROUTE ROOT LOCK
@@ -87,6 +91,27 @@ public static class ARCameraSpatialController
     private const float AnchorDriftLogStepMeters =
         0.25f;
 
+    /*
+     * VISUAL CONTINUITY HOLD
+     * ----------------------
+     * ARCore PAUSED poses are not valid for spatial updates. Instead of
+     * immediately removing user-facing AR content, remember whether each
+     * feature has previously received a valid tracked placement. During a
+     * temporary tracking/anchor interruption the Evergine camera already
+     * holds its last valid transform; route/flood roots now do the same.
+     *
+     * No stale pose is ever used to update geometry. We simply keep the last
+     * valid world transform visible until ARCore recovers, the content is
+     * explicitly cleared, the route view gate is disabled, or a new Session
+     * resets continuity state.
+     */
+    private static bool hasValidRouteSpatialPlacement;
+    private static bool hasValidFloodDepthSpatialPlacement;
+
+    private static bool visualContinuityHoldActive;
+    private static long visualContinuityHoldStartedTimestamp =
+        long.MinValue;
+
     private static long appliedVersion =
         -1;
 
@@ -99,6 +124,12 @@ public static class ARCameraSpatialController
 
     private static bool? lastLoggedFloodGeometry;
     private static bool? lastLoggedFloodVisible;
+
+    private const int FloodMetricTelemetryIntervalMilliseconds =
+        1000;
+
+    private static long lastFloodMetricTelemetryTimestamp =
+        long.MinValue;
 
     public static void Initialize(
         Entity cameraEntity,
@@ -171,6 +202,10 @@ public static class ARCameraSpatialController
 
         resolvedCameraComponent.FrustumCullingEnabled =
             false;
+
+        // Convert the old tall capsule into a compact floor diagnostic marker.
+        resolvedTargetTransform.LocalScale =
+            GroundMarkerScale;
 
         capsuleEntity.IsEnabled =
             false;
@@ -246,6 +281,21 @@ public static class ARCameraSpatialController
             lastLoggedFloodVisible =
                 null;
 
+            lastFloodMetricTelemetryTimestamp =
+                long.MinValue;
+
+            hasValidRouteSpatialPlacement =
+                false;
+
+            hasValidFloodDepthSpatialPlacement =
+                false;
+
+            visualContinuityHoldActive =
+                false;
+
+            visualContinuityHoldStartedTimestamp =
+                long.MinValue;
+
             initialized =
                 true;
         }
@@ -294,6 +344,26 @@ public static class ARCameraSpatialController
 
             lastLoggedAnchorDriftBucket =
                 -1;
+
+            /*
+             * ResetRouteRootLock is invoked when a genuinely new ARCore
+             * Session/world frame is created. Never carry last-world visual
+             * placements across that boundary.
+             */
+            hasValidRouteSpatialPlacement =
+                false;
+
+            hasValidFloodDepthSpatialPlacement =
+                false;
+
+            visualContinuityHoldActive =
+                false;
+
+            visualContinuityHoldStartedTimestamp =
+                long.MinValue;
+
+            lastFloodMetricTelemetryTimestamp =
+                long.MinValue;
         }
 
         AndroidLog.Debug(
@@ -395,34 +465,103 @@ public static class ARCameraSpatialController
             frame.Anchor;
 
         /*
+         * GROUND MARKER / FLOOD BASELINE
+         * ------------------------------
+         * Apply the compact ground marker before flood placement. The flood
+         * root then derives its baseline directly from that SAME marker
+         * transform rather than independently reconstructing the ground pose.
+         *
+         * This makes the visual contract explicit:
+         *
+         *   marker center = floor + 0.015 m
+         *   flood local Y=0 = marker center - 0.015 m = floor
+         *
+         * Therefore a selected 0.10 m flood surface is exactly 10 cm above the
+         * same floor represented by the marker.
+         */
+        if (trackingValid &&
+            anchor.IsAvailable)
+        {
+            capsuleTransform.Position =
+                new Vector3(
+                    anchor.PositionX,
+                    anchor.PositionY +
+                        GroundMarkerCenterOffsetMeters,
+                    anchor.PositionZ);
+
+            if (!capsule.IsEnabled)
+            {
+                capsule.IsEnabled =
+                    true;
+            }
+        }
+        else if (!anchor.IsAvailable &&
+                 capsule.IsEnabled)
+        {
+            capsule.IsEnabled =
+                false;
+        }
+
+        /*
          * FLOOD DEPTH AR SPACE
          * --------------------
-         * Flood depth is intentionally independent from navigation-route
-         * placement. It belongs to the Flood Depth Visualization sub-tab and
-         * is rooted directly on the current detected ARCore ground plane.
+         * Flood depth is independent from navigation-route placement and is
+         * rooted on the exact same detected ground used by the marker above.
          *
-         * AnchorSnapshot.PositionY contains the diagnostic capsule-center
-         * offset (+0.25 m), so subtract that offset to recover the actual floor
-         * height. ARFloodDepthRenderer then expresses the requested local water
-         * depth upward from local Y=0 in real ARCore meters.
+         * The renderer owns only LOCAL metric geometry:
+         *   local Y=0      -> floor
+         *   local Y=depth  -> water surface
          *
-         * X/Z deliberately follow the CURRENT anchor pose from the SAME
-         * frame-coherent snapshot as the Evergine camera. Unlike the route, no
-         * route-version root lock is appropriate here: this is local physical
-         * scene content attached to the ARCore anchor itself.
+         * The root transform below owns the world-space floor placement.
          */
+        bool floodDepthHeldFromLastValidPlacement =
+            false;
+
         if (hasFloodDepthGeometry &&
             trackingValid &&
             anchor.IsAvailable)
         {
+            Vector3 markerPosition =
+                capsuleTransform.Position;
+
             floodDepthRootTransform.Position =
                 new Vector3(
-                    anchor.PositionX,
-                    anchor.PositionY -
-                        PublishedAnchorCenterOffsetFromGroundMeters,
-                    anchor.PositionZ);
+                    markerPosition.X,
+                    markerPosition.Y -
+                        GroundMarkerCenterOffsetMeters,
+                    markerPosition.Z);
 
             floodDepthRoot.IsEnabled =
+                true;
+
+            hasValidFloodDepthSpatialPlacement =
+                true;
+        }
+        else if (!hasFloodDepthGeometry)
+        {
+            /*
+             * Explicit bridge clear / Flood Depth mode exit wins over visual
+             * continuity. Do not resurrect geometry the feature no longer
+             * considers active.
+             */
+            floodDepthRoot.IsEnabled =
+                false;
+
+            hasValidFloodDepthSpatialPlacement =
+                false;
+        }
+        else if (hasValidFloodDepthSpatialPlacement)
+        {
+            /*
+             * Freeze the last valid AR-space water placement. The camera is
+             * frozen to its own last valid ARCore pose by the existing early
+             * return below, so the scene does not blink out during brief
+             * relocalization.
+             */
+            floodDepthRoot.IsEnabled =
+                true;
+
+            floodDepthHeldFromLastValidPlacement =
                 true;
         }
         else
@@ -438,6 +577,11 @@ public static class ARCameraSpatialController
             floodDepthRoot.IsEnabled,
             frame.Version,
             floodDepthRootTransform.Position.Y);
+
+        LogFloodMetricTelemetryIfNeeded(
+            frame,
+            floodDepthRoot,
+            floodDepthRootTransform);
 
         /*
          * A route bridge Clear() and every usable Publish() increment the route
@@ -487,32 +631,6 @@ public static class ARCameraSpatialController
         }
 
         /*
-         * The diagnostic capsule continues to represent the LIVE ARCore
-         * Anchor. It is allowed to move as ARCore refines that Anchor.
-         */
-        if (trackingValid &&
-            anchor.IsAvailable)
-        {
-            capsuleTransform.Position =
-                new Vector3(
-                    anchor.PositionX,
-                    anchor.PositionY,
-                    anchor.PositionZ);
-
-            if (!capsule.IsEnabled)
-            {
-                capsule.IsEnabled =
-                    true;
-            }
-        }
-        else if (!anchor.IsAvailable &&
-                 capsule.IsEnabled)
-        {
-            capsule.IsEnabled =
-                false;
-        }
-
-        /*
          * Route X/Z use the per-route-version lock. Y deliberately continues
          * following the live Anchor so small floor-height refinement remains
          * possible without horizontal route translation.
@@ -527,10 +645,13 @@ public static class ARCameraSpatialController
                 new Vector3(
                     lockedRouteRootX,
                     anchor.PositionY +
-                        RouteYOffsetFromPublishedAnchor,
+                        RouteYOffsetAboveGroundMeters,
                     lockedRouteRootZ);
 
             route.IsEnabled =
+                true;
+
+            hasValidRouteSpatialPlacement =
                 true;
 
             float driftX =
@@ -575,14 +696,62 @@ public static class ARCameraSpatialController
         }
         else
         {
-            /*
-             * Keep the horizontal lock through temporary tracking/anchor loss
-             * or Camera sub-tab suppression, but hide route guidance until the
-             * AR Camera view and spatial validity are both active again.
-             */
-            route.IsEnabled =
-                false;
+            bool routeExplicitlySuppressed =
+                !routeRenderingAllowed;
+
+            if (!hasRouteGeometry)
+            {
+                /*
+                 * Route bridge Clear() is authoritative. A continuity hold
+                 * must never keep an intentionally removed route on screen.
+                 */
+                route.IsEnabled =
+                    false;
+
+                hasValidRouteSpatialPlacement =
+                    false;
+            }
+            else if (routeExplicitlySuppressed)
+            {
+                /*
+                 * Camera sub-tab selection is also authoritative. Preserve the
+                 * remembered placement so AR Camera can return seamlessly, but
+                 * do not render the route in 2D Map/Flood Depth modes.
+                 */
+                route.IsEnabled =
+                    false;
+            }
+            else if (hasValidRouteSpatialPlacement)
+            {
+                /*
+                 * Temporary camera/anchor loss: keep the route at its last
+                 * valid root transform instead of making it disappear. No
+                 * stale ARCore pose is applied.
+                 */
+                route.IsEnabled =
+                    true;
+            }
+            else
+            {
+                route.IsEnabled =
+                    false;
+            }
         }
+
+        bool routeHeldFromLastValidPlacement =
+            route.IsEnabled &&
+            hasRouteGeometry &&
+            routeRenderingAllowed &&
+            hasValidRouteSpatialPlacement &&
+            (!trackingValid || !anchor.IsAvailable);
+
+        LogVisualContinuityHoldIfChanged(
+            trackingValid,
+            anchor.IsAvailable,
+            routeHeldFromLastValidPlacement,
+            floodDepthHeldFromLastValidPlacement,
+            frame.TrackingFailureReason,
+            frame.Version);
 
         LogRouteStateIfChanged(
             trackingValid,
@@ -615,7 +784,8 @@ public static class ARCameraSpatialController
         {
             /*
              * Preserve the last valid camera transform/projection internally.
-             * Route visibility was already suppressed above.
+             * User-facing route/flood content may remain visible at its last
+             * valid spatial placement until tracking returns.
              */
             PublishTelemetry(
                 frame.Version,
@@ -714,6 +884,131 @@ public static class ARCameraSpatialController
             camera,
             capsule,
             capsuleTransform);
+    }
+
+    private static void LogVisualContinuityHoldIfChanged(
+        bool trackingValid,
+        bool anchorAvailable,
+        bool routeHeld,
+        bool floodHeld,
+        string trackingFailureReason,
+        long spatialVersion)
+    {
+        bool holdActive =
+            routeHeld ||
+            floodHeld;
+
+        if (holdActive ==
+            visualContinuityHoldActive)
+        {
+            return;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (holdActive)
+        {
+            visualContinuityHoldActive =
+                true;
+
+            visualContinuityHoldStartedTimestamp =
+                now;
+
+            AndroidLog.Warn(
+                ContinuityLogTag,
+                "VISUAL HOLD ENTERED: keeping last valid AR placement " +
+                "visible while live spatial updates are unavailable. " +
+                $"spatialVersion={spatialVersion}, " +
+                $"tracking={trackingValid}, " +
+                $"anchor={anchorAvailable}, " +
+                $"routeHeld={routeHeld}, " +
+                $"floodHeld={floodHeld}, " +
+                $"failure='{(string.IsNullOrWhiteSpace(trackingFailureReason) ? "<none>" : trackingFailureReason)}'. " +
+                "Geometry is frozen; it is not being updated from a PAUSED pose.");
+
+            return;
+        }
+
+        long holdDuration =
+            visualContinuityHoldStartedTimestamp ==
+                long.MinValue
+                ? 0
+                : Math.Max(
+                    0,
+                    now -
+                    visualContinuityHoldStartedTimestamp);
+
+        visualContinuityHoldActive =
+            false;
+
+        visualContinuityHoldStartedTimestamp =
+            long.MinValue;
+
+        AndroidLog.Debug(
+            ContinuityLogTag,
+            "VISUAL HOLD EXITED: live ARCore spatial placement resumed or " +
+            "content was explicitly hidden/cleared. " +
+            $"spatialVersion={spatialVersion}, " +
+            $"tracking={trackingValid}, " +
+            $"anchor={anchorAvailable}, " +
+            $"heldFor={holdDuration}ms.");
+    }
+
+    private static void LogFloodMetricTelemetryIfNeeded(
+        ARCameraPoseBridge.SpatialSnapshot frame,
+        Entity floodDepthRoot,
+        Transform3D floodDepthRootTransform)
+    {
+        if (!floodDepthRoot.IsEnabled ||
+            !frame.IsTracking ||
+            !frame.Pose.IsTracking)
+        {
+            return;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (lastFloodMetricTelemetryTimestamp !=
+                long.MinValue &&
+            now -
+                lastFloodMetricTelemetryTimestamp <
+                FloodMetricTelemetryIntervalMilliseconds)
+        {
+            return;
+        }
+
+        lastFloodMetricTelemetryTimestamp =
+            now;
+
+        float groundWorldY =
+            floodDepthRootTransform.Position.Y;
+
+        float depth =
+            ARFloodDepthRenderer.AppliedDepthMeters;
+
+        float surfaceWorldY =
+            groundWorldY +
+            depth;
+
+        float cameraWorldY =
+            frame.Pose.PositionY;
+
+        float cameraHeightAboveGround =
+            cameraWorldY -
+            groundWorldY;
+
+        AndroidLog.Debug(
+            "RescuAR-FloodDepth",
+            "AR FLOOD WORLD LOCK: " +
+            $"spatialVersion={frame.Version}, " +
+            "baselineSource=GroundMarker, " +
+            $"cameraWorldY={cameraWorldY:F3} m, " +
+            $"groundWorldY={groundWorldY:F3} m, " +
+            $"cameraHeightAboveGround={cameraHeightAboveGround:F3} m, " +
+            $"depth={depth:F2} m, " +
+            $"surfaceWorldY={surfaceWorldY:F3} m.");
     }
 
     private static void LogFloodDepthStateIfChanged(
