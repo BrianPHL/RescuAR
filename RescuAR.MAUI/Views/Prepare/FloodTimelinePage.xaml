@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.FloodTimelinePage"
+    x:DataType="vm:FloodTimelineViewModel"
+    Title="Historical Timeline"
+    BackgroundColor="#F8FAFC"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top Custom Header Bar -->
+        <Border Grid.Row="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="0,0,0,1" Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Grid.Column="0" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 16" WidthRequest="36" HeightRequest="36">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="←" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+                <Label Grid.Column="1" Text="Historical Timeline" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Page Scroll Container -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="20" Padding="16">
+                
+                <!-- Hero Chronology Header Banner -->
+                <Border StrokeThickness="0" StrokeShape="RoundRectangle 24" HeightRequest="170" HorizontalOptions="Fill">
+                    <Grid>
+                        <Image Source="carousel_flood_history.png" Aspect="AspectFill" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        <BoxView HorizontalOptions="Fill" VerticalOptions="Fill">
+                            <BoxView.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#20032B36" Offset="0.0" />
+                                    <GradientStop Color="#90032B36" Offset="0.5" />
+                                    <GradientStop Color="#F0032B36" Offset="1.0" />
+                                </LinearGradientBrush>
+                            </BoxView.Background>
+                        </BoxView>
+
+                        <Grid Padding="18" RowDefinitions="Auto,*">
+                            <Border Grid.Row="0" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,4" HorizontalOptions="Start">
+                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                    <Path Data="M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59L9,16.17Z" Fill="#0369A1" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Label Text="DOST-PAGASA &amp; PNA VERIFIED" TextColor="#0369A1" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+
+                            <VerticalStackLayout Grid.Row="1" Spacing="4" VerticalOptions="End">
+                                <Label Text="Marikina River Chronology" TextColor="#FFFFFF" FontSize="22" FontAttributes="Bold" />
+                                <Label Text="Key historical flood crests, water level benchmarks, and disaster response evolution." TextColor="#E0F2FE" FontSize="12" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- Section Header -->
+                <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
+                    <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                        <Path Data="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+                              Fill="#0284C7" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Text="Major Historical Flood Records" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </Grid>
+
+                <!-- Modern Timeline Stream -->
+                <Grid ColumnDefinitions="Auto,*">
+                    <!-- Continuous Vertical Line & Glowing Nodes -->
+                    <Grid Grid.Column="0" WidthRequest="32" Margin="0,10,12,0">
+                        <BoxView WidthRequest="3" Color="#CBD5E1" HorizontalOptions="Center" VerticalOptions="FillAndExpand" Margin="0,12" />
+                    </Grid>
+
+                    <VerticalStackLayout Grid.Column="1" Spacing="16">
+                        
+                        <!-- Event 1: 1992 Benchmark -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#0284C7" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="24" HeightRequest="24" HorizontalOptions="Start" Margin="-44,12,0,0" ZIndex="2">
+                                <BoxView WidthRequest="8" HeightRequest="8" Color="#FFFFFF" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Border BackgroundColor="#0284C7" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                                <Label Text="1992" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                            <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                                <Label Text="18.5m Crest" TextColor="#0369A1" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="DOST PJS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <Label Text="1992 Modern Hydrology Benchmark" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                                    <Label Text="One of the earliest recorded floods in modern Marikina records. It prompted the initial installation of automated river level telemetry sensors and river wall reinforcements by DPWH &amp; DOST." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                                    
+                                    <HorizontalStackLayout Spacing="6" Margin="0,4,0,0">
+                                        <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C17,14.25 19,9 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z" Fill="#475569" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Marikina River Main" TextColor="#475569" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2C6.48,2 2,6.48 2,12C2,17.52 6.48,22 12,22C17.52,22 22,17.52 22,12C22,6.48 17.52,2 12,2Z" Fill="#0369A1" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Early Warning Systems" TextColor="#0369A1" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <!-- Event 2: 2009 Typhoon Ondoy -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#DC2626" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="24" HeightRequest="24" HorizontalOptions="Start" Margin="-44,12,0,0" ZIndex="2">
+                                <BoxView WidthRequest="8" HeightRequest="8" Color="#FFFFFF" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Border BackgroundColor="#DC2626" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                                <Label Text="SEPT 26, 2009" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                            <Border BackgroundColor="#FEE2E2" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                                <Label Text="23.0m Crest (Record)" TextColor="#991B1B" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="PAGASA FFWS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <Label Text="Typhoon Ondoy (Ketsana)" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                                    
+                                    <!-- Stat Callout Cards -->
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" Margin="0,2">
+                                        <Border BackgroundColor="#FEF2F2" Stroke="#FCA5A5" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="10">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="455 mm" TextColor="#991B1B" FontSize="16" FontAttributes="Bold" />
+                                                <Label Text="24-Hour Rainfall" TextColor="#7F1D1D" FontSize="10" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#FEF2F2" Stroke="#FCA5A5" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="10">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="80% City" TextColor="#991B1B" FontSize="16" FontAttributes="Bold" />
+                                                <Label Text="Submerged Area" TextColor="#7F1D1D" FontSize="10" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                    </Grid>
+
+                                    <Label Text="Record-high 455mm rainfall in 24 hours (exceeding monthly average) caused Marikina River to overflow to 23.0 meters, submerging 80% of the city. Led to modern early warning threshold standards." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                                    
+                                    <HorizontalStackLayout Spacing="6" Margin="0,4,0,0">
+                                        <Border BackgroundColor="#FEF2F2" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2A2,2 0 0,0 10,4V4.29C7.03,5.17 5,7.9 5,11V16L3,18V19H21V18L19,16V11C19,7.9 16.97,5.17 14,4.29V4A2,2 0 0,0 12,2Z" Fill="#991B1B" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Forced Evacuation" TextColor="#991B1B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C17,14.25 19,9 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z" Fill="#475569" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Tumana, Malanday, Nangka" TextColor="#475569" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <!-- Event 3: 2020 Typhoon Ulysses -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#D97706" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="24" HeightRequest="24" HorizontalOptions="Start" Margin="-44,12,0,0" ZIndex="2">
+                                <BoxView WidthRequest="8" HeightRequest="8" Color="#FFFFFF" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Border BackgroundColor="#D97706" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                                <Label Text="NOV 11-12, 2020" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                            <Border BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                                <Label Text="22.0m Crest" TextColor="#92400E" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="PNA News" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <Label Text="Typhoon Ulysses (Vamco)" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                                    
+                                    <!-- Stat Callout Cards -->
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" Margin="0,2">
+                                        <Border BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="10">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="22.0 meters" TextColor="#92400E" FontSize="16" FontAttributes="Bold" />
+                                                <Label Text="3rd Alarm Triggered" TextColor="#78350F" FontSize="10" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="10">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="40,000+" TextColor="#92400E" FontSize="16" FontAttributes="Bold" />
+                                                <Label Text="Evacuated Residents" TextColor="#78350F" FontSize="10" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                    </Grid>
+
+                                    <Label Text="Marikina River reached 22.0 meters, breaking Ondoy's height record at the Santo Niño gauge. Prompted extensive roof rescues and pre-emptive evacuation drills." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                                    
+                                    <HorizontalStackLayout Spacing="6" Margin="0,4,0,0">
+                                        <Border BackgroundColor="#FFFBEB" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3Z" Fill="#92400E" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Rescue Command Ops" TextColor="#92400E" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C17,14.25 19,9 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z" Fill="#475569" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="City-wide Evacuation" TextColor="#475569" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <!-- Event 4: 2024 Typhoon Carina -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border BackgroundColor="#2563EB" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="24" HeightRequest="24" HorizontalOptions="Start" Margin="-44,12,0,0" ZIndex="2">
+                                <BoxView WidthRequest="8" HeightRequest="8" Color="#FFFFFF" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Border BackgroundColor="#2563EB" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                                <Label Text="JULY 24, 2024" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                            <Border BackgroundColor="#DBEAFE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                                <Label Text="20.7m Crest" TextColor="#1E40AF" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="Marikina Gov" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+
+                                    <Label Text="Typhoon Carina (Gaemi) &amp; Southwest Monsoon" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                                    <Label Text="Enhanced Habagat rains pushed Marikina River to 20.7 meters (3rd Alarm). Thanks to modern automated Siren warnings and early community readiness, zero casualties were recorded in key low-lying zones." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                                    
+                                    <HorizontalStackLayout Spacing="6" Margin="0,4,0,0">
+                                        <Border BackgroundColor="#EFF6FF" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M9,16.17L4.83,12L3.41,13.41L9,19L21,7L19.59,5.59L9,16.17Z" Fill="#1D4ED8" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Pre-emptive Evacuation" TextColor="#1D4ED8" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                        <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4">
+                                            <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                                <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C17,14.25 19,9 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z" Fill="#475569" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="Malanday &amp; Tumana Shelters" TextColor="#475569" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- Historical Takeaways & Marikina River Alarm Levels Card -->
+                <Border BackgroundColor="#E0F2FE" Stroke="#BAE6FD" StrokeThickness="1" StrokeShape="RoundRectangle 22" Padding="20" Margin="0,10,0,10">
+                    <VerticalStackLayout Spacing="12">
+                        <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                            <Path Data="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V9h2v3z" Fill="#0284C7" WidthRequest="20" HeightRequest="20" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Text="Marikina River Alarm Level Reference" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                            <!-- 1st Alarm -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="15.0 meters" TextColor="#D97706" FontSize="13" FontAttributes="Bold" />
+                                    <Label Text="1st Alarm (Alert)" TextColor="#64748B" FontSize="10" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- 2nd Alarm -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="16.0 meters" TextColor="#EA580C" FontSize="13" FontAttributes="Bold" />
+                                    <Label Text="2nd Alarm (Prepare)" TextColor="#64748B" FontSize="10" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- 3rd Alarm -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="18.0 meters" TextColor="#DC2626" FontSize="13" FontAttributes="Bold" />
+                                    <Label Text="3rd Alarm (Evacuate)" TextColor="#64748B" FontSize="10" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

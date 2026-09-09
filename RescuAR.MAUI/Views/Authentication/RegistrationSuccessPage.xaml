@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:RegistrationSuccessViewModel"
+    x:Class="RescuAR.App.Views.Authentication.RegistrationSuccessPage"
+    BackgroundColor="#F7F7F7">
+
+    <Grid RowDefinitions="Auto, *, Auto">
+
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" HeightRequest="60" BackgroundColor="#EAEAEA" Padding="16, 0">
+            <!-- Centered Title -->
+            <Label Grid.Column="1"
+                   Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Success Content -->
+        <VerticalStackLayout Grid.Row="1" 
+                             VerticalOptions="Center" 
+                             HorizontalOptions="Center" 
+                             Spacing="24"
+                             Padding="24">
+
+            <!-- Circular Checkmark (Pure XAML) -->
+            <Grid WidthRequest="130" 
+                  HeightRequest="130" 
+                  HorizontalOptions="Center"
+                  VerticalOptions="Center">
+                <Ellipse Fill="Transparent" 
+                         Stroke="#00848E" 
+                         StrokeThickness="6" 
+                         WidthRequest="120" 
+                         HeightRequest="120" 
+                         HorizontalOptions="Center"
+                         VerticalOptions="Center" />
+                <Path Data="M 38,62 L 53,77 L 82,45" 
+                      Stroke="#00848E" 
+                      StrokeThickness="7" 
+                      StrokeLineCap="Round" 
+                      StrokeLineJoin="Round" 
+                      HorizontalOptions="Center" 
+                      VerticalOptions="Center" />
+            </Grid>
+
+            <!-- Success Text -->
+            <Label Text="Success!"
+                   FontSize="32"
+                   FontFamily="OpenSansSemibold"
+                   TextColor="#00848E"
+                   HorizontalOptions="Center" />
+
+            <!-- Description -->
+            <Label Text="You may now proceed to sign into your newly created account."
+                   FontSize="14"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#5A5A5A"
+                   HorizontalTextAlignment="Center"
+                   LineBreakMode="WordWrap"
+                   MaximumWidthRequest="280"
+                   HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+
+        <!-- Bottom Action & Version -->
+        <VerticalStackLayout Grid.Row="2" Spacing="16" Margin="0, 0, 0, 16">
+            <Button Text="Continue >"
+                    Command="{Binding ContinueCommand}"
+                    TextColor="White"
+                    BackgroundColor="#00848E"
+                    CornerRadius="8"
+                    HeightRequest="50"
+                    FontFamily="OpenSansSemibold"
+                    FontSize="15"
+                    Margin="24, 0" />
+
+            <Label Text="v0.0.1s"
+                   FontSize="12"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#A0A0A0"
+                   HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>

@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:GoogleAuthViewModel"
+    x:Class="RescuAR.App.Views.Authentication.GoogleAuthPage"
+    BackgroundColor="#FFFFFF">
+
+    <!-- Container representing the Google Sign-in modal/dialog -->
+    <Grid RowDefinitions="Auto, *, Auto" Padding="24">
+
+        <!-- Top Header: G Logo & Title -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" Padding="0, 8, 0, 16">
+            <HorizontalStackLayout Grid.Column="0" Spacing="10" VerticalOptions="Center">
+                <!-- SVG Google Logo -->
+                <Path Data="M 12 10.2 L 12 13.8 L 18.2 13.8 C 17.6 16.4 15.2 18.2 12 18.2 C 8.6 18.2 5.8 15.4 5.8 12 C 5.8 8.6 8.6 5.8 12 5.8 C 13.5 5.8 14.9 6.3 16 7.2 L 18.6 4.6 C 16.8 3 14.5 2 12 2 C 6.5 2 2 6.5 2 12 C 2 17.5 6.5 22 12 22 C 17.8 22 22 17.8 22 12 C 22 11.4 21.9 10.8 21.8 10.2 L 12 10.2 Z" 
+                      Fill="#4285F4" 
+                      WidthRequest="18" 
+                      HeightRequest="18" 
+                      Aspect="Uniform" 
+                      VerticalOptions="Center" />
+                
+                <Label Text="Sign in with Google"
+                       FontSize="14"
+                       FontFamily="OpenSansRegular"
+                       TextColor="#5F6368"
+                       VerticalOptions="Center" />
+            </HorizontalStackLayout>
+
+            <!-- Cancel Button on top right -->
+            <Label Grid.Column="2"
+                   Text="Cancel"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="14"
+                   TextColor="#1A73E8"
+                   VerticalOptions="Center">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding CancelCommand}" />
+                </Label.GestureRecognizers>
+            </Label>
+        </Grid>
+
+        <!-- Main Content Area -->
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Spacing="30" Margin="0, 16, 0, 0">
+
+                <!-- Header Title -->
+                <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                    <Label Text="Choose an account"
+                           FontSize="24"
+                           FontFamily="OpenSansRegular"
+                           TextColor="#202124"
+                           HorizontalOptions="Center" />
+                    
+                    <Label HorizontalOptions="Center"
+                           FontSize="14"
+                           FontFamily="OpenSansRegular"
+                           TextColor="#5F6368">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="to continue to " />
+                                <Span Text="RescuAR" TextColor="#1A73E8" FontFamily="OpenSansSemibold" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </VerticalStackLayout>
+
+                <!-- Error Message -->
+                <Label Text="{Binding ErrorMessage}"
+                       TextColor="#FF3333"
+                       FontSize="13"
+                       FontFamily="OpenSansRegular"
+                       HorizontalOptions="Center"
+                       IsVisible="{Binding HasError}"
+                       HorizontalTextAlignment="Center" />
+
+                <!-- Account Items List -->
+                <VerticalStackLayout>
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1" BackgroundColor="#E0E0E0" />
+
+                    <!-- Account 1: Brian Pasco -->
+                    <Grid RowDefinitions="Auto" ColumnDefinitions="Auto, *, Auto" Padding="8, 16" BackgroundColor="Transparent">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding SelectAccountCommand}" CommandParameter="qblcpasco@tip.edu.ph" />
+                        </Grid.GestureRecognizers>
+                        
+                        <!-- Account Circular Icon -->
+                        <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" BackgroundColor="#E8F0FE" StrokeShape="RoundRectangle 20" Margin="0, 0, 16, 0">
+                            <Label Text="B" TextColor="#1A73E8" FontSize="16" FontFamily="OpenSansSemibold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                            <Label Text="Brian Lawrence Pasco" FontSize="15" FontFamily="OpenSansSemibold" TextColor="#3C4043" />
+                            <Label Text="qblcpasco@tip.edu.ph" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5F6368" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1" BackgroundColor="#E0E0E0" />
+
+                    <!-- Account 2: Frances Pasco -->
+                    <Grid RowDefinitions="Auto" ColumnDefinitions="Auto, *, Auto" Padding="8, 16" BackgroundColor="Transparent">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding SelectAccountCommand}" CommandParameter="frances@example-email.com" />
+                        </Grid.GestureRecognizers>
+                        
+                        <!-- Account Circular Icon -->
+                        <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" BackgroundColor="#F1F3F4" StrokeShape="RoundRectangle 20" Margin="0, 0, 16, 0">
+                            <Label Text="F" TextColor="#5F6368" FontSize="16" FontFamily="OpenSansSemibold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                            <Label Text="Frances Pasco" FontSize="15" FontFamily="OpenSansSemibold" TextColor="#3C4043" />
+                            <Label Text="frances@example-email.com" FontSize="13" FontFamily="OpenSansRegular" TextColor="#5F6368" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1" BackgroundColor="#E0E0E0" />
+
+                    <!-- Use Another Account Item -->
+                    <Grid RowDefinitions="Auto" ColumnDefinitions="Auto, *" Padding="8, 16" BackgroundColor="Transparent">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding UseAnotherAccountCommand}" />
+                        </Grid.GestureRecognizers>
+
+                        <!-- User Icon -->
+                        <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" BackgroundColor="Transparent" StrokeShape="RoundRectangle 20" Margin="0, 0, 16, 0">
+                            <!-- Circular Avatar with User Icon -->
+                            <Grid WidthRequest="40" HeightRequest="40" HorizontalOptions="Center" VerticalOptions="Center">
+                                <Ellipse Fill="Transparent" Stroke="#5F6368" StrokeThickness="2" WidthRequest="24" HeightRequest="24" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Label Text="👤" TextColor="#5F6368" FontSize="14" HorizontalOptions="Center" VerticalOptions="Center" Margin="0, -1, 0, 0" />
+                            </Grid>
+                        </Border>
+
+                        <Label Grid.Column="1"
+                               Text="Use another account"
+                               FontSize="14"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="#3C4043"
+                               VerticalOptions="Center" />
+                    </Grid>
+
+                    <!-- Divider -->
+                    <BoxView HeightRequest="1" BackgroundColor="#E0E0E0" />
+
+                </VerticalStackLayout>
+
+                <!-- Activity Indicator while loading -->
+                <ActivityIndicator IsRunning="{Binding IsLoading}"
+                                   Color="#1A73E8"
+                                   HeightRequest="40"
+                                   HorizontalOptions="Center" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Disclaimer & Version Footer -->
+        <VerticalStackLayout Grid.Row="2" Spacing="24" Padding="0, 16, 0, 8">
+            <Label FontSize="12"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#5F6368"
+                   LineBreakMode="WordWrap"
+                   HorizontalTextAlignment="Start">
+                <Label.FormattedText>
+                    <FormattedString>
+                        <Span Text="To continue, Google will share your name, email address, and profile picture with RescuAR. Before using this app, you can review RescuAR's " />
+                        <Span Text="privacy policy" TextColor="#1A73E8" FontFamily="OpenSansSemibold" />
+                        <Span Text=" and " />
+                        <Span Text="terms of service" TextColor="#1A73E8" FontFamily="OpenSansSemibold" />
+                        <Span Text="." />
+                    </FormattedString>
+                </Label.FormattedText>
+            </Label>
+        </VerticalStackLayout>
+
+    </Grid>
+
+</ContentPage>

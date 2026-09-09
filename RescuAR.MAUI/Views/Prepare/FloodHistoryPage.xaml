@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.FloodHistoryPage"
+    x:DataType="vm:FloodHistoryViewModel"
+    Title="Marikina Flood History"
+    BackgroundColor="#F8FAFC"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top Custom Header Bar -->
+        <Border Grid.Row="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="0,0,0,1" Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Grid.Column="0" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 16" WidthRequest="36" HeightRequest="36">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="←" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+                <Label Grid.Column="1" Text="Marikina Flood History" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Main Page Content ScrollView -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="22" Padding="16">
+                
+                <!-- 1. Hero Header Banner (Clean, no dots, official source pill) -->
+                <Border StrokeThickness="0" StrokeShape="RoundRectangle 24" HeightRequest="220" HorizontalOptions="Fill">
+                    <Grid>
+                        <!-- Background Image -->
+                        <Image Source="carousel_flood_history.png" Aspect="AspectFill" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        
+                        <!-- Dark Gradient Overlay -->
+                        <BoxView HorizontalOptions="Fill" VerticalOptions="Fill">
+                            <BoxView.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#20032B36" Offset="0.0" />
+                                    <GradientStop Color="#90032B36" Offset="0.5" />
+                                    <GradientStop Color="#E6032B36" Offset="1.0" />
+                                </LinearGradientBrush>
+                            </BoxView.Background>
+                        </BoxView>
+
+                        <!-- Content -->
+                        <Grid Padding="20" RowDefinitions="Auto,*,Auto">
+                            <!-- Official Source Credibility Badge -->
+                            <Border Grid.Row="0" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,4" HorizontalOptions="Start">
+                                <Label Text="✓ OFFICIAL DOST-PAGASA &amp; PJS DATA" TextColor="#0369A1" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                            </Border>
+
+                            <VerticalStackLayout Grid.Row="1" Spacing="4" VerticalOptions="End">
+                                <Label Text="Marikina Flood History" TextColor="#FFFFFF" FontSize="26" FontAttributes="Bold" />
+                                <Label Text="Learn from the past, understand the risks, and be better prepared for the future." TextColor="#E0F2FE" FontSize="13" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- 2. Clean 2x2 Bento Box Grid Category Cards (Neutral Non-Colorful Design) -->
+                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                    
+                    <!-- Tile 1: Historical Photos -->
+                    <Border Grid.Row="0" Grid.Column="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewCategoryCommand}" CommandParameter="Historical Photos" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start">
+                                    <Path Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                                          Fill="#0F172A" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+                                <Label Grid.Column="1" Text="›" TextColor="#64748B" FontSize="22" FontAttributes="Bold" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="Historical Photos" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                            <Label Text="Explore photos of past floods in Marikina." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Tile 2: Documentary Videos (Plays Ondoy & Ulysses Videos) -->
+                    <Border Grid.Row="0" Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewCategoryCommand}" CommandParameter="Documentary Videos" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start">
+                                    <Path Data="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"
+                                          Fill="#0F172A" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+                                <Label Grid.Column="1" Text="›" TextColor="#64748B" FontSize="22" FontAttributes="Bold" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="Documentary Videos" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                            <Label Text="Watch Ondoy &amp; Ulysses documentary videos." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Tile 3: News Archive -->
+                    <Border Grid.Row="1" Grid.Column="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewCategoryCommand}" CommandParameter="News Archive" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start">
+                                    <Path Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"
+                                          Fill="#0F172A" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+                                <Label Grid.Column="1" Text="›" TextColor="#64748B" FontSize="22" FontAttributes="Bold" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="News Archive" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                            <Label Text="Read news articles and reports from major events." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Tile 4: Flood Timeline -->
+                    <Border Grid.Row="1" Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ViewCategoryCommand}" CommandParameter="Flood Timeline" />
+                        </Border.GestureRecognizers>
+                        <VerticalStackLayout Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="44" HeightRequest="44" HorizontalOptions="Start">
+                                    <Path Data="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10z"
+                                          Fill="#0F172A" WidthRequest="22" HeightRequest="22" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+                                <Label Grid.Column="1" Text="›" TextColor="#64748B" FontSize="22" FontAttributes="Bold" VerticalOptions="Center" />
+                            </Grid>
+                            <Label Text="Flood Timeline" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                            <Label Text="See timeline of major flood events in Marikina." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                </Grid>
+
+                <!-- 3. Major Flood Events Section -->
+                <VerticalStackLayout Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                        <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                            <Path Data="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+                                  Fill="#0284C7" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Text="Major Flood Events in Marikina" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                        <Label Grid.Column="1" Text="View Details" TextColor="#0284C7" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                    </Grid>
+
+                    <!-- Connected Timeline Bar with 4 Node Dots -->
+                    <Grid ColumnDefinitions="*,*,*,*" Margin="0,2,0,4">
+                        <BoxView Grid.ColumnSpan="4" HeightRequest="2.5" Color="#0284C7" VerticalOptions="Center" Margin="30,0" />
+                        <Ellipse Grid.Column="0" WidthRequest="14" HeightRequest="14" Fill="#FFFFFF" Stroke="#0284C7" StrokeThickness="3" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Ellipse Grid.Column="1" WidthRequest="14" HeightRequest="14" Fill="#FFFFFF" Stroke="#0284C7" StrokeThickness="3" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Ellipse Grid.Column="2" WidthRequest="14" HeightRequest="14" Fill="#FFFFFF" Stroke="#0284C7" StrokeThickness="3" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Ellipse Grid.Column="3" WidthRequest="14" HeightRequest="14" Fill="#FFFFFF" Stroke="#0284C7" StrokeThickness="3" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Grid>
+
+                    <!-- Horizontal Event Cards -->
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout Spacing="14">
+                            
+                            <!-- Event 1: 1992 -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 18" WidthRequest="220" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ViewEventDetailCommand}" CommandParameter="1992" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Border BackgroundColor="#1E40AF" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                                            <Label Text="1992" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <Label Grid.Column="1" Text="DOST PJS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Label Text="1992 Marikina Flood" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" HeightRequest="110">
+                                        <Image Source="carousel_flood_history.png" Aspect="AspectFill" />
+                                    </Border>
+                                    <Label Text="Earliest benchmark flood in modern records prompting flood control wall &amp; gauge telemetry." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Event 2: 2009 Ondoy -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 18" WidthRequest="220" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ViewEventDetailCommand}" CommandParameter="2009" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Border BackgroundColor="#DC2626" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                                            <Label Text="2009 • 23.0m" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <Label Grid.Column="1" Text="PAGASA FFWS" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Label Text="Typhoon Ondoy (Ketsana)" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" HeightRequest="110">
+                                        <Image Source="onboarding_flood.jpg" Aspect="AspectFill" />
+                                    </Border>
+                                    <Label Text="Peak water level reached 23.0m with 455mm rainfall in 24h, devastating 80% of the city." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Event 3: 2020 Ulysses -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 18" WidthRequest="220" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ViewEventDetailCommand}" CommandParameter="2020" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Border BackgroundColor="#D97706" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                                            <Label Text="2020 • 22.0m" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <Label Grid.Column="1" Text="PNA News" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Label Text="Typhoon Ulysses (Vamco)" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" HeightRequest="110">
+                                        <Image Source="ulysses.jpg" Aspect="AspectFill" />
+                                    </Border>
+                                    <Label Text="Peak water level reached 22.0m (3rd Alarm), affecting 40,000+ residents in Tumana &amp; Malanday." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <!-- Event 4: Recent Carina -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 18" WidthRequest="220" Padding="14">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ViewEventDetailCommand}" CommandParameter="Recent" />
+                                </Border.GestureRecognizers>
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Border BackgroundColor="#2563EB" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                                            <Label Text="2024 • 20.7m" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <Label Grid.Column="1" Text="Marikina Gov" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Label Text="Typhoon Carina (Gaemi)" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" />
+                                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 12" HeightRequest="110">
+                                        <Image Source="carina.jpg" Aspect="AspectFill" />
+                                    </Border>
+                                    <Label Text="Peak water level reached 20.7m triggering forced evacuations across low-lying barangays." TextColor="#64748B" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+
+                <!-- 5. Learn & Prepare Banner Card -->
+                <Border BackgroundColor="#E0F2FE" Stroke="#BAE6FD" StrokeThickness="1" StrokeShape="RoundRectangle 22" Padding="20">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
+                        <!-- Left Illustration Graphic -->
+                        <Border Grid.Column="0" BackgroundColor="#0284C7" StrokeThickness="0" StrokeShape="RoundRectangle 18" WidthRequest="74" HeightRequest="74" VerticalOptions="Center">
+                            <Path Data="M12 2L2 12h3v8h6v-6h2v6h6v-8h3L12 2z" Fill="#FFFFFF" WidthRequest="38" HeightRequest="38" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+
+                        <!-- Right Text & Button -->
+                        <VerticalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
+                            <Label Text="Learn &amp; Prepare" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                            <Label Text="Answer quizzes, read safety tips, and strengthen your knowledge about floods." TextColor="#334155" FontSize="12" LineBreakMode="WordWrap" />
+                            
+                            <!-- Start Learning Button -->
+                            <Border BackgroundColor="#0284C7" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="16,10" HorizontalOptions="Start" Margin="0,4,0,0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding StartLearningCommand}" />
+                                </Border.GestureRecognizers>
+                                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                    <Label Text="Start Learning" TextColor="#FFFFFF" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                                    <Label Text="➔" TextColor="#FFFFFF" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+
+
+    </Grid>
+</ContentPage>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Map"
+    xmlns:mapsui="clr-namespace:Mapsui.UI.Maui;assembly=Mapsui.UI.Maui"
+    x:Class="RescuAR.App.Views.Map.MapPage"
+    x:DataType="vm:MapViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Top Custom Header -->
+        <Border Grid.Row="0" 
+                BackgroundColor="#0F8068" 
+                HeightRequest="65" 
+                StrokeThickness="0"
+                Padding="16,0">
+            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                <VerticalStackLayout Grid.Column="0" VerticalOptions="Center" Spacing="2">
+                    <Label Text="Evacuation Map" 
+                           TextColor="#FFFFFF" 
+                           FontSize="18" 
+                           FontAttributes="Bold" />
+                    <Label Text="Real-time safe zones &amp; active shelters" 
+                           TextColor="#B2DFDB" 
+                           FontSize="11" />
+                </VerticalStackLayout>
+                
+                <!-- Active Indicator -->
+                <HorizontalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="6">
+                    <Ellipse WidthRequest="8" HeightRequest="8" Fill="#22C55E" />
+                    <Label Text="OFFLINE READY" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+            </Grid>
+        </Border>
+
+        <!-- Mapsui Native Map -->
+        <mapsui:MapControl x:Name="MapControl" Grid.Row="1" 
+                           HorizontalOptions="FillAndExpand" 
+                           VerticalOptions="FillAndExpand" />
+
+        <!-- Floating Chat Button for Safety Circle -->
+        <Border Grid.Row="1"
+                BackgroundColor="#0F8068"
+                StrokeThickness="0"
+                WidthRequest="56"
+                HeightRequest="56"
+                Margin="16"
+                HorizontalOptions="End"
+                VerticalOptions="End"
+                Shadow="{Shadow Brush=Black, Offset='0,4', Radius=4, Opacity=0.3}">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="28" />
+            </Border.StrokeShape>
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding OpenChatCommand}" />
+            </Border.GestureRecognizers>
+            <Path Data="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z" 
+                  Fill="White" 
+                  Aspect="Uniform" 
+                  WidthRequest="24" 
+                  HeightRequest="24" 
+                  HorizontalOptions="Center" 
+                  VerticalOptions="Center" />
+        </Border>
+                 
+        <!-- Subtle shadow/line for TabBar -->
+        <BoxView Grid.RowSpan="2" VerticalOptions="End" HeightRequest="1" BackgroundColor="#D1D1D6" />
+        <!-- Real-time SweetAlert Emergency Advisory Pop-Up Modal Overlay -->
+        <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
+                <VerticalStackLayout Spacing="0">
+                   
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 24 24 0 0" Padding="16,14">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                            <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding SelectedAdvisory.AlertBadgeText}" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedAdvisory.HeaderTagText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="10" FontAttributes="Bold" />
+                                <Label Text="{Binding SelectedAdvisory.DisplayAlertLevelText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="15" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+                            
+                            <Border Grid.Column="3" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="32" HeightRequest="32" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="✕" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <ScrollView MaximumHeightRequest="420" Padding="20">
+                        <VerticalStackLayout Spacing="14">
+                            <Label Text="{Binding SelectedAdvisory.DisplayTitleText}" TextColor="#0F172A" FontSize="19" FontAttributes="Bold" />
+                            <Label Text="{Binding SelectedAdvisory.DisplayMessageText}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" CharacterSpacing="0.2" />
+
+                            <Border IsVisible="{Binding SelectedAdvisory.HasActionPlan}" BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="{Binding SelectedAdvisory.ActionPlanHeaderTagText}" TextColor="#B45309" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayActionPlanText}" TextColor="#92400E" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding SelectedAdvisory.AffectedAreaHeaderTagText}" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayAffectedAreaText}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedAdvisory.CreatedAtText}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+                                <Border Grid.Column="1" IsVisible="{Binding SelectedAdvisory.ShowWaterLevel}" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="{Binding SelectedAdvisory.WaterLevelText}" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Padding="20,16" BackgroundColor="#F8FAFC">
+                        <Button Grid.Column="0" Text="{Binding SelectedAdvisory.CloseButtonText}" TextColor="#475569" BackgroundColor="#E2E8F0" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding ClosePopupCommand}" />
+                        <Button Grid.Column="1" Text="{Binding SelectedAdvisory.DetailsButtonText}" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding GoToAdvisoriesFeedCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentPage>

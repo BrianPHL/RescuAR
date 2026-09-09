@@ -1,0 +1,68 @@
+using Google.AR.Core;
+using Frame = Google.AR.Core.Frame;
+
+namespace RescuAR.MAUI.Services;
+
+public interface IArCoreService
+{
+    ArCoreApk.Availability CheckAvailability();
+
+    ArCoreApk.InstallStatus RequestInstall();
+
+    bool Initialize();
+
+    Frame? Update();
+
+    /// <summary>
+    /// Pauses the retained ARCore Session and releases the physical camera
+    /// when the Camera tab is no longer active.
+    ///
+    /// The Session and navigation/guidance state remain retained.
+    /// </summary>
+    void PauseCameraSession();
+
+    /// <summary>
+    /// Resumes an already-created ARCore Session and restarts its frame loop.
+    ///
+    /// Returns false when there is no retained Session or resume fails.
+    /// </summary>
+    bool ResumeCameraSession();
+
+    /// <summary>
+    /// Performs a non-destructive health check of the retained ground anchor.
+    ///
+    /// When ARCore camera tracking has recovered but the existing anchor
+    /// remains non-tracking beyond a short grace period, the stale anchor is
+    /// released. The existing ARCore frame loop will then automatically resume
+    /// its normal horizontal-floor hit-test acquisition.
+    ///
+    /// Returns true when ground-anchor reacquisition is/was armed.
+    /// </summary>
+    bool TryRecoverGroundAnchorIfNeeded();
+
+    /// <summary>
+    /// Monotonically increasing generation that changes only after the
+    /// recovery service has actually released a stale retained ground anchor
+    /// and armed replacement floor-anchor acquisition.
+    ///
+    /// Temporary anchor PAUSED/unavailable states during the natural
+    /// relocalization grace period do not change this value.
+    ///
+    /// CameraPage uses this durable event to distinguish:
+    ///
+    ///     temporary natural relocalization
+    ///
+    /// from:
+    ///
+    ///     actual stale-anchor replacement
+    /// </summary>
+    long GroundAnchorReplacementGeneration { get; }
+
+    bool IsInitialized { get; }
+
+    Session? Session { get; }
+
+    bool IsFrameLoopRunning { get; }
+
+    bool IsSessionPaused { get; }
+}

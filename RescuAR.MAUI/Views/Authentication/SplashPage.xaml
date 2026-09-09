@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:SplashViewModel"
+    x:Class="RescuAR.App.Views.Authentication.SplashPage"
+    BackgroundColor="White">
+
+    <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
+        
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" Grid.Column="0" HeightRequest="60" BackgroundColor="White">
+            <Label Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="18"
+                   TextColor="#1E1E1E"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Center Content: Logo Card -->
+        <VerticalStackLayout Grid.Row="1" 
+                             HorizontalOptions="Center" 
+                             VerticalOptions="Center"
+                             Spacing="20">
+            
+            <Border WidthRequest="300"
+                    HeightRequest="120"
+                    StrokeThickness="0"
+                    BackgroundColor="White"
+                    StrokeShape="RoundRectangle 12">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
+                </Border.Shadow>
+                
+                <Image Source="rescuar_logo.jpg"
+                       Aspect="AspectFit"
+                       Margin="10"
+                       HorizontalOptions="Fill"
+                       VerticalOptions="Fill" />
+            </Border>
+            
+        </VerticalStackLayout>
+
+        <!-- Bottom Loading State & Version -->
+        <VerticalStackLayout Grid.Row="2"
+                             HorizontalOptions="Center"
+                             VerticalOptions="End"
+                             Margin="0,0,0,40"
+                             Spacing="12">
+            
+            <ActivityIndicator IsRunning="True"
+                               Color="#00848E"
+                               WidthRequest="24"
+                               HeightRequest="24"
+                               HorizontalOptions="Center" />
+            
+            <Label Text="{Binding StatusText}"
+                   FontSize="14"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#5A5A5A"
+                   HorizontalOptions="Center" />
+            
+            <Label Text="{Binding VersionText}"
+                   FontSize="12"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#A0A0A0"
+                   HorizontalOptions="Center" />
+            
+        </VerticalStackLayout>
+        
+    </Grid>
+
+</ContentPage>
+

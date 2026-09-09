@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:dashboard="clr-namespace:RescuAR.App.Views.Dashboard"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:Class="RescuAR.App.Views.Dashboard.QuickActionsPage"
+    x:Name="QuickActionsRoot"
+    x:DataType="vm:QuickActionsViewModel">
+
+    <VerticalStackLayout Spacing="12">
+        <!-- Header -->
+        <Grid ColumnDefinitions="*, Auto" VerticalOptions="Center">
+            <Label Text="Quick Actions"
+                   TextColor="#000000"
+                   FontSize="16"
+                   FontAttributes="Bold"
+                   VerticalOptions="Center" />
+            <Button Grid.Column="1"
+                    Text="Edit"
+                    Command="{Binding EditQuickActionsCommand}"
+                    TextColor="#000000"
+                    BackgroundColor="#E5E5EA"
+                    FontSize="12"
+                    FontAttributes="Bold"
+                    Padding="12,6"
+                    CornerRadius="8"
+                    HeightRequest="32"
+                    VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Actions List -->
+        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Actions}" Spacing="8">
+            <BindableLayout.ItemTemplate>
+                <DataTemplate x:DataType="models:QuickActionItem">
+                    <Border StrokeShape="RoundRectangle 12"
+                            StrokeThickness="1"
+                            Stroke="#E5E5EA"
+                            BackgroundColor="#FFFFFF"
+                            Padding="12">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={x:Reference QuickActionsRoot}, Path=ViewModel.ExecuteActionCommand, x:DataType=dashboard:QuickActionsPage}"
+                                CommandParameter="{Binding .}" />
+                        </Border.GestureRecognizers>
+                        
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                            <!-- Icon Container -->
+                            <Border Grid.Column="0"
+                                    StrokeShape="RoundRectangle 8"
+                                    StrokeThickness="0"
+                                    BackgroundColor="#F2F2F7"
+                                    WidthRequest="40"
+                                    HeightRequest="40"
+                                    VerticalOptions="Center">
+                                <Path Data="{Binding IconData}"
+                                      Fill="#0A8491"
+                                      WidthRequest="20"
+                                      HeightRequest="20"
+                                      Aspect="Uniform"
+                                      HorizontalOptions="Center"
+                                      VerticalOptions="Center" />
+                            </Border>
+
+                            <!-- Labels -->
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{Binding Title}"
+                                       TextColor="#000000"
+                                       FontSize="14"
+                                       FontAttributes="Bold" />
+                                <Label Text="{Binding Subtitle}"
+                                       TextColor="#7F7F7F"
+                                       FontSize="11" />
+                            </VerticalStackLayout>
+
+                            <!-- Arrow Symbol -->
+                            <Path Grid.Column="2"
+                                  Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"
+                                  Fill="#7F7F7F"
+                                  WidthRequest="16"
+                                  HeightRequest="16"
+                                  Aspect="Uniform"
+                                  VerticalOptions="Center" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </BindableLayout.ItemTemplate>
+        </VerticalStackLayout>
+    </VerticalStackLayout>
+</ContentView>

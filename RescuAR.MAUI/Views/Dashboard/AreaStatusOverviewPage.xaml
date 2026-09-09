@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.AreaStatusOverviewPage"
+    x:DataType="vm:AreaStatusOverviewViewModel">
+
+    <Border StrokeShape="RoundRectangle 16"
+            StrokeThickness="0"
+            BackgroundColor="{Binding BackgroundColor}"
+            Padding="20"
+            Margin="0,0,0,4">
+        
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer NumberOfTapsRequired="2" Command="{Binding CycleRiskLevelCommand}" />
+        </Border.GestureRecognizers>
+
+        <VerticalStackLayout Spacing="14">
+            <!-- Header Badge & Status Title -->
+            <VerticalStackLayout Spacing="6">
+                <!-- Badge Pill -->
+                <Border StrokeShape="RoundRectangle 8"
+                        BackgroundColor="#FFFFFF"
+                        Padding="10,4"
+                        HorizontalOptions="Start"
+                        StrokeThickness="0"
+                        Opacity="0.85">
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding TextColor}" VerticalOptions="Center" />
+                        <Label Text="{Binding RiskTitle}" TextColor="{Binding TextColor}" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </Border>
+
+                <!-- Dynamic Advisories Text -->
+                <Label Text="{Binding AdvisoriesText}"
+                       TextColor="{Binding TextColor}"
+                       FontSize="15"
+                       FontAttributes="Bold"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Key Metric Grid Details -->
+            <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="6" ColumnSpacing="8">
+                <!-- Row 1: Nearest Evacuation Center -->
+                <Label Grid.Row="0" Grid.Column="0"
+                       Text="Nearest Evacuation Center"
+                       TextColor="{Binding LabelColor}"
+                       FontSize="13"
+                       VerticalOptions="Center" />
+
+                <HorizontalStackLayout Grid.Row="0" Grid.Column="1" HorizontalOptions="End" Spacing="4" VerticalOptions="Center">
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding NavigateToEvacuationCenterCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                    <Label Text="{Binding NearestCenterName}" TextColor="{Binding LinkColor}" FontSize="13" FontAttributes="Bold" />
+                    <Label Text="{Binding NearestCenterDistance, StringFormat='( {0} )'}" TextColor="{Binding LinkColor}" FontSize="13" />
+                    <Label Text=">" TextColor="{Binding LinkColor}" FontSize="13" FontAttributes="Bold" />
+                </HorizontalStackLayout>
+
+                <!-- Row 2: Recommended Action -->
+                <Label Grid.Row="1" Grid.Column="0"
+                       Text="Recommended Action"
+                       TextColor="{Binding LabelColor}"
+                       FontSize="13"
+                       VerticalOptions="Center" />
+
+                <Label Grid.Row="1" Grid.Column="1"
+                       Text="{Binding RecommendedAction}"
+                       TextColor="{Binding TextColor}"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       HorizontalOptions="End"
+                       HorizontalTextAlignment="End"
+                       LineBreakMode="WordWrap"
+                       VerticalOptions="Center" />
+
+                <!-- Row 3: Updated At -->
+                <Label Grid.Row="2" Grid.Column="0"
+                       Text="Updated at"
+                       TextColor="{Binding LabelColor}"
+                       FontSize="13"
+                       VerticalOptions="Center" />
+
+                <Label Grid.Row="2" Grid.Column="1"
+                       Text="{Binding UpdatedText}"
+                       TextColor="{Binding LabelColor}"
+                       FontSize="13"
+                       HorizontalOptions="End"
+                       VerticalOptions="Center" />
+            </Grid>
+
+            <!-- Divider Line -->
+            <BoxView HeightRequest="1" Color="{Binding SubtitleColor}" Opacity="0.15" Margin="0,4" />
+
+            <!-- Footer Link using ViewEmergencySummaryCommand -->
+            <HorizontalStackLayout Spacing="4" VerticalOptions="End">
+                <HorizontalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding ViewEmergencySummaryCommand}" />
+                </HorizontalStackLayout.GestureRecognizers>
+                <Label Text="View emergency summary"
+                       TextColor="{Binding LinkColor}"
+                       FontAttributes="Bold"
+                       FontSize="13" />
+            </HorizontalStackLayout>
+        </VerticalStackLayout>
+    </Border>
+</ContentView>

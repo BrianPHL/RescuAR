@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="RescuAR.App/RescuAR.App.csproj">
-    <Deploy Solution="Debug|*" />
-  </Project>
-</Solution>

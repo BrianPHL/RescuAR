@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.WeatherInformationPage"
+    x:DataType="vm:WeatherInformationViewModel">
+
+    <VerticalStackLayout Spacing="10">
+        <!-- Section Header -->
+        <Label Text="Weather Forecast"
+               TextColor="#0F172A"
+               FontSize="16"
+               FontAttributes="Bold" />
+
+        <!-- Weather Card -->
+        <Border StrokeShape="RoundRectangle 18"
+                StrokeThickness="1"
+                Stroke="#E2E8F0"
+                BackgroundColor="#FFFFFF"
+                Padding="20">
+            
+            <!-- Allow tap gesture to request location permission and refresh real-time weather -->
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding RequestLocationAndRefreshCommand}" />
+            </Border.GestureRecognizers>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" VerticalOptions="Center">
+                
+                <!-- Left Column: Details -->
+                <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                    <!-- Location Line -->
+                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                        <Label Text="{Binding LocationName}"
+                               TextColor="#64748B"
+                               FontSize="14" />
+                        
+                        <!-- Location Arrow Vector -->
+                        <Path Data="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z"
+                              Fill="#64748B"
+                              WidthRequest="12"
+                              HeightRequest="12"
+                              Aspect="Uniform"
+                              VerticalOptions="Center">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="45" />
+                            </Path.RenderTransform>
+                        </Path>
+                    </HorizontalStackLayout>
+
+                    <!-- Temperature -->
+                    <Label Text="{Binding TemperatureDisplay}"
+                           TextColor="#0F172A"
+                           FontSize="36"
+                           FontAttributes="Bold"
+                           Margin="0,4,0,4" />
+
+                    <!-- Weather Description -->
+                    <Label Text="{Binding ConditionDescription}"
+                           TextColor="#0F172A"
+                           FontSize="15"
+                           FontAttributes="Bold" />
+
+                    <!-- Weather Summary -->
+                    <Label Text="{Binding ConditionSummary}"
+                           TextColor="#64748B"
+                           FontSize="13"
+                           LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+
+                <!-- Right Column: Outline Rain Cloud Vector Icon -->
+                <Path Grid.Column="1"
+                      Data="M19.35,10.04C18.67,6.59 15.64,4 12,4C9.11,4 6.6,5.64 5.35,8.04C2.34,8.36 0,10.91 0,14A6,6 0 0,0 6,20H19A5,5 0 0,0 24,15C24,12.36 21.95,10.22 19.35,10.04Z"
+                      Fill="Transparent"
+                      Stroke="#CBD5E1"
+                      StrokeThickness="3"
+                      WidthRequest="72"
+                      HeightRequest="72"
+                      Aspect="Uniform"
+                      HorizontalOptions="Center"
+                      VerticalOptions="Center" />
+            </Grid>
+        </Border>
+    </VerticalStackLayout>
+</ContentView>

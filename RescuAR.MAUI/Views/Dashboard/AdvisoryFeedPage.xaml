@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:Class="RescuAR.App.Views.Dashboard.AdvisoryFeedPage"
+    x:DataType="vm:AdvisoryFeedViewModel"
+    Title="Updates"
+    BackgroundColor="#F8FAFC"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar (Dark Navy Header) -->
+        <Border Grid.Row="0"
+                BackgroundColor="#132238"
+                StrokeThickness="0"
+                Padding="16,14">
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
+                <!-- Back Button -->
+                <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="18"
+                          HeightRequest="18"
+                          Aspect="Uniform"
+                          VerticalOptions="Center" />
+                    <Label Text="Back"
+                           TextColor="#FFFFFF"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <!-- App Title -->
+                <Label Grid.Column="1"
+                       Text="Disaster Updates"
+                       TextColor="#FFFFFF"
+                       FontSize="16"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
+
+                <!-- Bell Icon -->
+                <Border Grid.Column="2"
+                        StrokeThickness="0"
+                        BackgroundColor="Transparent"
+                        Padding="4"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                    </Border.GestureRecognizers>
+                    <Path Data="M12,2A2,2 0 0,0 10,4A7,7 0 0,0 3,11V16L1,18V19H23V18L21,16V11A7,7 0 0,0 14,4A2,2 0 0,0 12,2M10,20A2,2 0 0,0 12,22A2,2 0 0,0 14,20H10Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="22"
+                          HeightRequest="22"
+                          Aspect="Uniform"
+                          VerticalOptions="Center" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Scrollable Body Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="18" Padding="16,16,16,32">
+
+                <!-- Title & Breadcrumbs Section -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Home / Updates" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <Label Text="Disaster Updates" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
+                    <Label Text="Official disaster alerts and verified agency advisories." TextColor="#475569" FontSize="14" />
+                </VerticalStackLayout>
+
+                <!-- Active Monitoring Hero Card -->
+                <Border StrokeShape="RoundRectangle 16"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        BackgroundColor="#FFFFFF"
+                        Padding="18">
+                    <Border.Shadow>
+                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
+                    </Border.Shadow>
+                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                        <VerticalStackLayout Grid.Column="0" Spacing="8">
+                            <Border StrokeShape="RoundRectangle 20"
+                                    BackgroundColor="#DCFCE7"
+                                    Padding="10,5"
+                                    HorizontalOptions="Start"
+                                    StrokeThickness="0">
+                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                    <Ellipse WidthRequest="6" HeightRequest="6" Fill="#15803D" VerticalOptions="Center" />
+                                    <Label Text="Active Monitoring" TextColor="#15803D" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+
+                            <Label Text="Within 5 km of your location." TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                            <Label Text="{Binding LastUpdatedText}" TextColor="#94A3B8" FontSize="12" />
+                        </VerticalStackLayout>
+
+                        <!-- Signal Waves Icon -->
+                        <Path Grid.Column="1"
+                              Data="M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12A9,9 0 0,0 12,3Z"
+                              Fill="#CBD5E1"
+                              WidthRequest="44"
+                              HeightRequest="44"
+                              Aspect="Uniform"
+                              VerticalOptions="Center"
+                              HorizontalOptions="End" />
+                    </Grid>
+                </Border>
+
+                <!-- Categories Section -->
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Categories" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout BindableLayout.ItemsSource="{Binding CategoryChips}" Spacing="8">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CategoryChipItem">
+                                    <Border StrokeShape="RoundRectangle 12"
+                                            StrokeThickness="1"
+                                            Stroke="{Binding BorderColor}"
+                                            BackgroundColor="{Binding BgColor}"
+                                            Padding="16,8">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectCategoryCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                CommandParameter="{Binding Name}" />
+                                        </Border.GestureRecognizers>
+                                        <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <!-- Status Section -->
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Status" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout BindableLayout.ItemsSource="{Binding StatusChips}" Spacing="8">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CategoryChipItem">
+                                    <Border StrokeShape="RoundRectangle 12"
+                                            StrokeThickness="1"
+                                            Stroke="{Binding BorderColor}"
+                                            BackgroundColor="{Binding BgColor}"
+                                            Padding="16,8">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectStatusCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                CommandParameter="{Binding Name}" />
+                                        </Border.GestureRecognizers>
+                                        <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <!-- Advisory Feed List -->
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding DisplayedAdvisories}" Spacing="16">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:DisasterAdvisory">
+                            <Border StrokeShape="RoundRectangle 16"
+                                    StrokeThickness="1"
+                                    Stroke="#E2E8F0"
+                                    BackgroundColor="#FFFFFF"
+                                    Padding="16">
+                                <Border.Shadow>
+                                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
+                                </Border.Shadow>
+                                <VerticalStackLayout Spacing="12">
+                                    <!-- Badges Pill Row -->
+                                    <HorizontalStackLayout Spacing="6">
+                                        <!-- Severity Pill -->
+                                        <Border StrokeShape="RoundRectangle 12" BackgroundColor="{Binding AlertBadgeBg}" Padding="10,4" StrokeThickness="0">
+                                            <Label Text="{Binding Severity}" TextColor="{Binding AlertBadgeText}" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <!-- Category Pill -->
+                                        <Border StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" Padding="10,4">
+                                            <Label Text="{Binding Category}" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                        <!-- Type Tag Pill -->
+                                        <Border StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" Padding="10,4">
+                                            <Label Text="Advisory" TextColor="#0F172A" FontSize="11" />
+                                        </Border>
+                                        <!-- Status Pill -->
+                                        <Border StrokeShape="RoundRectangle 12" BackgroundColor="#DCFCE7" Padding="10,4" StrokeThickness="0">
+                                            <Label Text="Active" TextColor="#166534" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+
+                                    <!-- Main Title -->
+                                    <Label Text="{Binding Title}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" LineBreakMode="WordWrap" />
+
+                                    <!-- Description (if present) -->
+                                    <Label Text="{Binding DisplayMessage}"
+                                           TextColor="#475569"
+                                           FontSize="13"
+                                           LineBreakMode="WordWrap" />
+
+                                    <!-- Key-Value Details Grid -->
+                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="6">
+                                        <Label Grid.Row="0" Grid.Column="0" Text="Affected Area" TextColor="#64748B" FontSize="13" />
+                                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding AffectedArea}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" />
+
+                                        <Label Grid.Row="1" Grid.Column="0" Text="Issued by" TextColor="#64748B" FontSize="13" />
+                                        <Label Grid.Row="1" Grid.Column="1" Text="Not provided" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" />
+
+                                        <Label Grid.Row="2" Grid.Column="0" Text="Issued at" TextColor="#64748B" FontSize="13" />
+                                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding CreatedAtText}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" />
+                                    </Grid>
+
+                                    <!-- View Details Action Link -->
+                                    <HorizontalStackLayout Spacing="4" Margin="0,4,0,0">
+                                        <HorizontalStackLayout.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ViewDetailsCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                CommandParameter="{Binding .}" />
+                                        </HorizontalStackLayout.GestureRecognizers>
+                                        <Label Text="View details  ❯" TextColor="#008080" FontSize="14" FontAttributes="Bold" />
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <!-- Footer note -->
+                <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" Margin="0,8,0,16">
+                    <Ellipse WidthRequest="6" HeightRequest="6" Fill="#15803D" VerticalOptions="Center" />
+                    <Label Text="Alerts are updating in real time." TextColor="#64748B" FontSize="12" />
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

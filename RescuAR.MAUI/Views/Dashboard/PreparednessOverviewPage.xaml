@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.PreparednessOverviewPage"
+    x:DataType="vm:PreparednessOverviewViewModel">
+
+    <Border StrokeShape="RoundRectangle 16"
+            StrokeThickness="0"
+            BackgroundColor="#DCFCE7"
+            Padding="14"
+            VerticalOptions="Fill">
+
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding NavigateToPreparationProgressCommand}" />
+        </Border.GestureRecognizers>
+
+        <VerticalStackLayout Spacing="8" VerticalOptions="Center">
+            <!-- Title & Subtitle -->
+            <Label Text="{Binding Title}"
+                   TextColor="#15803D"
+                   FontSize="22"
+                   FontAttributes="Bold" />
+            
+            <Label Text="{Binding Subtitle}"
+                   TextColor="#166534"
+                   FontSize="12"
+                   LineBreakMode="WordWrap" />
+
+            <!-- Footer Action Label -->
+            <Label Text="{Binding ActionText}"
+                   TextColor="#15803D"
+                   FontSize="12"
+                   FontAttributes="Bold"
+                   Margin="0,4,0,0" />
+        </VerticalStackLayout>
+    </Border>
+</ContentView>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
+    x:DataType="vm:LoginViewModel"
+    x:Class="RescuAR.App.Views.Authentication.LoginPage"
+    BackgroundColor="White"
+    NavigationPage.HasNavigationBar="False">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <x:String x:Key="LockIcon">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</x:String>
+            <x:String x:Key="GoogleIcon">M 12 10.2 L 12 13.8 L 18.2 13.8 C 17.6 16.4 15.2 18.2 12 18.2 C 8.6 18.2 5.8 15.4 5.8 12 C 5.8 8.6 8.6 5.8 12 5.8 C 13.5 5.8 14.9 6.3 16 7.2 L 18.6 4.6 C 16.8 3 14.5 2 12 2 C 6.5 2 2 6.5 2 12 C 2 17.5 6.5 22 12 22 C 17.8 22 22 17.8 22 12 C 22 11.4 21.9 10.8 21.8 10.2 L 12 10.2 Z</x:String>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <Grid RowDefinitions="Auto, *">
+
+        <!-- Removed Top Navigation -->
+
+        <!-- Main Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="24, 10, 24, 40" Spacing="20">
+
+                <!-- Header -->
+                <VerticalStackLayout Spacing="6" Margin="0, 10, 0, 10">
+                    <Label Text="Welcome Back" FontFamily="OpenSansSemibold" FontSize="26" TextColor="#1E1E1E" HorizontalOptions="Center" />
+                    <Label Text="Login to access your account" FontFamily="OpenSansRegular" FontSize="14" TextColor="#757575" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+
+                <!-- Page Toggle (Sign Up / Log In) -->
+                <Border StrokeThickness="0" BackgroundColor="#EEEEEE" StrokeShape="RoundRectangle 25" HeightRequest="50" Margin="0, 10, 0, 10">
+                    <Grid ColumnDefinitions="*, *">
+                        <!-- Sign Up -->
+                        <Label Grid.Column="0" Text="Sign Up" TextColor="#757575" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding GoToSignUpCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
+                        <!-- Log In (Active) -->
+                        <Border Grid.Column="1" StrokeThickness="0" BackgroundColor="#00848E" StrokeShape="RoundRectangle 25" Margin="4">
+                            <Label Text="Log In" TextColor="White" FontFamily="OpenSansSemibold" FontSize="15" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Error Message -->
+                <Label Text="{Binding ErrorMessage}" TextColor="#D8000C" FontSize="13" FontFamily="OpenSansSemibold" HorizontalOptions="Center" HorizontalTextAlignment="Center" IsVisible="{Binding HasError}" Margin="0, -10, 0, 0" />
+
+                <!-- Email Field -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Email" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference emailEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Entry x:Name="emailEntry" Text="{Binding Email}" Placeholder="juanmigueldelacruz@gmail.com" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" Keyboard="Email" />
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Password Field -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#757575" />
+                    <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50" Padding="20, 0">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding Source={x:Reference passwordEntry}, Path=IsFocused, x:DataType=Entry}" Value="True">
+                                <Setter Property="Stroke" Value="#00848E" />
+                                <Setter Property="StrokeThickness" Value="1.5" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
+                            <Entry x:Name="passwordEntry" Grid.Column="0" Text="{Binding Password}" IsPassword="False" Placeholder="********" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
+                            <ContentView Grid.Column="1" WidthRequest="24" HeightRequest="24" VerticalOptions="Center" HorizontalOptions="Center">
+                                <ContentView.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding TogglePasswordVisibilityCommand}" />
+                                </ContentView.GestureRecognizers>
+                                <Grid>
+                                    <!-- Eye-Off Icon (Hidden Password) -->
+                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordHidden}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                    <!-- Eye Icon (Visible Password) -->
+                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z" 
+                                          Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordVisible}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                                </Grid>
+                            </ContentView>
+                        </Grid>
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Remember me / Forgot Password -->
+                <Grid ColumnDefinitions="Auto, *" Margin="0, 0, 0, 10">
+                    <!-- Remember Me Placeholder -->
+                    <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
+                        <CheckBox Color="#00848E" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
+                        <Label Text="Remember me" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                    
+                    <Label Grid.Column="1" Text="Forget password?" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="End" VerticalOptions="Center">
+                        <Label.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding ResetPasswordCommand}" />
+                        </Label.GestureRecognizers>
+                    </Label>
+                </Grid>
+
+                <!-- Log In Button -->
+                <Grid Margin="0, 10, 0, 0">
+                    <Border StrokeThickness="0" BackgroundColor="#00848E" StrokeShape="RoundRectangle 25" HeightRequest="50" IsVisible="{Binding IsNotLoading}">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding LoginCommand}" />
+                        </Border.GestureRecognizers>
+                        <Label Text="Log In" TextColor="White" FontFamily="OpenSansSemibold" FontSize="16" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
+                    <ActivityIndicator IsRunning="{Binding IsLoading}" Color="White" HeightRequest="50" HorizontalOptions="Center" IsVisible="{Binding IsLoading}" />
+                </Grid>
+
+                <!-- Divider -->
+                <Grid ColumnDefinitions="*, Auto, *" VerticalOptions="Center" Margin="0, 10">
+                    <BoxView Grid.Column="0" HeightRequest="1" BackgroundColor="#EEEEEE" VerticalOptions="Center" />
+                    <Label Grid.Column="1" Text="Or Sign In With" Margin="16, 0" FontSize="12" FontFamily="OpenSansRegular" TextColor="#9E9E9E" VerticalOptions="Center" />
+                    <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="#EEEEEE" VerticalOptions="Center" />
+                </Grid>
+
+                <!-- Social Sign In (Google) -->
+                <Border StrokeThickness="1" Stroke="#E0E0E0" StrokeShape="RoundRectangle 25" BackgroundColor="White" HeightRequest="50">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoogleSignInCommand}" />
+                    </Border.GestureRecognizers>
+                    <Grid ColumnDefinitions="Auto, Auto" HorizontalOptions="Center" ColumnSpacing="10">
+                        <Path Grid.Column="0" Data="{StaticResource GoogleIcon}" Fill="#4285F4" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="Google" TextColor="#1E1E1E" FontFamily="OpenSansSemibold" FontSize="14" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Sign Up Link -->
+                <Label HorizontalOptions="Center" FontSize="13" FontFamily="OpenSansRegular" TextColor="#757575" Margin="0, 10, 0, 10">
+                    <Label.FormattedText>
+                        <FormattedString>
+                            <Span Text="Don't have an account? " />
+                            <Span Text="Sign Up" TextColor="#5A67D8" FontFamily="OpenSansSemibold">
+                                <Span.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToSignUpCommand}" />
+                                </Span.GestureRecognizers>
+                            </Span>
+                        </FormattedString>
+                    </Label.FormattedText>
+                </Label>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+
+</ContentPage>

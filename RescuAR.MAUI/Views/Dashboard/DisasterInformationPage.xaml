@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
+    x:Class="RescuAR.App.Views.Dashboard.DisasterInformationPage"
+    x:DataType="vm:DisasterInformationViewModel">
+
+    <Border StrokeShape="RoundRectangle 16"
+            StrokeThickness="0"
+            BackgroundColor="#FAF2DB"
+            Padding="16"
+            HeightRequest="150"
+            VerticalOptions="Fill">
+
+        <Border.GestureRecognizers>
+            <TapGestureRecognizer Command="{Binding NavigateToDisasterUpdatesCommand}" />
+        </Border.GestureRecognizers>
+
+        <Grid RowDefinitions="*,Auto" RowSpacing="8" InputTransparent="True">
+            <!-- Header & Description -->
+            <VerticalStackLayout Grid.Row="0" Spacing="6">
+                <Label Text="{Binding Title}"
+                       TextColor="#7E5B12"
+                       FontSize="18"
+                       FontAttributes="Bold" />
+                <Label Text="{Binding Description}"
+                       TextColor="#8B702D"
+                       FontSize="12"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Footer Link -->
+            <HorizontalStackLayout Grid.Row="1" Spacing="4" VerticalOptions="End">
+                <Label Text="{Binding ActionText}"
+                       TextColor="#7E5B12"
+                       FontSize="13"
+                       FontAttributes="Bold" />
+                <Path Data="M6.4,18L5,16.6L14.6,7H7V5H18V16H16V8.4L6.4,18Z"
+                      Fill="#7E5B12"
+                      WidthRequest="12"
+                      HeightRequest="12"
+                      Aspect="Uniform"
+                      VerticalOptions="Center" />
+            </HorizontalStackLayout>
+        </Grid>
+    </Border>
+</ContentView>

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.DocumentaryVideosPage"
+    x:DataType="vm:DocumentaryVideosViewModel"
+    Title="Documentary Videos"
+    BackgroundColor="#F8FAFC"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top Custom Header Bar -->
+        <Border Grid.Row="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="0,0,0,1" Padding="16,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Grid.Column="0" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 16" WidthRequest="36" HeightRequest="36">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="←" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+                <Label Grid.Column="1" Text="Flood Documentaries" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Page Content ScrollView -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="20" Padding="16">
+                
+                <!-- Hero Video Banner -->
+                <Border StrokeThickness="0" StrokeShape="RoundRectangle 24" HeightRequest="160" HorizontalOptions="Fill">
+                    <Grid>
+                        <Image Source="carousel_flood_history.png" Aspect="AspectFill" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        <BoxView HorizontalOptions="Fill" VerticalOptions="Fill">
+                            <BoxView.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#20032B36" Offset="0.0" />
+                                    <GradientStop Color="#90032B36" Offset="0.5" />
+                                    <GradientStop Color="#F0032B36" Offset="1.0" />
+                                </LinearGradientBrush>
+                            </BoxView.Background>
+                        </BoxView>
+
+                        <Grid Padding="18" RowDefinitions="Auto,*">
+                            <Border Grid.Row="0" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,4" HorizontalOptions="Start">
+                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                    <Path Data="M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z" Fill="#0369A1" WidthRequest="10" HeightRequest="10" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Label Text="OFFICIAL DOCUMENTARIES" TextColor="#0369A1" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+
+                            <VerticalStackLayout Grid.Row="1" Spacing="4" VerticalOptions="End">
+                                <Label Text="Marikina Flood Documentaries" TextColor="#FFFFFF" FontSize="22" FontAttributes="Bold" />
+                                <Label Text="Watch real-time coverage, emergency response, and post-disaster recovery." TextColor="#E0F2FE" FontSize="12" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- Section Header -->
+                <Label Text="Featured Video Coverage" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" Margin="0,4,0,0" />
+                
+                <!-- Video 1: Typhoon Ondoy (2009) -->
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <HorizontalStackLayout Spacing="8">
+                                <Border BackgroundColor="#DC2626" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                    <Label Text="2009 • ONDOY" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                                <Border BackgroundColor="#FEE2E2" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="23.0m Record Crest" TextColor="#991B1B" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </HorizontalStackLayout>
+                            <Label Grid.Column="1" Text="News Video" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                        </Grid>
+
+                        <Label Text="Typhoon Ondoy (Ketsana) Documentary" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+
+                        <!-- Video Container Box -->
+                        <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" HeightRequest="220">
+                            <WebView Source="{Binding OndoyVideoUrl}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        </Border>
+
+                        <Label Text="Historical broadcast documentary of record-breaking rainfall and flood levels across Marikina River." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Video 2: Typhoon Ulysses (2020) -->
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 20" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <HorizontalStackLayout Spacing="8">
+                                <Border BackgroundColor="#D97706" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4">
+                                    <Label Text="2020 • ULYSSES" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                                <Border BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="22.0m 3rd Alarm" TextColor="#92400E" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </HorizontalStackLayout>
+                            <Label Grid.Column="1" Text="News Video" TextColor="#64748B" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                        </Grid>
+
+                        <Label Text="Typhoon Ulysses Rescue &amp; Recovery" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+
+                        <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" HeightRequest="220">
+                            <WebView Source="{Binding UlyssesVideoUrl}" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        </Border>
+
+                        <Label Text="Marikina River 22-meter flood crest rescue footage and emergency evacuation coverage." TextColor="#475569" FontSize="13" LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

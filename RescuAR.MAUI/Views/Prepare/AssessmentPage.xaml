@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    x:Class="RescuAR.App.Views.Prepare.AssessmentPage"
+    x:DataType="vm:AssessmentViewModel"
+    Title="Preparation Quiz"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F8FAFC">
+
+    <ContentPage.BindingContext>
+        <vm:AssessmentViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid RowDefinitions="Auto,*">
+        
+        <!-- Header Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" HeightRequest="56" Padding="16,0" BackgroundColor="#FFFFFF">
+            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                <HorizontalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding BackCommand}" />
+                </HorizontalStackLayout.GestureRecognizers>
+                <Label Text="Back" TextColor="#0A8491" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+            </HorizontalStackLayout>
+
+            <Label Grid.Column="1" Text="PASS Quiz" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+            <Label Grid.Column="2" Text="Quiz" TextColor="#64748B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1">
+            
+            <!-- State 1: Questionnaire Flow -->
+            <Grid RowDefinitions="*,Auto" Padding="20" IsVisible="{Binding IsNotFinished}">
+                
+                <ScrollView Grid.Row="0">
+                    <VerticalStackLayout Spacing="20">
+                        
+                        <!-- Progress Card -->
+                        <Border BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 14" Padding="16">
+                            <VerticalStackLayout Spacing="10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Text="{Binding QuestionProgressText}" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                                    <Label Grid.Column="1" Text="{Binding PercentText}" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
+                                </Grid>
+                                <ProgressBar Progress="{Binding ProgressValue}" ProgressColor="#0A8491" HeightRequest="8" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <!-- Question Card -->
+                        <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" BackgroundColor="#FFFFFF" Padding="20">
+                            <VerticalStackLayout Spacing="16">
+                                <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
+                                    <Label Text="{Binding CurrentQuestion.Category}" TextColor="#0369A1" FontSize="12" FontAttributes="Bold" />
+                                </Border>
+
+                                <Label Text="{Binding CurrentQuestion.QuestionText}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" LineBreakMode="WordWrap" />
+
+                                <!-- Option Cards -->
+                                <VerticalStackLayout Spacing="12" Margin="0,8,0,0">
+                                    
+                                    <!-- Option 1 -->
+                                    <Border StrokeThickness="1.5" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,14">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsOption1Selected}" Value="True">
+                                                <Setter Property="Stroke" Value="#0A8491" />
+                                                <Setter Property="BackgroundColor" Value="#F0FDFA" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding SelectOptionCommand}" CommandParameter="1" />
+                                        </Border.GestureRecognizers>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" VerticalOptions="Center">
+                                            <Border WidthRequest="22" HeightRequest="22" StrokeThickness="2" Stroke="#0A8491" StrokeShape="RoundRectangle 11" BackgroundColor="Transparent" VerticalOptions="Center">
+                                                <Border WidthRequest="12" HeightRequest="12" StrokeThickness="0" StrokeShape="RoundRectangle 6" BackgroundColor="#0A8491" IsVisible="{Binding IsOption1Selected}" VerticalOptions="Center" HorizontalOptions="Center" />
+                                            </Border>
+                                            <Label Grid.Column="1" Text="{Binding Option1Text}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Option 2 -->
+                                    <Border StrokeThickness="1.5" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,14">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsOption2Selected}" Value="True">
+                                                <Setter Property="Stroke" Value="#0A8491" />
+                                                <Setter Property="BackgroundColor" Value="#F0FDFA" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding SelectOptionCommand}" CommandParameter="2" />
+                                        </Border.GestureRecognizers>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" VerticalOptions="Center">
+                                            <Border WidthRequest="22" HeightRequest="22" StrokeThickness="2" Stroke="#0A8491" StrokeShape="RoundRectangle 11" BackgroundColor="Transparent" VerticalOptions="Center">
+                                                <Border WidthRequest="12" HeightRequest="12" StrokeThickness="0" StrokeShape="RoundRectangle 6" BackgroundColor="#0A8491" IsVisible="{Binding IsOption2Selected}" VerticalOptions="Center" HorizontalOptions="Center" />
+                                            </Border>
+                                            <Label Grid.Column="1" Text="{Binding Option2Text}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Option 3 -->
+                                    <Border StrokeThickness="1.5" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,14" IsVisible="{Binding IsOption3Visible}">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsOption3Selected}" Value="True">
+                                                <Setter Property="Stroke" Value="#0A8491" />
+                                                <Setter Property="BackgroundColor" Value="#F0FDFA" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding SelectOptionCommand}" CommandParameter="3" />
+                                        </Border.GestureRecognizers>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" VerticalOptions="Center">
+                                            <Border WidthRequest="22" HeightRequest="22" StrokeThickness="2" Stroke="#0A8491" StrokeShape="RoundRectangle 11" BackgroundColor="Transparent" VerticalOptions="Center">
+                                                <Border WidthRequest="12" HeightRequest="12" StrokeThickness="0" StrokeShape="RoundRectangle 6" BackgroundColor="#0A8491" IsVisible="{Binding IsOption3Selected}" VerticalOptions="Center" HorizontalOptions="Center" />
+                                            </Border>
+                                            <Label Grid.Column="1" Text="{Binding Option3Text}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" VerticalOptions="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+                        </Border>
+                    </VerticalStackLayout>
+                </ScrollView>
+
+                <!-- Navigation Controls -->
+                <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="16" Padding="0,16,0,0">
+                    <Button Text="Previous" TextColor="#0A8491" BackgroundColor="#FFFFFF" BorderColor="#0A8491" BorderWidth="1.5" CornerRadius="12" HeightRequest="48" FontSize="15" FontAttributes="Bold"
+                            Command="{Binding PreviousCommand}" IsEnabled="{Binding CanGoPrevious}" />
+                    
+                    <Button Grid.Column="1" Text="Next Question" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="48" FontSize="15" FontAttributes="Bold"
+                            Command="{Binding NextCommand}" IsEnabled="{Binding CanGoNext}" IsVisible="{Binding IsNotLastQuestion}" />
+
+                    <Button Grid.Column="1" Text="Calculate Score" TextColor="#FFFFFF" BackgroundColor="#16A34A" CornerRadius="12" HeightRequest="48" FontSize="15" FontAttributes="Bold"
+                            Command="{Binding SubmitCommand}" IsEnabled="{Binding CanSubmit}" IsVisible="{Binding IsLastQuestion}" />
+                </Grid>
+            </Grid>
+
+            <!-- State 2: Assessment Results Screen -->
+            <Grid Padding="24" IsVisible="{Binding IsFinished}" BackgroundColor="#F8FAFC">
+                <VerticalStackLayout Spacing="24" VerticalOptions="Center" HorizontalOptions="Center">
+                    
+                    <Border WidthRequest="90" HeightRequest="90" StrokeThickness="4" Stroke="#16A34A" StrokeShape="RoundRectangle 45" BackgroundColor="#DCFCE7" HorizontalOptions="Center">
+                        <Label Text="PASSED" TextColor="#16A34A" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
+
+                    <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                        <Label Text="Assessment Complete!" TextColor="#0F172A" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Label Text="Your calculated preparedness score is:" TextColor="#64748B" FontSize="14" HorizontalTextAlignment="Center" />
+                        <Label Text="{Binding FinalScorePercentage, StringFormat='{0}%'}" TextColor="#0A8491" FontSize="56" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 12" Padding="12,6" HorizontalOptions="Center">
+                            <Label Text="{Binding FinalScoreStatus}" TextColor="#0369A1" FontSize="14" FontAttributes="Bold" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <Button Text="Return to PASS Overview" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="52" FontSize="16" FontAttributes="Bold" WidthRequest="260"
+                            Command="{Binding GoToPreparationAssessmentCommand}" Margin="0,16,0,0" />
+                </VerticalStackLayout>
+            </Grid>
+
+        </Grid>
+    </Grid>
+
+</ContentPage>

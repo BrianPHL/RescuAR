@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Reports"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
+    x:Class="RescuAR.App.Views.Reports.ReportDetailsPage"
+    x:DataType="vm:ReportDetailsViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F8FAFC">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Top App Bar (Dark Navy Header) -->
+        <Border Grid.Row="0"
+                BackgroundColor="#132238"
+                HeightRequest="56"
+                StrokeThickness="0"
+                Padding="16,0">
+            <Grid ColumnDefinitions="Auto, *, Auto" VerticalOptions="Center">
+                <!-- Back Button -->
+                <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="18"
+                          HeightRequest="18"
+                          Aspect="Uniform"
+                          VerticalOptions="Center" />
+                    <Label Text="Back"
+                           TextColor="#FFFFFF"
+                           FontSize="15"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <!-- Page Title -->
+                <Label Grid.Column="1"
+                       Text="Report Details"
+                       TextColor="#FFFFFF"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
+
+                <!-- Bell Icon -->
+                <Path Grid.Column="2"
+                      Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                      Fill="#FFFFFF"
+                      WidthRequest="22"
+                      HeightRequest="22"
+                      Aspect="Uniform"
+                      HorizontalOptions="End"
+                      VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Main Details Content -->
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Spacing="16" Padding="16,16,16,32">
+
+                <!-- Header Title & Breadcrumbs -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Home / Community / Details" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <Label Text="Report Information" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" />
+                </VerticalStackLayout>
+                
+                <!-- Main Report Card -->
+                <Border BackgroundColor="#FFFFFF"
+                        Padding="16"
+                        Stroke="#E2E8F0"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 16">
+                    <Border.Shadow>
+                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
+                    </Border.Shadow>
+
+                    <VerticalStackLayout Spacing="14">
+                        
+                        <!-- Author Header & Category Badge -->
+                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <!-- Author Avatar -->
+                            <Border Grid.Column="0"
+                                    WidthRequest="40"
+                                    HeightRequest="40"
+                                    StrokeShape="RoundRectangle 20"
+                                    BackgroundColor="#008080"
+                                    StrokeThickness="0"
+                                    VerticalOptions="Center">
+                                <Label Text="{Binding Report.AuthorInitials}"
+                                       TextColor="#FFFFFF"
+                                       FontSize="15"
+                                       FontAttributes="Bold"
+                                       HorizontalOptions="Center"
+                                       VerticalOptions="Center" />
+                            </Border>
+
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{Binding Report.PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                <Label Text="{Binding Report.PostedAtText}" TextColor="#64748B" FontSize="12" />
+                            </VerticalStackLayout>
+
+                            <!-- Category Badge -->
+                            <Border Grid.Column="2"
+                                    BackgroundColor="{Binding Report.CategoryBadgeColor}"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="10,4"
+                                    VerticalOptions="Center">
+                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
+                                    <Path Data="{Binding Report.CategoryIcon}"
+                                          Fill="{Binding Report.CategoryTextColor}"
+                                          WidthRequest="12"
+                                          HeightRequest="12"
+                                          Aspect="Uniform"
+                                          VerticalOptions="Center" />
+                                    <Label Text="{Binding Report.Category}"
+                                           TextColor="{Binding Report.CategoryTextColor}"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <!-- Media Image -->
+                        <Border StrokeShape="RoundRectangle 12"
+                                StrokeThickness="0"
+                                HeightRequest="200"
+                                HorizontalOptions="FillAndExpand"
+                                IsVisible="{Binding Report.HasMedia}">
+                            <Image Source="{Binding Report.MediaUrl}"
+                                   Aspect="AspectFill"
+                                   HorizontalOptions="FillAndExpand"
+                                   VerticalOptions="FillAndExpand" />
+                        </Border>
+
+                        <!-- Title -->
+                        <Label Text="{Binding Report.Title}"
+                               TextColor="#0F172A"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               LineBreakMode="WordWrap" />
+
+                        <!-- Description -->
+                        <Label Text="{Binding Report.Description}"
+                               TextColor="#475569"
+                               FontSize="14"
+                               LineHeight="1.35"
+                               LineBreakMode="WordWrap" />
+
+                        <!-- Divider -->
+                        <BoxView HeightRequest="1" Color="#E2E8F0" Margin="0,4" />
+
+                        <!-- Details Key-Value List -->
+                        <Grid RowDefinitions="Auto, Auto"
+                              ColumnDefinitions="Auto, *"
+                              RowSpacing="8"
+                              ColumnSpacing="12">
+                            <!-- Address -->
+                            <Label Grid.Row="0" Grid.Column="0"
+                                   Text="Address"
+                                   TextColor="#64748B"
+                                   FontSize="13"
+                                   VerticalOptions="Start" />
+                            <Label Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding Report.Address}"
+                                   TextColor="#0F172A"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   HorizontalTextAlignment="End"
+                                   LineBreakMode="WordWrap" />
+
+                            <!-- Distance from you -->
+                            <Label Grid.Row="1" Grid.Column="0"
+                                   Text="Distance from you"
+                                   TextColor="#64748B"
+                                   FontSize="13"
+                                   VerticalOptions="Center" />
+                            <Label Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding Report.DistanceText}"
+                                   TextColor="#0F172A"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   HorizontalTextAlignment="End" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Comments Section -->
+                <VerticalStackLayout Spacing="10" Margin="0,8,0,0">
+                    <Label Text="Community Comments"
+                           TextColor="#0F172A"
+                           FontSize="17"
+                           FontAttributes="Bold" />
+
+                    <!-- Input Box Row -->
+                    <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
+                        <Border Grid.Column="0"
+                                BackgroundColor="#FFFFFF"
+                                Stroke="#E2E8F0"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="12,0"
+                                HeightRequest="46">
+                            <Entry Text="{Binding NewCommentText}"
+                                   Placeholder="Add a community comment..."
+                                   PlaceholderColor="#94A3B8"
+                                   TextColor="#0F172A"
+                                   FontSize="14"
+                                   VerticalOptions="Center"
+                                   ReturnType="Send"
+                                   ReturnCommand="{Binding AddCommentCommand}" />
+                        </Border>
+
+                        <Button Grid.Column="1"
+                                Text="Post"
+                                TextColor="#FFFFFF"
+                                BackgroundColor="#008080"
+                                FontSize="14"
+                                FontAttributes="Bold"
+                                CornerRadius="12"
+                                HeightRequest="46"
+                                Padding="18,0"
+                                Command="{Binding AddCommentCommand}" />
+                    </Grid>
+
+                    <!-- Empty Comments State -->
+                    <Label Text="Be the first to leave a comment..."
+                           TextColor="#94A3B8"
+                           FontSize="14"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           Margin="0,24,0,16"
+                           IsVisible="{Binding HasNoComments}" />
+
+                    <!-- Comments Collection -->
+                    <CollectionView ItemsSource="{Binding Report.Comments}"
+                                    Margin="0,4,0,0">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:CommunityComment">
+                                <Border BackgroundColor="#FFFFFF"
+                                        Margin="0,0,0,8"
+                                        Padding="12"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 14">
+                                    <Border.Shadow>
+                                        <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.03" />
+                                    </Border.Shadow>
+
+                                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" RowDefinitions="Auto, Auto">
+                                        <!-- Avatar -->
+                                        <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+                                                WidthRequest="36" HeightRequest="36"
+                                                StrokeShape="RoundRectangle 18"
+                                                StrokeThickness="0"
+                                                BackgroundColor="#008080">
+                                            <Label Text="{Binding AuthorName[0]}"
+                                                   TextColor="#FFFFFF"
+                                                   FontSize="16"
+                                                   FontAttributes="Bold"
+                                                   HorizontalOptions="Center"
+                                                   VerticalOptions="Center" />
+                                        </Border>
+
+                                        <!-- Author Name & Time -->
+                                        <HorizontalStackLayout Grid.Row="0" Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                            <Label Text="{Binding AuthorName}"
+                                                   TextColor="#0F172A"
+                                                   FontSize="13"
+                                                   FontAttributes="Bold" />
+                                            <Label Text="{Binding PostedAtText}"
+                                                   TextColor="#94A3B8"
+                                                   FontSize="11"
+                                                   VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+
+                                        <!-- Content -->
+                                        <Label Grid.Row="1" Grid.Column="1"
+                                               Text="{Binding Content}"
+                                               TextColor="#475569"
+                                               FontSize="13"
+                                               Margin="0,2,0,0"
+                                               LineBreakMode="WordWrap" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>
