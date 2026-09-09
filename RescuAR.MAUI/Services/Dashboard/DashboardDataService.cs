@@ -117,11 +117,11 @@ public class DashboardDataService : IDashboardDataService
             if (circles != null && circles.Count > 0)
             {
                 foreach (var circle in circles)
-    {
+                {
                     var members = await service.GetCircleMembersAsync(circle.Id);
                     int count = members?.Count ?? 0;
                     overview.Groups.Add(new SafetyCircleGroupItem
-        {
+                    {
                         Name = circle.Name,
                         StatusText = $"{count} member{(count == 1 ? "" : "s")} connected",
                         IsAlert = false
@@ -130,9 +130,9 @@ public class DashboardDataService : IDashboardDataService
             }
         }
         catch (System.Exception ex)
-            {
+        {
             System.Diagnostics.Debug.WriteLine($"GetSafetyCircleDataAsync error: {ex.Message}");
-            }
+        }
 
         return overview;
     }
