@@ -48,7 +48,7 @@
 		version changes.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
-		<AndroidSdkDirectory>C:\Users\Bri\AppData\Local\Android\Sdk</AndroidSdkDirectory>
+		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
 
 		<AndroidNdkDirectory>$(AndroidSdkDirectory)\ndk\28.2.13676358</AndroidNdkDirectory>
 		<AndroidCMakeDirectory>$(AndroidSdkDirectory)\cmake\3.22.1</AndroidCMakeDirectory>
