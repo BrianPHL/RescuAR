@@ -92,6 +92,44 @@ public static class ARCameraSpatialController
         0.25f;
 
     /*
+     * LARGE ARCORE WORLD-CORRECTION GUARD
+     * -----------------------------------
+     * Small live Anchor refinements are intentionally ignored by the V5
+     * horizontal route-root lock because following every centimeter of
+     * refinement would make the cyan guidance jitter.
+     *
+     * A multi-meter Anchor correction is different: it means ARCore has
+     * materially refined/relocalized its world model while the route is still
+     * locked to the old X/Z frame. In that case the existing local route
+     * points were also calculated from the old camera-to-anchor relationship,
+     * so merely moving the route root to the new Anchor is NOT sufficient.
+     *
+     * The draw thread therefore detects only sustained large corrections and
+     * publishes a lightweight rebase request. CameraPage consumes that request
+     * on its existing diagnostic tick and republishes the CURRENT route window
+     * using the same route progress but the corrected camera/anchor relation.
+     */
+    private const float LargeRouteWorldCorrectionThresholdMeters =
+        1.50f;
+
+    private const int LargeRouteWorldCorrectionConfirmationMilliseconds =
+        250;
+
+    private static long largeRouteWorldCorrectionCandidateStartedTimestamp =
+        long.MinValue;
+
+    private static long largeRouteWorldCorrectionCandidateRouteVersion =
+        -1;
+
+    private static long lastWorldCorrectionRequestedRouteVersion =
+        -1;
+
+    private static long worldCorrectionRequestGeneration;
+
+    private static RouteWorldCorrectionRequest pendingWorldCorrectionRequest =
+        RouteWorldCorrectionRequest.Unavailable;
+
+    /*
      * VISUAL CONTINUITY HOLD
      * ----------------------
      * ARCore PAUSED poses are not valid for spatial updates. Instead of
@@ -130,6 +168,55 @@ public static class ARCameraSpatialController
 
     private static long lastFloodMetricTelemetryTimestamp =
         long.MinValue;
+
+    /// <summary>
+    /// Latest sustained multi-meter ARCore world correction that requires the
+    /// active navigation route window to be republished from CameraPage.
+    ///
+    /// This is a request/acknowledgement bridge only. Evergine scene objects
+    /// remain draw-thread owned and CameraPage never mutates them directly.
+    /// </summary>
+    public static RouteWorldCorrectionRequest CurrentRouteWorldCorrectionRequest
+    {
+        get
+        {
+            lock (sync)
+            {
+                return pendingWorldCorrectionRequest;
+            }
+        }
+    }
+
+    public static void AcknowledgeRouteWorldCorrection(
+        long requestGeneration,
+        string reason)
+    {
+        bool acknowledged =
+            false;
+
+        lock (sync)
+        {
+            if (pendingWorldCorrectionRequest.IsPending &&
+                pendingWorldCorrectionRequest.Generation ==
+                    requestGeneration)
+            {
+                pendingWorldCorrectionRequest =
+                    RouteWorldCorrectionRequest.Unavailable;
+
+                acknowledged =
+                    true;
+            }
+        }
+
+        if (acknowledged)
+        {
+            AndroidLog.Debug(
+                RouteLogTag,
+                "ARCore world-correction route rebase request acknowledged: " +
+                $"generation={requestGeneration}, " +
+                $"reason='{(string.IsNullOrWhiteSpace(reason) ? "<unspecified>" : reason)}'.");
+        }
+    }
 
     public static void Initialize(
         Entity cameraEntity,
@@ -263,6 +350,21 @@ public static class ARCameraSpatialController
             lastLoggedAnchorDriftBucket =
                 -1;
 
+            largeRouteWorldCorrectionCandidateStartedTimestamp =
+                long.MinValue;
+
+            largeRouteWorldCorrectionCandidateRouteVersion =
+                -1;
+
+            lastWorldCorrectionRequestedRouteVersion =
+                -1;
+
+            worldCorrectionRequestGeneration =
+                0;
+
+            pendingWorldCorrectionRequest =
+                RouteWorldCorrectionRequest.Unavailable;
+
             lastLoggedTrackingValid =
                 null;
 
@@ -344,6 +446,18 @@ public static class ARCameraSpatialController
 
             lastLoggedAnchorDriftBucket =
                 -1;
+
+            largeRouteWorldCorrectionCandidateStartedTimestamp =
+                long.MinValue;
+
+            largeRouteWorldCorrectionCandidateRouteVersion =
+                -1;
+
+            lastWorldCorrectionRequestedRouteVersion =
+                -1;
+
+            pendingWorldCorrectionRequest =
+                RouteWorldCorrectionRequest.Unavailable;
 
             /*
              * ResetRouteRootLock is invoked when a genuinely new ARCore
@@ -601,6 +715,31 @@ public static class ARCameraSpatialController
 
             lastLoggedAnchorDriftBucket =
                 -1;
+
+            largeRouteWorldCorrectionCandidateStartedTimestamp =
+                long.MinValue;
+
+            largeRouteWorldCorrectionCandidateRouteVersion =
+                -1;
+
+            lastWorldCorrectionRequestedRouteVersion =
+                -1;
+
+            lock (sync)
+            {
+                /*
+                 * Any newly published route version is already based on the
+                 * newest CameraPage spatial snapshot. A request tied to the
+                 * previous geometry is therefore obsolete.
+                 */
+                if (pendingWorldCorrectionRequest.IsPending &&
+                    pendingWorldCorrectionRequest.RouteVersion !=
+                        rendererRouteVersion)
+                {
+                    pendingWorldCorrectionRequest =
+                        RouteWorldCorrectionRequest.Unavailable;
+                }
+            }
         }
 
         if (hasRouteGeometry &&
@@ -634,7 +773,23 @@ public static class ARCameraSpatialController
          * Route X/Z use the per-route-version lock. Y deliberately continues
          * following the live Anchor so small floor-height refinement remains
          * possible without horizontal route translation.
+         *
+         * Monitor horizontal Anchor refinement even while the AR Camera route
+         * is temporarily hidden by the Camera-module view gate. Otherwise a
+         * large ARCore world correction could occur on another sub-tab and
+         * leave stale route placement waiting when the user returns.
          */
+        if (hasRouteGeometry &&
+            trackingValid &&
+            anchor.IsAvailable &&
+            routeRootHorizontalLocked)
+        {
+            MonitorRouteAnchorRefinement(
+                rendererRouteVersion,
+                frame.Version,
+                anchor);
+        }
+
         if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
@@ -653,46 +808,6 @@ public static class ARCameraSpatialController
 
             hasValidRouteSpatialPlacement =
                 true;
-
-            float driftX =
-                anchor.PositionX -
-                lockedRouteRootX;
-
-            float driftZ =
-                anchor.PositionZ -
-                lockedRouteRootZ;
-
-            float horizontalAnchorDrift =
-                MathF.Sqrt(
-                    driftX * driftX +
-                    driftZ * driftZ);
-
-            int driftBucket =
-                (int)MathF.Floor(
-                    horizontalAnchorDrift /
-                    AnchorDriftLogStepMeters);
-
-            if (driftBucket >=
-                    1 &&
-                driftBucket !=
-                    lastLoggedAnchorDriftBucket)
-            {
-                lastLoggedAnchorDriftBucket =
-                    driftBucket;
-
-                AndroidLog.Debug(
-                    RouteLogTag,
-                    "V5 route root remains X/Z locked while ARCore anchor " +
-                    "refines: " +
-                    $"routeVersion={rendererRouteVersion}, " +
-                    $"lockedRoot=(" +
-                    $"{lockedRouteRootX:F2}," +
-                    $"{lockedRouteRootZ:F2}), " +
-                    $"liveAnchor=(" +
-                    $"{anchor.PositionX:F2}," +
-                    $"{anchor.PositionZ:F2}), " +
-                    $"anchorDrift={horizontalAnchorDrift:F2} m");
-            }
         }
         else
         {
@@ -884,6 +999,200 @@ public static class ARCameraSpatialController
             camera,
             capsule,
             capsuleTransform);
+    }
+
+    private static void MonitorRouteAnchorRefinement(
+        long routeVersion,
+        long spatialVersion,
+        ARCameraPoseBridge.AnchorSnapshot anchor)
+    {
+        float driftX =
+            anchor.PositionX -
+            lockedRouteRootX;
+
+        float driftZ =
+            anchor.PositionZ -
+            lockedRouteRootZ;
+
+        float horizontalAnchorDrift =
+            MathF.Sqrt(
+                driftX * driftX +
+                driftZ * driftZ);
+
+        int driftBucket =
+            (int)MathF.Floor(
+                horizontalAnchorDrift /
+                AnchorDriftLogStepMeters);
+
+        if (driftBucket >=
+                1 &&
+            driftBucket !=
+                lastLoggedAnchorDriftBucket)
+        {
+            lastLoggedAnchorDriftBucket =
+                driftBucket;
+
+            AndroidLog.Debug(
+                RouteLogTag,
+                "V5 route root remains X/Z locked while ARCore anchor " +
+                "refines: " +
+                $"routeVersion={routeVersion}, " +
+                $"lockedRoot=(" +
+                $"{lockedRouteRootX:F2}," +
+                $"{lockedRouteRootZ:F2}), " +
+                $"liveAnchor=(" +
+                $"{anchor.PositionX:F2}," +
+                $"{anchor.PositionZ:F2}), " +
+                $"anchorDrift={horizontalAnchorDrift:F2} m");
+        }
+
+        if (horizontalAnchorDrift <
+            LargeRouteWorldCorrectionThresholdMeters)
+        {
+            largeRouteWorldCorrectionCandidateStartedTimestamp =
+                long.MinValue;
+
+            largeRouteWorldCorrectionCandidateRouteVersion =
+                -1;
+
+            return;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (largeRouteWorldCorrectionCandidateRouteVersion !=
+                routeVersion ||
+            largeRouteWorldCorrectionCandidateStartedTimestamp ==
+                long.MinValue)
+        {
+            largeRouteWorldCorrectionCandidateRouteVersion =
+                routeVersion;
+
+            largeRouteWorldCorrectionCandidateStartedTimestamp =
+                now;
+
+            AndroidLog.Warn(
+                RouteLogTag,
+                "Large ARCore anchor refinement candidate detected: " +
+                $"routeVersion={routeVersion}, " +
+                $"spatialVersion={spatialVersion}, " +
+                $"anchorDrift={horizontalAnchorDrift:F2} m. " +
+                $"Confirming for {LargeRouteWorldCorrectionConfirmationMilliseconds} ms " +
+                "before requesting a route-window rebase.");
+
+            return;
+        }
+
+        if (lastWorldCorrectionRequestedRouteVersion ==
+                routeVersion ||
+            now -
+                largeRouteWorldCorrectionCandidateStartedTimestamp <
+                LargeRouteWorldCorrectionConfirmationMilliseconds)
+        {
+            return;
+        }
+
+        long requestGeneration;
+
+        lock (sync)
+        {
+            worldCorrectionRequestGeneration++;
+
+            requestGeneration =
+                worldCorrectionRequestGeneration;
+
+            pendingWorldCorrectionRequest =
+                new RouteWorldCorrectionRequest(
+                    requestGeneration,
+                    true,
+                    routeVersion,
+                    spatialVersion,
+                    horizontalAnchorDrift,
+                    lockedRouteRootX,
+                    lockedRouteRootZ,
+                    anchor.PositionX,
+                    anchor.PositionZ);
+        }
+
+        lastWorldCorrectionRequestedRouteVersion =
+            routeVersion;
+
+        AndroidLog.Warn(
+            RouteLogTag,
+            "LARGE ARCORE WORLD CORRECTION CONFIRMED: " +
+            $"requestGeneration={requestGeneration}, " +
+            $"routeVersion={routeVersion}, " +
+            $"spatialVersion={spatialVersion}, " +
+            $"lockedRoot=({lockedRouteRootX:F2},{lockedRouteRootZ:F2}), " +
+            $"liveAnchor=({anchor.PositionX:F2},{anchor.PositionZ:F2}), " +
+            $"anchorDrift={horizontalAnchorDrift:F2} m. " +
+            "Requesting immediate current-window republish; the existing route " +
+            "remains visible until the replacement version is ready.");
+    }
+
+    public readonly struct RouteWorldCorrectionRequest
+    {
+        public static RouteWorldCorrectionRequest Unavailable =>
+            new(
+                -1,
+                false,
+                -1,
+                -1,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f);
+
+        public RouteWorldCorrectionRequest(
+            long generation,
+            bool isPending,
+            long routeVersion,
+            long spatialVersion,
+            float anchorDriftMeters,
+            float lockedRootX,
+            float lockedRootZ,
+            float liveAnchorX,
+            float liveAnchorZ)
+        {
+            Generation =
+                generation;
+
+            IsPending =
+                isPending;
+
+            RouteVersion =
+                routeVersion;
+
+            SpatialVersion =
+                spatialVersion;
+
+            AnchorDriftMeters =
+                anchorDriftMeters;
+
+            LockedRootX =
+                lockedRootX;
+
+            LockedRootZ =
+                lockedRootZ;
+
+            LiveAnchorX =
+                liveAnchorX;
+
+            LiveAnchorZ =
+                liveAnchorZ;
+        }
+
+        public long Generation { get; }
+        public bool IsPending { get; }
+        public long RouteVersion { get; }
+        public long SpatialVersion { get; }
+        public float AnchorDriftMeters { get; }
+        public float LockedRootX { get; }
+        public float LockedRootZ { get; }
+        public float LiveAnchorX { get; }
+        public float LiveAnchorZ { get; }
     }
 
     private static void LogVisualContinuityHoldIfChanged(

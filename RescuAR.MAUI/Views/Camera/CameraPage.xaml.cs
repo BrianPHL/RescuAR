@@ -12,12 +12,14 @@ using RescuAR.App.Services.Reports;
 using RescuAR.App.Services.AreaStatus;
 using RescuAR.App.Services.Flood;
 using RescuAR.Navigation.Guidance;
+using RescuAR.Navigation.Data;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
 using RescuAR.Navigation.State;
 using System.Numerics;
+using Microsoft.Maui.Networking;
 
 namespace RescuAR.App.Views.Camera
 {
@@ -62,6 +64,7 @@ namespace RescuAR.App.Views.Camera
 
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
+        private readonly HybridRoutingService _hybridRoutingService;
         private readonly MLDARIntegrationService _mldArIntegrationService;
         private readonly ArHeadingAlignmentService _headingAlignmentService;
         private readonly ILocationService _locationService;
@@ -86,6 +89,22 @@ namespace RescuAR.App.Views.Camera
         private CancellationTokenSource? routeRequestCancellation;
         private CancellationTokenSource? routeProgressCancellation;
         private Task? routeProgressTask;
+
+        private CancellationTokenSource? connectivityFailoverCancellation;
+        private bool connectivityEventSubscribed;
+        private bool networkLossFailoverInProgress;
+
+        private const int NetworkLossConfirmationMilliseconds =
+            1500;
+
+        private const int NetworkFailoverBusyRetryMilliseconds =
+            250;
+
+        private const int NetworkFailoverMaximumBusyWaitMilliseconds =
+            5000;
+
+        private const int NetworkFailoverArReadyWaitMilliseconds =
+            5000;
 
         private bool routeRequestInProgress;
         private bool destinationEventSubscribed;
@@ -285,6 +304,8 @@ namespace RescuAR.App.Views.Camera
 
         private double? latestGpsAccuracyForDeveloperReroute;
 
+        private DateTimeOffset? latestGpsTimestampForRouting;
+
         private PedestrianTurnGuidanceService.TurnGuidanceSnapshot
             lastTurnGuidance =
                 PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
@@ -413,8 +434,17 @@ namespace RescuAR.App.Views.Camera
             handledGroundAnchorReplacementGeneration =
                 _arCoreService.GroundAnchorReplacementGeneration;
 
+            _hybridRoutingService =
+                new HybridRoutingService(
+                    new MLDRoutingService(),
+                    NavigationDataBootstrap.GetRoadGraphAsync,
+                    () =>
+                        Connectivity.Current.NetworkAccess ==
+                            NetworkAccess.Internet);
+
             _mldArIntegrationService =
-                new MLDARIntegrationService();
+                new MLDARIntegrationService(
+                    _hybridRoutingService);
 
             _headingAlignmentService =
                 new ArHeadingAlignmentService();
@@ -1038,6 +1068,10 @@ namespace RescuAR.App.Views.Camera
 
             SubscribeDestinationChanged();
             SubscribeEmergencyAdvisories();
+            SubscribeConnectivityChanges();
+
+            ScheduleNetworkLossFailoverIfNeeded(
+                "Camera tab entered");
 
             if (currentFloodVisualization.IsAvailable)
             {
@@ -1088,6 +1122,9 @@ namespace RescuAR.App.Views.Camera
 
             UnsubscribeDestinationChanged();
             UnsubscribeEmergencyAdvisories();
+            UnsubscribeConnectivityChanges();
+            CancelConnectivityFailover(
+                "Camera tab exited");
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
@@ -1587,6 +1624,18 @@ namespace RescuAR.App.Views.Camera
                 GeoCoordinate origin =
                     locationReading.Coordinate;
 
+                lock (routeProgressFusionSync)
+                {
+                    latestGpsCoordinateForDeveloperReroute =
+                        locationReading.Coordinate;
+
+                    latestGpsAccuracyForDeveloperReroute =
+                        locationReading.AccuracyMeters;
+
+                    latestGpsTimestampForRouting =
+                        locationReading.Timestamp;
+                }
+
                 if (!origin.IsValid)
                 {
                     Log.Error(
@@ -1739,7 +1788,7 @@ namespace RescuAR.App.Views.Camera
 
                 Log.Debug(
                     MldLogTag,
-                    "MLD route request COMPLETE: " +
+                    "Navigation route request COMPLETE: " +
                     $"algorithm='{route.Algorithm}', " +
                     $"routePoints={route.Points.Count}, " +
                     $"distance={route.TotalDistanceMeters:F1} m, " +
@@ -1870,6 +1919,418 @@ namespace RescuAR.App.Views.Camera
             cancellation.Dispose();
         }
 
+        private void SubscribeConnectivityChanges()
+        {
+            if (connectivityEventSubscribed)
+            {
+                return;
+            }
+
+            Connectivity.Current.ConnectivityChanged +=
+                OnConnectivityChanged;
+
+            connectivityEventSubscribed =
+                true;
+
+#if ANDROID
+            Log.Debug(
+                RerouteLogTag,
+                "Connectivity failover watcher subscribed: " +
+                $"networkAccess={Connectivity.Current.NetworkAccess}.");
+#endif
+        }
+
+        private void UnsubscribeConnectivityChanges()
+        {
+            if (!connectivityEventSubscribed)
+            {
+                return;
+            }
+
+            Connectivity.Current.ConnectivityChanged -=
+                OnConnectivityChanged;
+
+            connectivityEventSubscribed =
+                false;
+        }
+
+        private void OnConnectivityChanged(
+            object? sender,
+            ConnectivityChangedEventArgs e)
+        {
+#if ANDROID
+            Log.Warn(
+                RerouteLogTag,
+                "CONNECTIVITY CHANGED: " +
+                $"networkAccess={e.NetworkAccess}, " +
+                $"activeAlgorithm='{activeRoute?.Algorithm ?? "<none>"}'.");
+#endif
+
+            if (e.NetworkAccess ==
+                NetworkAccess.Internet)
+            {
+                CancelConnectivityFailover(
+                    "Internet connectivity restored");
+
+#if ANDROID
+                if (activeRoute is not null &&
+                    IsAStarRoute(
+                        activeRoute))
+                {
+                    Log.Debug(
+                        RerouteLogTag,
+                        "Internet restored while an offline A* route is active. " +
+                        "Keeping the current route; MLD becomes preferred again " +
+                        "for the next new route/reroute request.");
+                }
+#endif
+                return;
+            }
+
+            ScheduleNetworkLossFailoverIfNeeded(
+                $"ConnectivityChanged:{e.NetworkAccess}");
+        }
+
+        /// <summary>
+        /// When a route produced by MLD is active and Internet access is lost,
+        /// retain that route visually while preparing exactly one replacement
+        /// route through the existing offline A* implementation.
+        /// </summary>
+        private void ScheduleNetworkLossFailoverIfNeeded(
+            string reason)
+        {
+#if ANDROID
+            if (!pageIsVisible ||
+                safeZoneConfirmed ||
+                activeRoute is null ||
+                !IsMldRoute(
+                    activeRoute) ||
+                !activeDestinationCoordinate.HasValue ||
+                Connectivity.Current.NetworkAccess ==
+                    NetworkAccess.Internet ||
+                networkLossFailoverInProgress ||
+                connectivityFailoverCancellation is not null)
+            {
+                return;
+            }
+
+            connectivityFailoverCancellation =
+                new CancellationTokenSource();
+
+            CancellationToken cancellationToken =
+                connectivityFailoverCancellation.Token;
+
+            Log.Warn(
+                RerouteLogTag,
+                "MLD route is active while Internet is unavailable. " +
+                $"Confirming network loss for {NetworkLossConfirmationMilliseconds} ms " +
+                "before switching the active trip to offline A*. " +
+                $"reason='{reason}'.");
+
+            _ =
+                RunNetworkLossFailoverAsync(
+                    reason,
+                    cancellationToken);
+#endif
+        }
+
+        private async Task RunNetworkLossFailoverAsync(
+            string reason,
+            CancellationToken cancellationToken)
+        {
+#if ANDROID
+            if (networkLossFailoverInProgress)
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(
+                    NetworkLossConfirmationMilliseconds,
+                    cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (Connectivity.Current.NetworkAccess ==
+                        NetworkAccess.Internet ||
+                    !pageIsVisible ||
+                    safeZoneConfirmed ||
+                    activeRoute is null ||
+                    !IsMldRoute(
+                        activeRoute) ||
+                    !activeDestinationCoordinate.HasValue)
+                {
+                    return;
+                }
+
+                networkLossFailoverInProgress =
+                    true;
+
+                int busyWaitMilliseconds =
+                    0;
+
+                while ((routeRequestInProgress ||
+                        dynamicRerouteInProgress) &&
+                       busyWaitMilliseconds <
+                           NetworkFailoverMaximumBusyWaitMilliseconds)
+                {
+                    await Task.Delay(
+                        NetworkFailoverBusyRetryMilliseconds,
+                        cancellationToken);
+
+                    busyWaitMilliseconds +=
+                        NetworkFailoverBusyRetryMilliseconds;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (routeRequestInProgress ||
+                    dynamicRerouteInProgress)
+                {
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Automatic MLD -> A* transition deferred because another " +
+                        "route operation remained active. Existing MLD guidance is retained.");
+
+                    return;
+                }
+
+                if (Connectivity.Current.NetworkAccess ==
+                        NetworkAccess.Internet ||
+                    activeRoute is null ||
+                    !IsMldRoute(
+                        activeRoute))
+                {
+                    return;
+                }
+
+                int arWaitMilliseconds =
+                    0;
+
+                while (arWaitMilliseconds <
+                    NetworkFailoverArReadyWaitMilliseconds)
+                {
+                    ARCameraPoseBridge.SpatialSnapshot spatial =
+                        ARCameraPoseBridge.CurrentFrame;
+
+                    if (spatial.IsTracking &&
+                        spatial.Pose.IsTracking &&
+                        spatial.Anchor.IsAvailable)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(
+                        250,
+                        cancellationToken);
+
+                    arWaitMilliseconds +=
+                        250;
+                }
+
+                GeoCoordinate? failoverOrigin =
+                    await ResolveNetworkFailoverOriginAsync(
+                        cancellationToken);
+
+                if (!failoverOrigin.HasValue ||
+                    !failoverOrigin.Value.IsValid)
+                {
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Automatic MLD -> A* transition could not obtain a valid " +
+                        "offline GPS origin. Existing MLD route remains active.");
+
+                    return;
+                }
+
+                if (Connectivity.Current.NetworkAccess ==
+                    NetworkAccess.Internet)
+                {
+                    Log.Debug(
+                        RerouteLogTag,
+                        "Internet recovered before offline replacement began; " +
+                        "MLD route retained.");
+
+                    return;
+                }
+
+                Log.Warn(
+                    RerouteLogTag,
+                    "CONFIRMED NETWORK LOSS: transitioning active navigation " +
+                    "from MLD to offline A*. The current MLD AR route will stay " +
+                    "visible until the A* replacement is ready. " +
+                    $"origin=({failoverOrigin.Value.Latitude:F7}," +
+                    $"{failoverOrigin.Value.Longitude:F7}), reason='{reason}'.");
+
+                bool switched =
+                    await TryDynamicRerouteAsync(
+                        failoverOrigin.Value,
+                        "NETWORK_LOSS_MLD_TO_ASTAR",
+                        forceOfflineAStar:
+                            true);
+
+                if (!switched &&
+                    activeRoute is not null &&
+                    IsMldRoute(
+                        activeRoute))
+                {
+                    Log.Warn(
+                        RerouteLogTag,
+                        "MLD -> A* transition did not complete. The existing MLD " +
+                        "route was intentionally retained rather than clearing guidance.");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when Internet returns, destination changes, or page exits.
+            }
+            catch (Exception ex)
+            {
+                Log.Error(
+                    RerouteLogTag,
+                    "Automatic MLD -> A* transition FAILED. Existing route retained. " +
+                    ex);
+            }
+            finally
+            {
+                networkLossFailoverInProgress =
+                    false;
+
+                CancellationTokenSource? completedCancellation =
+                    connectivityFailoverCancellation;
+
+                connectivityFailoverCancellation =
+                    null;
+
+                completedCancellation?.Dispose();
+            }
+#else
+            await Task.CompletedTask;
+#endif
+        }
+
+        private async Task<GeoCoordinate?> ResolveNetworkFailoverOriginAsync(
+            CancellationToken cancellationToken)
+        {
+            GeoCoordinate? recentCoordinate;
+            DateTimeOffset? recentTimestamp;
+
+            lock (routeProgressFusionSync)
+            {
+                recentCoordinate =
+                    latestGpsCoordinateForDeveloperReroute;
+
+                recentTimestamp =
+                    latestGpsTimestampForRouting;
+            }
+
+            if (recentCoordinate.HasValue &&
+                recentCoordinate.Value.IsValid &&
+                recentTimestamp.HasValue &&
+                DateTimeOffset.UtcNow -
+                    recentTimestamp.Value <=
+                        TimeSpan.FromSeconds(
+                            15))
+            {
+#if ANDROID
+                Log.Debug(
+                    RerouteLogTag,
+                    "Using recent GPS route-progress fix as the offline A* " +
+                    "failover origin.");
+#endif
+                return recentCoordinate.Value;
+            }
+
+            LocationReading? lastKnown =
+                await _locationService.GetLastKnownLocationAsync(
+                    cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (lastKnown is not null &&
+                lastKnown.Coordinate.IsValid &&
+                DateTimeOffset.UtcNow -
+                    lastKnown.Timestamp <=
+                        TimeSpan.FromSeconds(
+                            30))
+            {
+#if ANDROID
+                Log.Debug(
+                    RerouteLogTag,
+                    "Using recent last-known GPS fix as the offline A* " +
+                    "failover origin.");
+#endif
+                return lastKnown.Coordinate;
+            }
+
+#if ANDROID
+            Log.Debug(
+                RerouteLogTag,
+                "Requesting a fresh GPS fix for the offline A* failover origin.");
+#endif
+
+            LocationReading? current =
+                await _locationService.GetCurrentLocationAsync(
+                    cancellationToken);
+
+            return current?.Coordinate.IsValid ==
+                true
+                    ? current.Coordinate
+                    : null;
+        }
+
+        private void CancelConnectivityFailover(
+            string reason)
+        {
+            CancellationTokenSource? cancellation =
+                connectivityFailoverCancellation;
+
+            connectivityFailoverCancellation =
+                null;
+
+            if (cancellation is null)
+            {
+                return;
+            }
+
+#if ANDROID
+            Log.Debug(
+                RerouteLogTag,
+                $"Cancelling pending network-loss failover: {reason}");
+#endif
+
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch
+            {
+                // Best effort.
+            }
+
+            cancellation.Dispose();
+        }
+
+        private static bool IsMldRoute(
+            RouteResult route)
+        {
+            return route.Algorithm.Contains(
+                "MLD",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAStarRoute(
+            RouteResult route)
+        {
+            return route.Algorithm.Contains(
+                "AStar",
+                StringComparison.OrdinalIgnoreCase) ||
+                route.Algorithm.Contains(
+                    "A*",
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
         private void SubscribeDestinationChanged()
         {
             if (destinationEventSubscribed)
@@ -1976,6 +2437,12 @@ namespace RescuAR.App.Views.Camera
 
             latestGpsAccuracyForDeveloperReroute =
                 null;
+
+            latestGpsTimestampForRouting =
+                null;
+
+            CancelConnectivityFailover(
+                "navigation destination changed");
 
             ResetTurnGuidance();
 
@@ -2202,6 +2669,9 @@ namespace RescuAR.App.Views.Camera
 
                             latestGpsAccuracyForDeveloperReroute =
                                 reading.AccuracyMeters;
+
+                            latestGpsTimestampForRouting =
+                                reading.Timestamp;
                         }
 
                         bool shouldStartDynamicReroute =
@@ -2998,7 +3468,8 @@ namespace RescuAR.App.Views.Camera
 
         private async Task<bool> TryDynamicRerouteAsync(
             GeoCoordinate origin,
-            string reason)
+            string reason,
+            bool forceOfflineAStar = false)
         {
 #if ANDROID
             if (safeZoneConfirmed ||
@@ -3046,10 +3517,15 @@ namespace RescuAR.App.Views.Camera
                 ApplyPrototypeReroutingState();
 
                 RouteResult? replacementRoute =
-                    await _mldArIntegrationService.RequestRouteAsync(
-                        origin,
-                        destination,
-                        cancellationToken);
+                    forceOfflineAStar
+                        ? await _hybridRoutingService.FindOfflineRouteAsync(
+                            origin,
+                            destination,
+                            cancellationToken)
+                        : await _mldArIntegrationService.RequestRouteAsync(
+                            origin,
+                            destination,
+                            cancellationToken);
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -3097,7 +3573,7 @@ namespace RescuAR.App.Views.Camera
 
                     Log.Warn(
                         RerouteLogTag,
-                        "Replacement MLD route is ready, but ARCore/ground anchor is not currently usable. " +
+                        "Replacement route is ready, but ARCore/ground anchor is not currently usable. " +
                         "Retaining the existing route; a later confirmed off-route sequence may retry.");
 
                     return false;
@@ -3139,8 +3615,15 @@ namespace RescuAR.App.Views.Camera
 
                         _gpsPdrFusionPolicy.Reset();
 
-                        _offRouteReroutePolicy.MarkRerouteCompleted(
-                            DateTimeOffset.UtcNow);
+                        if (forceOfflineAStar)
+                        {
+                            _offRouteReroutePolicy.Reset();
+                        }
+                        else
+                        {
+                            _offRouteReroutePolicy.MarkRerouteCompleted(
+                                DateTimeOffset.UtcNow);
+                        }
 
                         lastOffRouteCandidate =
                             false;
@@ -3170,15 +3653,23 @@ namespace RescuAR.App.Views.Camera
                     0.0);
 
                 lastRerouteResult =
-                    "Complete";
+                    forceOfflineAStar
+                        ? "OfflineFailoverComplete"
+                        : "Complete";
 
-                Log.Warn(
-                    RerouteLogTag,
-                    "DYNAMIC REROUTE COMPLETE: " +
+                string completionMessage =
+                    (forceOfflineAStar
+                        ? "NETWORK FAILOVER MLD -> A* COMPLETE: "
+                        : "DYNAMIC REROUTE COMPLETE: ") +
+                    $"algorithm='{replacementRoute.Algorithm}', " +
                     $"points={replacementRoute.Points.Count}, " +
                     $"distance={replacementRoute.TotalDistanceMeters:F1} m, " +
                     $"routeVersion={ARRouteBridge.Current.Version}, " +
-                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m.");
+                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m.";
+
+                Log.Warn(
+                    RerouteLogTag,
+                    completionMessage);
 
                 return true;
             }
@@ -3214,6 +3705,8 @@ namespace RescuAR.App.Views.Camera
 
                 if (lastRerouteResult !=
                         "Complete" &&
+                    lastRerouteResult !=
+                        "OfflineFailoverComplete" &&
                     lastTurnGuidance.IsAvailable)
                 {
                     Dispatcher.Dispatch(
@@ -5804,6 +6297,167 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
+        /// Re-publishes the CURRENT short route window after ARCore performs a
+        /// sustained, multi-meter world/Anchor correction while the existing
+        /// V5 route root is still locked to the previous X/Z frame.
+        ///
+        /// Unlike replacement-anchor recovery, this intentionally does NOT
+        /// preserve the old route-world start. The old world coordinates are
+        /// exactly what ARCore has just corrected. Instead, the retained route
+        /// progress is projected again and shifted by the CURRENT
+        /// camera-to-anchor offset so the cyan guidance is immediately placed
+        /// back near the user in the corrected AR frame.
+        /// </summary>
+        private bool TryRebaseRouteAfterWorldCorrection(
+            ARCameraPoseBridge.SpatialSnapshot spatial,
+            ARCameraSpatialController.RouteWorldCorrectionRequest request)
+        {
+#if ANDROID
+            RouteResult? route =
+                activeRoute;
+
+            if (route is null ||
+                route.Points.Count <
+                    2)
+            {
+                Log.Warn(
+                    "RescuAR-AnchorRecovery",
+                    "Large ARCore world correction was detected, but no active " +
+                    "navigation route exists to rebase.");
+
+                return false;
+            }
+
+            if (!spatial.IsTracking ||
+                !spatial.Pose.IsTracking ||
+                !spatial.Anchor.IsAvailable)
+            {
+                return false;
+            }
+
+            ARRouteBridge.RouteSnapshot currentRoute =
+                ARRouteBridge.Current;
+
+            if (!currentRoute.IsAvailable ||
+                currentRoute.Version !=
+                    request.RouteVersion)
+            {
+                /*
+                 * Another GPS/PDR/reroute publication already produced a newer
+                 * route version from a newer spatial snapshot. The caller will
+                 * acknowledge the now-stale correction request.
+                 */
+                return false;
+            }
+
+            RouteProgressTracker.ProgressSnapshot progress =
+                _routeProgressTracker.Current;
+
+            double startDistanceMeters;
+            GeoCoordinate referenceCoordinate;
+
+            if (progress.HasProgress &&
+                progress.SnappedCoordinate.IsValid)
+            {
+                startDistanceMeters =
+                    progress.CommittedProgressMeters;
+
+                referenceCoordinate =
+                    progress.SnappedCoordinate;
+            }
+            else
+            {
+                startDistanceMeters =
+                    route.Points[0]
+                        .DistanceFromStartMeters;
+
+                referenceCoordinate =
+                    route.Points[0]
+                        .Coordinate;
+            }
+
+            /*
+             * This is the same placement rule used by the normal GPS/PDR
+             * moving-window publisher:
+             *
+             * local route origin = current camera - current ground anchor.
+             *
+             * Therefore, after the new route version locks its root to the
+             * corrected Anchor, the first projected route point is again near
+             * the current camera instead of remaining in ARCore's old world
+             * coordinates.
+             */
+            float arOriginOffsetX =
+                spatial.Pose.PositionX -
+                spatial.Anchor.PositionX;
+
+            float arOriginOffsetZ =
+                spatial.Pose.PositionZ -
+                spatial.Anchor.PositionZ;
+
+            bool published;
+
+            lock (routeProgressFusionSync)
+            {
+                published =
+                    _mldArIntegrationService.PublishProgressWindow(
+                        route,
+                        startDistanceMeters,
+                        referenceCoordinate,
+                        activeMapToArYawDegrees,
+                        arOriginOffsetX,
+                        arOriginOffsetZ,
+                        clearRouteOnFailure:
+                            false);
+
+                if (published)
+                {
+                    _routeProgressTracker.MarkWindowPublished(
+                        startDistanceMeters);
+                }
+            }
+
+            if (!published)
+            {
+                Log.Warn(
+                    "RescuAR-AnchorRecovery",
+                    "Large-world-correction rebase could not publish a usable " +
+                    "replacement route window. The existing route remains visible " +
+                    "and the request will retry while spatial tracking is healthy.");
+
+                return false;
+            }
+
+            CaptureRouteWorldStartContinuity(
+                spatial);
+
+            ARRouteBridge.RouteSnapshot rebasedRoute =
+                ARRouteBridge.Current;
+
+            Log.Warn(
+                "RescuAR-AnchorRecovery",
+                "ARCORE WORLD CORRECTION ROUTE REBASE COMPLETE: " +
+                $"requestGeneration={request.Generation}, " +
+                $"oldRouteVersion={request.RouteVersion}, " +
+                $"newRouteVersion={rebasedRoute.Version}, " +
+                $"detectedSpatialVersion={request.SpatialVersion}, " +
+                $"currentSpatialVersion={spatial.Version}, " +
+                $"anchorDrift={request.AnchorDriftMeters:F2} m, " +
+                $"oldLockedRoot=({request.LockedRootX:F2},{request.LockedRootZ:F2}), " +
+                $"correctedAnchor=({spatial.Anchor.PositionX:F2},{spatial.Anchor.PositionZ:F2}), " +
+                $"camera=({spatial.Pose.PositionX:F2},{spatial.Pose.PositionZ:F2}), " +
+                $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m, " +
+                $"progress={startDistanceMeters:F1} m, " +
+                $"algorithm='{route.Algorithm}'. " +
+                "Route progress was preserved; ARCore was not restarted.");
+
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        /// <summary>
         /// Re-publishes the currently active short route window against the
         /// newly recovered ground anchor.
         ///
@@ -5824,7 +6478,7 @@ namespace RescuAR.App.Views.Camera
             {
                 Log.Debug(
                     "RescuAR-AnchorRecovery",
-                    "Ground anchor recovered, but no active MLD route exists " +
+                    "Ground anchor recovered, but no active navigation route exists " +
                     "to rebase.");
 
                 return false;
@@ -6300,6 +6954,14 @@ namespace RescuAR.App.Views.Camera
             EventArgs e)
         {
 #if ANDROID
+            /*
+             * ConnectivityChanged is the primary trigger. This lightweight
+             * one-second poll is only a safety net for Android network handoffs
+             * that do not surface a timely event.
+             */
+            ScheduleNetworkLossFailoverIfNeeded(
+                "diagnostic connectivity poll");
+
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
@@ -6459,9 +7121,74 @@ namespace RescuAR.App.Views.Camera
             }
 
             /*
-             * The bridge can change during an actual replacement rebase.
-             * Refresh the diagnostic snapshots so STATUS describes the state
-             * after recovery work, not the snapshot captured at timer entry.
+             * LARGE IN-SESSION ARCORE WORLD CORRECTION
+             * ----------------------------------------
+             * This is distinct from stale-Anchor replacement above. ARCore can
+             * keep both camera and Anchor TRACKING while materially refining
+             * their world coordinates. The Evergine V5 route root intentionally
+             * ignores small Anchor jitter, but a sustained multi-meter change
+             * makes that old lock stale.
+             *
+             * ARCameraSpatialController detects the correction on the draw
+             * thread. Consume its request here so all navigation state and
+             * RouteResult access remains on CameraPage's existing path.
+             */
+            ARCameraSpatialController.RouteWorldCorrectionRequest
+                worldCorrectionRequest =
+                    ARCameraSpatialController
+                        .CurrentRouteWorldCorrectionRequest;
+
+            if (worldCorrectionRequest.IsPending)
+            {
+                ARRouteBridge.RouteSnapshot correctionRoute =
+                    ARRouteBridge.Current;
+
+                if (!correctionRoute.IsAvailable ||
+                    activeRoute is null)
+                {
+                    ARCameraSpatialController
+                        .AcknowledgeRouteWorldCorrection(
+                            worldCorrectionRequest.Generation,
+                            "no active route remains");
+                }
+                else if (correctionRoute.Version !=
+                    worldCorrectionRequest.RouteVersion)
+                {
+                    /*
+                     * A normal GPS/PDR/reroute/anchor-recovery publication
+                     * already created newer geometry using a newer spatial
+                     * snapshot, so this old correction request is satisfied.
+                     */
+                    ARCameraSpatialController
+                        .AcknowledgeRouteWorldCorrection(
+                            worldCorrectionRequest.Generation,
+                            $"stale request; current route version is {correctionRoute.Version}");
+                }
+                else if (!anchorRecoveryInProgress &&
+                         spatial.IsTracking &&
+                         spatial.Pose.IsTracking &&
+                         spatial.Anchor.IsAvailable)
+                {
+                    bool correctionRebased =
+                        TryRebaseRouteAfterWorldCorrection(
+                            spatial,
+                            worldCorrectionRequest);
+
+                    if (correctionRebased)
+                    {
+                        ARCameraSpatialController
+                            .AcknowledgeRouteWorldCorrection(
+                                worldCorrectionRequest.Generation,
+                                "current route window republished in corrected ARCore world frame");
+                    }
+                }
+            }
+
+            /*
+             * The bridge can change during an actual replacement rebase or an
+             * in-session ARCore world-correction rebase. Refresh the diagnostic
+             * snapshots so STATUS describes the state after recovery work, not
+             * the snapshot captured at timer entry.
              */
             route =
                 ARRouteBridge.Current;
@@ -6481,6 +7208,11 @@ namespace RescuAR.App.Views.Camera
             RouteProgressTracker.ProgressSnapshot progress =
                 _routeProgressTracker.Current;
 
+            ARCameraSpatialController.RouteWorldCorrectionRequest
+                worldCorrectionStatus =
+                    ARCameraSpatialController
+                        .CurrentRouteWorldCorrectionRequest;
+
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
 
@@ -6499,6 +7231,10 @@ namespace RescuAR.App.Views.Camera
                 $"handledReplacementGeneration=" +
                 $"{handledGroundAnchorReplacementGeneration}, " +
                 $"routeContinuity={hasRetainedRouteWorldStart}, " +
+                $"worldCorrectionPending={worldCorrectionStatus.IsPending}, " +
+                $"worldCorrectionGeneration={worldCorrectionStatus.Generation}, " +
+                $"worldCorrectionDrift=" +
+                $"{(worldCorrectionStatus.IsPending ? worldCorrectionStatus.AnchorDriftMeters.ToString("F2") : "<none>")}m, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
                 $"headingStable={lastHeadingAlignment?.IsStable ?? false}, " +

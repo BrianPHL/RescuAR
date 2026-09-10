@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using RescuAR.Navigation.Models;
 
@@ -31,7 +32,31 @@ public static class NavigationDataBootstrap
 
     private static Task<NavigationRuntimeValidationResult>? validationTask;
 
+    private static RoadGraph? cachedRoadGraph;
+
     public static NavigationRuntimeValidationResult? LastResult { get; private set; }
+
+    /// <summary>
+    /// Returns the one in-memory pedestrian RoadGraph built from the embedded
+    /// ROADS.geojson dataset. The existing one-time validation task owns graph
+    /// creation, so offline routing never reparses or rebuilds the dataset.
+    /// </summary>
+    public static async Task<RoadGraph> GetRoadGraphAsync(
+        CancellationToken cancellationToken = default)
+    {
+        Task<NavigationRuntimeValidationResult> validation =
+            ValidateOnceAsync();
+
+        await validation.WaitAsync(
+            cancellationToken);
+
+        lock (sync)
+        {
+            return cachedRoadGraph ??
+                throw new InvalidOperationException(
+                    "Navigation data validation completed without publishing the RoadGraph.");
+        }
+    }
 
     public static Task<NavigationRuntimeValidationResult> ValidateOnceAsync()
     {
@@ -145,6 +170,12 @@ public static class NavigationDataBootstrap
                 roads);
 
         graphStopwatch.Stop();
+
+        lock (sync)
+        {
+            cachedRoadGraph =
+                graph;
+        }
 
         NavigationRuntimeValidationResult result =
             new(

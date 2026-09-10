@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace RescuAR.Navigation.Routing;
 
 /// <summary>
-/// Connects the Railway-hosted MLD service to the AR route bridge.
+/// Connects the selected routing provider (online MLD or offline A*) to the AR route bridge.
 ///
 /// The full RouteResult is returned to the caller. Camera/navigation may then
 /// keep that full geometry and republish short progress-aware AR windows
@@ -19,7 +19,7 @@ namespace RescuAR.Navigation.Routing;
 public sealed class MLDARIntegrationService
 {
     private const string LogTag =
-        "RescuAR-MLD";
+        "RescuAR-Routing";
 
     private const string ProgressLogTag =
         "RescuAR-NavProgress";
@@ -50,7 +50,8 @@ public sealed class MLDARIntegrationService
     {
         AndroidLog.Debug(
             LogTag,
-            "MLD -> AR integration request: " +
+            "Routing -> AR integration request: " +
+            $"provider='{routingService.AlgorithmName}', " +
             $"window={arWindowMeters:F1} m, " +
             $"mapToArYaw={mapToArYawDegrees:F2} deg");
 
@@ -66,7 +67,7 @@ public sealed class MLDARIntegrationService
         {
             AndroidLog.Warn(
                 LogTag,
-                "MLD -> AR integration produced no usable route; " +
+                "Routing -> AR integration produced no usable route; " +
                 "clearing AR route.");
 
             ARRouteBridge.Clear();
@@ -100,7 +101,8 @@ public sealed class MLDARIntegrationService
         {
             AndroidLog.Debug(
                 LogTag,
-                "MLD -> AR route published successfully.");
+                "Routing -> AR route published successfully: " +
+                $"algorithm='{route.Algorithm}'.");
         }
 
         return route;
@@ -110,7 +112,7 @@ public sealed class MLDARIntegrationService
     /// Requests route geometry without touching ARRouteBridge.
     ///
     /// Dynamic rerouting uses this two-phase path so the currently visible
-    /// route remains intact until a replacement MLD route has been received
+    /// route remains intact until a replacement route has been received
     /// and is ready to publish.
     /// </summary>
     public Task<RouteResult?> RequestRouteAsync(
@@ -120,7 +122,8 @@ public sealed class MLDARIntegrationService
     {
         AndroidLog.Debug(
             LogTag,
-            "MLD route-only request started for dynamic rerouting.");
+            "Route-only request started: " +
+            $"provider='{routingService.AlgorithmName}'.");
 
         return routingService.FindRouteAsync(
             origin,
@@ -180,7 +183,7 @@ public sealed class MLDARIntegrationService
     {
         AndroidLog.Debug(
             LogTag,
-            "MLD -> AR route clear requested.");
+            "Routing -> AR route clear requested.");
 
         ARRouteBridge.Clear();
     }
