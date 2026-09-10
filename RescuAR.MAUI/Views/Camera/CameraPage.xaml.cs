@@ -12,6 +12,7 @@ using RescuAR.App.Services.Reports;
 using RescuAR.App.Services.AreaStatus;
 using RescuAR.App.Services.Flood;
 using RescuAR.Navigation.Guidance;
+using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Data;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -61,6 +62,9 @@ namespace RescuAR.App.Views.Camera
         private const string FloodDepthLogTag =
             "RescuAR-FloodDepth";
 
+        private const string HazardRerouteLogTag =
+            "RescuAR-HazardReroute";
+
 
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
@@ -75,6 +79,7 @@ namespace RescuAR.App.Views.Camera
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
+        private readonly HazardReroutingService _hazardReroutingService;
 
         /*
          * GPS and PDR can both update the same monotonic route progress state.
@@ -229,6 +234,25 @@ namespace RescuAR.App.Views.Camera
             1.50,
             null
         };
+
+        /*
+         * STAGE 10 DEVELOPER DYNAMIC-HAZARD VALIDATION
+         *
+         * This controlled harness injects one geographic road hazard ahead
+         * on the CURRENT route, then exercises the real route/hazard
+         * intersection -> hazard-aware MLD/A* -> AR replacement pipeline. It is
+         * independent from production Approved Community Reports.
+         */
+        private static readonly bool EnableDeveloperDynamicHazardValidation =
+            true;
+
+        private const double DeveloperHazardAheadMeters =
+            45.0;
+
+        private const double DeveloperHazardRadiusMeters =
+            12.0;
+
+        private bool developerHazardValidationArmed;
 
         private const double DeveloperSimulatedCrossTrackMeters =
             50.0;
@@ -475,6 +499,9 @@ namespace RescuAR.App.Views.Camera
             _floodDepthVisualizationService =
                 new FloodDepthVisualizationService();
 
+            _hazardReroutingService =
+                new HazardReroutingService();
+
             _pdrService.StepDetected +=
                 OnPdrStepDetected;
 
@@ -581,6 +608,9 @@ namespace RescuAR.App.Views.Camera
 
                     developerRerouteTestButton.IsVisible =
                         false;
+
+                    developerHazardRerouteTestButton.IsVisible =
+                        EnableDeveloperDynamicHazardValidation;
 
                     if (!arCameraMode)
                     {
@@ -789,7 +819,8 @@ namespace RescuAR.App.Views.Camera
             arDeveloperControls.IsVisible =
                 currentCameraModuleView ==
                     CameraModuleViewMode.ArCamera &&
-                EnableDeveloperSafeZoneValidation;
+                (EnableDeveloperSafeZoneValidation ||
+                 EnableDeveloperDynamicHazardValidation);
         }
 
         private void OnNavigationAwarenessCloseClicked(
@@ -2420,6 +2451,17 @@ namespace RescuAR.App.Views.Camera
 
             _offRouteReroutePolicy.Reset();
 
+            _hazardReroutingService.ResetSessionState();
+
+            developerHazardValidationArmed =
+                false;
+
+            if (developerHazardRerouteTestButton is not null)
+            {
+                developerHazardRerouteTestButton.Text =
+                    "DEV: Simulate Route Hazard";
+            }
+
             dynamicRerouteInProgress =
                 false;
 
@@ -2495,6 +2537,10 @@ namespace RescuAR.App.Views.Camera
 #endif
                 return;
             }
+
+            _hazardReroutingService.ScheduleRemoteRefreshIfDue(
+                Connectivity.Current.NetworkAccess ==
+                    NetworkAccess.Internet);
 
             RouteProgressTracker.ProgressSnapshot retainedProgress =
                 _routeProgressTracker.Current;
@@ -2910,7 +2956,31 @@ namespace RescuAR.App.Views.Camera
                                     .CommittedProgressMeters);
                         }
 
-                        if (shouldStartDynamicReroute)
+                        bool hazardRerouteOwnsThisCycle =
+                            false;
+
+                        if (!safeZoneConfirmed)
+                        {
+                            RouteProgressTracker.ProgressSnapshot hazardProgress;
+
+                            lock (routeProgressFusionSync)
+                            {
+                                hazardProgress =
+                                    _routeProgressTracker.Current;
+                            }
+
+                            if (hazardProgress.HasProgress)
+                            {
+                                hazardRerouteOwnsThisCycle =
+                                    StartHazardRerouteIfNeeded(
+                                        route,
+                                        hazardProgress.CommittedProgressMeters,
+                                        reading.Coordinate);
+                            }
+                        }
+
+                        if (shouldStartDynamicReroute &&
+                            !hazardRerouteOwnsThisCycle)
                         {
                             StartDynamicRerouteIfPossible(
                                 rerouteOrigin,
@@ -3436,6 +3506,234 @@ namespace RescuAR.App.Views.Camera
 #endif
         }
 
+        private bool StartHazardRerouteIfNeeded(
+            RouteResult route,
+            double progressMeters,
+            GeoCoordinate origin)
+        {
+#if ANDROID
+            if (safeZoneConfirmed ||
+                !pageIsVisible ||
+                !origin.IsValid ||
+                !ReferenceEquals(
+                    route,
+                    activeRoute) ||
+                !activeDestinationCoordinate.HasValue)
+            {
+                return false;
+            }
+
+            HazardReroutingService.HazardRouteAssessment assessment =
+                _hazardReroutingService.AssessRoute(
+                    route,
+                    progressMeters,
+                    Connectivity.Current.NetworkAccess ==
+                        NetworkAccess.Internet);
+
+            if (!assessment.IsUnsafe ||
+                assessment.PrimaryHazard is null)
+            {
+                return false;
+            }
+
+            RouteHazard hazard =
+                assessment.PrimaryHazard;
+
+            if (dynamicRerouteInProgress ||
+                routeRequestInProgress)
+            {
+                Log.Debug(
+                    HazardRerouteLogTag,
+                    "Unsafe route is already known, but another route operation " +
+                    "is active. Hazard-aware rerouting owns this GPS cycle and " +
+                    "will be reconsidered on the next route-progress poll.");
+
+                return true;
+            }
+
+            if (!_hazardReroutingService.TryReserveReroute(
+                    hazard,
+                    out string reservationReason))
+            {
+                Log.Debug(
+                    HazardRerouteLogTag,
+                    "Hazard reroute not repeated yet: " +
+                    $"id='{hazard.Id}', reason='{reservationReason}'.");
+
+                return true;
+            }
+
+            Log.Warn(
+                HazardRerouteLogTag,
+                "HAZARD-DRIVEN REROUTE TRIGGERED: " +
+                $"id='{hazard.Id}', " +
+                $"category='{hazard.Category}', " +
+                $"severity='{hazard.Severity}', " +
+                $"distanceAhead={assessment.DistanceAheadMeters:F1} m, " +
+                $"activeAlgorithm='{route.Algorithm}', " +
+                $"hazardsToAvoid={assessment.ActiveHazards.Count}. " +
+                "Current AR guidance will remain visible until a safe " +
+                "replacement route is publishable.");
+
+            _ =
+                TryDynamicRerouteAsync(
+                    origin,
+                    $"ROUTE_HAZARD:{hazard.Id}",
+                    forceOfflineAStar: false,
+                    hazardsToAvoid: assessment.ActiveHazards,
+                    triggeringHazard: hazard);
+
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private void OnDeveloperHazardRerouteTestClicked(
+            object? sender,
+            EventArgs e)
+        {
+#if ANDROID
+            if (!EnableDeveloperDynamicHazardValidation)
+            {
+                return;
+            }
+
+            if (developerHazardValidationArmed)
+            {
+                _hazardReroutingService.SetDeveloperHazard(
+                    null);
+
+                developerHazardValidationArmed =
+                    false;
+
+                developerHazardRerouteTestButton.Text =
+                    "DEV: Simulate Route Hazard";
+
+                Log.Warn(
+                    HazardRerouteLogTag,
+                    "[DEV HAZARD] Controlled route hazard cleared.");
+
+                return;
+            }
+
+            RouteResult? route =
+                activeRoute;
+
+            RouteProgressTracker.ProgressSnapshot progress;
+
+            lock (routeProgressFusionSync)
+            {
+                progress =
+                    _routeProgressTracker.Current;
+            }
+
+            if (route is null ||
+                route.Points.Count < 2 ||
+                !progress.HasProgress)
+            {
+                Log.Warn(
+                    HazardRerouteLogTag,
+                    "[DEV HAZARD] Cannot arm yet. Wait for an active route and " +
+                    "at least one GPS/PDR progress observation.");
+
+                return;
+            }
+
+            double hazardProgressMeters =
+                Math.Min(
+                    route.TotalDistanceMeters,
+                    progress.CommittedProgressMeters +
+                    DeveloperHazardAheadMeters);
+
+            if (hazardProgressMeters -
+                    progress.CommittedProgressMeters <
+                DeveloperHazardAheadMeters *
+                    0.60)
+            {
+                Log.Warn(
+                    HazardRerouteLogTag,
+                    "[DEV HAZARD] Route is too close to the destination to " +
+                    "place a useful simulated hazard ahead.");
+
+                return;
+            }
+
+            if (!TryGetRouteCoordinateAtProgress(
+                    route,
+                    hazardProgressMeters,
+                    out GeoCoordinate hazardCoordinate))
+            {
+                Log.Warn(
+                    HazardRerouteLogTag,
+                    "[DEV HAZARD] Could not interpolate a hazard coordinate " +
+                    "from the current route geometry.");
+
+                return;
+            }
+
+            RouteHazard hazard =
+                new(
+                    "dev-stage10-route-hazard",
+                    hazardCoordinate,
+                    DeveloperHazardRadiusMeters,
+                    "Road Hazard",
+                    "High",
+                    "DEV simulated blocked route",
+                    "Stage 10 developer validation",
+                    DateTimeOffset.UtcNow);
+
+            _hazardReroutingService.SetDeveloperHazard(
+                hazard);
+
+            developerHazardValidationArmed =
+                true;
+
+            developerHazardRerouteTestButton.Text =
+                "DEV: Clear Route Hazard";
+
+            GeoCoordinate rerouteOrigin =
+                default;
+
+            lock (routeProgressFusionSync)
+            {
+                if (latestGpsCoordinateForDeveloperReroute.HasValue)
+                {
+                    rerouteOrigin =
+                        latestGpsCoordinateForDeveloperReroute.Value;
+                }
+            }
+
+            if (!rerouteOrigin.IsValid &&
+                !TryGetRouteCoordinateAtProgress(
+                    route,
+                    progress.CommittedProgressMeters,
+                    out rerouteOrigin))
+            {
+                Log.Warn(
+                    HazardRerouteLogTag,
+                    "[DEV HAZARD] Hazard was armed, but a current reroute origin " +
+                    "is not yet available. The normal GPS loop will trigger it.");
+
+                return;
+            }
+
+            Log.Warn(
+                HazardRerouteLogTag,
+                "[DEV HAZARD] ARMED on current route: " +
+                $"currentProgress={progress.CommittedProgressMeters:F1} m, " +
+                $"hazardAhead={DeveloperHazardAheadMeters:F1} m, " +
+                $"hazard=({hazardCoordinate.Latitude:F7},{hazardCoordinate.Longitude:F7}), " +
+                $"radius={DeveloperHazardRadiusMeters:F1} m. " +
+                "Route/hazard detection and provider-aware avoidance remain production logic.");
+
+            StartHazardRerouteIfNeeded(
+                route,
+                progress.CommittedProgressMeters,
+                rerouteOrigin);
+#endif
+        }
+
         private void StartDynamicRerouteIfPossible(
             GeoCoordinate origin,
             string reason)
@@ -3469,7 +3767,9 @@ namespace RescuAR.App.Views.Camera
         private async Task<bool> TryDynamicRerouteAsync(
             GeoCoordinate origin,
             string reason,
-            bool forceOfflineAStar = false)
+            bool forceOfflineAStar = false,
+            IReadOnlyList<RouteHazard>? hazardsToAvoid = null,
+            RouteHazard? triggeringHazard = null)
         {
 #if ANDROID
             if (safeZoneConfirmed ||
@@ -3486,6 +3786,9 @@ namespace RescuAR.App.Views.Camera
 
             string destinationName =
                 activeDestinationName;
+
+            bool hazardAware =
+                hazardsToAvoid is { Count: > 0 };
 
             routeRequestInProgress =
                 true;
@@ -3514,18 +3817,44 @@ namespace RescuAR.App.Views.Camera
                     $"destination='{destinationName}'. " +
                     "The current AR route remains visible until a replacement route is ready.");
 
-                ApplyPrototypeReroutingState();
+                if (hazardAware &&
+                    triggeringHazard is not null)
+                {
+                    ApplyPrototypeHazardReroutingState(
+                        triggeringHazard);
+                }
+                else
+                {
+                    ApplyPrototypeReroutingState();
+                }
 
-                RouteResult? replacementRoute =
-                    forceOfflineAStar
-                        ? await _hybridRoutingService.FindOfflineRouteAsync(
+                RouteResult? replacementRoute;
+
+                if (hazardAware)
+                {
+                    replacementRoute =
+                        await _hybridRoutingService.FindHazardAvoidingRouteAsync(
                             origin,
                             destination,
-                            cancellationToken)
-                        : await _mldArIntegrationService.RequestRouteAsync(
+                            hazardsToAvoid!,
+                            cancellationToken);
+                }
+                else if (forceOfflineAStar)
+                {
+                    replacementRoute =
+                        await _hybridRoutingService.FindOfflineRouteAsync(
                             origin,
                             destination,
                             cancellationToken);
+                }
+                else
+                {
+                    replacementRoute =
+                        await _mldArIntegrationService.RequestRouteAsync(
+                            origin,
+                            destination,
+                            cancellationToken);
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -3653,19 +3982,27 @@ namespace RescuAR.App.Views.Camera
                     0.0);
 
                 lastRerouteResult =
-                    forceOfflineAStar
-                        ? "OfflineFailoverComplete"
-                        : "Complete";
+                    hazardAware
+                        ? "HazardComplete"
+                        : forceOfflineAStar
+                            ? "OfflineFailoverComplete"
+                            : "Complete";
 
                 string completionMessage =
-                    (forceOfflineAStar
-                        ? "NETWORK FAILOVER MLD -> A* COMPLETE: "
-                        : "DYNAMIC REROUTE COMPLETE: ") +
+                    (hazardAware
+                        ? "HAZARD REROUTE COMPLETE: "
+                        : forceOfflineAStar
+                            ? "NETWORK FAILOVER MLD -> A* COMPLETE: "
+                            : "DYNAMIC REROUTE COMPLETE: ") +
                     $"algorithm='{replacementRoute.Algorithm}', " +
                     $"points={replacementRoute.Points.Count}, " +
                     $"distance={replacementRoute.TotalDistanceMeters:F1} m, " +
                     $"routeVersion={ARRouteBridge.Current.Version}, " +
-                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m.";
+                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m" +
+                    (hazardAware
+                        ? $", triggeringHazard='{triggeringHazard?.Id ?? "<unknown>"}', " +
+                          $"avoidedHazards={hazardsToAvoid!.Count}."
+                        : ".");
 
                 Log.Warn(
                     RerouteLogTag,
@@ -3707,6 +4044,8 @@ namespace RescuAR.App.Views.Camera
                         "Complete" &&
                     lastRerouteResult !=
                         "OfflineFailoverComplete" &&
+                    lastRerouteResult !=
+                        "HazardComplete" &&
                     lastTurnGuidance.IsAvailable)
                 {
                     Dispatcher.Dispatch(
@@ -3918,6 +4257,52 @@ namespace RescuAR.App.Views.Camera
             turnDistanceLabel.Text =
                 $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} meters away from the " +
                 "nearest evacuation center";
+        }
+
+        private void ApplyPrototypeHazardReroutingState(
+            RouteHazard hazard)
+        {
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    if (currentCameraModuleView !=
+                            CameraModuleViewMode.ArCamera ||
+                        emergencyAdvisoryVisible ||
+                        safeZoneConfirmed)
+                    {
+                        return;
+                    }
+
+                    turnGuidancePanel.BackgroundColor =
+                        Color.FromArgb("#FFF4DE");
+
+                    turnGuidancePanel.Stroke =
+                        new SolidColorBrush(
+                            Color.FromArgb("#E7B85D"));
+
+                    turnInstructionLabel.TextColor =
+                        Color.FromArgb("#8A4B00");
+
+                    turnDistanceLabel.TextColor =
+                        Color.FromArgb("#7B5700");
+
+                    turnDirectionIconLabel.Source =
+                        "lucide_ellipsis_amber.png";
+
+                    turnChevronImage.Source =
+                        "lucide_chevron_down_amber.png";
+
+                    turnInstructionLabel.Text =
+                        "Hazard ahead - finding a safer route";
+
+                    turnDistanceLabel.Text =
+                        string.IsNullOrWhiteSpace(hazard.Title)
+                            ? $"{hazard.Category} reported on the current route."
+                            : hazard.Title;
+
+                    turnGuidancePanel.IsVisible =
+                        true;
+                });
         }
 
         private void ApplyPrototypeReroutingState()

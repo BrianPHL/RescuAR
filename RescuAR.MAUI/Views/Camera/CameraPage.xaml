@@ -652,6 +652,17 @@
                                 IsVisible="False"
                                 Text="DEV: Simulate Off-Route Reroute"
                                 Clicked="OnDeveloperRerouteTestClicked" />
+                            <Button
+                                x:Name="developerHazardRerouteTestButton"
+                                IsVisible="False"
+                                Text="DEV: Simulate Route Hazard"
+                                HeightRequest="34"
+                                Padding="10,4"
+                                BackgroundColor="#FFF4DE"
+                                TextColor="#8A4B00"
+                                FontSize="10"
+                                CornerRadius="6"
+                                Clicked="OnDeveloperHazardRerouteTestClicked" />
                         </VerticalStackLayout>
                     </VerticalStackLayout>
                 </Border>

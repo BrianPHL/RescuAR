@@ -1,6 +1,9 @@
 using RescuAR.Diagnostics;
+using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Models;
+using System.Collections.Generic;
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,10 +21,14 @@ namespace RescuAR.Navigation.Routing;
 /// A normal online "NoRoute" result is not silently replaced with A*: that is
 /// a routing result, not a connectivity failure.
 /// </summary>
-public sealed class HybridRoutingService : IRoutingService
+public sealed class HybridRoutingService : IHazardAwareRoutingService
 {
     private const string LogTag =
         "RescuAR-HybridRouting";
+
+    private static readonly TimeSpan HazardAwareOnlineBudget =
+        TimeSpan.FromSeconds(
+            6);
 
     private readonly IRoutingService onlineRoutingService;
     private readonly Func<CancellationToken, Task<RoadGraph>> roadGraphProvider;
@@ -139,6 +146,186 @@ public sealed class HybridRoutingService : IRoutingService
         return await FindOfflineRouteAsync(
             origin,
             destination,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Stage 10 hazard-aware route entry point. While Internet is available,
+    /// prefer the online provider's own hazard-aware capability. If MLD cannot
+    /// produce a client-validated safe alternative/detour, or the online
+    /// request fails, fall back to the existing local hazard-aware A*.
+    /// </summary>
+    public async Task<RouteResult?> FindHazardAvoidingRouteAsync(
+        GeoCoordinate origin,
+        GeoCoordinate destination,
+        IReadOnlyList<RouteHazard> hazards,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(
+            hazards);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (hazards.Count == 0)
+        {
+            return await FindRouteAsync(
+                origin,
+                destination,
+                cancellationToken);
+        }
+
+        bool internetAvailable =
+            GetInternetAvailabilitySafely();
+
+        if (internetAvailable &&
+            onlineRoutingService is IHazardAwareRoutingService hazardAwareOnline)
+        {
+            AndroidLog.Warn(
+                LogTag,
+                "HAZARD-AWARE ROUTING attempting online MLD first: " +
+                $"hazards={hazards.Count}, provider='{onlineRoutingService.AlgorithmName}'.");
+
+            try
+            {
+                using CancellationTokenSource onlineBudget =
+                    CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken);
+
+                onlineBudget.CancelAfter(
+                    HazardAwareOnlineBudget);
+
+                RouteResult? onlineRoute =
+                    await hazardAwareOnline.FindRouteAvoidingHazardsAsync(
+                        origin,
+                        destination,
+                        hazards,
+                        onlineBudget.Token);
+
+                if (onlineRoute is not null &&
+                    RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(
+                        onlineRoute,
+                        origin,
+                        hazards))
+                {
+                    AndroidLog.Warn(
+                        LogTag,
+                        "HAZARD-AWARE ROUTING selected ONLINE safe route: " +
+                        $"algorithm='{onlineRoute.Algorithm}', " +
+                        $"points={onlineRoute.Points.Count}, " +
+                        $"distance={onlineRoute.TotalDistanceMeters:F1} m, " +
+                        $"avoidedHazards={hazards.Count}.");
+
+                    return onlineRoute;
+                }
+
+                AndroidLog.Warn(
+                    LogTag,
+                    "Online MLD could not produce a verified-safe hazard route. " +
+                    "Falling back to local hazard-aware A*.");
+            }
+            catch (OperationCanceledException)
+                when (!cancellationToken.IsCancellationRequested)
+            {
+                AndroidLog.Warn(
+                    LogTag,
+                    "Online hazard-aware MLD timed out. Falling back to A*.");
+            }
+            catch (TimeoutException ex)
+            {
+                AndroidLog.Warn(
+                    LogTag,
+                    "Online hazard-aware MLD timed out. Falling back to A*: " +
+                    ex.Message);
+            }
+            catch (HttpRequestException ex)
+            {
+                AndroidLog.Warn(
+                    LogTag,
+                    "Online hazard-aware MLD transport failed. Falling back to A*: " +
+                    ex.Message);
+            }
+            catch (InvalidDataException ex)
+            {
+                AndroidLog.Warn(
+                    LogTag,
+                    "Online hazard-aware MLD response/request was unusable. " +
+                    "Falling back to A*: " +
+                    ex.Message);
+            }
+        }
+        else if (internetAvailable)
+        {
+            AndroidLog.Warn(
+                LogTag,
+                "The configured online routing provider does not expose the " +
+                "hazard-aware routing contract. Falling back to local A*.");
+        }
+        else
+        {
+            AndroidLog.Warn(
+                LogTag,
+                "Internet is unavailable during hazard rerouting. Using local " +
+                "hazard-aware A* immediately.");
+        }
+
+        AStarRoutingService offline =
+            await GetOfflineRoutingServiceAsync(
+                cancellationToken);
+
+        RouteResult? route =
+            await offline.FindRouteAvoidingHazardsAsync(
+                origin,
+                destination,
+                hazards,
+                cancellationToken);
+
+        if (route is null)
+        {
+            AndroidLog.Warn(
+                LogTag,
+                "Hazard-aware A* returned no safe replacement route.");
+
+            return null;
+        }
+
+        RouteHazardGeometry.RouteHazardIntersection unsafeIntersection =
+            RouteHazardGeometry.FindFirstUnsafeIntersectionFromOrigin(
+                route,
+                origin,
+                hazards);
+
+        if (unsafeIntersection.IsAffected)
+        {
+            AndroidLog.Error(
+                LogTag,
+                "Hazard-aware A* safety validation rejected the replacement " +
+                $"route because it still intersects hazard " +
+                $"'{unsafeIntersection.Hazard?.Id ?? "<unknown>"}'.");
+
+            return null;
+        }
+
+        AndroidLog.Warn(
+            LogTag,
+            "HAZARD-AWARE ROUTING selected OFFLINE/local safe route: " +
+            $"algorithm='{route.Algorithm}', " +
+            $"points={route.Points.Count}, " +
+            $"distance={route.TotalDistanceMeters:F1} m, " +
+            $"avoidedHazards={hazards.Count}.");
+
+        return route;
+    }
+
+    Task<RouteResult?> IHazardAwareRoutingService.FindRouteAvoidingHazardsAsync(
+        GeoCoordinate origin,
+        GeoCoordinate destination,
+        IReadOnlyList<RouteHazard> hazards,
+        CancellationToken cancellationToken)
+    {
+        return FindHazardAvoidingRouteAsync(
+            origin,
+            destination,
+            hazards,
             cancellationToken);
     }
 

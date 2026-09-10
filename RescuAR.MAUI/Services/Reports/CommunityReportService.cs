@@ -17,6 +17,44 @@ public class CommunityReportService
         return await SupabaseService.Instance.GetClientAsync();
     }
 
+    /// <summary>
+    /// Remote-only report fetch used by route-safety monitoring. Unlike the
+    /// public feed method, this returns null when Supabase cannot be reached
+    /// and never substitutes local sample rows. This prevents a fallback UI
+    /// record from being interpreted as a verified live road hazard.
+    /// </summary>
+    public async Task<List<CommunityReport>?> TryGetRemoteReportsAsync()
+    {
+        var client = await GetClientAsync();
+
+        if (client is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var response = await client.From<CommunityReport>()
+                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Get();
+
+            return response.Models?.ToList() ??
+                new List<CommunityReport>();
+        }
+        catch (Exception ex)
+        {
+#if ANDROID
+            Android.Util.Log.Warn(
+                "RescuAR-HazardReroute",
+                $"Remote community-hazard fetch unavailable: {ex.Message}");
+#else
+            System.Diagnostics.Debug.WriteLine(
+                $"Remote community-hazard fetch unavailable: {ex.Message}");
+#endif
+            return null;
+        }
+    }
+
     public async Task<List<CommunityReport>> GetReportsAsync(string searchQuery = "", string filterOption = "Newest first")
     {
         var client = await GetClientAsync();
