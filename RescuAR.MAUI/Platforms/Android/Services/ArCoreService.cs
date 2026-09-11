@@ -1227,10 +1227,19 @@ public sealed partial class ArCoreService : IArCoreService
             ArCoreCamera camera =
                 frame.Camera;
 
+            /*
+             * Capture user zoom exactly once for this ARCore frame. Camera
+             * UVs, projection, depth mapping, and screen-space hit tests must
+             * all use the same ratio to preserve AR registration.
+             */
+            float frameZoomRatio =
+                cameraZoomRatio;
+
             PublishSpatialPose(
                 frame,
                 camera,
-                timestamp);
+                timestamp,
+                frameZoomRatio);
 
             LogTextureIntrinsicsOnce(
                 camera);
@@ -1238,7 +1247,8 @@ public sealed partial class ArCoreService : IArCoreService
             TryPublishDepthOcclusionFrame(
                 frame,
                 camera,
-                timestamp);
+                timestamp,
+                frameZoomRatio);
 
             if (captureCpuDiagnosticRequested)
             {
@@ -1320,7 +1330,8 @@ public sealed partial class ArCoreService : IArCoreService
 
                 float[] cameraUv =
                     TransformCameraUv(
-                        frame);
+                        frame,
+                        frameZoomRatio);
 
                 GetAppliedDisplaySize(
                     out uint outputWidth,
@@ -1557,7 +1568,8 @@ public sealed partial class ArCoreService : IArCoreService
     private void PublishSpatialPose(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp)
+        long timestamp,
+        float zoomRatio)
     {
         string trackingState =
             camera.TrackingState.ToString();
@@ -1638,6 +1650,10 @@ public sealed partial class ArCoreService : IArCoreService
             SpatialProjectionNearPlane,
             SpatialProjectionFarPlane);
 
+        ApplyCameraZoomToProjection(
+            projection,
+            zoomRatio);
+
         /*
          * Keep searching until a real upward-facing horizontal floor plane
          * is acquired. The fast path uses world-space downward rays around
@@ -1648,7 +1664,8 @@ public sealed partial class ArCoreService : IArCoreService
         {
             TryCreateSpatialGroundAnchor(
                 frame,
-                translation);
+                translation,
+                zoomRatio);
         }
 
         bool anchorAvailable =
@@ -1698,7 +1715,8 @@ public sealed partial class ArCoreService : IArCoreService
 
     private void TryCreateSpatialGroundAnchor(
         Frame frame,
-        float[] cameraTranslation)
+        float[] cameraTranslation,
+        float zoomRatio)
     {
         long now =
             Environment.TickCount64;
@@ -1825,13 +1843,23 @@ public sealed partial class ArCoreService : IArCoreService
                 GroundPlaneSearchPattern[
                     sampleIndex];
 
+            float arCoreNormalizedX =
+                MapZoomedViewCoordinateToArCoreView(
+                    normalizedX,
+                    zoomRatio);
+
+            float arCoreNormalizedY =
+                MapZoomedViewCoordinateToArCoreView(
+                    normalizedY,
+                    zoomRatio);
+
             float hitX =
                 viewportWidth *
-                normalizedX;
+                arCoreNormalizedX;
 
             float hitY =
                 viewportHeight *
-                normalizedY;
+                arCoreNormalizedY;
 
             var hitResults =
                 frame.HitTest(
@@ -1841,8 +1869,9 @@ public sealed partial class ArCoreService : IArCoreService
             groundPlaneSearchHitTestCount++;
 
             string sampleDescription =
-                $"normalized=({normalizedX:F2},{normalizedY:F2}), " +
-                $"screen=({hitX:F1},{hitY:F1})";
+                $"displayNormalized=({normalizedX:F2},{normalizedY:F2}), " +
+                $"arCoreNormalized=({arCoreNormalizedX:F2},{arCoreNormalizedY:F2}), " +
+                $"zoom={zoomRatio:0.#}x, screen=({hitX:F1},{hitY:F1})";
 
             if (TryCreatePlaneGroundAnchorFromHits(
                     hitResults,
@@ -2534,7 +2563,8 @@ public sealed partial class ArCoreService : IArCoreService
     private void TryPublishDepthOcclusionFrame(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp)
+        long timestamp,
+        float zoomRatio)
     {
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
@@ -2702,7 +2732,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             float[] viewToTextureUv =
                 TransformCameraUv(
-                    frame);
+                    frame,
+                    zoomRatio);
 
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
@@ -2777,14 +2808,59 @@ public sealed partial class ArCoreService : IArCoreService
     /// coordinates into normalized camera-texture coordinates.
     /// </summary>
     private float[] TransformCameraUv(
-        Frame frame)
+        Frame frame,
+        float zoomRatio)
     {
+        float safeZoomRatio =
+            Math.Clamp(
+                zoomRatio,
+                MinimumCameraZoomRatio,
+                MaximumCameraZoomRatio);
+
+        float[] inputViewUv;
+
+        if (Math.Abs(
+                safeZoomRatio - 1.0f) < 0.001f)
+        {
+            inputViewUv =
+                ViewNormalizedCameraUv;
+        }
+        else
+        {
+            float halfSpan =
+                0.5f /
+                safeZoomRatio;
+
+            float minimum =
+                0.5f -
+                halfSpan;
+
+            float maximum =
+                0.5f +
+                halfSpan;
+
+            inputViewUv =
+            [
+                // Top-left
+                minimum, minimum,
+
+                // Top-right
+                maximum, minimum,
+
+                // Bottom-left
+                minimum, maximum,
+
+                // Bottom-right
+                maximum, maximum
+            ];
+        }
+
         float[] transformedUv =
             new float[8];
 
         frame.TransformCoordinates2d(
             Coordinates2d.ViewNormalized,
-            ViewNormalizedCameraUv,
+            inputViewUv,
             Coordinates2d.TextureNormalized,
             transformedUv);
 
@@ -2795,7 +2871,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "========== ARCore Camera UV ==========");
+                $"========== ARCore Camera UV ({safeZoomRatio:0.#}x) ==========");
 
             Log.Debug(
                 Tag,

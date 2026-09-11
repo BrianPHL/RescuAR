@@ -117,6 +117,16 @@ namespace RescuAR.App.Views.Camera
         private bool emergencyAdvisoryVisible;
         private bool pageIsVisible;
 
+        private static readonly float[] CameraZoomLevels =
+        {
+            1.0f,
+            2.0f,
+            3.0f
+        };
+
+        private int currentCameraZoomLevelIndex;
+        private bool flashlightToggleInProgress;
+
         private DisasterAdvisory? currentEmergencyAdvisory;
 
         // Retain the latest verified advisory for the compact Figma status
@@ -454,6 +464,12 @@ namespace RescuAR.App.Views.Camera
 
             _arCoreService =
                 arCoreService;
+
+            currentCameraZoomLevelIndex =
+                FindClosestCameraZoomLevelIndex(
+                    _arCoreService.CameraZoomRatio);
+
+            RefreshCameraControlUi();
 
             handledGroundAnchorReplacementGeneration =
                 _arCoreService.GroundAnchorReplacementGeneration;
@@ -809,6 +825,113 @@ namespace RescuAR.App.Views.Camera
                 "Flood Depth sub-tab selected");
         }
 
+        private void OnCameraZoomInClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ChangeCameraZoomLevel(
+                +1);
+        }
+
+        private void OnCameraZoomOutClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ChangeCameraZoomLevel(
+                -1);
+        }
+
+        private void ChangeCameraZoomLevel(
+            int direction)
+        {
+            int targetIndex =
+                Math.Clamp(
+                    currentCameraZoomLevelIndex +
+                        Math.Sign(direction),
+                    0,
+                    CameraZoomLevels.Length - 1);
+
+            if (targetIndex ==
+                currentCameraZoomLevelIndex)
+            {
+                return;
+            }
+
+            float zoomRatio =
+                CameraZoomLevels[
+                    targetIndex];
+
+            _arCoreService.SetCameraZoomRatio(
+                zoomRatio);
+
+            currentCameraZoomLevelIndex =
+                targetIndex;
+
+            RefreshCameraControlUi();
+
+#if ANDROID
+            Log.Info(
+                "RescuAR-CameraUI",
+                $"Camera zoom changed to {zoomRatio:0.#}x.");
+#endif
+        }
+        private void RefreshCameraControlUi()
+        {
+            float currentZoom =
+                _arCoreService.CameraZoomRatio;
+
+            currentCameraZoomLevelIndex =
+                FindClosestCameraZoomLevelIndex(
+                    currentZoom);
+
+            cameraZoomRatioLabel.Text =
+                $"{CameraZoomLevels[currentCameraZoomLevelIndex]:0.#}x";
+
+            cameraZoomInIcon.Opacity =
+                currentCameraZoomLevelIndex <
+                    CameraZoomLevels.Length - 1
+                    ? 1.0
+                    : 0.35;
+
+            cameraZoomOutIcon.Opacity =
+                currentCameraZoomLevelIndex > 0
+                    ? 1.0
+                    : 0.35;
+
+        }
+
+        private static int FindClosestCameraZoomLevelIndex(
+            float zoomRatio)
+        {
+            int closestIndex =
+                0;
+
+            float closestDistance =
+                float.MaxValue;
+
+            for (int index = 0;
+                 index < CameraZoomLevels.Length;
+                 index++)
+            {
+                float distance =
+                    Math.Abs(
+                        CameraZoomLevels[index] -
+                        zoomRatio);
+
+                if (distance <
+                    closestDistance)
+                {
+                    closestDistance =
+                        distance;
+
+                    closestIndex =
+                        index;
+                }
+            }
+
+            return closestIndex;
+        }
+
         private void OnNavigationAwarenessClicked(
             object? sender,
             TappedEventArgs e)
@@ -1076,6 +1199,8 @@ namespace RescuAR.App.Views.Camera
             ApplyCameraModuleView(
                 currentCameraModuleView,
                 "Camera tab entered");
+
+            RefreshCameraControlUi();
 
 #if ANDROID
             Log.Debug(

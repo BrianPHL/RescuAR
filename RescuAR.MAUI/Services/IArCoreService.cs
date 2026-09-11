@@ -29,6 +29,19 @@ public interface IArCoreService
     bool ResumeCameraSession();
 
     /// <summary>
+    /// Current synchronized presentation zoom applied to both the ARCore
+    /// camera background and virtual-camera projection.
+    /// </summary>
+    float CameraZoomRatio { get; }
+
+    /// <summary>
+    /// Applies a centered AR-safe presentation zoom. The service keeps the
+    /// camera feed and AR projection on the same ratio so overlays remain
+    /// registered with the physical scene.
+    /// </summary>
+    void SetCameraZoomRatio(float zoomRatio);
+
+    /// <summary>
     /// Performs a non-destructive health check of the retained ground anchor.
     ///
     /// When ARCore camera tracking has recovered but the existing anchor

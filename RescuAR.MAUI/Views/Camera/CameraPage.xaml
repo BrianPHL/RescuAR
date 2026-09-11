@@ -344,6 +344,7 @@
                     StrokeThickness="1"
                     StrokeShape="RoundRectangle 5">
                     <Label
+                        x:Name="cameraZoomRatioLabel"
                         Text="1x"
                         TextColor="#111111"
                         FontSize="12"
@@ -360,21 +361,35 @@
                     StrokeThickness="1"
                     StrokeShape="RoundRectangle 7">
                     <Grid RowDefinitions="*,1,*">
-                        <Image
-                            Grid.Row="0"
-                            Source="lucide_zoom_in_black.png"
-                            WidthRequest="22"
-                            HeightRequest="22"
-                            HorizontalOptions="Center"
-                            VerticalOptions="Center" />
+                        <Grid Grid.Row="0" BackgroundColor="Transparent">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCameraZoomInClicked" />
+                            </Grid.GestureRecognizers>
+                            <Image
+                                x:Name="cameraZoomInIcon"
+                                InputTransparent="True"
+                                Source="lucide_zoom_in_black.png"
+                                WidthRequest="22"
+                                HeightRequest="22"
+                                HorizontalOptions="Center"
+                                VerticalOptions="Center" />
+                        </Grid>
+
                         <BoxView Grid.Row="1" BackgroundColor="#CFD2D4" />
-                        <Image
-                            Grid.Row="2"
-                            Source="lucide_zoom_out_black.png"
-                            WidthRequest="22"
-                            HeightRequest="22"
-                            HorizontalOptions="Center"
-                            VerticalOptions="Center" />
+
+                        <Grid Grid.Row="2" BackgroundColor="Transparent">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnCameraZoomOutClicked" />
+                            </Grid.GestureRecognizers>
+                            <Image
+                                x:Name="cameraZoomOutIcon"
+                                InputTransparent="True"
+                                Source="lucide_zoom_out_black.png"
+                                WidthRequest="22"
+                                HeightRequest="22"
+                                HorizontalOptions="Center"
+                                VerticalOptions="Center" />
+                        </Grid>
                     </Grid>
                 </Border>
             </VerticalStackLayout>
