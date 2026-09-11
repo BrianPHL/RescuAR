@@ -392,6 +392,27 @@
                         </Grid>
                     </Grid>
                 </Border>
+
+                <Border
+                    x:Name="cameraFlashlightButton"
+                    WidthRequest="58"
+                    HeightRequest="58"
+                    BackgroundColor="#ECFFFFFF"
+                    Stroke="#F4FFFFFF"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 7">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCameraFlashlightClicked" />
+                    </Border.GestureRecognizers>
+                    <Image
+                        x:Name="cameraFlashlightIcon"
+                        InputTransparent="True"
+                        Source="icon_flashlight.png"
+                        WidthRequest="23"
+                        HeightRequest="23"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
+                </Border>
             </VerticalStackLayout>
 
             <Button

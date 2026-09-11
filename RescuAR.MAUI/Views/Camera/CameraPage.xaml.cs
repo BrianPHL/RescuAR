@@ -875,6 +875,84 @@ namespace RescuAR.App.Views.Camera
                 $"Camera zoom changed to {zoomRatio:0.#}x.");
 #endif
         }
+
+        private async void OnCameraFlashlightClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            if (flashlightToggleInProgress)
+            {
+                return;
+            }
+
+            flashlightToggleInProgress =
+                true;
+
+            try
+            {
+                /*
+                 * The Camera page auto-starts ARCore, but a very fast tap can
+                 * arrive before initialization has finished. Reuse the same
+                 * serialized activation path rather than trying to touch the
+                 * physical camera directly.
+                 */
+                if (!_arCoreService.IsInitialized ||
+                    _arCoreService.IsSessionPaused)
+                {
+                    bool arCoreReady =
+                        await EnsureArCoreActiveAsync(
+                            CancellationToken.None);
+
+                    if (!arCoreReady)
+                    {
+                        await DisplayAlert(
+                            "Flashlight unavailable",
+                            "The AR camera is not ready yet.",
+                            "OK");
+
+                        return;
+                    }
+                }
+
+                bool requestedState =
+                    !_arCoreService.IsFlashlightOn;
+
+                bool changed =
+                    await _arCoreService.SetFlashlightAsync(
+                        requestedState);
+
+                RefreshCameraControlUi();
+
+                if (!changed)
+                {
+                    await DisplayAlert(
+                        "Flashlight unavailable",
+                        "The active camera does not provide a usable flashlight.",
+                        "OK");
+                }
+            }
+            catch (Exception exception)
+            {
+#if ANDROID
+                Log.Warn(
+                    "RescuAR-CameraUI",
+                    $"Camera flashlight toggle failed: {exception.Message}");
+#endif
+
+                RefreshCameraControlUi();
+
+                await DisplayAlert(
+                    "Flashlight unavailable",
+                    "The flashlight could not be changed while the AR camera is active.",
+                    "OK");
+            }
+            finally
+            {
+                flashlightToggleInProgress =
+                    false;
+            }
+        }
+
         private void RefreshCameraControlUi()
         {
             float currentZoom =
@@ -898,6 +976,19 @@ namespace RescuAR.App.Views.Camera
                     ? 1.0
                     : 0.35;
 
+            bool flashlightOn =
+                _arCoreService.IsFlashlightOn;
+
+            cameraFlashlightButton.BackgroundColor =
+                Color.FromArgb(
+                    flashlightOn
+                        ? "#FFF2A8"
+                        : "#ECFFFFFF");
+
+            cameraFlashlightIcon.Opacity =
+                flashlightOn
+                    ? 1.0
+                    : 0.78;
         }
 
         private static int FindClosestCameraZoomLevelIndex(

@@ -42,6 +42,19 @@ public interface IArCoreService
     void SetCameraZoomRatio(float zoomRatio);
 
     /// <summary>
+    /// True after ARCore successfully configured torch mode for the retained
+    /// camera session.
+    /// </summary>
+    bool IsFlashlightOn { get; }
+
+    /// <summary>
+    /// Enables or disables the device torch through ARCore's FlashMode API.
+    /// Returns false when the current camera has no flash unit or the ARCore
+    /// session is not available.
+    /// </summary>
+    Task<bool> SetFlashlightAsync(bool enabled);
+
+    /// <summary>
     /// Performs a non-destructive health check of the retained ground anchor.
     ///
     /// When ARCore camera tracking has recovered but the existing anchor
