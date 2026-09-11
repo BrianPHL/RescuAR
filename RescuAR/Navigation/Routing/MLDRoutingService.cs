@@ -1076,7 +1076,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 : string.Empty;
 
         return
-            $"{baseUrl}/route/v1/driving/{coordinatePath}" +
+            $"{baseUrl}/route/v1/foot/{coordinatePath}" +
             "?overview=full&geometries=geojson&steps=true" +
             alternativesQuery;
     }
