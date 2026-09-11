@@ -47,53 +47,55 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- 2. Interactive Disaster Preparedness & AR Navigation Carousel -->
-                <VerticalStackLayout Spacing="6" Margin="0,2,0,0">
-                    <CarouselView ItemsSource="{Binding CarouselItems}"
-                                   IndicatorView="carouselIndicator"
-                                   HeightRequest="185"
-                                   Loop="True"
-                                   PeekAreaInsets="16">
+                <!-- 2. Disaster Preparedness & AR Navigation Carousel -->
+                <VerticalStackLayout Spacing="8" Margin="0,2,0,0">
+                    <CarouselView x:Name="DashboardCarousel"
+                                  ItemsSource="{Binding CarouselItems}"
+                                  IndicatorView="CarouselIndicators"
+                                  HeightRequest="190"
+                                  Loop="True"
+                                  PeekAreaInsets="16">
                         <CarouselView.ItemTemplate>
                             <DataTemplate x:DataType="models:DashboardCarouselItem">
-                                <Grid Padding="3">
+                                <Grid Padding="4">
                                     <Border StrokeThickness="0"
-                                            StrokeShape="RoundRectangle 18"
-                                            HeightRequest="175"
+                                            StrokeShape="RoundRectangle 20"
+                                            HeightRequest="180"
                                             HorizontalOptions="Fill"
                                             VerticalOptions="Fill">
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
                                                                  CommandParameter="{Binding .}" />
                                         </Border.GestureRecognizers>
-                                        <Grid>
-                                            <!-- Background Photo -->
-                                            <Image Source="{Binding ImageSource}"
+                                        <Grid RowDefinitions="*,Auto">
+                                            <!-- Full Card Background Image -->
+                                            <Image Grid.RowSpan="2"
+                                                   Source="{Binding ImageSource}"
                                                    Aspect="AspectFill"
                                                    HorizontalOptions="Fill"
                                                    VerticalOptions="Fill" />
 
-                                            <!-- Gradient Dark Overlay -->
-                                            <BoxView HorizontalOptions="Fill" VerticalOptions="Fill">
-                                                <BoxView.Background>
+                                            <!-- Bottom Text & Button Overlay with Gradient -->
+                                            <Grid Grid.Row="1"
+                                                  Padding="16,16,16,14"
+                                                  RowDefinitions="Auto,Auto"
+                                                  RowSpacing="8">
+                                                <Grid.Background>
                                                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                                        <GradientStop Color="#40032B36" Offset="0.0" />
-                                                        <GradientStop Color="#D8032B36" Offset="0.55" />
-                                                        <GradientStop Color="#FA032B36" Offset="1.0" />
+                                                        <GradientStop Color="#00000000" Offset="0.0" />
+                                                        <GradientStop Color="#99000000" Offset="0.4" />
+                                                        <GradientStop Color="#E6021A20" Offset="1.0" />
                                                     </LinearGradientBrush>
-                                                </BoxView.Background>
-                                            </BoxView>
+                                                </Grid.Background>
 
-                                            <!-- Card Content Layer -->
-                                            <Grid RowDefinitions="*,Auto" Padding="16,14" RowSpacing="8">
                                                 <!-- Title & Description -->
-                                                <VerticalStackLayout Grid.Row="0" Spacing="4" VerticalOptions="End">
+                                                <VerticalStackLayout Grid.Row="0" Spacing="3">
                                                     <Label Text="{Binding Title}"
                                                            TextColor="#FFFFFF"
                                                            FontSize="17"
                                                            FontAttributes="Bold" />
                                                     <Label Text="{Binding Description}"
-                                                           TextColor="#E0F2FE"
+                                                           TextColor="#E2E8F0"
                                                            FontSize="11"
                                                            LineBreakMode="WordWrap"
                                                            MaxLines="2" />
@@ -126,12 +128,12 @@
                     </CarouselView>
 
                     <!-- Carousel Page Indicator Dots -->
-                    <IndicatorView x:Name="carouselIndicator"
+                    <IndicatorView x:Name="CarouselIndicators"
                                    IndicatorColor="#CBD5E1"
                                    SelectedIndicatorColor="#0A8491"
                                    IndicatorSize="8"
                                    HorizontalOptions="Center"
-                                   Margin="0,0,0,4" />
+                                   Margin="0,2,0,4" />
                 </VerticalStackLayout>
 
                 <!-- 3. Weather Forecast Section (Compact Mobile Viewport Widget) -->
@@ -209,38 +211,37 @@
                         </HorizontalStackLayout>
                     </Grid>
 
-                    <!-- Compact Container Card with Horizontal Scrollable Grid -->
-                    <Border IsVisible="{Binding IsQuickActionsExpanded}" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="12,14">
+                    <!-- Compact 4-Column Quick Actions Grid (Evenly Distributed, No Overlap, Natural Tight Height) -->
+                    <Border IsVisible="{Binding IsQuickActionsExpanded}" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="6,10">
                         <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
                             <FlexLayout BindableLayout.ItemsSource="{Binding QuickActions}"
                                         Direction="Column"
                                         Wrap="Wrap"
-                                        HeightRequest="156"
+                                        HeightRequest="118"
                                         AlignContent="Start"
-                                        JustifyContent="Start">
+                                        JustifyContent="SpaceBetween">
                                 <BindableLayout.ItemTemplate>
                                     <DataTemplate x:DataType="models:QuickActionItem">
-                                        <Grid WidthRequest="105"
-                                              HeightRequest="74"
-                                              Padding="4,2"
+                                        <Grid WidthRequest="76"
+                                              HeightRequest="56"
+                                              Padding="1,0"
                                               RowDefinitions="Auto,Auto"
-                                              RowSpacing="4"
+                                              RowSpacing="3"
                                               HorizontalOptions="Center"
-                                              VerticalOptions="Start">
+                                              VerticalOptions="Center">
                                             <Grid.GestureRecognizers>
                                                 <TapGestureRecognizer Command="{Binding ViewModel.ExecuteQuickActionCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
                                                                       CommandParameter="{Binding .}" />
                                             </Grid.GestureRecognizers>
-
                                             <!-- Clean Vector Icon (Centered Top - No Box) -->
                                             <Grid Grid.Row="0"
-                                                  WidthRequest="32"
-                                                  HeightRequest="32"
+                                                  WidthRequest="24"
+                                                  HeightRequest="24"
                                                   HorizontalOptions="Center"
                                                   VerticalOptions="Center">
                                                 <Image Source="{Binding IconImage}"
-                                                       WidthRequest="26"
-                                                       HeightRequest="26"
+                                                       WidthRequest="22"
+                                                       HeightRequest="22"
                                                        Aspect="AspectFit"
                                                        HorizontalOptions="Center"
                                                        VerticalOptions="Center" />
@@ -249,12 +250,12 @@
                                             <!-- Action Label Centered Directly Below -->
                                             <Label Grid.Row="1"
                                                    Text="{Binding Title}"
-                                                   TextColor="#0F172A"
-                                                   FontSize="11"
+                                                   TextColor="#475569"
+                                                   FontSize="9.5"
                                                    FontAttributes="Bold"
                                                    HorizontalTextAlignment="Center"
                                                    VerticalTextAlignment="Start"
-                                                   LineBreakMode="TailTruncation"
+                                                   LineBreakMode="WordWrap"
                                                    MaxLines="2"
                                                    HorizontalOptions="Center" />
                                         </Grid>
@@ -527,14 +528,18 @@
                                         <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 14" BackgroundColor="#F8FAFC" Padding="12">
                                             <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" VerticalOptions="Center">
                                                 
-                                                <!-- Clean Vector Icon in Checklist (No Box Container) -->
-                                                <Grid Grid.Column="0" WidthRequest="32" HeightRequest="32" VerticalOptions="Center" HorizontalOptions="Center">
+                                                <!-- Clean Vector Icon in Checklist (No Box) -->
+                                                <Grid Grid.Column="0"
+                                                      WidthRequest="32"
+                                                      HeightRequest="32"
+                                                      VerticalOptions="Center"
+                                                      HorizontalOptions="Center">
                                                     <Image Source="{Binding IconImage}"
-                                                       WidthRequest="26"
-                                                       HeightRequest="26"
-                                                       Aspect="AspectFit"
-                                                       HorizontalOptions="Center"
-                                                       VerticalOptions="Center" />
+                                                           WidthRequest="24"
+                                                           HeightRequest="24"
+                                                           Aspect="AspectFit"
+                                                           HorizontalOptions="Center"
+                                                           VerticalOptions="Center" />
                                                 </Grid>
 
                                                 <!-- Text Labels -->

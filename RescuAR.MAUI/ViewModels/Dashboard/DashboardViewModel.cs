@@ -189,45 +189,45 @@ public partial class DashboardViewModel : ObservableObject
     public ObservableCollection<QuickActionItem> AllAvailableQuickActions { get; } = new();
     public ObservableCollection<QuickActionPage> QuickActionPages { get; } = new();
     public bool HasMultipleQuickActionPages => QuickActionPages.Count > 1;
-    public ObservableCollection<DashboardCarouselItem> CarouselItems { get; set; } = new();
+    [ObservableProperty]
+    private ObservableCollection<DashboardCarouselItem> _carouselItems = new();
 
     public DashboardViewModel()
     {
         _weatherService = WeatherService.Instance;
 
-        CarouselItems = new ObservableCollection<DashboardCarouselItem>
+        CarouselItems.Add(new DashboardCarouselItem
         {
-            new DashboardCarouselItem
-            {
-                Id = "1",
-                Title = "Marikina Flood History",
-                Description = "Learn from past floods to improve your disaster preparedness.",
-                ButtonText = "Learn More",
-                ImageSource = "carousel_flood_history.png",
-                IconData = "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
-                ActionType = "LearnMore"
-            },
-            new DashboardCarouselItem
-            {
-                Id = "2",
-                Title = "Be Ready Before the Flood",
-                Description = "Check your emergency kit and review your evacuation plan.",
-                ButtonText = "View Checklist",
-                ImageSource = "carousel_emergency_kit.png",
-                IconData = "M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z",
-                ActionType = "Checklist"
-            },
-            new DashboardCarouselItem
-            {
-                Id = "3",
-                Title = "AR Safe Route",
-                Description = "Find the safest evacuation route with real-time AR navigation.",
-                ButtonText = "Start Navigation",
-                ImageSource = "carousel_ar_route.png",
-                IconData = "M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z",
-                ActionType = "Camera"
-            }
-        };
+            Id = "1",
+            Title = "Marikina Flood History",
+            Description = "Learn from past floods to improve your disaster preparedness.",
+            ButtonText = "Learn More",
+            ImageSource = "carousel_flood_history.png",
+            IconData = "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
+            ActionType = "LearnMore"
+        });
+
+        CarouselItems.Add(new DashboardCarouselItem
+        {
+            Id = "2",
+            Title = "Be Ready Before the Flood",
+            Description = "Check your emergency kit and review your evacuation plan.",
+            ButtonText = "View Checklist",
+            ImageSource = "carousel_emergency_kit.png",
+            IconData = "M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z",
+            ActionType = "Checklist"
+        });
+
+        CarouselItems.Add(new DashboardCarouselItem
+        {
+            Id = "3",
+            Title = "AR Safe Route",
+            Description = "Find the safest evacuation route with real-time AR navigation.",
+            ButtonText = "Start Navigation",
+            ImageSource = "carousel_ar_route.png",
+            IconData = "M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z",
+            ActionType = "Camera"
+        });
 
         LoadQuickActions();
         RefreshDashboard();
@@ -260,7 +260,7 @@ public partial class DashboardViewModel : ObservableObject
             IsQuickActionsExpanded = Preferences.Default.Get("IsQuickActionsExpanded", true);
             AllAvailableQuickActions.Clear();
 
-            string json = Preferences.Default.Get("CustomQuickActionsList_v12", string.Empty);
+            string json = Preferences.Default.Get("CustomQuickActionsList_v18", string.Empty);
             List<QuickActionItem>? saved = null;
             if (!string.IsNullOrWhiteSpace(json))
             {
@@ -269,10 +269,14 @@ public partial class DashboardViewModel : ObservableObject
 
             if (saved != null && saved.Count > 0)
             {
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var item in saved.Where(x => x.Id != "sos_beacon" && x.ActionType != "SOSBeacon"))
                 {
-                    EnsureSolidVectorIcons(item);
-                    AllAvailableQuickActions.Add(item);
+                    if (seen.Add(item.Title))
+                    {
+                        EnsureSolidVectorIcons(item);
+                        AllAvailableQuickActions.Add(item);
+                    }
                 }
             }
             else
@@ -299,118 +303,118 @@ public partial class DashboardViewModel : ObservableObject
     {
         AllAvailableQuickActions.Clear();
 
-        // 1. Flashlight Quick Action (Interactive Phone Flashlight Toggle)
+        // Col 0 - Top: Flashlight
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "flashlight",
             Title = "Flashlight",
             Subtitle = "Toggle flashlight ON / OFF",
-            IconImage = "icon_flashlight.svg",
+            IconImage = "icon_flashlight.png",
             IconData = "M9,2A1,1 0 0,0 8,3V8.5L10.5,11V21A1,1 0 0,0 11.5,22H12.5A1,1 0 0,0 13.5,21V11L16,8.5V3A1,1 0 0,0 15,2H9M10,4H14V6H10V4Z",
-            IconBg = "#FEF9C3",
-            IconColor = "#CA8A04",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Flashlight",
             IsEnabled = true
         });
 
-        // 2. Loud Rescue Siren / Whistle (Beacon Light with Base)
+        // Col 0 - Bottom: Loud Rescue Siren
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "siren",
             Title = "Loud Siren",
             Subtitle = "Play loud emergency beacon sound",
-            IconImage = "icon_siren.svg",
+            IconImage = "icon_siren.png",
             IconData = "M12,2C8.13,2 5,5.13 5,9V14H3.5C2.67,14 2,14.67 2,15.5V17C2,17.83 2.67,18.5 3.5,18.5H20.5C21.33,18.5 22,17.83 22,17V15.5C22,14.67 21.33,14 20.5,14H19V9C19,5.13 15.87,2 12,2ZM7,9C7,6.24 9.24,4 12,4C14.76,4 17,6.24 17,9V14H7V9ZM9.5,5.5C8.3,6.3 7.5,7.6 7.5,9H9.2C9.4,8.1 10,7.3 10.7,6.7L9.5,5.5Z",
-            IconBg = "#FEF3C7",
-            IconColor = "#D97706",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Siren",
             IsEnabled = true
         });
 
-        // 3. Share Live GPS Location (Solid Location Marker Pin)
+        // Col 1 - Top: Share Live GPS Location
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "share_gps",
             Title = "Share GPS",
             Subtitle = "Share live location link via SMS",
-            IconImage = "icon_gps.svg",
+            IconImage = "icon_gps.png",
             IconData = "M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,16.25 19,11A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,11A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,11A2.5,2.5 0 0,1 12,13.5Z",
-            IconBg = "#CCFBF1",
-            IconColor = "#0D9488",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "ShareLocation",
             IsEnabled = true
         });
 
-        // 4. Standard Report Incident (Octagon Alert Mark)
+        // Col 1 - Bottom: Report Incident
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "report",
             Title = "Report Incident",
             Subtitle = "Submit a community report",
-            IconImage = "icon_report.svg",
+            IconImage = "icon_report.png",
             IconData = "M8,2H16L22,8V16L16,22H8L2,16V8L8,2ZM8.8,4L4,8.8V15.2L8.8,20H15.2L20,15.2V8.8L15.2,4H8.8ZM11,7H13V13H11V7ZM11,15H13V17H11V15Z",
-            IconBg = "#FFEDD5",
-            IconColor = "#EA580C",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Route",
             TargetRoute = "//Reports",
             IsEnabled = true
         });
 
-        // 5. Standard Emergency Hotlines (Solid Phone Receiver)
+        // Col 2 - Top: Standard Emergency Hotlines
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "hotlines",
             Title = "Hotlines",
             Subtitle = "Directory of emergency contacts",
-            IconImage = "icon_hotlines.svg",
+            IconImage = "icon_hotlines.png",
             IconData = "M6.62,10.79C8.06,13.62 10.38,15.94 13.21,17.38L15.41,15.18C15.69,14.9 16.08,14.82 16.43,14.93C17.55,15.3 18.75,15.5 20,15.5A1,1 0 0,1 21,16.5V20A1,1 0 0,1 20,21C10.61,21 3,13.39 3,4A1,1 0 0,1 4,3H7.5A1,1 0 0,1 8.5,4C8.5,5.25 8.7,6.45 9.07,7.57C9.18,7.92 9.1,8.31 8.82,8.59L6.62,10.79Z",
-            IconBg = "#E0F2FE",
-            IconColor = "#0284C7",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Route",
             TargetRoute = "Prepare/HotlineDirectory",
             IsEnabled = true
         });
 
-        // 6. Find Evacuation Center (Solid Shelter House)
+        // Col 2 - Bottom: Find Evacuation Center
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "evacuation",
             Title = "Evacuation Center",
             Subtitle = "Locate nearby shelters",
-            IconImage = "icon_evacuation.svg",
+            IconImage = "icon_evacuation.png",
             IconData = "M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z",
-            IconBg = "#DCFCE7",
-            IconColor = "#16A34A",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Route",
             TargetRoute = "Prepare/EvacuationCenterInfo",
             IsEnabled = true
         });
 
-        // 7. Safety Circle (House with Family Group)
+        // Col 3 - Top: Safety Circle
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "safety",
             Title = "Safety Circle",
             Subtitle = "Check family status",
-            IconImage = "icon_safety.svg",
+            IconImage = "icon_safety.png",
             IconData = "M12,2L1,11H4V21H20V11H23L12,2ZM12,4.8L18,10V19H6V10L12,4.8ZM12,7C12.8,7 13.5,7.7 13.5,8.5C13.5,9.3 12.8,10 12,10C11.2,10 10.5,9.3 10.5,8.5C10.5,7.7 11.2,7 12,7ZM8.5,9C9.2,9 9.7,9.5 9.7,10.2C9.7,10.9 9.2,11.4 8.5,11.4C7.8,11.4 7.3,10.9 7.3,10.2C7.3,9.5 7.8,9 8.5,9ZM15.5,9C16.2,9 16.7,9.5 16.7,10.2C16.7,10.9 16.2,11.4 15.5,11.4C14.8,11.4 14.3,10.9 14.3,10.2C14.3,9.5 14.8,9 15.5,9ZM12,11C10.5,11 9,11.8 8.5,13H15.5C15,11.8 13.5,11 12,11ZM6.2,14H8.5V16H6.2V14ZM15.5,14H17.8V16H15.5V14Z",
-            IconBg = "#EDE9FE",
-            IconColor = "#7C3AED",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Route",
             TargetRoute = "SafetyCirclePage",
             IsEnabled = true
         });
 
-        // 8. AR Evacuation Practice (Route Path with Nodes)
+        // Col 3 - Bottom: AR Route (Optional / Configurable)
         AllAvailableQuickActions.Add(new QuickActionItem
         {
             Id = "ar_route",
             Title = "AR Route",
             Subtitle = "Camera / AR Route Guidance",
-            IconImage = "icon_ar_route.svg",
+            IconImage = "icon_ar_route.png",
             IconData = "M19,15.18V7C19,4.79 17.21,3 15,3C12.79,3 11,4.79 11,7V15C11,16.1 10.1,17 9,17C7.9,17 7,16.1 7,15V7.82C8.16,7.4 9,6.3 9,5C9,3.34 7.66,2 6,2C4.34,2 3,3.34 3,5C3,6.3 3.84,7.4 5,7.82V15C5,17.21 6.79,19 9,19C11.21,19 13,17.21 13,15V7C13,5.9 13.9,5 15,5C16.1,5 17,5.9 17,7V15.18C15.84,15.6 15,16.7 15,18C15,19.66 16.34,21 18,21C19.66,21 21,19.66 21,18C21,16.7 20.16,15.6 19,15.18Z",
-            IconBg = "#DBEAFE",
-            IconColor = "#2563EB",
+            IconBg = "Transparent",
+            IconColor = "#64748B",
             ActionType = "Route",
             TargetRoute = "//Camera",
             IsEnabled = false
@@ -423,42 +427,19 @@ public partial class DashboardViewModel : ObservableObject
 
         item.IconImage = item.Id switch
         {
-            "siren" => "icon_siren.svg",
-            "flashlight" => "icon_flashlight.svg",
-            "share_gps" => "icon_gps.svg",
-            "report" => "icon_report.svg",
-            "hotlines" => "icon_hotlines.svg",
-            "evacuation" => "icon_evacuation.svg",
-            "safety" => "icon_safety.svg",
-            "ar_route" => "icon_ar_route.svg",
-            _ => item.ActionType == "CustomContact" ? "icon_custom_contact.svg" : (string.IsNullOrWhiteSpace(item.IconImage) ? "icon_hotlines.svg" : item.IconImage)
+            "siren" => "icon_siren.png",
+            "flashlight" => "icon_flashlight.png",
+            "share_gps" => "icon_gps.png",
+            "report" => "icon_report.png",
+            "hotlines" => "icon_hotlines.png",
+            "evacuation" => "icon_evacuation.png",
+            "safety" => "icon_safety.png",
+            "ar_route" => "icon_ar_route.png",
+            _ => item.ActionType == "CustomContact" ? "icon_custom_contact.png" : (string.IsNullOrWhiteSpace(item.IconImage) ? "icon_hotlines.png" : item.IconImage)
         };
 
-        item.IconBg = item.Id switch
-        {
-            "siren" => "#FEF3C7",
-            "flashlight" => item.IsActiveState ? "#FEF08A" : "#FEF9C3",
-            "share_gps" => "#CCFBF1",
-            "report" => "#FFEDD5",
-            "hotlines" => "#E0F2FE",
-            "evacuation" => "#DCFCE7",
-            "safety" => "#EDE9FE",
-            "ar_route" => "#DBEAFE",
-            _ => string.IsNullOrWhiteSpace(item.IconBg) ? "#EFF6FF" : item.IconBg
-        };
-
-        item.IconColor = item.Id switch
-        {
-            "siren" => "#D97706",
-            "flashlight" => item.IsActiveState ? "#854D0E" : "#CA8A04",
-            "share_gps" => "#0D9488",
-            "report" => "#EA580C",
-            "hotlines" => "#0284C7",
-            "evacuation" => "#16A34A",
-            "safety" => "#7C3AED",
-            "ar_route" => "#2563EB",
-            _ => string.IsNullOrWhiteSpace(item.IconColor) ? "#2563EB" : item.IconColor
-        };
+        item.IconBg = "Transparent";
+        item.IconColor = "#64748B";
 
         item.IconData = item.Id switch
         {
@@ -477,10 +458,14 @@ public partial class DashboardViewModel : ObservableObject
     private void SyncEnabledQuickActions()
     {
         QuickActions.Clear();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in AllAvailableQuickActions.Where(x => x.IsEnabled))
         {
-            EnsureSolidVectorIcons(item);
-            QuickActions.Add(item);
+            if (seen.Add(item.Title))
+            {
+                EnsureSolidVectorIcons(item);
+                QuickActions.Add(item);
+            }
         }
 
         QuickActionPages.Clear();
@@ -503,7 +488,7 @@ public partial class DashboardViewModel : ObservableObject
         try
         {
             string json = JsonConvert.SerializeObject(AllAvailableQuickActions.ToList());
-            Preferences.Default.Set("CustomQuickActionsList_v12", json);
+            Preferences.Default.Set("CustomQuickActionsList_v18", json);
         }
         catch (Exception ex)
         {
