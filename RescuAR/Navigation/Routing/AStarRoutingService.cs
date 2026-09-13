@@ -135,19 +135,85 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
             return null;
         }
 
-        // 1. Snap origin and destination coordinates to nearest graph nodes.
-        RoadNode? startNode = FindNearestNode(origin);
-        RoadNode? targetNode = FindNearestNode(destination);
+        // Keep destination node snapping until destination-edge arrival is
+        // implemented as a separate, bounded change.
+        RoadNode? targetNode =
+            FindNearestNode(
+                destination);
 
-        if (startNode == null || targetNode == null)
+        if (targetNode is null)
         {
             return null;
         }
 
-        if (startNode.Id == targetNode.Id)
+        Dictionary<int, double> startSeedCosts =
+            new();
+
+        GeoCoordinate snappedStartCoordinate;
+
+        if (hazardAware)
         {
-            var singlePoint = new RoutePoint(startNode.Coordinate, 0.0);
-            return new RouteResult(new[] { singlePoint }, 0.0, algorithmName);
+            /*
+             * Preserve the previously validated hazard escape behavior. A
+             * virtual partial-edge start needs separate segment-level hazard
+             * clipping before it can safely be enabled for exclusion routes.
+             */
+            RoadNode? startNode =
+                FindNearestNode(
+                    origin);
+
+            if (startNode is null)
+            {
+                return null;
+            }
+
+            snappedStartCoordinate =
+                startNode.Coordinate;
+
+            startSeedCosts[startNode.Id] =
+                0.0;
+        }
+        else
+        {
+            EdgeProjection startProjection =
+                FindNearestEdgeProjection(
+                    origin);
+
+            if (!startProjection.IsAvailable ||
+                startProjection.Edge is null)
+            {
+                return null;
+            }
+
+            RoadEdge startEdge =
+                startProjection.Edge;
+
+            snappedStartCoordinate =
+                startProjection.SnappedCoordinate;
+
+            double costToFrom =
+                startEdge.LengthMeters *
+                startProjection.FractionFromStart;
+
+            double costToTo =
+                startEdge.LengthMeters *
+                (1.0 -
+                 startProjection.FractionFromStart);
+
+            startSeedCosts[startEdge.From.Id] =
+                costToFrom;
+
+            startSeedCosts[startEdge.To.Id] =
+                costToTo;
+
+            AndroidLog.Debug(
+                LogTag,
+                "A* origin snapped to nearest traversable edge: " +
+                $"edge={startEdge.Id}, " +
+                $"crossTrack={startProjection.CrossTrackMeters:F1} m, " +
+                $"fraction={startProjection.FractionFromStart:F3}, " +
+                $"seedFrom={costToFrom:F1} m, " +
+                $"seedTo={costToTo:F1} m.");
         }
 
         // 2. A* Search Data Structures
@@ -156,9 +222,34 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         var cameFrom = new Dictionary<int, (int ParentId, RoadEdge UsedEdge)>();
         var closedSet = new HashSet<int>();
 
-        gScore[startNode.Id] = 0.0;
-        double initialH = startNode.Coordinate.DistanceTo(targetNode.Coordinate);
-        openSet.Enqueue(startNode.Id, initialH);
+        foreach (KeyValuePair<int, double> seed in
+                 startSeedCosts)
+        {
+            if (!graph.Nodes.TryGetValue(
+                    seed.Key,
+                    out RoadNode? seedNode))
+            {
+                continue;
+            }
+
+            gScore[seed.Key] =
+                seed.Value;
+
+            double initialH =
+                seedNode.Coordinate.DistanceTo(
+                    targetNode.Coordinate);
+
+            openSet.Enqueue(
+                seed.Key,
+                seed.Value +
+                    initialH);
+        }
+
+        if (openSet.Count ==
+            0)
+        {
+            return null;
+        }
 
         int blockedEdgeCount =
             0;
@@ -174,8 +265,9 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                 RouteResult result =
                     ReconstructRoute(
                         cameFrom,
-                        startNode,
                         targetNode,
+                        snappedStartCoordinate,
+                        startSeedCosts,
                         gScore[targetNode.Id],
                         algorithmName);
 
@@ -348,10 +440,158 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         return nearest;
     }
 
+    private EdgeProjection FindNearestEdgeProjection(
+        GeoCoordinate point)
+    {
+        EdgeProjection nearest =
+            EdgeProjection.Unavailable;
+
+        foreach (RoadEdge edge in
+                 graph.Edges)
+        {
+            EdgeProjection candidate =
+                ProjectOntoEdge(
+                    point,
+                    edge);
+
+            if (!candidate.IsAvailable ||
+                (nearest.IsAvailable &&
+                 candidate.CrossTrackMeters >=
+                    nearest.CrossTrackMeters))
+            {
+                continue;
+            }
+
+            nearest =
+                candidate;
+        }
+
+        return nearest;
+    }
+
+    private static EdgeProjection ProjectOntoEdge(
+        GeoCoordinate point,
+        RoadEdge edge)
+    {
+        const double earthRadiusMeters =
+            6371008.8;
+
+        double referenceLatitudeRadians =
+            point.Latitude *
+            Math.PI /
+            180.0;
+
+        double cosReferenceLatitude =
+            Math.Cos(
+                referenceLatitudeRadians);
+
+        double fromNorth =
+            (edge.From.Coordinate.Latitude -
+             point.Latitude) *
+            Math.PI /
+            180.0 *
+            earthRadiusMeters;
+
+        double fromEast =
+            (edge.From.Coordinate.Longitude -
+             point.Longitude) *
+            Math.PI /
+            180.0 *
+            earthRadiusMeters *
+            cosReferenceLatitude;
+
+        double toNorth =
+            (edge.To.Coordinate.Latitude -
+             point.Latitude) *
+            Math.PI /
+            180.0 *
+            earthRadiusMeters;
+
+        double toEast =
+            (edge.To.Coordinate.Longitude -
+             point.Longitude) *
+            Math.PI /
+            180.0 *
+            earthRadiusMeters *
+            cosReferenceLatitude;
+
+        double deltaEast =
+            toEast -
+            fromEast;
+
+        double deltaNorth =
+            toNorth -
+            fromNorth;
+
+        double lengthSquared =
+            deltaEast *
+                deltaEast +
+            deltaNorth *
+                deltaNorth;
+
+        if (!double.IsFinite(
+                lengthSquared) ||
+            lengthSquared <=
+                0.0001)
+        {
+            return EdgeProjection.Unavailable;
+        }
+
+        double fraction =
+            -(
+                fromEast *
+                    deltaEast +
+                fromNorth *
+                    deltaNorth) /
+            lengthSquared;
+
+        fraction =
+            Math.Clamp(
+                fraction,
+                0.0,
+                1.0);
+
+        double snappedEast =
+            fromEast +
+            deltaEast *
+                fraction;
+
+        double snappedNorth =
+            fromNorth +
+            deltaNorth *
+                fraction;
+
+        double crossTrack =
+            Math.Sqrt(
+                snappedEast *
+                    snappedEast +
+                snappedNorth *
+                    snappedNorth);
+
+        GeoCoordinate snappedCoordinate =
+            new(
+                edge.From.Coordinate.Latitude +
+                    (edge.To.Coordinate.Latitude -
+                     edge.From.Coordinate.Latitude) *
+                    fraction,
+                edge.From.Coordinate.Longitude +
+                    (edge.To.Coordinate.Longitude -
+                     edge.From.Coordinate.Longitude) *
+                    fraction);
+
+        return new EdgeProjection(
+            true,
+            edge,
+            snappedCoordinate,
+            fraction,
+            crossTrack);
+    }
+
     private RouteResult ReconstructRoute(
         Dictionary<int, (int ParentId, RoadEdge UsedEdge)> cameFrom,
-        RoadNode startNode,
         RoadNode targetNode,
+        GeoCoordinate snappedStartCoordinate,
+        IReadOnlyDictionary<int, double> startSeedCosts,
         double totalDistance,
         string algorithmName)
     {
@@ -374,19 +614,77 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         reversedNodes.Reverse();
         reversedEdges.Reverse();
 
-        var routePoints = new List<RoutePoint>();
-        double accumulatedDistance = 0.0;
-
-        for (int i = 0; i < reversedNodes.Count; i++)
-        {
-            if (i > 0 && i - 1 < reversedEdges.Count)
+        var routePoints =
+            new List<RoutePoint>
             {
-                accumulatedDistance += reversedEdges[i - 1].LengthMeters;
+                new(
+                    snappedStartCoordinate,
+                    0.0)
+            };
+
+        if (reversedNodes.Count ==
+            0)
+        {
+            return new RouteResult(
+                routePoints,
+                0.0,
+                algorithmName);
+        }
+
+        RoadNode firstGraphNode =
+            reversedNodes[0];
+
+        double accumulatedDistance =
+            startSeedCosts.TryGetValue(
+                firstGraphNode.Id,
+                out double seedCost)
+                ? seedCost
+                : snappedStartCoordinate.DistanceTo(
+                    firstGraphNode.Coordinate);
+
+        if (snappedStartCoordinate.DistanceTo(
+                firstGraphNode.Coordinate) >
+            0.05)
+        {
+            routePoints.Add(
+                new RoutePoint(
+                    firstGraphNode.Coordinate,
+                    accumulatedDistance));
+        }
+
+        for (int i = 1; i < reversedNodes.Count; i++)
+        {
+            if (i - 1 <
+                reversedEdges.Count)
+            {
+                accumulatedDistance +=
+                    reversedEdges[i - 1]
+                        .LengthMeters;
             }
 
-            routePoints.Add(new RoutePoint(reversedNodes[i].Coordinate, accumulatedDistance));
+            routePoints.Add(
+                new RoutePoint(
+                    reversedNodes[i]
+                        .Coordinate,
+                    accumulatedDistance));
         }
 
         return new RouteResult(routePoints, totalDistance, algorithmName);
+    }
+
+    private readonly record struct EdgeProjection(
+        bool IsAvailable,
+        RoadEdge? Edge,
+        GeoCoordinate SnappedCoordinate,
+        double FractionFromStart,
+        double CrossTrackMeters)
+    {
+        public static EdgeProjection Unavailable =>
+            new(
+                false,
+                null,
+                default,
+                0.0,
+                double.PositiveInfinity);
     }
 }

@@ -76,6 +76,7 @@ namespace RescuAR.App.Views.Camera
         private readonly PedestrianDeadReckoningService _pdrService;
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
+        private readonly RouteReplacementPolicy _routeReplacementPolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
@@ -535,6 +536,9 @@ namespace RescuAR.App.Views.Camera
 
             _offRouteReroutePolicy =
                 new OffRouteReroutePolicy();
+
+            _routeReplacementPolicy =
+                new RouteReplacementPolicy();
 
             _turnGuidanceService =
                 new PedestrianTurnGuidanceService();
@@ -2057,6 +2061,8 @@ namespace RescuAR.App.Views.Camera
 
                 _offRouteReroutePolicy.Reset();
 
+                _routeReplacementPolicy.Reset();
+
                 UpdateTurnGuidance(
                     route,
                     0.0);
@@ -2699,6 +2705,8 @@ namespace RescuAR.App.Views.Camera
             _gpsPdrFusionPolicy.Reset();
 
             _offRouteReroutePolicy.Reset();
+
+            _routeReplacementPolicy.Reset();
 
             _hazardReroutingService.ResetSessionState();
 
@@ -4229,22 +4237,56 @@ namespace RescuAR.App.Views.Camera
                     spatial.Pose.PositionZ -
                     spatial.Anchor.PositionZ;
 
-                bool published;
+                bool published =
+                    false;
+
+                bool destinationStillCurrent;
+
+                RouteReplacementDecision replacementDecision =
+                    default;
 
                 lock (routeProgressFusionSync)
                 {
-                    published =
-                        _mldArIntegrationService.PublishProgressWindow(
-                            replacementRoute,
-                            0.0,
-                            origin,
-                            activeMapToArYawDegrees,
-                            arOriginOffsetX,
-                            arOriginOffsetZ,
-                            arWindowMeters:
-                                GetCurrentArRouteVisualWindowMeters(),
-                            clearRouteOnFailure:
-                                false);
+                    destinationStillCurrent =
+                        activeDestinationCoordinate.HasValue &&
+                        activeDestinationCoordinate.Value ==
+                            destination &&
+                        string.Equals(
+                            activeDestinationName,
+                            destinationName,
+                            StringComparison.Ordinal);
+
+                    if (destinationStillCurrent)
+                    {
+                        replacementDecision =
+                            _routeReplacementPolicy.Evaluate(
+                                activeRoute,
+                                _routeProgressTracker.Current,
+                                replacementRoute,
+                                origin,
+                                destination,
+                                explicitlyJustifiedDetour:
+                                    hazardAware,
+                                timestampUtc:
+                                    DateTimeOffset.UtcNow);
+                    }
+
+                    if (destinationStillCurrent &&
+                        replacementDecision.IsAccepted)
+                    {
+                        published =
+                            _mldArIntegrationService.PublishProgressWindow(
+                                replacementRoute,
+                                0.0,
+                                origin,
+                                activeMapToArYawDegrees,
+                                arOriginOffsetX,
+                                arOriginOffsetZ,
+                                arWindowMeters:
+                                    GetCurrentArRouteVisualWindowMeters(),
+                                clearRouteOnFailure:
+                                    false);
+                    }
 
                     if (published)
                     {
@@ -4265,15 +4307,8 @@ namespace RescuAR.App.Views.Camera
 
                         _gpsPdrFusionPolicy.Reset();
 
-                        if (forceOfflineAStar)
-                        {
-                            _offRouteReroutePolicy.Reset();
-                        }
-                        else
-                        {
-                            _offRouteReroutePolicy.MarkRerouteCompleted(
-                                DateTimeOffset.UtcNow);
-                        }
+                        _offRouteReroutePolicy.MarkRerouteCompleted(
+                            DateTimeOffset.UtcNow);
 
                         lastOffRouteCandidate =
                             false;
@@ -4281,6 +4316,42 @@ namespace RescuAR.App.Views.Camera
                         lastOffRouteConfirmationCount =
                             0;
                     }
+                }
+
+                if (!destinationStillCurrent)
+                {
+                    lastRerouteResult =
+                        "DestinationChanged";
+
+                    Log.Debug(
+                        RerouteLogTag,
+                        "Dynamic reroute discarded because the destination changed before atomic route publication.");
+
+                    return false;
+                }
+
+                Log.Warn(
+                    RerouteLogTag,
+                    "Replacement route validation: " +
+                    $"disposition={replacementDecision.Disposition}, " +
+                    $"previousRemaining={replacementDecision.PreviousRemainingMeters:F1} m, " +
+                    $"replacementDistance={replacementDecision.ReplacementDistanceMeters:F1} m, " +
+                    $"increase={replacementDecision.DistanceIncreaseMeters:F1} m, " +
+                    $"reason='{replacementDecision.Reason}'.");
+
+                if (!replacementDecision.IsAccepted)
+                {
+                    lastRerouteResult =
+                        replacementDecision.Disposition ==
+                            RouteReplacementDisposition.RequiresConfirmation
+                            ? "AwaitingRouteConfirmation"
+                            : "ReplacementRejected";
+
+                    Log.Warn(
+                        RerouteLogTag,
+                        "Replacement route was not accepted. Existing route, progress, AR geometry, and displayed distance remain unchanged.");
+
+                    return false;
                 }
 
                 if (!published)

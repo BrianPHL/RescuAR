@@ -19,7 +19,7 @@ public sealed class OffRouteReroutePolicy
 
     private static readonly TimeSpan RerouteCooldown =
         TimeSpan.FromSeconds(
-            20);
+            45);
 
     private int consecutiveOffRouteSamples;
 
