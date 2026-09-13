@@ -122,6 +122,21 @@ public sealed class GpsPdrFusionPolicy
                 "GPS sample was not accepted for route progress.");
         }
 
+        if (gpsUpdate.MatchConfidence <
+            RouteMatchConfidence.Medium)
+        {
+            ResetBackwardConfirmation();
+
+            return new GpsFusionDecision(
+                GpsConfidence.Low,
+                GpsFusionAction.Ignore,
+                previousCommittedProgressMeters,
+                gpsUpdate.RawProgressMeters -
+                    previousCommittedProgressMeters,
+                0,
+                "GPS segment identity is ambiguous; route progress is held.");
+        }
+
         GpsConfidence confidence =
             ClassifyGps(
                 gpsUpdate.AccuracyMeters,

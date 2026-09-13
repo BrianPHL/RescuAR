@@ -1,6 +1,7 @@
 using RescuAR.AR;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using System;
 using System.Collections.Generic;
@@ -181,12 +182,12 @@ public sealed class MLDARIntegrationService
 
     /// <summary>
     /// Publishes a direct local access connector from the user's current GPS
-    /// position to the route-matched road/sidewalk coordinate.
+    /// position to the route-matched pedestrian corridor coordinate.
     ///
     /// This is intentionally different from PublishProgressWindow(...): while
     /// the user is not yet verified inside the routed pedestrian corridor, the
     /// cyan visual should point TO the nearest route instead of pretending the
-    /// camera is already standing on that road/sidewalk.
+    /// camera is already inside that route corridor.
     /// </summary>
     public bool PublishApproachToRoute(
         RouteResult route,
@@ -228,6 +229,19 @@ public sealed class MLDARIntegrationService
             connectorDistanceMeters <=
                 0.05)
         {
+            return false;
+        }
+
+        if (connectorDistanceMeters >
+            RouteCorridorPolicy.MaximumRecoveryConnectorMeters)
+        {
+            AndroidLog.Warn(
+                ProgressLogTag,
+                "Approach-to-route connector rejected because it exceeds " +
+                "the bounded local recovery distance: " +
+                $"distance={connectorDistanceMeters:F1} m, " +
+                $"maximum={RouteCorridorPolicy.MaximumRecoveryConnectorMeters:F1} m.");
+
             return false;
         }
 

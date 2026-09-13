@@ -179,16 +179,15 @@ namespace RescuAR.App.Views.Camera
          * Navigation starts in APPROACH mode. Until GPS has repeatedly shown
          * that the user is actually inside the routed pedestrian corridor, the
          * cyan visual points from the user's current position to the nearest
-         * matched road/sidewalk instead of projecting the long route through
+         * matched route corridor instead of projecting the long route through
          * the user's present off-road location.
          *
-         * After two HIGH-confidence route matches (<=10 m cross-track and
-         * <=15 m reported accuracy), the visual becomes a 40 m road-following
-         * corridor using the actual MLD/A* polyline geometry, including bends
-         * and turns. Once established, this long corridor is retained through
-         * ordinary GPS jitter and only falls back to the approach/recovery
-         * arrow when the existing 3-sample off-route policy VERIFIED that the
-         * user genuinely left the routed road/sidewalk.
+         * After two MEDIUM-or-better matches inside the accuracy-aware entry
+         * radius, the visual becomes a 40 m road-following corridor using the
+         * actual MLD/A* polyline geometry, including bends and turns. Once
+         * established, this long corridor is retained through ordinary GPS
+         * jitter and only falls back to the approach/recovery arrow when the
+         * three-sample off-route policy verifies trustworthy displacement.
          *
          * A finite forward horizon is intentional. Rendering a kilometer-scale
          * route from one ARCore ground anchor would magnify heading/world-frame
@@ -207,22 +206,15 @@ namespace RescuAR.App.Views.Camera
         private const double ApproachRouteVisualWindowMeters =
             LocalArNavigationPolicy.ApproachWindowMeters;
 
-        private const double RoadFollowingEntryCrossTrackMeters =
-            10.0;
-
-        private const double RoadFollowingEntryMaximumAccuracyMeters =
-            15.0;
-
         private const int RoadFollowingEntryRequiredSamples =
             2;
-
-        private const double MinimumApproachConnectorMeters =
-            1.25;
 
         private ArRouteVisualMode arRouteVisualMode =
             ArRouteVisualMode.ApproachOrOffCourseShort;
 
         private int roadFollowingReentryConfirmationCount;
+
+        private bool recoveryConnectorVerified;
 
         /*
          * TEST SWITCH:
@@ -238,8 +230,8 @@ namespace RescuAR.App.Views.Camera
          * TEMPORARY: keep true only while validating the confirmed-off-route
          * -> Railway reroute -> replacement-route publication pipeline.
          *
-         * This does NOT change the real RouteProgressTracker 35 m off-route
-         * threshold. It only exposes a test button that injects three policy
+         * This does NOT change the real accuracy-aware route corridor. It only
+         * exposes a test button that injects three policy
          * confirmations while routing from the latest REAL GPS coordinate.
          *
          * Set false after Milestone 3 validation; the button then disappears.
@@ -366,6 +358,9 @@ namespace RescuAR.App.Views.Camera
 
         private GpsPdrFusionPolicy.GpsConfidence lastGpsConfidence =
             GpsPdrFusionPolicy.GpsConfidence.Unavailable;
+
+        private RouteMatchConfidence lastRouteMatchConfidence =
+            RouteMatchConfidence.Unavailable;
 
         private GpsPdrFusionPolicy.GpsFusionAction lastGpsFusionAction =
             GpsPdrFusionPolicy.GpsFusionAction.Ignore;
@@ -2057,6 +2052,9 @@ namespace RescuAR.App.Views.Camera
                 _routeProgressTracker.SetRoute(
                     route);
 
+                lastRouteMatchConfidence =
+                    RouteMatchConfidence.Unavailable;
+
                 _offRouteReroutePolicy.Reset();
 
                 UpdateTurnGuidance(
@@ -2877,6 +2875,9 @@ namespace RescuAR.App.Views.Camera
         {
             _pdrService.Stop();
 
+            lastRouteMatchConfidence =
+                RouteMatchConfidence.Unavailable;
+
             CancellationTokenSource? cancellation =
                 routeProgressCancellation;
 
@@ -2999,7 +3000,12 @@ namespace RescuAR.App.Views.Camera
                             RouteProgressTracker.RouteProgressUpdate matchedGps =
                                 _routeProgressTracker.Update(
                                     reading.Coordinate,
-                                    reading.AccuracyMeters);
+                                    reading.AccuracyMeters,
+                                    reading.CourseDegrees,
+                                    reading.SpeedMetersPerSecond);
+
+                            lastRouteMatchConfidence =
+                                matchedGps.MatchConfidence;
 
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 _offRouteReroutePolicy.Evaluate(
@@ -3021,6 +3027,7 @@ namespace RescuAR.App.Views.Camera
                                     $"confirmation={offRouteDecision.ConfirmationCount}/" +
                                     $"{offRouteDecision.RequiredConfirmationCount}, " +
                                     $"crossTrack={offRouteDecision.CrossTrackErrorMeters:F1} m, " +
+                                    $"matchConfidence={offRouteDecision.MatchConfidence}, " +
                                     $"accuracy=" +
                                     $"{(offRouteDecision.AccuracyMeters.HasValue ? offRouteDecision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
                                     $"reroute={offRouteDecision.ShouldReroute}, " +
@@ -3136,7 +3143,7 @@ namespace RescuAR.App.Views.Camera
                             {
                                 /*
                                  * Use the raw matched GPS update here even
-                                 * when it is outside the 35 m accepted route
+                                 * when it is outside the accuracy-aware route
                                  * corridor. RouteProgressTracker still gives
                                  * us the nearest snapped route coordinate,
                                  * which is exactly where the access arrow
@@ -4247,8 +4254,14 @@ namespace RescuAR.App.Views.Camera
                         _routeProgressTracker.SetRoute(
                             replacementRoute);
 
+                        lastRouteMatchConfidence =
+                            RouteMatchConfidence.Unavailable;
+
                         _routeProgressTracker.MarkWindowPublished(
                             0.0);
+
+                        recoveryConnectorVerified =
+                            false;
 
                         _gpsPdrFusionPolicy.Reset();
 
@@ -6501,6 +6514,20 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            if (!IndoorRouteTestMode &&
+                lastRouteMatchConfidence <
+                RouteMatchConfidence.Medium)
+            {
+                rejectedPdrStepCount++;
+
+                Log.Debug(
+                    PdrLogTag,
+                    "PDR step held because the current route-segment match " +
+                    $"is not trustworthy: confidence={lastRouteMatchConfidence}.");
+
+                return;
+            }
+
             if (!TryGetPdrDirectionAgreement(
                     out double cameraAzimuthDegrees,
                     out double routeAzimuthDegrees,
@@ -6794,7 +6821,7 @@ namespace RescuAR.App.Views.Camera
         {
             /*
              * A newly requested route has not yet proven that the device is
-             * physically on its road/sidewalk. Start conservatively with the
+             * physically inside its route corridor. Start conservatively with the
              * short access cue; GPS verification promotes it to the long
              * road-following corridor.
              */
@@ -6803,6 +6830,9 @@ namespace RescuAR.App.Views.Camera
 
             roadFollowingReentryConfirmationCount =
                 0;
+
+            recoveryConnectorVerified =
+                false;
 
 #if ANDROID
             Log.Debug(
@@ -6825,6 +6855,9 @@ namespace RescuAR.App.Views.Camera
             roadFollowingReentryConfirmationCount =
                 0;
 
+            recoveryConnectorVerified =
+                true;
+
             if (arRouteVisualMode ==
                 ArRouteVisualMode.ApproachOrOffCourseShort)
             {
@@ -6839,18 +6872,17 @@ namespace RescuAR.App.Views.Camera
                 RouteLogTag,
                 "AR ROUTE VISUAL MODE -> VERIFIED OFF-COURSE APPROACH: " +
                 "the cyan arrow will point back to the nearest matched " +
-                "road/sidewalk until route re-entry is verified; " +
+                "route corridor until route re-entry is verified; " +
                 $"reason='{reason}'.");
 #endif
         }
 
         /// <summary>
         /// Promotes the short access cue to the long road-following corridor
-        /// only after consecutive HIGH-confidence matches place the user close
-        /// to the route. This deliberately uses stricter limits than the 35 m
-        /// off-route threshold: a GPS sample can be usable for progress while
-        /// still being too far from the road/sidewalk to justify drawing the
-        /// long corridor from the camera.
+        /// only after consecutive MEDIUM-or-better matches place the user
+        /// inside the accuracy-aware route-entry radius. A GPS sample can be
+        /// usable for progress while still being too uncertain to justify
+        /// drawing the long corridor from the camera.
         ///
         /// Once RoadFollowingLong is established, ordinary GPS jitter does not
         /// demote it. Demotion is handled only by the verified 3/3 off-route
@@ -6868,23 +6900,15 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            bool accuracyUsable =
-                update.AccuracyMeters.HasValue &&
-                double.IsFinite(
-                    update.AccuracyMeters.Value) &&
-                update.AccuracyMeters.Value <=
-                    RoadFollowingEntryMaximumAccuracyMeters;
+            bool canEnterRoadFollowing =
+                RouteCorridorPolicy.CanEnterRoadFollowing(
+                    update.IsAccepted,
+                    update.IsOffRoute,
+                    update.CrossTrackErrorMeters,
+                    update.CorridorRadiusMeters,
+                    update.MatchConfidence);
 
-            bool closeToPedestrianRoute =
-                update.IsAccepted &&
-                !update.IsOffRoute &&
-                double.IsFinite(
-                    update.CrossTrackErrorMeters) &&
-                update.CrossTrackErrorMeters <=
-                    RoadFollowingEntryCrossTrackMeters;
-
-            if (!accuracyUsable ||
-                !closeToPedestrianRoute)
+            if (!canEnterRoadFollowing)
             {
                 roadFollowingReentryConfirmationCount =
                     0;
@@ -6897,11 +6921,16 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
             Log.Debug(
                 RouteLogTag,
-                "Road/sidewalk visual-entry candidate: " +
+                "Route-corridor visual-entry candidate: " +
                 $"confirmation={roadFollowingReentryConfirmationCount}/" +
                 $"{RoadFollowingEntryRequiredSamples}, " +
                 $"crossTrack={update.CrossTrackErrorMeters:F1} m, " +
-                $"accuracy={update.AccuracyMeters.Value:F1} m.");
+                $"entryRadius=" +
+                $"{RouteCorridorPolicy.GetRoadFollowingEntryRadiusMeters(update.CorridorRadiusMeters):F1} m, " +
+                $"corridor={update.CorridorRadiusMeters:F1} m, " +
+                $"matchConfidence={update.MatchConfidence}, " +
+                $"accuracy=" +
+                $"{(update.AccuracyMeters.HasValue ? update.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m.");
 #endif
 
             if (roadFollowingReentryConfirmationCount <
@@ -6916,24 +6945,26 @@ namespace RescuAR.App.Views.Camera
             roadFollowingReentryConfirmationCount =
                 0;
 
+            recoveryConnectorVerified =
+                false;
+
 #if ANDROID
             Log.Warn(
                 RouteLogTag,
                 "AR ROUTE VISUAL MODE -> ROAD-FOLLOWING LONG: " +
                 $"window={RoadFollowingRouteVisualWindowMeters:F1} m after " +
-                $"{RoadFollowingEntryRequiredSamples} high-confidence " +
-                "road/sidewalk matches.");
+                $"{RoadFollowingEntryRequiredSamples} confidence-gated " +
+                "route-corridor matches.");
 #endif
 
             return true;
         }
 
         /// <summary>
-        /// Publishes the short access cue while the user is not yet verified
-        /// inside the routed pedestrian corridor. The arrow terminates at the
-        /// current route-matched road/sidewalk coordinate. Once the connector
-        /// is extremely short, fall back to the original 7.5 m route window so
-        /// there is still a visible cue during the final verification sample.
+        /// Keeps a short route-following cue while the device is still proving
+        /// route-corridor membership. A direct connector is published only
+        /// after repeated off-route confirmation and only when GPS accuracy and
+        /// segment identity make that recovery direction trustworthy.
         /// </summary>
         private bool TryPublishApproachToRouteVisual(
             RouteResult route,
@@ -6961,16 +6992,35 @@ namespace RescuAR.App.Views.Camera
                 update.GpsCoordinate.DistanceTo(
                     update.SnappedCoordinate);
 
-            if (update.IsAccepted &&
-                double.IsFinite(
-                    connectorDistanceMeters) &&
-                connectorDistanceMeters <=
-                    MinimumApproachConnectorMeters)
+            bool directConnectorAllowed =
+                recoveryConnectorVerified &&
+                RouteCorridorPolicy.CanPublishRecoveryConnector(
+                    update.AccuracyMeters,
+                    update.CrossTrackErrorMeters,
+                    update.CorridorRadiusMeters,
+                    update.MatchConfidence);
+
+            if (!directConnectorAllowed)
             {
-                return TryPublishMovingRouteWindow(
-                    route,
-                    update,
-                    $"{progressSource}/APPROACH-NEAR-ROUTE");
+                if (update.IsAccepted)
+                {
+                    return TryPublishMovingRouteWindow(
+                        route,
+                        update,
+                        $"{progressSource}/CORRIDOR-PENDING");
+                }
+
+                Log.Debug(
+                    ProgressLogTag,
+                    $"{progressSource} RECOVERY CONNECTOR HELD: " +
+                    $"verified={recoveryConnectorVerified}, " +
+                    $"crossTrack={update.CrossTrackErrorMeters:F1} m, " +
+                    $"corridor={update.CorridorRadiusMeters:F1} m, " +
+                    $"matchConfidence={update.MatchConfidence}, " +
+                    $"accuracy=" +
+                    $"{(update.AccuracyMeters.HasValue ? update.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m.");
+
+                return false;
             }
 
             float arOriginOffsetX =
@@ -6998,6 +7048,8 @@ namespace RescuAR.App.Views.Camera
                     ProgressLogTag,
                     $"{progressSource} APPROACH-TO-ROUTE: " +
                     $"crossTrack={update.CrossTrackErrorMeters:F1} m, " +
+                    $"corridor={update.CorridorRadiusMeters:F1} m, " +
+                    $"matchConfidence={update.MatchConfidence}, " +
                     $"connector={connectorDistanceMeters:F1} m, " +
                     $"accuracy=" +
                     $"{(update.AccuracyMeters.HasValue ? update.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
@@ -7047,10 +7099,9 @@ namespace RescuAR.App.Views.Camera
              * current AR camera position so the guidance moves with the user.
              *
              * This publisher is used for the road-following corridor and the
-             * tiny final access cue when the route connector is already less
-             * than MinimumApproachConnectorMeters. Neither GPS nor PDR drives
-             * the Evergine camera; they only advance route progress and
-             * republish route geometry.
+             * short confidence-building cue before route membership is
+             * confirmed. Neither GPS nor PDR drives the Evergine camera; they
+             * only advance route progress and republish route geometry.
              */
             float arOriginOffsetX =
                 spatial.Pose.PositionX -
@@ -7942,6 +7993,7 @@ namespace RescuAR.App.Views.Camera
                 $"pdrConfidence={lastPdrConfidence}, " +
                 $"pdrStrideScale={lastPdrStrideScale:F2}, " +
                 $"gpsConfidence={lastGpsConfidence}, " +
+                $"routeMatchConfidence={lastRouteMatchConfidence}, " +
                 $"gpsFusionAction={lastGpsFusionAction}, " +
                 $"gpsMinusPdr=" +
                 $"{(lastGpsPdrDivergenceMeters.HasValue ? lastGpsPdrDivergenceMeters.Value.ToString("F1") : "<none>")}m, " +
