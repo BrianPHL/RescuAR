@@ -179,6 +179,145 @@ public sealed class MLDARIntegrationService
         return published;
     }
 
+    /// <summary>
+    /// Publishes a direct local access connector from the user's current GPS
+    /// position to the route-matched road/sidewalk coordinate.
+    ///
+    /// This is intentionally different from PublishProgressWindow(...): while
+    /// the user is not yet verified inside the routed pedestrian corridor, the
+    /// cyan visual should point TO the nearest route instead of pretending the
+    /// camera is already standing on that road/sidewalk.
+    /// </summary>
+    public bool PublishApproachToRoute(
+        RouteResult route,
+        GeoCoordinate userCoordinate,
+        GeoCoordinate snappedRouteCoordinate,
+        double mapToArYawDegrees,
+        float arOriginOffsetX,
+        float arOriginOffsetZ,
+        bool clearRouteOnFailure = true)
+    {
+        ArgumentNullException.ThrowIfNull(
+            route);
+
+        if (!userCoordinate.IsValid ||
+            !snappedRouteCoordinate.IsValid)
+        {
+            AndroidLog.Warn(
+                ProgressLogTag,
+                "Approach-to-route connector rejected because GPS or snapped route coordinate is invalid.");
+
+            return false;
+        }
+
+        double connectorDistanceMeters =
+            userCoordinate.DistanceTo(
+                snappedRouteCoordinate);
+
+        if (!double.IsFinite(
+                connectorDistanceMeters) ||
+            connectorDistanceMeters <=
+                0.05)
+        {
+            return false;
+        }
+
+        const double earthRadiusMeters =
+            6371008.8;
+
+        double referenceLatitudeRadians =
+            userCoordinate.Latitude *
+            Math.PI /
+            180.0;
+
+        double deltaLatitudeRadians =
+            (snappedRouteCoordinate.Latitude -
+             userCoordinate.Latitude) *
+            Math.PI /
+            180.0;
+
+        double deltaLongitudeRadians =
+            (snappedRouteCoordinate.Longitude -
+             userCoordinate.Longitude) *
+            Math.PI /
+            180.0;
+
+        double northMeters =
+            deltaLatitudeRadians *
+            earthRadiusMeters;
+
+        double eastMeters =
+            deltaLongitudeRadians *
+            earthRadiusMeters *
+            Math.Cos(
+                referenceLatitudeRadians);
+
+        LocalRoutePoint[] connector =
+        [
+            new LocalRoutePoint(
+                userCoordinate,
+                0.0,
+                0.0,
+                0.0),
+            new LocalRoutePoint(
+                snappedRouteCoordinate,
+                eastMeters,
+                northMeters,
+                connectorDistanceMeters)
+        ];
+
+        IReadOnlyList<ArHorizontalRoutePoint> aligned =
+            ArRouteAlignment.Rotate(
+                connector,
+                mapToArYawDegrees);
+
+        if (aligned.Count <
+            2)
+        {
+            if (clearRouteOnFailure)
+            {
+                ARRouteBridge.Clear();
+            }
+
+            return false;
+        }
+
+        ArHorizontalRoutePoint[] shifted =
+            new ArHorizontalRoutePoint[
+                aligned.Count];
+
+        for (int i = 0;
+             i < aligned.Count;
+             i++)
+        {
+            ArHorizontalRoutePoint point =
+                aligned[i];
+
+            shifted[i] =
+                new ArHorizontalRoutePoint(
+                    point.X +
+                        arOriginOffsetX,
+                    point.Z +
+                        arOriginOffsetZ,
+                    point.DistanceFromWindowStartMeters);
+        }
+
+        ARRouteBridge.Publish(
+            shifted,
+            route.Algorithm,
+            route.TotalDistanceMeters);
+
+        AndroidLog.Debug(
+            ProgressLogTag,
+            "Approach-to-route AR connector published: " +
+            $"distance={connectorDistanceMeters:F1} m, " +
+            $"user=({userCoordinate.Latitude:F7},{userCoordinate.Longitude:F7}), " +
+            $"route=({snappedRouteCoordinate.Latitude:F7},{snappedRouteCoordinate.Longitude:F7}), " +
+            $"arOriginOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m");
+
+        return true;
+    }
+
     public void ClearRoute()
     {
         AndroidLog.Debug(

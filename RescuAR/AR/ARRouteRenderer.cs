@@ -28,28 +28,37 @@ public static class ARRouteRenderer
         "ARRouteRoot";
 
     private const float RouteWidthMeters =
-        0.40f;
+        0.65f;
 
     private const float RouteThicknessMeters =
-        0.03f;
+        0.04f;
+
+    /*
+     * Adjacent cube segments meet at different yaw angles around road bends.
+     * A small longitudinal overlap removes hairline gaps between those cubes
+     * so the cyan polyline reads as one continuous solid route.
+     */
+    private const float RouteSegmentOverlapMeters =
+        0.24f;
 
     private const float ArrowWingLengthMeters =
-        0.55f;
+        0.82f;
 
     private const float ArrowHalfWidthMeters =
-        0.30f;
+        0.46f;
 
     private const float ArrowWingWidthMeters =
-        0.16f;
+        0.26f;
 
     private const int ArrowWingCount =
         2;
 
     /*
-     * A single ARCore anchor should only own a nearby route window.
-     * The current integration publishes approximately 7.5 m. 64 pooled
-     * segments leaves generous room for dense OSRM geometry without creating
-     * or destroying entities while rendering.
+     * The route visual now has two horizons: a long road-following corridor
+     * during normal navigation and the original short recovery corridor after
+     * verified off-course detection. The renderer still reuses a fixed pool;
+     * ordinary OSRM/A* pedestrian geometry is sparse enough that 64 segments
+     * covers the forward visual horizon without per-frame allocation.
      */
     private const int MaxRouteSegments =
         64;
@@ -400,7 +409,8 @@ public static class ARRouteRenderer
             new Vector3(
                 widthMeters,
                 RouteThicknessMeters,
-                horizontalLength);
+                horizontalLength +
+                    RouteSegmentOverlapMeters);
 
         slot.Entity.IsEnabled =
             true;
