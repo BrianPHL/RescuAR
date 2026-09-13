@@ -1,5 +1,6 @@
 using Android.Util;
 using RescuAR.AR;
+using RescuAR.Navigation.Projection;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
@@ -63,9 +64,9 @@ public sealed partial class ArCoreService
     /*
      * V6 durable replacement event.
      *
-     * This increments ONLY after this recovery component itself releases a
-     * stale retained Anchor. It is deliberately independent from short-lived
-     * SpatialSnapshot.Anchor.IsAvailable changes.
+     * This increments only after this component releases an anchor because it
+     * is stale or has moved outside the local AR navigation radius. It remains
+     * independent from short-lived SpatialSnapshot.Anchor.IsAvailable changes.
      */
     private long groundAnchorReplacementGeneration;
 
@@ -75,6 +76,112 @@ public sealed partial class ArCoreService
         long.MinValue;
 
     private bool replacementAnchorSearchNoticeLogged;
+
+    /// <summary>
+    /// Retires a still-valid anchor once it is no longer local to the camera.
+    ///
+    /// This method runs from the ARCore frame worker while updateGate is held,
+    /// so releasing the anchor cannot race the normal pose read. Route state
+    /// is not cleared; CameraPage observes the replacement generation and
+    /// republishes the current geographic route progress in the new frame.
+    /// </summary>
+    private bool TryRetireGroundAnchorBeyondLocalWindow(
+        float cameraX,
+        float cameraZ)
+    {
+        Google.AR.Core.Anchor? anchor =
+            spatialGroundAnchor;
+
+        if (anchor is null ||
+            !GetAnchorTrackingState(
+                    anchor)
+                .Equals(
+                    "Tracking",
+                    StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        using Google.AR.Core.Pose? anchorPose =
+            anchor.Pose;
+
+        if (anchorPose is null)
+        {
+            return false;
+        }
+
+        float[] anchorTranslation =
+            new float[3];
+
+        anchorPose.GetTranslation(
+            anchorTranslation,
+            0);
+
+        float deltaX =
+            cameraX -
+            anchorTranslation[0];
+
+        float deltaZ =
+            cameraZ -
+            anchorTranslation[2];
+
+        float distanceMeters =
+            LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                deltaX,
+                deltaZ);
+
+        if (!float.IsFinite(
+                distanceMeters) ||
+            distanceMeters <
+                LocalArNavigationPolicy
+                    .GroundAnchorRetirementDistanceMeters)
+        {
+            return false;
+        }
+
+        /*
+         * Make any delayed stale-anchor worker obsolete before detaching the
+         * valid-but-distant anchor. This prevents an old worker from acting on
+         * the replacement anchor.
+         */
+        InvalidatePendingRecoveryCountdown();
+
+        ReleaseSpatialGroundAnchor();
+
+        long replacementGeneration;
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorReplacementGeneration++;
+
+            replacementGeneration =
+                groundAnchorReplacementGeneration;
+
+            groundAnchorReacquisitionArmed =
+                true;
+
+            replacementAnchorSearchStartedTimestamp =
+                Environment.TickCount64;
+
+            replacementAnchorSearchNoticeLogged =
+                false;
+        }
+
+        hasLoggedGroundPlaneSearch =
+            false;
+
+        Log.Warn(
+            AnchorRecoveryLogTag,
+            "MOVING LOCAL AR FRAME: retired a distant ground anchor. " +
+            $"cameraToAnchor={distanceMeters:F2} m, " +
+            $"retirementThreshold=" +
+            $"{LocalArNavigationPolicy.GroundAnchorRetirementDistanceMeters:F1} m, " +
+            $"replacementGeneration={replacementGeneration}. " +
+            "The current geographic route progress is retained while a nearby " +
+            "floor anchor is acquired.");
+
+        return true;
+    }
 
     /// <inheritdoc />
     public long GroundAnchorReplacementGeneration

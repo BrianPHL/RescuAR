@@ -54,11 +54,11 @@ public static class ARRouteRenderer
         2;
 
     /*
-     * The route visual now has two horizons: a long road-following corridor
-     * during normal navigation and the original short recovery corridor after
+     * The route visual has two bounded local horizons: a 40 m road-following
+     * window during normal navigation and a short recovery window after
      * verified off-course detection. The renderer still reuses a fixed pool;
      * ordinary OSRM/A* pedestrian geometry is sparse enough that 64 segments
-     * covers the forward visual horizon without per-frame allocation.
+     * covers either local window without per-frame allocation.
      */
     private const int MaxRouteSegments =
         64;

@@ -67,9 +67,9 @@ public interface IArCoreService
     bool TryRecoverGroundAnchorIfNeeded();
 
     /// <summary>
-    /// Monotonically increasing generation that changes only after the
-    /// recovery service has actually released a stale retained ground anchor
-    /// and armed replacement floor-anchor acquisition.
+    /// Monotonically increasing generation that changes after the service has
+    /// released either a stale anchor or a valid anchor that has moved beyond
+    /// the local AR navigation radius, then armed replacement acquisition.
     ///
     /// Temporary anchor PAUSED/unavailable states during the natural
     /// relocalization grace period do not change this value.

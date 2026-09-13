@@ -183,7 +183,7 @@ namespace RescuAR.App.Views.Camera
          * the user's present off-road location.
          *
          * After two HIGH-confidence route matches (<=10 m cross-track and
-         * <=15 m reported accuracy), the visual becomes a 120 m road-following
+         * <=15 m reported accuracy), the visual becomes a 40 m road-following
          * corridor using the actual MLD/A* polyline geometry, including bends
          * and turns. Once established, this long corridor is retained through
          * ordinary GPS jitter and only falls back to the approach/recovery
@@ -192,9 +192,8 @@ namespace RescuAR.App.Views.Camera
          *
          * A finite forward horizon is intentional. Rendering a kilometer-scale
          * route from one ARCore ground anchor would magnify heading/world-frame
-         * error and waste draw calls. 120 m already reaches far enough into
-         * perspective to visually read as a continuous route toward the
-         * destination while remaining tied to nearby ARCore space.
+         * error and waste draw calls. The 40 m local window is rebuilt from
+         * current route progress and the current nearby AR frame.
          */
         private enum ArRouteVisualMode
         {
@@ -203,10 +202,10 @@ namespace RescuAR.App.Views.Camera
         }
 
         private const double RoadFollowingRouteVisualWindowMeters =
-            120.0;
+            LocalArNavigationPolicy.RoadFollowingWindowMeters;
 
         private const double ApproachRouteVisualWindowMeters =
-            7.5;
+            LocalArNavigationPolicy.ApproachWindowMeters;
 
         private const double RoadFollowingEntryCrossTrackMeters =
             10.0;
@@ -457,31 +456,13 @@ namespace RescuAR.App.Views.Camera
          * replaced the ground Anchor.
          *
          * The service increments GroundAnchorReplacementGeneration only after
-         * it ACTUALLY releases a stale retained Anchor. Only that durable event
-         * starts CameraPage's V4/V5 route-rebase phase.
+         * it actually releases an anchor, either because it became stale or
+         * because it left the moving local AR radius. Only that durable event
+         * starts CameraPage's local route-rebase phase.
          */
         private long handledGroundAnchorReplacementGeneration;
 
         private long activeGroundAnchorReplacementGeneration =
-            -1;
-
-        /*
-         * Anchor-continuity V4:
-         *
-         * Keep the cyan route's LAST VALID AR-world X/Z start position
-         * independent from whichever ARCore ground Anchor currently owns the
-         * route root.
-         *
-         * When a stale Anchor is replaced, the new Anchor may be several
-         * meters away because it comes from a new floor hit. V4 compensates
-         * for that change instead of making the route jump to the new hit.
-         */
-        private bool hasRetainedRouteWorldStart;
-
-        private float retainedRouteWorldStartX;
-        private float retainedRouteWorldStartZ;
-
-        private long retainedRouteWorldStartRouteVersion =
             -1;
 
         /*
@@ -1667,9 +1648,6 @@ namespace RescuAR.App.Views.Camera
                 handledGroundAnchorReplacementGeneration =
                     _arCoreService.GroundAnchorReplacementGeneration;
 
-                ResetRouteWorldContinuity(
-                    "creating a new ARCore Session");
-
                 ARCameraSpatialController.ResetRouteRootLock(
                     "creating a new ARCore Session");
 
@@ -2084,11 +2062,6 @@ namespace RescuAR.App.Views.Camera
                 UpdateTurnGuidance(
                     route,
                     0.0);
-
-#if ANDROID
-                CaptureRouteWorldStartContinuity(
-                    ARCameraPoseBridge.CurrentFrame);
-#endif
 
                 StartRouteProgress();
 
@@ -2777,9 +2750,6 @@ namespace RescuAR.App.Views.Camera
 
             rejectedPdrStepCount =
                 0;
-
-            ResetRouteWorldContinuity(
-                "navigation destination changed");
 
             _routeProgressTracker.Clear();
 
@@ -4311,9 +4281,6 @@ namespace RescuAR.App.Views.Camera
 
                     return false;
                 }
-
-                CaptureRouteWorldStartContinuity(
-                    spatial);
 
                 UpdateTurnGuidance(
                     replacementRoute,
@@ -7027,9 +6994,6 @@ namespace RescuAR.App.Views.Camera
 
             if (published)
             {
-                CaptureRouteWorldStartContinuity(
-                    spatial);
-
                 Log.Debug(
                     ProgressLogTag,
                     $"{progressSource} APPROACH-TO-ROUTE: " +
@@ -7115,9 +7079,6 @@ namespace RescuAR.App.Views.Camera
             _routeProgressTracker.MarkWindowPublished(
                 update.CommittedProgressMeters);
 
-            CaptureRouteWorldStartContinuity(
-                spatial);
-
             Log.Debug(
                 ProgressLogTag,
                 $"{progressSource} MOVING WINDOW: " +
@@ -7135,135 +7096,6 @@ namespace RescuAR.App.Views.Camera
 #else
             return false;
 #endif
-        }
-
-        /// <summary>
-        /// Stores the cyan route's first point in the retained ARCore
-        /// session's WORLD X/Z frame:
-        ///
-        ///     routeWorldStart = anchorWorld + routeLocalFirstPoint
-        ///
-        /// This value survives loss/replacement of the ground Anchor and is
-        /// the continuity target retained by V4/V5.
-        /// </summary>
-        private void CaptureRouteWorldStartContinuity(
-            ARCameraPoseBridge.SpatialSnapshot spatial)
-        {
-#if ANDROID
-            if (!spatial.IsTracking ||
-                !spatial.Pose.IsTracking ||
-                !spatial.Anchor.IsAvailable)
-            {
-                return;
-            }
-
-            ARRouteBridge.RouteSnapshot route =
-                ARRouteBridge.Current;
-
-            if (!route.IsAvailable ||
-                route.Points.Count <
-                    1)
-            {
-                return;
-            }
-
-            ArHorizontalRoutePoint firstPoint =
-                route.Points[0];
-
-            retainedRouteWorldStartX =
-                spatial.Anchor.PositionX +
-                firstPoint.X;
-
-            retainedRouteWorldStartZ =
-                spatial.Anchor.PositionZ +
-                firstPoint.Z;
-
-            retainedRouteWorldStartRouteVersion =
-                route.Version;
-
-            hasRetainedRouteWorldStart =
-                true;
-#endif
-        }
-
-        /// <summary>
-        /// Clears only the continuity bookmark. This is appropriate when a
-        /// genuinely new ARCore Session/world frame or a different navigation
-        /// destination is created.
-        /// </summary>
-        private void ResetRouteWorldContinuity(
-            string reason)
-        {
-            hasRetainedRouteWorldStart =
-                false;
-
-            retainedRouteWorldStartX =
-                0.0f;
-
-            retainedRouteWorldStartZ =
-                0.0f;
-
-            retainedRouteWorldStartRouteVersion =
-                -1;
-
-#if ANDROID
-            Log.Debug(
-                "RescuAR-AnchorRecovery",
-                $"Route-world continuity reset: {reason}.");
-#endif
-        }
-
-        /// <summary>
-        /// Calculates the unshifted first X/Z point produced by the same
-        /// projection/alignment path used by MLDARIntegrationService.
-        ///
-        /// Usually this is approximately (0,0), but calculating it explicitly
-        /// makes the V4 compensation exact even if the snapped reference and
-        /// interpolated route start differ slightly.
-        /// </summary>
-        private bool TryGetUnshiftedRecoveryFirstPoint(
-            RouteResult route,
-            double startDistanceMeters,
-            GeoCoordinate referenceCoordinate,
-            out float firstX,
-            out float firstZ)
-        {
-            firstX =
-                0.0f;
-
-            firstZ =
-                0.0f;
-
-            IReadOnlyList<LocalRoutePoint> localPoints =
-                LocalRouteProjector.ProjectWindow(
-                    route,
-                    startDistanceMeters,
-                    referenceCoordinate);
-
-            if (localPoints.Count <
-                1)
-            {
-                return false;
-            }
-
-            IReadOnlyList<ArHorizontalRoutePoint> aligned =
-                ArRouteAlignment.Rotate(
-                    localPoints,
-                    activeMapToArYawDegrees);
-
-            if (aligned.Count <
-                1)
-            {
-                return false;
-            }
-
-            firstX =
-                aligned[0].X;
-
-            firstZ =
-                aligned[0].Z;
-
-            return true;
         }
 
         /// <summary>
@@ -7400,9 +7232,6 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            CaptureRouteWorldStartContinuity(
-                spatial);
-
             ARRouteBridge.RouteSnapshot rebasedRoute =
                 ARRouteBridge.Current;
 
@@ -7430,12 +7259,14 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
-        /// Re-publishes the currently active short route window against the
-        /// newly recovered ground anchor.
+        /// Re-publishes the currently active local route window against the
+        /// newly recovered nearby ground anchor.
         ///
         /// The full MLD RouteResult and route-progress state are retained.
-        /// Only the local AR X/Z placement is recalculated for the replacement
-        /// anchor so navigation does not restart from zero.
+        /// Route progress is retained, but the old AR-world route position is
+        /// deliberately discarded. The replacement window starts from the
+        /// current camera-to-anchor offset so city-scale offsets cannot carry
+        /// across local-frame handoffs.
         /// </summary>
         private bool TryRebaseRouteAfterAnchorRecovery(
             ARCameraPoseBridge.SpatialSnapshot spatial)
@@ -7489,73 +7320,13 @@ namespace RescuAR.App.Views.Camera
                         .Coordinate;
             }
 
-            float baseFirstX =
-                0.0f;
+            float arOriginOffsetX =
+                spatial.Pose.PositionX -
+                spatial.Anchor.PositionX;
 
-            float baseFirstZ =
-                0.0f;
-
-            bool hasBaseFirstPoint =
-                TryGetUnshiftedRecoveryFirstPoint(
-                    route,
-                    startDistanceMeters,
-                    referenceCoordinate,
-                    out baseFirstX,
-                    out baseFirstZ);
-
-            float arOriginOffsetX;
-            float arOriginOffsetZ;
-
-            bool continuityApplied =
-                hasRetainedRouteWorldStart &&
-                hasBaseFirstPoint;
-
-            if (continuityApplied)
-            {
-                /*
-                 * Preserve the PREVIOUS route world start:
-                 *
-                 * desiredWorldStart
-                 *     =
-                 * newAnchor
-                 * + unshiftedFirstPoint
-                 * + compensationOffset
-                 *
-                 * therefore:
-                 *
-                 * compensationOffset
-                 *     =
-                 * desiredWorldStart
-                 * - newAnchor
-                 * - unshiftedFirstPoint
-                 */
-                arOriginOffsetX =
-                    retainedRouteWorldStartX -
-                    spatial.Anchor.PositionX -
-                    baseFirstX;
-
-                arOriginOffsetZ =
-                    retainedRouteWorldStartZ -
-                    spatial.Anchor.PositionZ -
-                    baseFirstZ;
-            }
-            else
-            {
-                /*
-                 * Safe fallback for an extremely early loss where no healthy
-                 * route/anchor pair was observed before recovery.
-                 */
-                arOriginOffsetX =
-                    0.0f;
-
-                arOriginOffsetZ =
-                    0.0f;
-
-                Log.Warn(
-                    "RescuAR-AnchorRecovery",
-                    "No complete route-world continuity bookmark was available. " +
-                    "Falling back to V3 replacement-anchor-origin rebase.");
-            }
+            float arOriginOffsetZ =
+                spatial.Pose.PositionZ -
+                spatial.Anchor.PositionZ;
 
             bool published =
                 _mldArIntegrationService.PublishProgressWindow(
@@ -7584,82 +7355,24 @@ namespace RescuAR.App.Views.Camera
             ARRouteBridge.RouteSnapshot recoveredRoute =
                 ARRouteBridge.Current;
 
-            string firstPointText =
-                recoveredRoute.Points.Count >
-                    0
-                    ? $"({recoveredRoute.Points[0].X:F2}," +
-                      $"{recoveredRoute.Points[0].Z:F2})"
-                    : "<none>";
-
-            float recoveredWorldStartX =
-                spatial.Anchor.PositionX;
-
-            float recoveredWorldStartZ =
-                spatial.Anchor.PositionZ;
-
-            if (recoveredRoute.Points.Count >
-                0)
-            {
-                recoveredWorldStartX +=
-                    recoveredRoute.Points[0].X;
-
-                recoveredWorldStartZ +=
-                    recoveredRoute.Points[0].Z;
-            }
-
-            double continuityErrorMeters =
-                continuityApplied
-                    ? Math.Sqrt(
-                        Math.Pow(
-                            recoveredWorldStartX -
-                            retainedRouteWorldStartX,
-                            2.0) +
-                        Math.Pow(
-                            recoveredWorldStartZ -
-                            retainedRouteWorldStartZ,
-                            2.0))
-                    : double.NaN;
-
-            Log.Debug(
+            Log.Warn(
                 "RescuAR-AnchorRecovery",
-                continuityApplied
-                    ? "Active route window REBASED with V4 WORLD CONTINUITY: " +
-                      $"progress={startDistanceMeters:F1} m, " +
-                      $"newAnchor=(" +
-                      $"{spatial.Anchor.PositionX:F2}," +
-                      $"{spatial.Anchor.PositionY:F2}," +
-                      $"{spatial.Anchor.PositionZ:F2}), " +
-                      $"continuityTarget=(" +
-                      $"{retainedRouteWorldStartX:F2}," +
-                      $"{retainedRouteWorldStartZ:F2}), " +
-                      $"baseFirst=(" +
-                      $"{baseFirstX:F2}," +
-                      $"{baseFirstZ:F2}), " +
-                      $"compensation=(" +
-                      $"{arOriginOffsetX:F2}," +
-                      $"{arOriginOffsetZ:F2}) m, " +
-                      $"firstLocalRoutePoint={firstPointText}, " +
-                      $"recoveredWorldStart=(" +
-                      $"{recoveredWorldStartX:F2}," +
-                      $"{recoveredWorldStartZ:F2}), " +
-                      $"continuityError={continuityErrorMeters:F3} m, " +
-                      $"routeVersion={recoveredRoute.Version}"
-                    : "Active route window REBASED using V3 fallback: " +
-                      $"progress={startDistanceMeters:F1} m, " +
-                      $"newAnchor=(" +
-                      $"{spatial.Anchor.PositionX:F2}," +
-                      $"{spatial.Anchor.PositionY:F2}," +
-                      $"{spatial.Anchor.PositionZ:F2}), " +
-                      "compensation=(0.00,0.00) m, " +
-                      $"firstLocalRoutePoint={firstPointText}, " +
-                      $"routeVersion={recoveredRoute.Version}");
-
-            /*
-             * The newly published route is now the authoritative continuity
-             * state for any later recovery.
-             */
-            CaptureRouteWorldStartContinuity(
-                spatial);
+                "MOVING LOCAL AR FRAME REBASE COMPLETE: " +
+                $"progress={startDistanceMeters:F1} m, " +
+                $"newAnchor=(" +
+                $"{spatial.Anchor.PositionX:F2}," +
+                $"{spatial.Anchor.PositionY:F2}," +
+                $"{spatial.Anchor.PositionZ:F2}), " +
+                $"camera=(" +
+                $"{spatial.Pose.PositionX:F2}," +
+                $"{spatial.Pose.PositionZ:F2}), " +
+                $"localOffset=(" +
+                $"{arOriginOffsetX:F2}," +
+                $"{arOriginOffsetZ:F2}) m, " +
+                $"window={GetCurrentArRouteVisualWindowMeters():F1} m, " +
+                $"routeVersion={recoveredRoute.Version}. " +
+                "Old AR-world continuity was intentionally discarded; " +
+                "geographic route progress was preserved.");
 
             return true;
 #else
@@ -7981,13 +7694,12 @@ namespace RescuAR.App.Views.Camera
 
                     Log.Warn(
                         "RescuAR-AnchorRecovery",
-                        "V6 actual stale-anchor replacement detected: " +
+                        "Ground-anchor replacement detected: " +
                         $"replacementGeneration=" +
                         $"{serviceReplacementGeneration}. " +
-                        "The natural-relocalization grace period has already " +
-                        "finished and the retained Anchor was released. " +
-                        "V4/V5 route continuity will be applied when a " +
-                        "replacement floor Anchor is TRACKING.");
+                        "A stale or distant Anchor was released. The current " +
+                        "geographic route progress will be projected into the " +
+                        "replacement local frame once its floor Anchor is TRACKING.");
                 }
             }
 
@@ -8003,8 +7715,8 @@ namespace RescuAR.App.Views.Camera
                 {
                     Log.Debug(
                         "RescuAR-AnchorRecovery",
-                        "Replacement ground anchor is TRACKING. Applying " +
-                        "V4/V5 world-position continuity: " +
+                        "Replacement ground anchor is TRACKING. Rebuilding the " +
+                        "current route window in the new local frame: " +
                         $"replacementGeneration=" +
                         $"{activeGroundAnchorReplacementGeneration}.");
 
@@ -8033,12 +7745,9 @@ namespace RescuAR.App.Views.Camera
                          */
                         _arCoreService.TryRecoverGroundAnchorIfNeeded();
 
-                        CaptureRouteWorldStartContinuity(
-                            spatial);
-
                         Log.Debug(
                             "RescuAR-AnchorRecovery",
-                            "V6 replacement-anchor recovery COMPLETE. " +
+                            "Moving local-frame anchor replacement COMPLETE. " +
                             $"handledReplacementGeneration=" +
                             $"{handledGroundAnchorReplacementGeneration}.");
                     }
@@ -8046,24 +7755,11 @@ namespace RescuAR.App.Views.Camera
                     {
                         Log.Warn(
                             "RescuAR-AnchorRecovery",
-                            "Replacement anchor is TRACKING, but route continuity " +
-                            "rebasing has not completed. The existing V5-locked " +
+                            "Replacement anchor is TRACKING, but local-window " +
+                            "rebasing has not completed. The existing locked " +
                             "route placement is retained and rebasing will retry " +
                             "on the next diagnostic tick.");
                     }
-                }
-                else if (!hasRetainedRouteWorldStart)
-                {
-                    /*
-                     * Establish the first continuity bookmark once a healthy
-                     * route + ground-anchor pair exists.
-                     *
-                     * V5 deliberately does NOT recapture this every diagnostic
-                     * tick because live Anchor refinement is not navigation
-                     * movement.
-                     */
-                    CaptureRouteWorldStartContinuity(
-                        spatial);
                 }
 
                 /*
@@ -8080,7 +7776,7 @@ namespace RescuAR.App.Views.Camera
                  * This is either:
                  *
                  *  A) temporary retained-anchor PAUSED state during the
-                 *     natural 1250 ms relocalization grace period; or
+                 *     natural 5000 ms relocalization grace period; or
                  *
                  *  B) an actual replacement floor search after the service has
                  *     released the stale Anchor.
@@ -8088,8 +7784,8 @@ namespace RescuAR.App.Views.Camera
                  * The service owns that distinction. CameraPage does NOT clear
                  * or republish ARRouteBridge here.
                  *
-                 * V5 already hides the route whenever tracking/anchor validity
-                 * is unavailable while retaining the same route-root X/Z lock.
+                 * The renderer owns the short visual-continuity behavior while
+                 * retaining the same route-root X/Z lock.
                  */
                 _arCoreService.TryRecoverGroundAnchorIfNeeded();
             }
@@ -8187,6 +7883,16 @@ namespace RescuAR.App.Views.Camera
                     ARCameraSpatialController
                         .CurrentRouteWorldCorrectionRequest;
 
+            float cameraToAnchorHorizontalMeters =
+                spatial.Anchor.IsAvailable &&
+                spatial.Pose.IsTracking
+                    ? LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                        spatial.Pose.PositionX -
+                            spatial.Anchor.PositionX,
+                        spatial.Pose.PositionZ -
+                            spatial.Anchor.PositionZ)
+                    : float.NaN;
+
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
 
@@ -8199,12 +7905,15 @@ namespace RescuAR.App.Views.Camera
                 $"frameLoop={_arCoreService.IsFrameLoopRunning}, " +
                 $"tracking={tracking}, " +
                 $"anchor={spatial.Anchor.IsAvailable}, " +
+                $"cameraToAnchor=" +
+                $"{(float.IsFinite(cameraToAnchorHorizontalMeters) ? cameraToAnchorHorizontalMeters.ToString("F2") : "<none>")}m, " +
+                $"anchorRetirement=" +
+                $"{LocalArNavigationPolicy.GroundAnchorRetirementDistanceMeters:F1}m, " +
                 $"anchorRecovery={anchorRecoveryInProgress}, " +
                 $"replacementGeneration=" +
                 $"{_arCoreService.GroundAnchorReplacementGeneration}, " +
                 $"handledReplacementGeneration=" +
                 $"{handledGroundAnchorReplacementGeneration}, " +
-                $"routeContinuity={hasRetainedRouteWorldStart}, " +
                 $"worldCorrectionPending={worldCorrectionStatus.IsPending}, " +
                 $"worldCorrectionGeneration={worldCorrectionStatus.Generation}, " +
                 $"worldCorrectionDrift=" +
@@ -8217,6 +7926,7 @@ namespace RescuAR.App.Views.Camera
                 $"routePublished={route.IsAvailable}, " +
                 $"routeVersion={route.Version}, " +
                 $"routePoints={route.Points.Count}, " +
+                $"localRouteWindow={GetCurrentArRouteVisualWindowMeters():F1}m, " +
                 $"rendererVersion={ARRouteRenderer.AppliedRouteVersion}, " +
                 $"activeSegments={activeSegments}, " +
                 $"indoorTest={IndoorRouteTestMode}, " +

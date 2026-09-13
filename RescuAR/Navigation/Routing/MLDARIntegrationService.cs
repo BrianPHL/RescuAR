@@ -200,6 +200,15 @@ public sealed class MLDARIntegrationService
         ArgumentNullException.ThrowIfNull(
             route);
 
+        if (!ValidateLocalRouteOriginOffset(
+                arOriginOffsetX,
+                arOriginOffsetZ,
+                ProgressLogTag,
+                clearRouteOnFailure))
+        {
+            return false;
+        }
+
         if (!userCoordinate.IsValid ||
             !snappedRouteCoordinate.IsValid)
         {
@@ -338,18 +347,61 @@ public sealed class MLDARIntegrationService
         string logTag,
         bool clearRouteOnFailure)
     {
+        if (!ValidateLocalRouteOriginOffset(
+                arOriginOffsetX,
+                arOriginOffsetZ,
+                logTag,
+                clearRouteOnFailure))
+        {
+            return false;
+        }
+
+        if (!double.IsFinite(
+                arWindowMeters) ||
+            arWindowMeters <=
+                0.0)
+        {
+            AndroidLog.Warn(
+                logTag,
+                $"AR route publication rejected an invalid local window: " +
+                $"{arWindowMeters} m.");
+
+            if (clearRouteOnFailure)
+            {
+                ARRouteBridge.Clear();
+            }
+
+            return false;
+        }
+
+        double boundedWindowMeters =
+            Math.Min(
+                arWindowMeters,
+                LocalArNavigationPolicy.MaximumVisibleWindowMeters);
+
+        if (boundedWindowMeters <
+            arWindowMeters)
+        {
+            AndroidLog.Warn(
+                logTag,
+                "AR route window was capped by the moving-local-frame policy: " +
+                $"requested={arWindowMeters:F1} m, " +
+                $"applied={boundedWindowMeters:F1} m.");
+        }
+
         IReadOnlyList<LocalRoutePoint> localPoints =
             LocalRouteProjector.ProjectWindow(
                 route,
                 startDistanceMeters,
                 reference,
-                arWindowMeters);
+                boundedWindowMeters);
 
         AndroidLog.Debug(
             logTag,
             "Local route window projected: " +
             $"sourcePoints={route.Points.Count}, " +
             $"windowPoints={localPoints.Count}, " +
+            $"window={boundedWindowMeters:F1} m, " +
             $"startDistance={startDistanceMeters:F1} m, " +
             $"reference=({reference.Latitude:F7}," +
             $"{reference.Longitude:F7})");
@@ -430,5 +482,37 @@ public sealed class MLDARIntegrationService
             route.TotalDistanceMeters);
 
         return true;
+    }
+
+    private static bool ValidateLocalRouteOriginOffset(
+        float arOriginOffsetX,
+        float arOriginOffsetZ,
+        string logTag,
+        bool clearRouteOnFailure)
+    {
+        if (LocalArNavigationPolicy.IsRouteOriginOffsetAcceptable(
+                arOriginOffsetX,
+                arOriginOffsetZ,
+                out float offsetDistanceMeters))
+        {
+            return true;
+        }
+
+        AndroidLog.Warn(
+            logTag,
+            "AR route publication blocked by the moving-local-frame guard: " +
+            $"originOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m, " +
+            $"horizontalDistance={offsetDistanceMeters:F2} m, " +
+            $"maximum=" +
+            $"{LocalArNavigationPolicy.MaximumRouteOriginOffsetMeters:F1} m. " +
+            "Waiting for a nearby ground-anchor replacement instead of " +
+            "publishing a city-scale local offset.");
+
+        if (clearRouteOnFailure)
+        {
+            ARRouteBridge.Clear();
+        }
+
+        return false;
     }
 }

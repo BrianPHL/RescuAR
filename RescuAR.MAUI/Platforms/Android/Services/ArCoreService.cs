@@ -1655,6 +1655,18 @@ public sealed partial class ArCoreService : IArCoreService
             zoomRatio);
 
         /*
+         * MOVING LOCAL AR FRAME
+         * ---------------------
+         * A ground anchor is a nearby spatial reference, not a permanent
+         * city-scale origin. Retire it after the pedestrian has moved beyond
+         * the configured local radius. The existing frame loop then acquires
+         * a replacement floor anchor close to the current camera.
+         */
+        TryRetireGroundAnchorBeyondLocalWindow(
+            translation[0],
+            translation[2]);
+
+        /*
          * Keep searching until a real upward-facing horizontal floor plane
          * is acquired. The fast path uses world-space downward rays around
          * the tracked camera; the visible-floor screen sweep remains as a
