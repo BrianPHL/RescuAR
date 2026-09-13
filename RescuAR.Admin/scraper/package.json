@@ -1,0 +1,16 @@
+{
+  "name": "scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "syncWorker.js",
+  "scripts": {
+    "start": "node syncWorker.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.4.0",
+    "node-cron": "^3.0.3"
+  }
+}
