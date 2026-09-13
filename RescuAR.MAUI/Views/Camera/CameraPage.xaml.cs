@@ -168,6 +168,9 @@ namespace RescuAR.App.Views.Camera
 
         private GeoCoordinate? activeDestinationCoordinate;
 
+        private double activeDestinationSafeZoneRadiusMeters =
+            SafeZoneConfirmationService.ArrivalRadiusMeters;
+
         private double activeMapToArYawDegrees;
 
         /*
@@ -262,14 +265,13 @@ namespace RescuAR.App.Views.Camera
         /*
          * STAGE 5 DEVELOPER SAFE-ZONE VALIDATION
          *
-         * This does NOT change the production 30 m arrival radius or the real
-         * evacuation-center destination used for routing. When armed, only
+         * Production destinations now use facility-specific safe-zone radii.
+         * This controlled harness intentionally keeps the original 30 m radius
+         * so Stage 5 regression testing remains deterministic. When armed, only
          * SafeZoneConfirmationService evaluation is temporarily pointed at a
-         * test coordinate 20 m ahead along the CURRENT active route. The DEV
-         * target intentionally starts inside the unchanged 30 m arrival radius,
-         * inside the unchanged 30 m production arrival radius. This controlled
-         * validation is for the real 3-distinct-GPS-fix confirmation path and UI,
-         * not for natural destination-distance validation. Disable after Stage 5 validation.
+         * test coordinate 20 m ahead along the CURRENT active route. The real
+         * evacuation-center destination and its facility geofence are unchanged.
+         * Disable after Stage 5 validation.
          */
         private static readonly bool EnableDeveloperSafeZoneValidation =
             true;
@@ -2068,6 +2070,9 @@ namespace RescuAR.App.Views.Camera
                 activeDestinationCoordinate =
                     destination.Coordinate;
 
+                activeDestinationSafeZoneRadiusMeters =
+                    destination.SafeZoneRadiusMeters;
+
                 activeMapToArYawDegrees =
                     mapToArYawDegrees;
 
@@ -2693,6 +2698,9 @@ namespace RescuAR.App.Views.Camera
             activeDestinationCoordinate =
                 null;
 
+            activeDestinationSafeZoneRadiusMeters =
+                SafeZoneConfirmationService.ArrivalRadiusMeters;
+
             indoorStationaryPollCount =
                 0;
 
@@ -3192,6 +3200,9 @@ namespace RescuAR.App.Views.Camera
                                 GeoCoordinate safeZoneEvaluationCoordinate =
                                     activeDestinationCoordinate.Value;
 
+                                double safeZoneEvaluationRadiusMeters =
+                                    activeDestinationSafeZoneRadiusMeters;
+
                                 double safeZoneEvaluationRemainingMeters =
                                     afterGps.RemainingMeters;
 
@@ -3204,6 +3215,15 @@ namespace RescuAR.App.Views.Camera
                                     safeZoneEvaluationCoordinate =
                                         developerSafeZoneTargetCoordinate.Value;
 
+                                    /*
+                                     * Keep the Stage 5 synthetic test on the
+                                     * original 30 m production baseline so
+                                     * existing developer-validation behavior
+                                     * remains deterministic.
+                                     */
+                                    safeZoneEvaluationRadiusMeters =
+                                        SafeZoneConfirmationService.ArrivalRadiusMeters;
+
                                     safeZoneEvaluationRemainingMeters =
                                         Math.Max(
                                             0.0,
@@ -3215,6 +3235,7 @@ namespace RescuAR.App.Views.Camera
                                     _safeZoneConfirmationService.Evaluate(
                                         reading.Coordinate,
                                         safeZoneEvaluationCoordinate,
+                                        safeZoneEvaluationRadiusMeters,
                                         reading.AccuracyMeters,
                                         safeZoneEvaluationRemainingMeters,
                                         reading.Timestamp);
@@ -4723,7 +4744,9 @@ namespace RescuAR.App.Views.Camera
                     $"confirmation={decision.ConfirmationCount}/" +
                     $"{decision.RequiredConfirmationCount}, " +
                     $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
-                    $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                    $"safeZoneRadius={decision.ArrivalRadiusMeters:F1} m, " +
+                    $"remaining={decision.RemainingRouteMeters:F1} m/" +
+                    $"{decision.MaximumRemainingRouteMeters:F1} m, " +
                     $"accuracy=" +
                     $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
                     $"confirmed={decision.IsConfirmed}, " +
@@ -4739,7 +4762,9 @@ namespace RescuAR.App.Views.Camera
                     SafeZoneLogTag,
                     "Arrival confirmation sequence RESET: " +
                     $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
-                    $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                    $"safeZoneRadius={decision.ArrivalRadiusMeters:F1} m, " +
+                    $"remaining={decision.RemainingRouteMeters:F1} m/" +
+                    $"{decision.MaximumRemainingRouteMeters:F1} m, " +
                     $"accuracy=" +
                     $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
                     $"reason='{decision.Reason}'");
@@ -4779,7 +4804,9 @@ namespace RescuAR.App.Views.Camera
                 "SAFE ZONE CONFIRMED: " +
                 $"destination='{activeDestinationName}', " +
                 $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
-                $"remaining={decision.RemainingRouteMeters:F1} m, " +
+                $"safeZoneRadius={decision.ArrivalRadiusMeters:F1} m, " +
+                $"remaining={decision.RemainingRouteMeters:F1} m/" +
+                $"{decision.MaximumRemainingRouteMeters:F1} m, " +
                 $"accuracy=" +
                 $"{(decision.AccuracyMeters.HasValue ? decision.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m, " +
                 $"confirmations={decision.ConfirmationCount}/" +
@@ -4834,8 +4861,9 @@ namespace RescuAR.App.Views.Camera
                         $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
-                        $"Arrival confirmed about " +
-                        $"{decision.DistanceToDestinationMeters:F0} m from the destination." +
+                        $"Safe-zone entry confirmed within the " +
+                        $"{decision.ArrivalRadiusMeters:F0} m evacuation-center vicinity " +
+                        $"({decision.DistanceToDestinationMeters:F0} m from the destination point)." +
                         accuracyText;
 
                     safeZoneConfirmationOverlay.IsVisible =
@@ -4999,8 +5027,8 @@ namespace RescuAR.App.Views.Camera
                 $"targetCenterAhead={DeveloperSafeZoneTargetAheadMeters:F1} m, " +
                 $"targetProgress={targetProgressMeters:F1} m, " +
                 $"target=({targetCoordinate.Latitude:F7},{targetCoordinate.Longitude:F7}), " +
-                $"productionArrivalRadius={SafeZoneConfirmationService.ArrivalRadiusMeters:F1} m. " +
-                "The DEV target intentionally starts inside the production arrival radius. Stay near the arming point and wait for three DISTINCT qualifying GPS observations; production thresholds remain unchanged.");
+                $"devArrivalRadius={SafeZoneConfirmationService.ArrivalRadiusMeters:F1} m. " +
+                "The DEV target intentionally keeps the original 30 m baseline so the existing test remains deterministic. Stay near the arming point and wait for three DISTINCT qualifying GPS observations.");
 #endif
         }
 
