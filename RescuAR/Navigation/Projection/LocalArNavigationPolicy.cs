@@ -63,6 +63,17 @@ public static class LocalArNavigationPolicy
     public const float MaximumPlausibleCameraHeightAboveGroundMeters =
         2.40f;
 
+    /// <summary>
+    /// Stricter acquisition range used when deciding whether a newly observed
+    /// horizontal surface is likely to be the pedestrian's floor. The wider
+    /// plausible range above remains the renderer's continuity safety limit.
+    /// </summary>
+    public const float MinimumPreferredGroundCandidateCameraHeightMeters =
+        0.85f;
+
+    public const float MaximumPreferredGroundCandidateCameraHeightMeters =
+        2.20f;
+
     public static float GetHorizontalDistanceMeters(
         float deltaX,
         float deltaZ)
@@ -109,5 +120,22 @@ public static class LocalArNavigationPolicy
                 MinimumPlausibleCameraHeightAboveGroundMeters &&
             cameraHeightAboveGroundMeters <=
                 MaximumPlausibleCameraHeightAboveGroundMeters;
+    }
+
+    public static bool IsPreferredGroundCandidateHeight(
+        float cameraWorldY,
+        float candidateGroundWorldY,
+        out float cameraHeightAboveCandidateMeters)
+    {
+        cameraHeightAboveCandidateMeters =
+            cameraWorldY -
+            candidateGroundWorldY;
+
+        return float.IsFinite(
+                   cameraHeightAboveCandidateMeters) &&
+            cameraHeightAboveCandidateMeters >=
+                MinimumPreferredGroundCandidateCameraHeightMeters &&
+            cameraHeightAboveCandidateMeters <=
+                MaximumPreferredGroundCandidateCameraHeightMeters;
     }
 }
