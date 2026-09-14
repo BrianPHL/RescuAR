@@ -77,6 +77,7 @@ namespace RescuAR.App.Views.Camera
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
+        private readonly HeadingRevalidationPolicy _headingRevalidationPolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
@@ -539,6 +540,9 @@ namespace RescuAR.App.Views.Camera
 
             _routeReplacementPolicy =
                 new RouteReplacementPolicy();
+
+            _headingRevalidationPolicy =
+                new HeadingRevalidationPolicy();
 
             _turnGuidanceService =
                 new PedestrianTurnGuidanceService();
@@ -1632,6 +1636,8 @@ namespace RescuAR.App.Views.Camera
                 _headingAlignmentService.ResetSessionCalibration(
                     "creating a new ARCore Session");
 
+                _headingRevalidationPolicy.Reset();
+
                 lastHeadingAlignment =
                     null;
 
@@ -1952,7 +1958,7 @@ namespace RescuAR.App.Views.Camera
                     HeadingLogTag,
                     _headingAlignmentService.HasSessionCalibration
                         ? "GPS origin acquired. Reusing retained ARCore-session heading alignment."
-                        : "GPS origin acquired. Capturing one-time map-to-AR heading alignment.");
+                        : "GPS origin acquired. Capturing initial map-to-AR heading alignment.");
 
                 ArHeadingAlignmentService.HeadingAlignmentResult?
                     headingAlignment =
@@ -2062,6 +2068,8 @@ namespace RescuAR.App.Views.Camera
                 _offRouteReroutePolicy.Reset();
 
                 _routeReplacementPolicy.Reset();
+
+                _headingRevalidationPolicy.Reset();
 
                 UpdateTurnGuidance(
                     route,
@@ -2708,6 +2716,8 @@ namespace RescuAR.App.Views.Camera
 
             _routeReplacementPolicy.Reset();
 
+            _headingRevalidationPolicy.Reset();
+
             _hazardReroutingService.ResetSessionState();
 
             developerHazardValidationArmed =
@@ -3146,7 +3156,14 @@ namespace RescuAR.App.Views.Camera
                                 UpdateRoadFollowingVisualModeFromAcceptedGps(
                                     fusedGps);
 
-                            if (arRouteVisualMode ==
+                            publishedRealProgress =
+                                TryApplyHeadingRevalidation(
+                                    route,
+                                    reading,
+                                    fusedGps);
+
+                            if (!publishedRealProgress &&
+                                arRouteVisualMode ==
                                 ArRouteVisualMode.ApproachOrOffCourseShort)
                             {
                                 /*
@@ -3163,7 +3180,8 @@ namespace RescuAR.App.Views.Camera
                                         matchedGps,
                                         "GPS");
                             }
-                            else if (fusedGps.IsAccepted &&
+                            else if (!publishedRealProgress &&
+                                     fusedGps.IsAccepted &&
                                      (fusedGps.ShouldPublishWindow ||
                                       routeVisualModeChanged))
                             {
@@ -4306,6 +4324,8 @@ namespace RescuAR.App.Views.Camera
                             false;
 
                         _gpsPdrFusionPolicy.Reset();
+
+                        _headingRevalidationPolicy.Reset();
 
                         _offRouteReroutePolicy.MarkRerouteCompleted(
                             DateTimeOffset.UtcNow);
@@ -6561,6 +6581,176 @@ namespace RescuAR.App.Views.Camera
                     $"Navigation was cleared, but returning to Home failed: {exception.Message}");
 #endif
             }
+        }
+
+        /// <summary>
+        /// Revalidates the active map-to-AR yaw from the same accepted route
+        /// segment and GPS progress used by visible and textual guidance.
+        /// </summary>
+        private bool TryApplyHeadingRevalidation(
+            RouteResult route,
+            LocationReading reading,
+            RouteProgressTracker.RouteProgressUpdate update)
+        {
+#if ANDROID
+            if (!update.IsAccepted ||
+                update.IsOffRoute ||
+                !TryGetRouteSegmentBearing(
+                    route,
+                    update.SegmentIndex,
+                    out double routeTangentBearingDegrees))
+            {
+                return false;
+            }
+
+            ARCameraPoseBridge.SpatialSnapshot spatial =
+                ARCameraPoseBridge.CurrentFrame;
+
+            if (!spatial.IsTracking ||
+                !spatial.Pose.IsTracking ||
+                !spatial.Anchor.IsAvailable)
+            {
+                return false;
+            }
+
+            HeadingRevalidationDecision decision =
+                _headingRevalidationPolicy.Evaluate(
+                    activeMapToArYawDegrees,
+                    reading.Coordinate,
+                    reading.AccuracyMeters,
+                    reading.SpeedMetersPerSecond,
+                    reading.CourseDegrees,
+                    update.MatchConfidence,
+                    routeTangentBearingDegrees,
+                    spatial.Pose.PositionX,
+                    spatial.Pose.PositionZ,
+                    DateTimeOffset.UtcNow);
+
+            if (decision.Disposition ==
+                    HeadingRevalidationDisposition.AwaitingConfirmation ||
+                decision.Disposition ==
+                    HeadingRevalidationDisposition.SignalsDisagree ||
+                decision.Disposition ==
+                    HeadingRevalidationDisposition.CorrectionCooldown)
+            {
+                Log.Debug(
+                    HeadingLogTag,
+                    "HEADING REVALIDATION: " +
+                    $"state={decision.Disposition}, " +
+                    $"confirmation={decision.ConfirmationCount}/" +
+                    $"{decision.RequiredConfirmationCount}, " +
+                    $"gpsMove={decision.GpsDisplacementMeters:F1} m, " +
+                    $"arMove={decision.ArDisplacementMeters:F1} m, " +
+                    $"gpsBearing={decision.GpsDisplacementBearingDegrees:F1} deg, " +
+                    $"gpsCourse={decision.GpsCourseDegrees:F1} deg, " +
+                    $"routeBearing={decision.RouteTangentBearingDegrees:F1} deg, " +
+                    $"arMovement={decision.ArMovementAzimuthDegrees:F1} deg, " +
+                    $"candidateYaw={decision.CandidateYawDegrees:F1} deg, " +
+                    $"error={decision.AlignmentErrorDegrees:F1} deg, " +
+                    $"reason='{decision.Reason}'.");
+            }
+
+            if (!decision.ShouldApplyCorrection)
+            {
+                return false;
+            }
+
+            double previousYawDegrees =
+                activeMapToArYawDegrees;
+
+            activeMapToArYawDegrees =
+                decision.CorrectedYawDegrees;
+
+            bool published =
+                TryPublishMovingRouteWindow(
+                    route,
+                    update,
+                    "GPS/HEADING-REVALIDATION");
+
+            if (!published)
+            {
+                activeMapToArYawDegrees =
+                    previousYawDegrees;
+
+                Log.Warn(
+                    HeadingLogTag,
+                    "Movement-confirmed heading correction was not applied because the corrected local route window could not be published.");
+
+                return false;
+            }
+
+            _headingRevalidationPolicy.MarkCorrectionApplied(
+                DateTimeOffset.UtcNow);
+
+            double residualAlignmentErrorDegrees =
+                NormalizeSignedDegrees(
+                    decision.CandidateYawDegrees -
+                    decision.CorrectedYawDegrees);
+
+            lastHeadingAlignment =
+                _headingAlignmentService.ApplyMovementValidatedYaw(
+                    decision.CorrectedYawDegrees,
+                    decision.ConfirmationCount,
+                    residualAlignmentErrorDegrees,
+                    DateTimeOffset.UtcNow);
+
+            Log.Warn(
+                HeadingLogTag,
+                "HEADING REVALIDATION APPLIED: " +
+                $"oldYaw={previousYawDegrees:F1} deg, " +
+                $"candidateYaw={decision.CandidateYawDegrees:F1} deg, " +
+                $"appliedCorrection={decision.AppliedCorrectionDegrees:F1} deg, " +
+                $"newYaw={decision.CorrectedYawDegrees:F1} deg, " +
+                $"observedError={decision.AlignmentErrorDegrees:F1} deg, " +
+                $"confirmations={decision.ConfirmationCount}/" +
+                $"{decision.RequiredConfirmationCount}, " +
+                $"segment={update.SegmentIndex}.");
+
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private static bool TryGetRouteSegmentBearing(
+            RouteResult route,
+            int segmentIndex,
+            out double bearingDegrees)
+        {
+            bearingDegrees =
+                0.0;
+
+            if (segmentIndex <
+                    0 ||
+                segmentIndex +
+                    1 >=
+                    route.Points.Count)
+            {
+                return false;
+            }
+
+            GeoCoordinate from =
+                route.Points[segmentIndex]
+                    .Coordinate;
+
+            GeoCoordinate to =
+                route.Points[segmentIndex + 1]
+                    .Coordinate;
+
+            if (from.DistanceTo(
+                    to) <
+                0.50)
+            {
+                return false;
+            }
+
+            bearingDegrees =
+                CalculateInitialBearingDegrees(
+                    from,
+                    to);
+
+            return double.IsFinite(
+                bearingDegrees);
         }
 
         private void OnPdrStepDetected(
