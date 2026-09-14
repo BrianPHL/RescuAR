@@ -1692,11 +1692,16 @@ public sealed partial class ArCoreService : IArCoreService
 
         /*
          * Keep searching until a real upward-facing horizontal floor plane
-         * is acquired. The fast path uses world-space downward rays around
-         * the tracked camera; the visible-floor screen sweep remains as a
-         * fallback.
+         * is acquired. This also runs after a short non-tracking-anchor delay
+         * so a validated replacement can be prepared before the old anchor is
+         * detached. The fast path uses world-space downward rays around the
+         * tracked camera; the visible-floor screen sweep remains as a fallback.
          */
-        if (spatialGroundAnchor is null)
+        bool shouldSearchForGroundAnchor =
+            spatialGroundAnchor is null ||
+            ShouldSearchForProactiveGroundAnchorReplacement();
+
+        if (shouldSearchForGroundAnchor)
         {
             TryCreateSpatialGroundAnchor(
                 frame,
@@ -2397,8 +2402,23 @@ public sealed partial class ArCoreService : IArCoreService
             return false;
         }
 
-        spatialGroundAnchor =
-            newAnchor;
+        Google.AR.Core.Anchor? previousAnchor =
+            Interlocked.Exchange(
+                ref spatialGroundAnchor,
+                newAnchor);
+
+        if (previousAnchor is not null &&
+            !ReferenceEquals(
+                previousAnchor,
+                newAnchor))
+        {
+            RegisterProactiveGroundAnchorHandoff(
+                previousAnchor,
+                source);
+
+            DisposeGroundAnchor(
+                previousAnchor);
+        }
 
         return true;
     }
@@ -2541,6 +2561,13 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        DisposeGroundAnchor(
+            anchor);
+    }
+
+    private static void DisposeGroundAnchor(
+        Google.AR.Core.Anchor anchor)
+    {
         try
         {
             anchor.Detach();

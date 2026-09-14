@@ -32,11 +32,15 @@ public sealed partial class ArCoreService
      * PAUSED means ARCore may resume tracking the same anchor. Because the
      * renderer now holds the last valid visual placement during temporary
      * tracking loss, recovery can favor continuity over aggressive anchor
-     * replacement. Five seconds substantially reduces unnecessary detach /
-     * reacquire cycles after short lighting, feature, or motion failures.
+     * replacement. V3 begins a validated replacement search while the old
+     * anchor is retained, then releases it only if neither the old anchor nor
+     * a better candidate succeeds within the final grace period.
      */
     private const long GroundAnchorRecoveryGraceMilliseconds =
-        5000;
+        2500;
+
+    private const long ProactiveGroundAnchorSearchDelayMilliseconds =
+        750;
 
     /*
      * If the ordinary floor hit-test has not produced a replacement after a
@@ -85,6 +89,152 @@ public sealed partial class ArCoreService
 
     private Google.AR.Core.Anchor?
         implausibleGroundHeightCandidateAnchor;
+
+    private long proactiveGroundAnchorSearchStartedTimestamp =
+        long.MinValue;
+
+    private Google.AR.Core.Anchor?
+        proactiveGroundAnchorSearchSource;
+
+    private bool proactiveGroundAnchorSearchLogged;
+
+    /// <summary>
+    /// Returns true after a retained Anchor has remained non-tracking long
+    /// enough to justify searching for a validated replacement in parallel.
+    /// The old Anchor is not detached until a replacement succeeds or the
+    /// final recovery deadline expires.
+    /// </summary>
+    private bool ShouldSearchForProactiveGroundAnchorReplacement()
+    {
+        Google.AR.Core.Anchor? anchor =
+            spatialGroundAnchor;
+
+        if (anchor is null)
+        {
+            ResetProactiveGroundAnchorSearchObservation();
+
+            return false;
+        }
+
+        string trackingState =
+            GetAnchorTrackingState(
+                anchor);
+
+        if (trackingState.Equals(
+                "Tracking",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            bool hadPendingSearch =
+                proactiveGroundAnchorSearchStartedTimestamp !=
+                    long.MinValue;
+
+            ResetProactiveGroundAnchorSearchObservation();
+
+            if (hadPendingSearch)
+            {
+                ResetGroundPlaneSearchState();
+            }
+
+            return false;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (!ReferenceEquals(
+                proactiveGroundAnchorSearchSource,
+                anchor) ||
+            proactiveGroundAnchorSearchStartedTimestamp ==
+                long.MinValue)
+        {
+            proactiveGroundAnchorSearchSource =
+                anchor;
+
+            proactiveGroundAnchorSearchStartedTimestamp =
+                now;
+
+            proactiveGroundAnchorSearchLogged =
+                false;
+        }
+
+        bool stopped =
+            trackingState.Equals(
+                "Stopped",
+                StringComparison.OrdinalIgnoreCase);
+
+        bool searchReady =
+            stopped ||
+            now -
+                proactiveGroundAnchorSearchStartedTimestamp >=
+            ProactiveGroundAnchorSearchDelayMilliseconds;
+
+        if (searchReady &&
+            !proactiveGroundAnchorSearchLogged)
+        {
+            proactiveGroundAnchorSearchLogged =
+                true;
+
+            Log.Warn(
+                AnchorRecoveryLogTag,
+                "PROACTIVE GROUND RECOVERY: searching for a validated " +
+                "replacement while retaining the current anchor. " +
+                $"state={trackingState}, " +
+                $"delay={ProactiveGroundAnchorSearchDelayMilliseconds}ms, " +
+                $"finalGrace={GroundAnchorRecoveryGraceMilliseconds}ms.");
+        }
+
+        return searchReady;
+    }
+
+    private void RegisterProactiveGroundAnchorHandoff(
+        Google.AR.Core.Anchor previousAnchor,
+        string source)
+    {
+        InvalidatePendingRecoveryCountdown();
+
+        long replacementGeneration;
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorReplacementGeneration++;
+
+            replacementGeneration =
+                groundAnchorReplacementGeneration;
+
+            groundAnchorReacquisitionArmed =
+                false;
+
+            replacementAnchorSearchStartedTimestamp =
+                long.MinValue;
+
+            replacementAnchorSearchNoticeLogged =
+                false;
+        }
+
+        ARCameraSpatialController.SetRouteRecoveryRebasePending(
+            true,
+            "validated proactive ground-anchor handoff");
+
+        Log.Debug(
+            AnchorRecoveryLogTag,
+            "PROACTIVE GROUND HANDOFF COMPLETE: a validated replacement " +
+            "anchor was acquired before detaching the stale reference. " +
+            $"source={source}, " +
+            $"previousState={GetAnchorTrackingState(previousAnchor)}, " +
+            $"replacementGeneration={replacementGeneration}.");
+    }
+
+    private void ResetProactiveGroundAnchorSearchObservation()
+    {
+        proactiveGroundAnchorSearchStartedTimestamp =
+            long.MinValue;
+
+        proactiveGroundAnchorSearchSource =
+            null;
+
+        proactiveGroundAnchorSearchLogged =
+            false;
+    }
 
     /// <summary>
     /// Retires a still-valid anchor once it is no longer local to the camera
@@ -232,6 +382,10 @@ public sealed partial class ArCoreService
             replacementAnchorSearchNoticeLogged =
                 false;
         }
+
+        ARCameraSpatialController.SetRouteRecoveryRebasePending(
+            true,
+            "ground anchor retired outside the trusted local frame");
 
         hasLoggedGroundPlaneSearch =
             false;
@@ -434,7 +588,8 @@ public sealed partial class ArCoreService
                     "ARCore camera is TRACKING but retained ground anchor is " +
                     $"{observedTrackingState}. Allowing " +
                     $"{graceMilliseconds} ms for natural anchor relocalization " +
-                    "while the renderer keeps the last valid AR placement visible.");
+                    "while replacement search and bounded visual continuity " +
+                    "operate independently.");
             }
 
             CancellationTokenSource cancellation =
@@ -596,6 +751,10 @@ public sealed partial class ArCoreService
                         false;
                 }
 
+                ARCameraSpatialController.SetRouteRecoveryRebasePending(
+                    true,
+                    "stale ground anchor released for replacement");
+
                 Log.Debug(
                     AnchorRecoveryLogTag,
                     "Stale ground anchor released after queued grace-period " +
@@ -735,6 +894,8 @@ public sealed partial class ArCoreService
     private void InvalidatePendingRecoveryCountdown()
     {
         CancellationTokenSource? cancellationToCancel;
+
+        ResetProactiveGroundAnchorSearchObservation();
 
         lock (groundAnchorRecoveryLock)
         {

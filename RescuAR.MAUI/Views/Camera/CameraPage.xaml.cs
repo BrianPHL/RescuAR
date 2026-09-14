@@ -750,6 +750,83 @@ namespace RescuAR.App.Views.Camera
                 !safeZoneConfirmed;
 
             RefreshEmergencyStatusBanner();
+            RefreshArTrackingStatusBanner();
+        }
+
+        private void RefreshArTrackingStatusBanner()
+        {
+            bool headingTrusted =
+                lastHeadingAlignment.HasValue &&
+                lastHeadingAlignment.Value.IsAvailable &&
+                lastHeadingAlignment.Value.IsStable;
+
+            ARCameraSpatialController.SetRouteHeadingTrust(
+                headingTrusted,
+                headingTrusted
+                    ? "Stable map-to-AR heading alignment is available."
+                    : "Map-to-AR heading alignment is unavailable or unstable.");
+
+            ARCameraSpatialController.SpatialContinuitySnapshot continuity =
+                ARCameraSpatialController.CurrentSpatialContinuity;
+
+            bool shouldShow =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera &&
+                NavigationDestinationBridge.Current.IsAvailable &&
+                continuity.State !=
+                    ARCameraSpatialController.SpatialContinuityState.Live;
+
+            arTrackingStatusBanner.IsVisible =
+                shouldShow;
+
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            bool severe =
+                continuity.State ==
+                    ARCameraSpatialController.SpatialContinuityState.LongLoss ||
+                continuity.State ==
+                    ARCameraSpatialController.SpatialContinuityState.Untrusted;
+
+            arTrackingStatusBanner.BackgroundColor =
+                Color.FromArgb(
+                    severe
+                        ? "#FBE1E3"
+                        : "#FFF3CD");
+
+            arTrackingStatusBanner.Stroke =
+                new SolidColorBrush(
+                    Color.FromArgb(
+                        severe
+                            ? "#F2B4BA"
+                            : "#E6B800"));
+
+            arTrackingStatusLabel.TextColor =
+                Color.FromArgb(
+                    severe
+                        ? "#B4232B"
+                        : "#7A5700");
+
+            arTrackingStatusLabel.Text =
+                continuity.State switch
+                {
+                    ARCameraSpatialController.SpatialContinuityState.ShortHold =>
+                        "AR tracking interrupted — hold still",
+
+                    ARCameraSpatialController.SpatialContinuityState.Degraded =>
+                        "AR route hidden — follow the text guidance",
+
+                    ARCameraSpatialController.SpatialContinuityState.LongLoss =>
+                        "AR unavailable — move slowly to a well-lit area",
+
+                    ARCameraSpatialController.SpatialContinuityState.Untrusted =>
+                        "AR placement recovering — follow the text guidance",
+
+                    _ =>
+                        string.Empty
+                };
         }
 
         private void RefreshEmergencyStatusBanner()
@@ -7981,12 +8058,14 @@ namespace RescuAR.App.Views.Camera
              * A temporary Anchor.IsAvailable=false is NOT replacement recovery.
              *
              * ARCore commonly reports the retained Anchor PAUSED for a short
-             * period after camera tracking returns. Recovery V2 already gives
-             * that Anchor 1250 ms to relocalize naturally.
+             * period after camera tracking returns. Recovery V3 begins a
+             * parallel validated-floor search after 750 ms and retains the old
+             * Anchor for at most the 2500 ms final recovery grace.
              *
              * CameraPage therefore reacts only when the Android recovery
              * service increments GroundAnchorReplacementGeneration, which
-             * happens after the stale Anchor has actually been released.
+             * happens after the stale Anchor is released or a validated
+             * replacement is handed off proactively.
              */
             long serviceReplacementGeneration =
                 _arCoreService.GroundAnchorReplacementGeneration;
@@ -8009,7 +8088,8 @@ namespace RescuAR.App.Views.Camera
                         "Ground-anchor replacement detected: " +
                         $"replacementGeneration=" +
                         $"{serviceReplacementGeneration}. " +
-                        "A stale or distant Anchor was released. The current " +
+                        "A stale/distant Anchor was released or proactively " +
+                        "replaced. The current " +
                         "geographic route progress will be projected into the " +
                         "replacement local frame once its floor Anchor is TRACKING.");
                 }
@@ -8039,6 +8119,13 @@ namespace RescuAR.App.Views.Camera
 
                     if (recoveryRouteReady)
                     {
+                        ARCameraSpatialController
+                            .SetRouteRecoveryRebasePending(
+                                false,
+                                activeRoute is null
+                                    ? "no active route requires recovery rebasing"
+                                    : "current route window republished in the replacement local frame");
+
                         handledGroundAnchorReplacementGeneration =
                             Math.Max(
                                 handledGroundAnchorReplacementGeneration,
@@ -8068,8 +8155,8 @@ namespace RescuAR.App.Views.Camera
                         Log.Warn(
                             "RescuAR-AnchorRecovery",
                             "Replacement anchor is TRACKING, but local-window " +
-                            "rebasing has not completed. The existing locked " +
-                            "route placement is retained and rebasing will retry " +
+                            "rebasing has not completed. AR route placement " +
+                            "remains hidden and rebasing will retry " +
                             "on the next diagnostic tick.");
                     }
                 }
@@ -8088,7 +8175,7 @@ namespace RescuAR.App.Views.Camera
                  * This is either:
                  *
                  *  A) temporary retained-anchor PAUSED state during the
-                 *     natural 5000 ms relocalization grace period; or
+                 *     proactive/final recovery window; or
                  *
                  *  B) an actual replacement floor search after the service has
                  *     released the stale Anchor.
@@ -8195,6 +8282,11 @@ namespace RescuAR.App.Views.Camera
                     ARCameraSpatialController
                         .CurrentRouteWorldCorrectionRequest;
 
+            ARCameraSpatialController.SpatialContinuitySnapshot
+                continuityStatus =
+                    ARCameraSpatialController
+                        .CurrentSpatialContinuity;
+
             float cameraToAnchorHorizontalMeters =
                 spatial.Anchor.IsAvailable &&
                 spatial.Pose.IsTracking
@@ -8230,6 +8322,9 @@ namespace RescuAR.App.Views.Camera
                 $"worldCorrectionGeneration={worldCorrectionStatus.Generation}, " +
                 $"worldCorrectionDrift=" +
                 $"{(worldCorrectionStatus.IsPending ? worldCorrectionStatus.AnchorDriftMeters.ToString("F2") : "<none>")}m, " +
+                $"spatialContinuity={continuityStatus.State}, " +
+                $"spatialLossDuration={continuityStatus.DurationMilliseconds}ms, " +
+                $"spatialTrustScore={continuityStatus.TrustScore}/100, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
                 $"headingStable={lastHeadingAlignment?.IsStable ?? false}, " +
