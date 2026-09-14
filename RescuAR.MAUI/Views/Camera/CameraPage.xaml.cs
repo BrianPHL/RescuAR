@@ -75,6 +75,7 @@ namespace RescuAR.App.Views.Camera
         private readonly RouteProgressTracker _routeProgressTracker;
         private readonly PedestrianDeadReckoningService _pdrService;
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
+        private readonly PdrHeadingSmoother _pdrHeadingSmoother;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
         private readonly HeadingRevalidationPolicy _headingRevalidationPolicy;
@@ -343,15 +344,20 @@ namespace RescuAR.App.Views.Camera
         /*
          * Direction gating occurs entirely in the retained ARCore world:
          *
-         * current ARCore camera forward
-         *          vs.
-         * current rendered route tangent.
+         * rolling ARCore walking displacement + smoothed camera forward
+         *                           vs.
+         *              current rendered route tangent.
          *
-         * This avoids making step acceptance depend on the Earth-referenced
-         * heading calibration's stability flag. The existing mapToArYaw still
-         * determines how the geographic route is rendered.
+         * This reduces sensitivity to one phone rotation while keeping route
+         * context as the acceptance constraint. Earth-referenced calibration
+         * still determines how the geographic route is rendered.
          */
         private double? lastPdrHeadingErrorDegrees;
+
+        private string lastPdrHeadingSource =
+            "Unavailable";
+
+        private double lastPdrMotionCoherence;
 
         private double lastPdrStrideScale;
 
@@ -370,6 +376,10 @@ namespace RescuAR.App.Views.Camera
         private double? lastGpsPdrDivergenceMeters;
 
         private int lastGpsBackwardConfirmationCount;
+
+        private int lastGpsRouteIdentityConfirmationCount;
+
+        private double lastGpsReliabilityWeight;
 
         private long acceptedPdrStepCount;
 
@@ -534,6 +544,9 @@ namespace RescuAR.App.Views.Camera
 
             _gpsPdrFusionPolicy =
                 new GpsPdrFusionPolicy();
+
+            _pdrHeadingSmoother =
+                new PdrHeadingSmoother();
 
             _offRouteReroutePolicy =
                 new OffRouteReroutePolicy();
@@ -1715,6 +1728,8 @@ namespace RescuAR.App.Views.Camera
 
                 _headingRevalidationPolicy.Reset();
 
+                _pdrHeadingSmoother.Reset();
+
                 lastHeadingAlignment =
                     null;
 
@@ -2769,6 +2784,12 @@ namespace RescuAR.App.Views.Camera
             lastPdrHeadingErrorDegrees =
                 null;
 
+            lastPdrHeadingSource =
+                "Unavailable";
+
+            lastPdrMotionCoherence =
+                0.0;
+
             lastPdrStrideScale =
                 0.0;
 
@@ -2787,7 +2808,15 @@ namespace RescuAR.App.Views.Camera
             lastGpsBackwardConfirmationCount =
                 0;
 
+            lastGpsRouteIdentityConfirmationCount =
+                0;
+
+            lastGpsReliabilityWeight =
+                0.0;
+
             _gpsPdrFusionPolicy.Reset();
+
+            _pdrHeadingSmoother.Reset();
 
             _offRouteReroutePolicy.Reset();
 
@@ -2948,8 +2977,9 @@ namespace RescuAR.App.Views.Camera
                         PdrLogTag,
                         "PDR route-progress input ACTIVE: " +
                         $"baseStepLength={PdrStepLengthMeters:F2} m, " +
+                        "rollingHeadingWindow=4s, " +
                         "directionConfidenceBands=HIGH<=25deg, " +
-                        "MEDIUM<=45deg, LOW<=60deg, REJECT>60deg, " +
+                        "MEDIUM<=45deg, LOW<=70deg, REJECT>70deg, " +
                         $"gpsFrozen=" +
                         $"{(IndoorRouteTestMode && FreezeRouteProgressDuringIndoorTest)}.");
                 }
@@ -3099,8 +3129,18 @@ namespace RescuAR.App.Views.Camera
                                     reading.CourseDegrees,
                                     reading.SpeedMetersPerSecond);
 
-                            lastRouteMatchConfidence =
-                                matchedGps.MatchConfidence;
+                            /*
+                             * A rejected/no-fix GPS observation has no new
+                             * segment identity evidence. Preserve the last
+                             * real route match so one accuracy outage cannot
+                             * immediately disable otherwise valid PDR.
+                             */
+                            if (matchedGps.MatchConfidence !=
+                                RouteMatchConfidence.Unavailable)
+                            {
+                                lastRouteMatchConfidence =
+                                    matchedGps.MatchConfidence;
+                            }
 
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 _offRouteReroutePolicy.Evaluate(
@@ -3148,74 +3188,72 @@ namespace RescuAR.App.Views.Camera
                             RouteProgressTracker.RouteProgressUpdate fusedGps =
                                 matchedGps;
 
+                            GpsPdrFusionPolicy.GpsFusionDecision gpsFusionDecision =
+                                _gpsPdrFusionPolicy.EvaluateGps(
+                                    beforeGps.HasProgress
+                                        ? beforeGps.CommittedProgressMeters
+                                        : 0.0,
+                                    beforeGps.HasProgress,
+                                    matchedGps);
+
+                            lastGpsConfidence =
+                                gpsFusionDecision.Confidence;
+
+                            lastGpsFusionAction =
+                                gpsFusionDecision.Action;
+
+                            lastGpsPdrDivergenceMeters =
+                                gpsFusionDecision.RawGpsMinusPreviousProgressMeters;
+
+                            lastGpsBackwardConfirmationCount =
+                                gpsFusionDecision.BackwardConfirmationCount;
+
+                            lastGpsRouteIdentityConfirmationCount =
+                                gpsFusionDecision.RouteIdentityConfirmationCount;
+
+                            lastGpsReliabilityWeight =
+                                gpsFusionDecision.ReliabilityWeight;
+
                             if (matchedGps.IsAccepted &&
                                 !matchedGps.IsOffRoute)
                             {
-                                GpsPdrFusionPolicy.GpsFusionDecision decision =
-                                    _gpsPdrFusionPolicy.EvaluateGps(
-                                        beforeGps.HasProgress
-                                            ? beforeGps.CommittedProgressMeters
-                                            : 0.0,
-                                        matchedGps);
-
-                                lastGpsConfidence =
-                                    decision.Confidence;
-
-                                lastGpsFusionAction =
-                                    decision.Action;
-
-                                lastGpsPdrDivergenceMeters =
-                                    decision.RawGpsMinusPreviousProgressMeters;
-
-                                lastGpsBackwardConfirmationCount =
-                                    decision.BackwardConfirmationCount;
-
                                 if (Math.Abs(
-                                        decision.TargetProgressMeters -
+                                        gpsFusionDecision.TargetProgressMeters -
                                         matchedGps.CommittedProgressMeters) >
                                     0.001)
                                 {
                                     fusedGps =
                                         _routeProgressTracker.ApplyFusionCorrection(
-                                            decision.TargetProgressMeters,
+                                            gpsFusionDecision.TargetProgressMeters,
                                             matchedGps,
-                                            $"GPS_PDR_{decision.Action}");
+                                            $"GPS_PDR_{gpsFusionDecision.Action}");
                                 }
 
                                 turnGuidanceUpdate =
                                     fusedGps;
+                            }
 
 #if ANDROID
-                                Log.Debug(
-                                    FusionLogTag,
-                                    "GPS/PDR fusion: " +
-                                    $"confidence={decision.Confidence}, " +
-                                    $"action={decision.Action}, " +
-                                    $"rawGps={matchedGps.RawProgressMeters:F1} m, " +
-                                    $"before=" +
-                                    $"{(beforeGps.HasProgress ? beforeGps.CommittedProgressMeters.ToString("F1") : "0.0")} m, " +
-                                    $"target={decision.TargetProgressMeters:F1} m, " +
-                                    $"gpsMinusPrevious=" +
-                                    $"{decision.RawGpsMinusPreviousProgressMeters:F1} m, " +
-                                    $"backConfirmations=" +
-                                    $"{decision.BackwardConfirmationCount}, " +
-                                    $"reason='{decision.Reason}'");
+                            Log.Debug(
+                                FusionLogTag,
+                                "GPS/PDR fusion: " +
+                                $"confidence={gpsFusionDecision.Confidence}, " +
+                                $"reliability={gpsFusionDecision.ReliabilityWeight:F2}, " +
+                                $"action={gpsFusionDecision.Action}, " +
+                                $"rawGps={matchedGps.RawProgressMeters:F1} m, " +
+                                $"before=" +
+                                $"{(beforeGps.HasProgress ? beforeGps.CommittedProgressMeters.ToString("F1") : "0.0")} m, " +
+                                $"target={gpsFusionDecision.TargetProgressMeters:F1} m, " +
+                                $"gpsMinusPrevious=" +
+                                $"{gpsFusionDecision.RawGpsMinusPreviousProgressMeters:F1} m, " +
+                                $"backConfirmations=" +
+                                $"{gpsFusionDecision.BackwardConfirmationCount}, " +
+                                $"identityConfirmations=" +
+                                $"{gpsFusionDecision.RouteIdentityConfirmationCount}, " +
+                                $"routeIdentitySuspended=" +
+                                $"{_gpsPdrFusionPolicy.IsRouteIdentitySuspended}, " +
+                                $"reason='{gpsFusionDecision.Reason}'");
 #endif
-                            }
-                            else
-                            {
-                                lastGpsConfidence =
-                                    GpsPdrFusionPolicy.GpsConfidence.Unavailable;
-
-                                lastGpsFusionAction =
-                                    GpsPdrFusionPolicy.GpsFusionAction.Ignore;
-
-                                lastGpsPdrDivergenceMeters =
-                                    null;
-
-                                lastGpsBackwardConfirmationCount =
-                                    0;
-                            }
 
                             if (verifiedOffCourseThisCycle)
                             {
@@ -4401,6 +4439,8 @@ namespace RescuAR.App.Views.Camera
                             false;
 
                         _gpsPdrFusionPolicy.Reset();
+
+                        _pdrHeadingSmoother.Reset();
 
                         _headingRevalidationPolicy.Reset();
 
@@ -6866,10 +6906,24 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            if (!IndoorRouteTestMode &&
+                _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
+            {
+                rejectedPdrStepCount++;
+
+                Log.Debug(
+                    PdrLogTag,
+                    "PDR step held while GPS route identity is unresolved. " +
+                    $"step={e.StepNumber}.");
+
+                return;
+            }
+
             if (!TryGetPdrDirectionAgreement(
                     out double cameraAzimuthDegrees,
                     out double routeAzimuthDegrees,
                     out double headingErrorDegrees,
+                    out PdrHeadingSmoother.HeadingEstimate headingEstimate,
                     out string unavailableReason))
             {
                 rejectedPdrStepCount++;
@@ -6884,6 +6938,12 @@ namespace RescuAR.App.Views.Camera
 
             lastPdrHeadingErrorDegrees =
                 headingErrorDegrees;
+
+            lastPdrHeadingSource =
+                headingEstimate.Reason;
+
+            lastPdrMotionCoherence =
+                headingEstimate.MotionCoherence;
 
             GpsPdrFusionPolicy.PdrConfidenceDecision pdrConfidence =
                 _gpsPdrFusionPolicy.EvaluatePdrHeading(
@@ -6903,9 +6963,12 @@ namespace RescuAR.App.Views.Camera
                     PdrLogTag,
                     "PDR step REJECTED by confidence gate: " +
                     $"step={e.StepNumber}, " +
-                    $"cameraArAzimuth={cameraAzimuthDegrees:F1} deg, " +
+                    $"smoothedCameraArAzimuth={cameraAzimuthDegrees:F1} deg, " +
+                    $"walkingArAzimuth=" +
+                    $"{(headingEstimate.UsedWalkingVector ? headingEstimate.WalkingAzimuthDegrees.ToString("F1") : "<accumulating>")} deg, " +
                     $"routeArAzimuth={routeAzimuthDegrees:F1} deg, " +
                     $"error={headingErrorDegrees:F1} deg, " +
+                    $"motionCoherence={headingEstimate.MotionCoherence:F2}, " +
                     $"confidence={pdrConfidence.Confidence}, " +
                     $"reason='{pdrConfidence.Reason}'.");
 
@@ -6969,22 +7032,24 @@ namespace RescuAR.App.Views.Camera
                 $"advance={fusedStepAdvanceMeters:F2} m, " +
                 $"progress={update.CommittedProgressMeters:F1} m, " +
                 $"headingError={headingErrorDegrees:F1} deg, " +
+                $"headingSource='{headingEstimate.Reason}', " +
+                $"motionCoherence={headingEstimate.MotionCoherence:F2}, " +
                 $"publishWindow={published}.");
 #endif
         }
 
         /// <summary>
-        /// Compares phone/rear-camera forward direction to the current cyan
-        /// route tangent in the SAME ARCore coordinate frame.
+        /// Compares a short rolling ARCore walking/camera direction estimate to
+        /// the current cyan route tangent in the SAME ARCore coordinate frame.
         ///
-        /// This remains intentionally AR-relative. PDR confidence therefore
-        /// does not depend on a second compass reading or on the heading
-        /// calibration's IsStable flag.
+        /// This remains intentionally AR-relative and does not require another
+        /// compass reading at step time.
         /// </summary>
         private bool TryGetPdrDirectionAgreement(
             out double cameraAzimuthDegrees,
             out double routeAzimuthDegrees,
             out double headingErrorDegrees,
+            out PdrHeadingSmoother.HeadingEstimate headingEstimate,
             out string unavailableReason)
         {
             cameraAzimuthDegrees =
@@ -6995,6 +7060,10 @@ namespace RescuAR.App.Views.Camera
 
             headingErrorDegrees =
                 180.0;
+
+            headingEstimate =
+                PdrHeadingSmoother.HeadingEstimate.Unavailable(
+                    "PDR heading has not been evaluated.");
 
             unavailableReason =
                 string.Empty;
@@ -7123,7 +7192,7 @@ namespace RescuAR.App.Views.Camera
              *
              * 0° = +Z, 90° = +X.
              */
-            cameraAzimuthDegrees =
+            double instantaneousCameraAzimuthDegrees =
                 Normalize360Degrees(
                     RadiansToDegrees(
                         Math.Atan2(
@@ -7137,11 +7206,27 @@ namespace RescuAR.App.Views.Camera
                             routeDeltaX,
                             routeDeltaZ)));
 
+            headingEstimate =
+                _pdrHeadingSmoother.Evaluate(
+                    Environment.TickCount64,
+                    pose.PositionX,
+                    pose.PositionZ,
+                    instantaneousCameraAzimuthDegrees,
+                    routeAzimuthDegrees);
+
+            if (!headingEstimate.IsAvailable)
+            {
+                unavailableReason =
+                    headingEstimate.Reason;
+
+                return false;
+            }
+
+            cameraAzimuthDegrees =
+                headingEstimate.SmoothedCameraAzimuthDegrees;
+
             headingErrorDegrees =
-                Math.Abs(
-                    NormalizeSignedDegrees(
-                        cameraAzimuthDegrees -
-                        routeAzimuthDegrees));
+                headingEstimate.HeadingErrorDegrees;
 
             return true;
         }
@@ -8080,6 +8165,8 @@ namespace RescuAR.App.Views.Camera
                     anchorRecoveryInProgress =
                         true;
 
+                    _pdrHeadingSmoother.Reset();
+
                     activeGroundAnchorReplacementGeneration =
                         serviceReplacementGeneration;
 
@@ -8245,6 +8332,8 @@ namespace RescuAR.App.Views.Camera
 
                     if (correctionRebased)
                     {
+                        _pdrHeadingSmoother.Reset();
+
                         ARCameraSpatialController
                             .AcknowledgeRouteWorldCorrection(
                                 worldCorrectionRequest.Generation,
@@ -8346,14 +8435,19 @@ namespace RescuAR.App.Views.Camera
                 $"pdrRejectedSteps={rejectedPdrStepCount}, " +
                 $"pdrHeadingError=" +
                 $"{(lastPdrHeadingErrorDegrees.HasValue ? lastPdrHeadingErrorDegrees.Value.ToString("F1") : "<none>")}deg, " +
+                $"pdrHeadingSource='{lastPdrHeadingSource}', " +
+                $"pdrMotionCoherence={lastPdrMotionCoherence:F2}, " +
                 $"pdrConfidence={lastPdrConfidence}, " +
                 $"pdrStrideScale={lastPdrStrideScale:F2}, " +
                 $"gpsConfidence={lastGpsConfidence}, " +
                 $"routeMatchConfidence={lastRouteMatchConfidence}, " +
                 $"gpsFusionAction={lastGpsFusionAction}, " +
+                $"gpsReliability={lastGpsReliabilityWeight:F2}, " +
                 $"gpsMinusPdr=" +
                 $"{(lastGpsPdrDivergenceMeters.HasValue ? lastGpsPdrDivergenceMeters.Value.ToString("F1") : "<none>")}m, " +
                 $"gpsBackConfirmations={lastGpsBackwardConfirmationCount}, " +
+                $"gpsIdentityConfirmations={lastGpsRouteIdentityConfirmationCount}, " +
+                $"gpsRouteIdentitySuspended={_gpsPdrFusionPolicy.IsRouteIdentitySuspended}, " +
                 $"offRouteCandidate={lastOffRouteCandidate}, " +
                 $"offRouteConfirmations={lastOffRouteConfirmationCount}, " +
                 $"rerouteInProgress={dynamicRerouteInProgress}, " +
