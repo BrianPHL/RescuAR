@@ -2,6 +2,7 @@ using Evergine.Framework;
 using Evergine.Framework.Graphics;
 using Evergine.Mathematics;
 using RescuAR.Diagnostics;
+using RescuAR.Navigation.Projection;
 using System;
 
 namespace RescuAR.AR;
@@ -159,6 +160,7 @@ public static class ARCameraSpatialController
     private static bool? lastLoggedAnchorAvailable;
     private static bool? lastLoggedRouteGeometry;
     private static bool? lastLoggedRouteVisible;
+    private static bool? lastLoggedRouteGroundHeightPlausible;
 
     private static bool? lastLoggedFloodGeometry;
     private static bool? lastLoggedFloodVisible;
@@ -377,6 +379,9 @@ public static class ARCameraSpatialController
             lastLoggedRouteVisible =
                 null;
 
+            lastLoggedRouteGroundHeightPlausible =
+                null;
+
             lastLoggedFloodGeometry =
                 null;
 
@@ -478,6 +483,9 @@ public static class ARCameraSpatialController
 
             lastFloodMetricTelemetryTimestamp =
                 long.MinValue;
+
+            lastLoggedRouteGroundHeightPlausible =
+                null;
         }
 
         AndroidLog.Debug(
@@ -577,6 +585,26 @@ public static class ARCameraSpatialController
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
+
+        float cameraHeightAboveGroundMeters =
+            float.NaN;
+
+        bool routeGroundHeightPlausible =
+            trackingValid &&
+            anchor.IsAvailable &&
+            LocalArNavigationPolicy
+                .IsCameraHeightAboveGroundPlausible(
+                    frame.Pose.PositionY,
+                    anchor.PositionY,
+                    out cameraHeightAboveGroundMeters);
+
+        LogRouteGroundHeightStateIfChanged(
+            trackingValid,
+            anchor,
+            routeGroundHeightPlausible,
+            frame.Pose.PositionY,
+            cameraHeightAboveGroundMeters,
+            frame.Version);
 
         /*
          * GROUND MARKER / FLOOD BASELINE
@@ -745,6 +773,7 @@ public static class ARCameraSpatialController
         if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
+            routeGroundHeightPlausible &&
             !routeRootHorizontalLocked)
         {
             lockedRouteRootX =
@@ -782,6 +811,7 @@ public static class ARCameraSpatialController
         if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
+            routeGroundHeightPlausible &&
             routeRootHorizontalLocked)
         {
             MonitorRouteAnchorRefinement(
@@ -793,6 +823,7 @@ public static class ARCameraSpatialController
         if (hasRouteGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
+            routeGroundHeightPlausible &&
             routeRootHorizontalLocked &&
             routeRenderingAllowed)
         {
@@ -834,6 +865,22 @@ public static class ARCameraSpatialController
                  * do not render the route in 2D Map/Flood Depth modes.
                  */
                 route.IsEnabled =
+                    false;
+            }
+            else if (trackingValid &&
+                     anchor.IsAvailable &&
+                     !routeGroundHeightPlausible)
+            {
+                /*
+                 * An implausible camera-to-ground height is a safety failure,
+                 * not a temporary tracking interruption. Never preserve the
+                 * previous cyan route at head height while anchor recovery
+                 * searches for a new floor reference.
+                 */
+                route.IsEnabled =
+                    false;
+
+                hasValidRouteSpatialPlacement =
                     false;
             }
             else if (hasValidRouteSpatialPlacement)
@@ -1403,6 +1450,57 @@ public static class ARCameraSpatialController
             $"anchor={anchorAvailable}, " +
             $"geometry={hasRouteGeometry}, " +
             $"visible={routeVisible}");
+    }
+
+    private static void LogRouteGroundHeightStateIfChanged(
+        bool trackingValid,
+        ARCameraPoseBridge.AnchorSnapshot anchor,
+        bool heightPlausible,
+        float cameraWorldY,
+        float cameraHeightAboveGroundMeters,
+        long spatialVersion)
+    {
+        if (!trackingValid ||
+            !anchor.IsAvailable)
+        {
+            lastLoggedRouteGroundHeightPlausible =
+                null;
+
+            return;
+        }
+
+        if (lastLoggedRouteGroundHeightPlausible ==
+            heightPlausible)
+        {
+            return;
+        }
+
+        lastLoggedRouteGroundHeightPlausible =
+            heightPlausible;
+
+        string message =
+            "AR route ground-height validation changed: " +
+            $"spatialVersion={spatialVersion}, " +
+            $"plausible={heightPlausible}, " +
+            $"cameraY={cameraWorldY:F2} m, " +
+            $"groundY={anchor.PositionY:F2} m, " +
+            $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
+            $"allowed=[{LocalArNavigationPolicy.MinimumPlausibleCameraHeightAboveGroundMeters:F2}," +
+            $"{LocalArNavigationPolicy.MaximumPlausibleCameraHeightAboveGroundMeters:F2}] m.";
+
+        if (heightPlausible)
+        {
+            AndroidLog.Debug(
+                RouteLogTag,
+                message);
+        }
+        else
+        {
+            AndroidLog.Warn(
+                RouteLogTag,
+                message +
+                " Cyan route rendering is suppressed until a valid floor anchor is available.");
+        }
     }
 
     private static void PublishTelemetry(

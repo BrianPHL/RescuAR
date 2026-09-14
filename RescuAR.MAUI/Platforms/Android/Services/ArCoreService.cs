@@ -6,6 +6,7 @@ using Evergine.Vulkan;
 using Google.AR.Core;
 using RescuAR.AR;
 using RescuAR.MAUI.Services;
+using RescuAR.Navigation.Projection;
 using Frame = Google.AR.Core.Frame;
 using ArCoreCamera = Google.AR.Core.Camera;
 using ArCorePlane = Google.AR.Core.Plane;
@@ -230,12 +231,6 @@ public sealed partial class ArCoreService : IArCoreService
 
     private const float GroundDepthMaximumHorizontalDeltaMeters =
         0.35f;
-
-    private const float GroundDepthMinimumCameraHeightMeters =
-        0.30f;
-
-    private const float GroundDepthMaximumCameraHeightMeters =
-        2.50f;
 
     private long nextGroundPlaneSearchTimestamp =
         long.MinValue;
@@ -1659,11 +1654,13 @@ public sealed partial class ArCoreService : IArCoreService
          * ---------------------
          * A ground anchor is a nearby spatial reference, not a permanent
          * city-scale origin. Retire it after the pedestrian has moved beyond
-         * the configured local radius. The existing frame loop then acquires
-         * a replacement floor anchor close to the current camera.
+         * the configured local radius or its sustained height becomes
+         * implausible. The existing frame loop then acquires a replacement
+         * floor anchor close to the current camera.
          */
         TryRetireGroundAnchorBeyondLocalWindow(
             translation[0],
+            translation[1],
             translation[2]);
 
         /*
@@ -1830,6 +1827,7 @@ public sealed partial class ArCoreService : IArCoreService
             if (TryCreatePlaneGroundAnchorFromHits(
                     hitResults,
                     now,
+                    cameraTranslation[1],
                     "PLANE_WORLD_DOWN",
                     sampleIndex,
                     GroundPlaneWorldDownSearchPattern.Length,
@@ -1888,6 +1886,7 @@ public sealed partial class ArCoreService : IArCoreService
             if (TryCreatePlaneGroundAnchorFromHits(
                     hitResults,
                     now,
+                    cameraTranslation[1],
                     "PLANE_SCREEN",
                     sampleIndex,
                     GroundPlaneSearchPattern.Length,
@@ -1944,6 +1943,7 @@ public sealed partial class ArCoreService : IArCoreService
     private bool TryCreatePlaneGroundAnchorFromHits(
         IEnumerable<Google.AR.Core.HitResult> hitResults,
         long acquisitionTimestamp,
+        float cameraY,
         string method,
         int sampleIndex,
         int sampleCount,
@@ -1993,6 +1993,15 @@ public sealed partial class ArCoreService : IArCoreService
                 hitTranslation,
                 0);
 
+            if (!LocalArNavigationPolicy
+                    .IsCameraHeightAboveGroundPlausible(
+                        cameraY,
+                        hitTranslation[1],
+                        out float cameraHeightAboveGroundMeters))
+            {
+                continue;
+            }
+
             if (!TryAssignGroundAnchorFromHit(
                     hit,
                     "Plane"))
@@ -2021,6 +2030,7 @@ public sealed partial class ArCoreService : IArCoreService
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms, " +
                 $"hit=({hitTranslation[0]:F2},{hitTranslation[1]:F2},{hitTranslation[2]:F2}), " +
+                $"cameraHeight={cameraHeightAboveGroundMeters:F2}m, " +
                 $"normalY={planeNormal[1]:F2}.");
 
             ResetGroundPlaneSearchState();
@@ -2074,14 +2084,11 @@ public sealed partial class ArCoreService : IArCoreService
                 hitTranslation,
                 0);
 
-            float cameraHeight =
-                cameraY -
-                hitTranslation[1];
-
-            if (cameraHeight <
-                    GroundDepthMinimumCameraHeightMeters ||
-                cameraHeight >
-                    GroundDepthMaximumCameraHeightMeters)
+            if (!LocalArNavigationPolicy
+                    .IsCameraHeightAboveGroundPlausible(
+                        cameraY,
+                        hitTranslation[1],
+                        out _))
             {
                 continue;
             }

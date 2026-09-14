@@ -47,6 +47,22 @@ public static class LocalArNavigationPolicy
     public const float MaximumRouteOriginOffsetMeters =
         20.0f;
 
+    /// <summary>
+    /// Lowest plausible upright-device camera height above a navigable floor.
+    /// Hits closer than this are commonly tables, benches, or other raised
+    /// horizontal surfaces rather than the pedestrian's floor.
+    /// </summary>
+    public const float MinimumPlausibleCameraHeightAboveGroundMeters =
+        0.65f;
+
+    /// <summary>
+    /// Highest plausible upright-device camera height above a navigable floor.
+    /// A larger separation usually indicates a stale or incorrectly resolved
+    /// ARCore ground reference.
+    /// </summary>
+    public const float MaximumPlausibleCameraHeightAboveGroundMeters =
+        2.40f;
+
     public static float GetHorizontalDistanceMeters(
         float deltaX,
         float deltaZ)
@@ -76,5 +92,22 @@ public static class LocalArNavigationPolicy
                    horizontalDistanceMeters) &&
             horizontalDistanceMeters <=
                 MaximumRouteOriginOffsetMeters;
+    }
+
+    public static bool IsCameraHeightAboveGroundPlausible(
+        float cameraWorldY,
+        float groundWorldY,
+        out float cameraHeightAboveGroundMeters)
+    {
+        cameraHeightAboveGroundMeters =
+            cameraWorldY -
+            groundWorldY;
+
+        return float.IsFinite(
+                   cameraHeightAboveGroundMeters) &&
+            cameraHeightAboveGroundMeters >=
+                MinimumPlausibleCameraHeightAboveGroundMeters &&
+            cameraHeightAboveGroundMeters <=
+                MaximumPlausibleCameraHeightAboveGroundMeters;
     }
 }

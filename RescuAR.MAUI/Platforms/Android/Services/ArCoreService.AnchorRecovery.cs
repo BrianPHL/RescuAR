@@ -77,8 +77,18 @@ public sealed partial class ArCoreService
 
     private bool replacementAnchorSearchNoticeLogged;
 
+    private const long ImplausibleGroundHeightConfirmationMilliseconds =
+        1000;
+
+    private long implausibleGroundHeightCandidateStartedTimestamp =
+        long.MinValue;
+
+    private Google.AR.Core.Anchor?
+        implausibleGroundHeightCandidateAnchor;
+
     /// <summary>
-    /// Retires a still-valid anchor once it is no longer local to the camera.
+    /// Retires a still-valid anchor once it is no longer local to the camera
+    /// or remains vertically inconsistent with the tracked camera.
     ///
     /// This method runs from the ARCore frame worker while updateGate is held,
     /// so releasing the anchor cannot race the normal pose read. Route state
@@ -87,6 +97,7 @@ public sealed partial class ArCoreService
     /// </summary>
     private bool TryRetireGroundAnchorBeyondLocalWindow(
         float cameraX,
+        float cameraY,
         float cameraZ)
     {
         Google.AR.Core.Anchor? anchor =
@@ -99,6 +110,8 @@ public sealed partial class ArCoreService
                     "Tracking",
                     StringComparison.OrdinalIgnoreCase))
         {
+            ResetImplausibleGroundHeightCandidate();
+
             return false;
         }
 
@@ -107,6 +120,8 @@ public sealed partial class ArCoreService
 
         if (anchorPose is null)
         {
+            ResetImplausibleGroundHeightCandidate();
+
             return false;
         }
 
@@ -130,21 +145,72 @@ public sealed partial class ArCoreService
                 deltaX,
                 deltaZ);
 
-        if (!float.IsFinite(
-                distanceMeters) ||
-            distanceMeters <
+        bool heightPlausible =
+            LocalArNavigationPolicy
+                .IsCameraHeightAboveGroundPlausible(
+                    cameraY,
+                    anchorTranslation[1],
+                    out float cameraHeightAboveGroundMeters);
+
+        long now =
+            Environment.TickCount64;
+
+        bool implausibleHeightConfirmed =
+            false;
+
+        if (heightPlausible)
+        {
+            ResetImplausibleGroundHeightCandidate();
+        }
+        else if (!ReferenceEquals(
+                     implausibleGroundHeightCandidateAnchor,
+                     anchor) ||
+                 implausibleGroundHeightCandidateStartedTimestamp ==
+                     long.MinValue)
+        {
+            implausibleGroundHeightCandidateAnchor =
+                anchor;
+
+            implausibleGroundHeightCandidateStartedTimestamp =
+                now;
+
+            Log.Warn(
+                AnchorRecoveryLogTag,
+                "Implausible ground height detected; awaiting confirmation: " +
+                $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
+                $"allowed=[{LocalArNavigationPolicy.MinimumPlausibleCameraHeightAboveGroundMeters:F2}," +
+                $"{LocalArNavigationPolicy.MaximumPlausibleCameraHeightAboveGroundMeters:F2}] m, " +
+                $"confirmation={ImplausibleGroundHeightConfirmationMilliseconds}ms.");
+        }
+        else
+        {
+            implausibleHeightConfirmed =
+                now -
+                    implausibleGroundHeightCandidateStartedTimestamp >=
+                ImplausibleGroundHeightConfirmationMilliseconds;
+        }
+
+        bool anchorOutsideLocalWindow =
+            float.IsFinite(
+                distanceMeters) &&
+            distanceMeters >=
                 LocalArNavigationPolicy
-                    .GroundAnchorRetirementDistanceMeters)
+                    .GroundAnchorRetirementDistanceMeters;
+
+        if (!anchorOutsideLocalWindow &&
+            !implausibleHeightConfirmed)
         {
             return false;
         }
 
         /*
          * Make any delayed stale-anchor worker obsolete before detaching the
-         * valid-but-distant anchor. This prevents an old worker from acting on
-         * the replacement anchor.
+         * valid-but-obsolete anchor. This prevents an old worker from acting
+         * on the replacement anchor.
          */
         InvalidatePendingRecoveryCountdown();
+
+        ResetImplausibleGroundHeightCandidate();
 
         ReleaseSpatialGroundAnchor();
 
@@ -161,7 +227,7 @@ public sealed partial class ArCoreService
                 true;
 
             replacementAnchorSearchStartedTimestamp =
-                Environment.TickCount64;
+                now;
 
             replacementAnchorSearchNoticeLogged =
                 false;
@@ -172,8 +238,10 @@ public sealed partial class ArCoreService
 
         Log.Warn(
             AnchorRecoveryLogTag,
-            "MOVING LOCAL AR FRAME: retired a distant ground anchor. " +
+            "MOVING LOCAL AR FRAME: retired a ground anchor. " +
+            $"reason={(anchorOutsideLocalWindow ? "DISTANCE" : "IMPLAUSIBLE_HEIGHT")}, " +
             $"cameraToAnchor={distanceMeters:F2} m, " +
+            $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
             $"retirementThreshold=" +
             $"{LocalArNavigationPolicy.GroundAnchorRetirementDistanceMeters:F1} m, " +
             $"replacementGeneration={replacementGeneration}. " +
@@ -181,6 +249,15 @@ public sealed partial class ArCoreService
             "floor anchor is acquired.");
 
         return true;
+    }
+
+    private void ResetImplausibleGroundHeightCandidate()
+    {
+        implausibleGroundHeightCandidateAnchor =
+            null;
+
+        implausibleGroundHeightCandidateStartedTimestamp =
+            long.MinValue;
     }
 
     /// <inheritdoc />
