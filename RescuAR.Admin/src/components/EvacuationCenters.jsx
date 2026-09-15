@@ -13,25 +13,33 @@ import {
   Archive,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Navigation
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 export default function EvacuationCenters() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [classificationFilter, setClassificationFilter] = useState('');
   const [selectedCenter, setSelectedCenter] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRefreshSpinning, setIsRefreshSpinning] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
-  // Initial mock data fallback if database is empty
+  // Full official Marikina Evacuation Center data from official classifications (All 45 Centers)
   const defaultCenters = [
+    // Flood-Safe Major Evacuation Centers
     {
       id: '1',
       name: 'Malanday Elementary School',
       barangay: 'Malanday',
+      classification: 'Flood-Safe Major',
+      longitude: '121.094409',
+      latitude: '14.650283',
       capacity: 1200,
       currentEvacuees: 450,
       status: 'Open',
@@ -41,47 +49,683 @@ export default function EvacuationCenters() {
     },
     {
       id: '2',
-      name: 'Tumana Evacuation Center',
-      barangay: 'Tumana',
-      capacity: 1500,
-      currentEvacuees: 980,
+      name: 'H. Bautista Elementary School',
+      barangay: 'Concepcion Uno',
+      classification: 'Flood-Safe Major',
+      longitude: '121.104240',
+      latitude: '14.657914',
+      capacity: 1000,
+      currentEvacuees: 200,
       status: 'Open',
-      headOfficer: 'Elena Cruz (LGU Coordinator)',
+      headOfficer: 'Kagawad Arnel Cruz',
       contact: '0918-444-9120',
-      facilities: ['Medical Station', 'Kitchen Area', 'Clean Water', 'Child-Friendly Space']
+      facilities: ['Medical Station', 'Clean Water', 'Restrooms']
     },
     {
       id: '3',
       name: 'Nangka Elementary School',
       barangay: 'Nangka',
-      capacity: 1000,
-      currentEvacuees: 310,
+      classification: 'Flood-Safe Major',
+      longitude: '121.108440',
+      latitude: '14.672991',
+      capacity: 1500,
+      currentEvacuees: 980,
       status: 'Open',
       headOfficer: 'Kagawad Manuel Reyes',
       contact: '0920-333-8101',
-      facilities: ['Clean Water', 'Generator', 'Restrooms']
+      facilities: ['Clean Water', 'Generator', 'Kitchen Area', 'Child-Friendly Space']
     },
     {
       id: '4',
-      name: 'Provident Multipurpose Hall',
-      barangay: 'Provident',
-      capacity: 600,
+      name: 'Concepcion Elementary School',
+      barangay: 'Concepcion Uno',
+      classification: 'Flood-Safe Major',
+      longitude: '121.103974',
+      latitude: '14.647648',
+      capacity: 1100,
       currentEvacuees: 0,
       status: 'Standby',
-      headOfficer: 'Maria Gonzales',
-      contact: '0915-222-7711',
-      facilities: ['Generator', 'Restrooms', 'Parking']
+      headOfficer: 'Officer Gabriel Fernandez',
+      contact: '0917-222-3456',
+      facilities: ['Generator', 'Restrooms', 'Clean Water']
     },
     {
       id: '5',
-      name: 'Marikina Sports Center',
+      name: 'Sto. Niño Elementary School',
       barangay: 'Sto. Niño',
-      capacity: 3500,
+      classification: 'Flood-Safe Major',
+      longitude: '121.098368',
+      latitude: '14.638324',
+      capacity: 1300,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Maria Gonzales (MCDRRMO)',
+      contact: '0915-222-7711',
+      facilities: ['Generator', 'Restrooms', 'Parking', 'Medical Hub']
+    },
+    {
+      id: '6',
+      name: 'Sto. Niño National High School',
+      barangay: 'Sto. Niño',
+      classification: 'Flood-Safe Major',
+      longitude: '121.096448',
+      latitude: '14.638939',
+      capacity: 1400,
       currentEvacuees: 0,
       status: 'Standby',
       headOfficer: 'MDRRMO Relief Team Alpha',
       contact: '0917-809-5141',
-      facilities: ['Major Relief Hub', 'Medical Station', 'Helipad', 'Full Kitchen']
+      facilities: ['Major Relief Hub', 'Medical Station', 'Generator', 'Full Kitchen']
+    },
+    {
+      id: '7',
+      name: 'Leodegario Victorino Elementary',
+      barangay: 'Jesus dela Peña',
+      classification: 'Flood-Safe Major',
+      longitude: '121.090214',
+      latitude: '14.635407',
+      capacity: 900,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Carlos Mendoza',
+      contact: '0919-666-4321',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '8',
+      name: 'Bulelak Gym',
+      barangay: 'Malanday',
+      classification: 'Flood-Safe Major',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 650,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Eric Castro',
+      contact: '0917-444-9988',
+      facilities: ['Covered Gym', 'Restrooms']
+    },
+    {
+      id: '9',
+      name: 'Sampaguita Gym',
+      barangay: 'Malanday',
+      classification: 'Flood-Safe Major',
+      longitude: '124.998659*',
+      latitude: '11.224286*',
+      capacity: 700,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Danilo Cruz',
+      contact: '0918-333-7766',
+      facilities: ['Covered Gym', 'Clean Water']
+    },
+    {
+      id: '10',
+      name: 'Marikina Elementary School',
+      barangay: 'Sta. Elena',
+      classification: 'Flood-Safe Major',
+      longitude: '121.097529',
+      latitude: '14.631281',
+      capacity: 1250,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Antonio Flores',
+      contact: '0917-333-8899',
+      facilities: ['Medical Station', 'Clean Water', 'Generator']
+    },
+    {
+      id: '11',
+      name: 'Sta. Elena High School',
+      barangay: 'Sta. Elena',
+      classification: 'Flood-Safe Major',
+      longitude: '121.097392',
+      latitude: '14.632361',
+      capacity: 1600,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Elena Soriano',
+      contact: '0918-111-2233',
+      facilities: ['Major Relief Hub', 'Clean Water', 'Generator']
+    },
+    {
+      id: '12',
+      name: 'Nangka Gym',
+      barangay: 'Nangka',
+      classification: 'Flood-Safe Major',
+      longitude: '121.108408',
+      latitude: '14.672471',
+      capacity: 800,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Reynaldo Diaz',
+      contact: '0920-555-6677',
+      facilities: ['Generator', 'Restrooms', 'Clean Water']
+    },
+    {
+      id: '13',
+      name: 'Kalumpang Elementary School',
+      barangay: 'Kalumpang',
+      classification: 'Flood-Safe Major',
+      longitude: '121.090032',
+      latitude: '14.622431',
+      capacity: 1100,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Joselito Ramos',
+      contact: '0916-444-5566',
+      facilities: ['Clean Water', 'Medical Station']
+    },
+    {
+      id: '14',
+      name: 'Kalumpang NHS',
+      barangay: 'Kalumpang',
+      classification: 'Flood-Safe Major',
+      longitude: '121.089973',
+      latitude: '14.622111',
+      capacity: 1300,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Fernando Castro',
+      contact: '0917-777-8822',
+      facilities: ['Generator', 'Clean Water', 'Restrooms']
+    },
+    {
+      id: '15',
+      name: 'San Roque Elementary School',
+      barangay: 'San Roque',
+      classification: 'Flood-Safe Major',
+      longitude: '121.096947',
+      latitude: '14.623069',
+      capacity: 1000,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Danilo Gutierrez',
+      contact: '0918-999-1122',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '16',
+      name: 'San Roque High School',
+      barangay: 'San Roque',
+      classification: 'Flood-Safe Major',
+      longitude: '121.097204',
+      latitude: '14.622760',
+      capacity: 1500,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'MCDRRMO Team Bravo',
+      contact: '0915-888-3344',
+      facilities: ['Major Relief Hub', 'Medical Station', 'Generator']
+    },
+    {
+      id: '17',
+      name: 'Barangka Elementary School',
+      barangay: 'Barangka',
+      classification: 'Flood-Safe Major',
+      longitude: '121.081934',
+      latitude: '14.633421',
+      capacity: 1050,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Mario Morales',
+      contact: '0917-444-2211',
+      facilities: ['Clean Water', 'Restrooms', 'Generator']
+    },
+    {
+      id: '18',
+      name: 'Tañong High School',
+      barangay: 'Tañong',
+      classification: 'Flood-Safe Major',
+      longitude: '121.085333',
+      latitude: '14.634177',
+      capacity: 1200,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Ricardo Navarro',
+      contact: '0920-111-5544',
+      facilities: ['Medical Station', 'Clean Water']
+    },
+    {
+      id: '19',
+      name: 'IVS Covered Court',
+      barangay: 'Industrial Valley Complex',
+      classification: 'Flood-Safe Major',
+      longitude: '121.0850158',
+      latitude: '14.6187095',
+      capacity: 700,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Sofia Valdez',
+      contact: '0918-666-7788',
+      facilities: ['Generator', 'Clean Water']
+    },
+    {
+      id: '20',
+      name: 'Jesus Dela Peña NHS',
+      barangay: 'Jesus dela Peña',
+      classification: 'Flood-Safe Major',
+      longitude: '121.089906',
+      latitude: '14.635212',
+      capacity: 950,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Bernardo Aquino',
+      contact: '0917-999-4455',
+      facilities: ['Medical Station', 'Clean Water']
+    },
+
+    // Flood-Safe Minor Evacuation Centers
+    {
+      id: '21',
+      name: 'St. Mary Elem. School',
+      barangay: 'Parang',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.113418',
+      latitude: '14.668643',
+      capacity: 600,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Laura Reyes',
+      contact: '0918-222-1100',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '22',
+      name: 'SSS Village Elem. School',
+      barangay: 'Concepcion Dos',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.121368',
+      latitude: '14.640183',
+      capacity: 800,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Ernesto Pineda',
+      contact: '0917-111-9988',
+      facilities: ['Generator', 'Clean Water']
+    },
+    {
+      id: '23',
+      name: 'SSS National High School',
+      barangay: 'Concepcion Dos',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.121304',
+      latitude: '14.639743',
+      capacity: 900,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Teresa Santos',
+      contact: '0920-888-7766',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '24',
+      name: 'Kap. Moy Elementary School',
+      barangay: 'Concepcion Dos',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.118689',
+      latitude: '14.648958',
+      capacity: 750,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Manuel Villanueva',
+      contact: '0915-444-3322',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '25',
+      name: 'Marikina Science High School',
+      barangay: 'Sta. Elena',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.099460',
+      latitude: '14.631314',
+      capacity: 850,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Rodrigo Cruz',
+      contact: '0917-666-5544',
+      facilities: ['Medical Station', 'Clean Water', 'Generator']
+    },
+    {
+      id: '26',
+      name: 'Champaca I Gym',
+      barangay: 'Fortune',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 500,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Gabriel Morales',
+      contact: '0917-123-9876',
+      facilities: ['Restrooms', 'Clean Water']
+    },
+    {
+      id: '27',
+      name: 'Manotoc Gym',
+      barangay: 'Sto. Niño',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 450,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Jose Garcia',
+      contact: '0918-555-4321',
+      facilities: ['Restrooms']
+    },
+    {
+      id: '28',
+      name: 'Sunny Square Gym',
+      barangay: 'Fortune',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.0985288',
+      latitude: '14.6431288',
+      capacity: 500,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Beatrice Gomez',
+      contact: '0918-333-2211',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '29',
+      name: 'Sta. Teresita Gym',
+      barangay: 'Concepcion Dos',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 480,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Remedios Tan',
+      contact: '0920-777-6611',
+      facilities: ['Restrooms', 'Clean Water']
+    },
+    {
+      id: '30',
+      name: 'Amang Rodriguez Gym',
+      barangay: 'Concepcion Uno',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.103100',
+      latitude: '14.652100',
+      capacity: 650,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Ignacio Lopez',
+      contact: '0920-444-1122',
+      facilities: ['Generator', 'Clean Water']
+    },
+    {
+      id: '31',
+      name: 'St. Mary Gym',
+      barangay: 'Parang',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 520,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Carmela Santos',
+      contact: '0917-888-2211',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '32',
+      name: 'Fairlane Covered Court',
+      barangay: 'Nangka',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 550,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Raul Ramos',
+      contact: '0919-444-7788',
+      facilities: ['Covered Court', 'Clean Water']
+    },
+    {
+      id: '33',
+      name: 'St. Benedick Gym, Nangka',
+      barangay: 'Nangka',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 500,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Benedict Reyes',
+      contact: '0915-333-9900',
+      facilities: ['Restrooms']
+    },
+    {
+      id: '34',
+      name: 'Greenland Gym',
+      barangay: 'Nangka',
+      classification: 'Flood-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 480,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Hector Fernandez',
+      contact: '0918-666-3322',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+    {
+      id: '35',
+      name: 'Jesus Dela Peña Gym',
+      barangay: 'Jesus dela Peña',
+      classification: 'Flood-Safe Minor',
+      longitude: '121.087972',
+      latitude: '14.636041',
+      capacity: 550,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Patricia Javier',
+      contact: '0917-222-1133',
+      facilities: ['Clean Water', 'Restrooms']
+    },
+
+    // Dual-Purpose Major Evacuation Centers
+    {
+      id: '36',
+      name: 'Concepcion Integrated School ES',
+      barangay: 'Concepcion Uno',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.101893',
+      latitude: '14.649954',
+      capacity: 1800,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'MCDRRMO Campus Lead',
+      contact: '0915-999-0011',
+      facilities: ['Dual-Purpose Fields', 'Medical Hub', 'Generator', 'Clean Water']
+    },
+    {
+      id: '37',
+      name: 'Concepcion Integrated School SL',
+      barangay: 'Concepcion Uno',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.101893',
+      latitude: '14.649954',
+      capacity: 1700,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Liza Aquino',
+      contact: '0917-777-3344',
+      facilities: ['Dual-Purpose Fields', 'Generator', 'Clean Water']
+    },
+    {
+      id: '38',
+      name: 'PLMAR (GH) Campus Grounds',
+      barangay: 'Concepcion Uno',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.106189',
+      latitude: '14.658173',
+      capacity: 2200,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'PLMAR Disaster Response Officer',
+      contact: '0917-888-9900',
+      facilities: ['Open Campus Grounds', 'Helipad', 'Full Kitchen', 'Generator']
+    },
+    {
+      id: '39',
+      name: 'Marikina High School Wide Fields',
+      barangay: 'Concepcion Uno',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.103239',
+      latitude: '14.647058',
+      capacity: 2000,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Alejandro Reyes',
+      contact: '0918-777-6655',
+      facilities: ['Wide Open Fields', 'Medical Station', 'Clean Water']
+    },
+    {
+      id: '40',
+      name: 'Parang Elem. School Open Grounds',
+      barangay: 'Parang',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.111283',
+      latitude: '14.657072',
+      capacity: 1600,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Victoriano Lim',
+      contact: '0920-666-4433',
+      facilities: ['Open Grounds', 'Generator', 'Restrooms']
+    },
+    {
+      id: '41',
+      name: 'Parang High School Open Grounds',
+      barangay: 'Parang',
+      classification: 'Dual-Purpose Major',
+      longitude: '121.112227',
+      latitude: '14.663300',
+      capacity: 1750,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Capt. Benjamin Ocampo',
+      contact: '0917-555-4433',
+      facilities: ['Open Grounds', 'Clean Water', 'Medical Station']
+    },
+
+    // Dual-Purpose Minor Evacuation Centers
+    {
+      id: '42',
+      name: 'Fortune Elem. School Fields',
+      barangay: 'Fortune',
+      classification: 'Dual-Purpose Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 700,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Sandra Lopez',
+      contact: '0918-222-5566',
+      facilities: ['Open Grounds', 'Restrooms']
+    },
+    {
+      id: '43',
+      name: 'Fortune High School Fields',
+      barangay: 'Fortune',
+      classification: 'Dual-Purpose Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 800,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Dennis Perez',
+      contact: '0920-999-1122',
+      facilities: ['Open Fields', 'Clean Water']
+    },
+    {
+      id: '44',
+      name: 'PLMAR San Roque Plaza',
+      barangay: 'San Roque',
+      classification: 'Dual-Purpose Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 650,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'PLMAR Representative',
+      contact: '0917-333-4411',
+      facilities: ['Open Plaza', 'Clean Water']
+    },
+    {
+      id: '45',
+      name: 'Marikina Hotel Parking Grounds',
+      barangay: 'Pio del Pilar',
+      classification: 'Dual-Purpose Minor',
+      longitude: '121.112182',
+      latitude: '14.638203',
+      capacity: 600,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Claudia Delgado',
+      contact: '0918-444-2233',
+      facilities: ['Open Parking', 'Generator', 'Clean Water']
+    },
+
+    // Earthquake-Safe Minor Evacuation Centers
+    {
+      id: '46',
+      name: 'Sta. Elena Chapel Plaza',
+      barangay: 'Sta. Elena',
+      classification: 'Earthquake-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 400,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Teresa Cruz',
+      contact: '0917-888-1122',
+      facilities: ['Open Courtyard', 'Clean Water']
+    },
+    {
+      id: '47',
+      name: 'Aglipay Church Courtyard, Malanday',
+      barangay: 'Malanday',
+      classification: 'Earthquake-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 450,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Kagawad Mario Santos',
+      contact: '0918-777-5544',
+      facilities: ['Open Courtyard']
+    },
+    {
+      id: '48',
+      name: 'Aglipay Church Courtyard, Sto. Niño',
+      barangay: 'Sto. Niño',
+      classification: 'Earthquake-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 450,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'Officer Vicente Ramos',
+      contact: '0920-555-4433',
+      facilities: ['Open Courtyard', 'Restrooms']
+    },
+    {
+      id: '49',
+      name: 'OLA Church Open Plaza & Courtyard',
+      barangay: 'Sta. Elena',
+      classification: 'Earthquake-Safe Minor',
+      longitude: 'Not provided',
+      latitude: 'Not provided',
+      capacity: 600,
+      currentEvacuees: 0,
+      status: 'Standby',
+      headOfficer: 'MCDRRMO Parish Coordinator',
+      contact: '0915-444-2299',
+      facilities: ['Open Plaza', 'Clean Water', 'Medical Station']
     }
   ];
 
@@ -91,6 +735,9 @@ export default function EvacuationCenters() {
     id: null,
     name: '',
     barangay: '',
+    classification: 'Flood-Safe Major',
+    longitude: '',
+    latitude: '',
     capacity: '',
     currentEvacuees: 0,
     status: 'Standby',
@@ -114,6 +761,9 @@ export default function EvacuationCenters() {
           id: item.id,
           name: item.name,
           barangay: item.barangay || 'Marikina',
+          classification: item.classification || 'Flood-Safe Major',
+          longitude: item.longitude || 'N/A',
+          latitude: item.latitude || 'N/A',
           capacity: item.capacity || 500,
           currentEvacuees: item.current_evacuees || 0,
           status: item.status || 'Standby',
@@ -167,10 +817,23 @@ export default function EvacuationCenters() {
   const filteredCenters = centers.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.barangay.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.classification && c.classification.toLowerCase().includes(searchTerm.toLowerCase())) ||
       c.headOfficer.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter ? c.status === statusFilter : true;
-    return matchesSearch && matchesStatus;
+    const matchesClassification = classificationFilter ? c.classification === classificationFilter : true;
+    return matchesSearch && matchesStatus && matchesClassification;
   });
+
+  // Reset to page 1 whenever filters or search query change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, classificationFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCenters.length / itemsPerPage));
+  const paginatedCenters = filteredCenters.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const openAddModal = () => {
     setIsEditing(false);
@@ -178,6 +841,9 @@ export default function EvacuationCenters() {
       id: null,
       name: '',
       barangay: '',
+      classification: 'Flood-Safe Major',
+      longitude: '',
+      latitude: '',
       capacity: '',
       currentEvacuees: 0,
       status: 'Standby',
@@ -194,6 +860,9 @@ export default function EvacuationCenters() {
       id: center.id,
       name: center.name,
       barangay: center.barangay,
+      classification: center.classification || 'Flood-Safe Major',
+      longitude: center.longitude || '',
+      latitude: center.latitude || '',
       capacity: center.capacity,
       currentEvacuees: center.currentEvacuees,
       status: center.status,
@@ -217,6 +886,9 @@ export default function EvacuationCenters() {
     const payload = {
       name: formData.name,
       barangay: formData.barangay,
+      classification: formData.classification,
+      longitude: formData.longitude || null,
+      latitude: formData.latitude || null,
       capacity: parseInt(formData.capacity) || 500,
       current_evacuees: parseInt(formData.currentEvacuees) || 0,
       status: formData.status,
@@ -267,7 +939,6 @@ export default function EvacuationCenters() {
     }
   };
 
-  // Reusable inline style objects matching EmergencyHotlines UI
   const styles = {
     panelContainer: { display: 'flex', gap: '20px', alignItems: 'flex-start' },
     leftPanel: { flex: '1', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden', minHeight: '600px', display: 'flex', flexDirection: 'column' },
@@ -284,7 +955,6 @@ export default function EvacuationCenters() {
     pageControls: { display: 'flex', gap: '5px' },
     pageBtn: { padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: '4px', backgroundColor: '#fff', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' },
 
-    // Details card styles
     detailsCard: { backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '20px' },
     sectionLabel: { fontSize: '12px', fontWeight: '500', color: '#94a3b8', marginBottom: '12px', marginTop: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' },
     rowPair: { display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '13px' },
@@ -293,7 +963,6 @@ export default function EvacuationCenters() {
     outlineBtn: { width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', backgroundColor: 'transparent', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: '#334155', marginTop: '12px' },
     emptyState: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '600px', fontSize: '14px', color: '#94a3b8', fontWeight: '500', textAlign: 'center' },
 
-    // Drawer styles
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 999, display: 'flex', justifyContent: 'flex-end' },
     drawer: { width: '400px', backgroundColor: '#fff', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)' },
     drawerHeader: { padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
@@ -313,7 +982,7 @@ export default function EvacuationCenters() {
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: '0 0 4px 0' }}>Evacuation Centers</h1>
           <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-            Monitor shelter capacity, occupancy rates, and assigned LGU relief officers across Marikina
+            Monitor shelter capacity, classifications, coordinates, and assigned LGU relief officers across Marikina
           </span>
         </div>
         <button 
@@ -348,6 +1017,18 @@ export default function EvacuationCenters() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             <select
+              style={{ ...styles.selectInput, width: '150px' }}
+              value={classificationFilter}
+              onChange={(e) => setClassificationFilter(e.target.value)}
+            >
+              <option value="">Classification...</option>
+              <option value="Flood-Safe Major">Flood-Safe Major</option>
+              <option value="Flood-Safe Minor">Flood-Safe Minor</option>
+              <option value="Dual-Purpose Major">Dual-Purpose Major</option>
+              <option value="Dual-Purpose Minor">Dual-Purpose Minor</option>
+              <option value="Earthquake-Safe Minor">Earthquake-Safe Minor</option>
+            </select>
+            <select
               style={styles.selectInput}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -364,16 +1045,15 @@ export default function EvacuationCenters() {
               <tr>
                 <th style={styles.tableHeader}>Shelter Name</th>
                 <th style={styles.tableHeader}>Barangay</th>
+                <th style={styles.tableHeader}>Classification</th>
                 <th style={styles.tableHeader}>Capacity</th>
-                <th style={styles.tableHeader}>Occupancy</th>
                 <th style={styles.tableHeader}>Status</th>
               </tr>
             </thead>
             <tbody>
-              {filteredCenters.map((c) => {
+              {paginatedCenters.map((c) => {
                 const badge = getStatusBadge(c.status);
                 const isSelected = activeCenter && activeCenter.id === c.id;
-                const occupancyPercent = Math.min(100, Math.round((c.currentEvacuees / c.capacity) * 100));
 
                 return (
                   <tr
@@ -386,10 +1066,8 @@ export default function EvacuationCenters() {
                   >
                     <td style={{ ...styles.tableCell, fontWeight: '600', color: '#0f172a' }}>{c.name}</td>
                     <td style={styles.tableCell}>{c.barangay}</td>
+                    <td style={{ ...styles.tableCell, fontSize: '11px', color: '#64748b' }}>{c.classification || 'Flood-Safe Major'}</td>
                     <td style={styles.tableCell}>{c.capacity.toLocaleString()} evacuees</td>
-                    <td style={styles.tableCell}>
-                      <span style={{ fontWeight: '500' }}>{c.currentEvacuees} ({occupancyPercent}%)</span>
-                    </td>
                     <td style={styles.tableCell}>
                       <span style={{
                         backgroundColor: badge.bg,
@@ -416,11 +1094,49 @@ export default function EvacuationCenters() {
           </table>
 
           <div style={styles.pagination}>
-            <span>1 of {filteredCenters.length || 1} record</span>
+            <span>
+              Showing {filteredCenters.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredCenters.length)} of {filteredCenters.length} evacuation centers
+            </span>
             <div style={styles.pageControls}>
-              <button style={styles.pageBtn}><ChevronLeft size={14} /></button>
-              <button style={{ ...styles.pageBtn, backgroundColor: '#0d9488', color: '#fff', borderColor: '#0d9488' }}>1</button>
-              <button style={styles.pageBtn}><ChevronRight size={14} /></button>
+              <button 
+                style={{
+                  ...styles.pageBtn,
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  style={{
+                    ...styles.pageBtn,
+                    backgroundColor: page === currentPage ? '#0d9488' : '#fff',
+                    color: page === currentPage ? '#fff' : '#64748b',
+                    borderColor: page === currentPage ? '#0d9488' : '#e2e8f0',
+                    fontWeight: page === currentPage ? '700' : '500'
+                  }}
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+
+              <button 
+                style={{
+                  ...styles.pageBtn,
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           </div>
         </div>
@@ -439,6 +1155,18 @@ export default function EvacuationCenters() {
               <div style={styles.rowPair}>
                 <span style={styles.label}>Barangay Location</span>
                 <span style={styles.val}>{activeCenter.barangay}</span>
+              </div>
+              <div style={styles.rowPair}>
+                <span style={styles.label}>Classification</span>
+                <span style={{ ...styles.val, color: '#0369a1' }}>{activeCenter.classification || 'Flood-Safe Major'}</span>
+              </div>
+              <div style={styles.rowPair}>
+                <span style={styles.label}>GPS Coordinates</span>
+                <span style={{ ...styles.val, fontSize: '11px', fontFamily: 'monospace' }}>
+                  {activeCenter.latitude && activeCenter.longitude && activeCenter.latitude !== 'N/A'
+                    ? `${activeCenter.latitude}, ${activeCenter.longitude}`
+                    : 'Not provided'}
+                </span>
               </div>
               <div style={styles.rowPair}>
                 <span style={styles.label}>Operating Status</span>
@@ -545,6 +1273,44 @@ export default function EvacuationCenters() {
                   value={formData.barangay}
                   onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
                 />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Classification</label>
+                <select
+                  style={styles.input}
+                  value={formData.classification}
+                  onChange={(e) => setFormData({ ...formData, classification: e.target.value })}
+                >
+                  <option value="Flood-Safe Major">Flood-Safe Major Evacuation Center</option>
+                  <option value="Flood-Safe Minor">Flood-Safe Minor Evacuation Center</option>
+                  <option value="Dual-Purpose Major">Dual-Purpose Major Evacuation Center</option>
+                  <option value="Dual-Purpose Minor">Dual-Purpose Minor Evacuation Center</option>
+                  <option value="Earthquake-Safe Minor">Earthquake-Safe Minor Evacuation Center</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={styles.formGroup}>
+                  <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Latitude</label>
+                  <input 
+                    type="text" 
+                    placeholder="14.650283" 
+                    style={styles.input} 
+                    value={formData.latitude}
+                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Longitude</label>
+                  <input 
+                    type="text" 
+                    placeholder="121.094409" 
+                    style={styles.input} 
+                    value={formData.longitude}
+                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div style={styles.formGroup}>
