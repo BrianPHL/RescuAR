@@ -182,6 +182,46 @@ public partial class AssessmentViewModel : ObservableObject
             Options = new List<string> { "Yes, waterproofed", "In regular drawer", "Unorganized" },
             CorrectOptionIndex = 0
         });
+        _questions.Add(new AssessmentQuestion
+        {
+            Number = 11,
+            Category = "Fire Safety",
+            QuestionText = "Do you have a working fire extinguisher and smoke detectors installed in your home?",
+            Options = new List<string> { "Yes, both", "Only one", "Neither" },
+            CorrectOptionIndex = 0
+        });
+        _questions.Add(new AssessmentQuestion
+        {
+            Number = 12,
+            Category = "Household Preparedness",
+            QuestionText = "Do you have a specific backup plan for assisting pets, elderly, or disabled family members?",
+            Options = new List<string> { "Yes, fully planned", "Discussed only", "No plan" },
+            CorrectOptionIndex = 0
+        });
+        _questions.Add(new AssessmentQuestion
+        {
+            Number = 13,
+            Category = "First Aid Knowledge",
+            QuestionText = "Does anyone in your household have basic first aid and CPR training?",
+            Options = new List<string> { "Yes, certified", "Basic knowledge", "None" },
+            CorrectOptionIndex = 0
+        });
+        _questions.Add(new AssessmentQuestion
+        {
+            Number = 14,
+            Category = "Evacuation Readiness",
+            QuestionText = "Is your primary vehicle maintained with at least a half tank of gas for sudden evacuations?",
+            Options = new List<string> { "Yes, always", "Sometimes", "Rarely/No vehicle" },
+            CorrectOptionIndex = 0
+        });
+        _questions.Add(new AssessmentQuestion
+        {
+            Number = 15,
+            Category = "Emergency Supplies",
+            QuestionText = "Do you have a portable battery-powered or hand-crank radio to monitor emergency broadcasts?",
+            Options = new List<string> { "Yes, ready", "Needs batteries", "No radio" },
+            CorrectOptionIndex = 0
+        });
     }
 
     private void LoadCurrentQuestion()

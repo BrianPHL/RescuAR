@@ -10,6 +10,159 @@
     BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto,Auto,*">
+<<<<<<< HEAD
+
+        <!-- 1. TOP HEADER BANNER & DOWNLOAD ACTION -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0A8491"
+                StrokeThickness="0"
+                Padding="16,16,16,14">
+            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                    <Label Text="OFFICIAL DRRMO PROTOCOL" TextColor="#E0F2FE" FontSize="11" FontAttributes="Bold" CharacterSpacing="1" />
+                    <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="20" FontAttributes="Bold" />
+                    <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="12" />
+                </VerticalStackLayout>
+
+                <!-- Download PDF Button -->
+                <Button Grid.Column="1"
+                        Text="⬇ Download PDF"
+                        Command="{Binding DownloadPdfDocumentCommand}"
+                        BackgroundColor="#065F69"
+                        TextColor="#FFFFFF"
+                        FontAttributes="Bold"
+                        FontSize="12"
+                        CornerRadius="14"
+                        Padding="14,8"
+                        VerticalOptions="Center" />
+
+                <Button Grid.Column="2"
+                        Text="👁 View PDF"
+                        Command="{Binding ViewPdfCommand}"
+                        BackgroundColor="#065F69"
+                        TextColor="#FFFFFF"
+                        FontAttributes="Bold"
+                        FontSize="12"
+                        CornerRadius="14"
+                        Padding="14,8"
+                        VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- 2. SECTION PAGE SELECTOR CHIPS -->
+        <ScrollView Grid.Row="1" Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Padding="12,10">
+            <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding ProtocolPages}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProtocolPageItem">
+                        <Border StrokeThickness="0"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="12,6"
+                                BackgroundColor="{Binding HeaderBgColor}">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectPageCommand}"
+                                                     CommandParameter="{Binding .}" />
+                            </Border.GestureRecognizers>
+                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                <Label Text="{Binding PageNumber, StringFormat='P{0}'}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                                <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
+                            </HorizontalStackLayout>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- 3. MAIN PDF PROTOCOL IMAGE VIEWER -->
+        <ScrollView Grid.Row="2" VerticalScrollBarVisibility="Never" Padding="16">
+            <VerticalStackLayout Spacing="16">
+
+                <!-- PDF Document Sheet Container -->
+                <Border BackgroundColor="#FFFFFF"
+                        Stroke="#CBD5E1"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 20"
+                        Padding="16">
+                    <VerticalStackLayout Spacing="14">
+
+                        <!-- Document Header Banner -->
+                        <Border BackgroundColor="{Binding CurrentPage.HeaderBgColor}"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 14"
+                                Padding="14,12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                                <Border Grid.Column="0" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 10" WidthRequest="38" HeightRequest="38">
+                                    <Path Data="{Binding CurrentPage.IconData}" Fill="{Binding CurrentPage.HeaderBgColor}" WidthRequest="20" HeightRequest="20" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+
+                                <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Label Text="MARIKINA CITY PROTOCOL" TextColor="#E0F2FE" FontSize="10" FontAttributes="Bold" CharacterSpacing="1" />
+                                        <Border BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,1">
+                                            <Label Text="{Binding CurrentPage.PageNumber, StringFormat='Page {0} of 8'}" TextColor="{Binding CurrentPage.HeaderBgColor}" FontSize="9" FontAttributes="Bold" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+                                    <Label Text="{Binding CurrentPage.Title}" TextColor="#FFFFFF" FontSize="17" FontAttributes="Bold" />
+                                    <Label Text="{Binding CurrentPage.Subtitle}" TextColor="#E0F2FE" FontSize="11" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Border>
+
+                        <!-- High Quality Protocol Image View -->
+                        <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" BackgroundColor="#F8FAFC" Padding="4">
+                            <Image Source="{Binding CurrentPage.ImageSource}"
+                                   Aspect="AspectFit"
+                                   MaximumHeightRequest="480"
+                                   HorizontalOptions="Fill"
+                                   VerticalOptions="Fill" />
+                        </Border>
+
+                        <!-- Key Highlights / Step Cards -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="KEY PROTOCOL SUMMARY &amp; STEPS" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.8" />
+                            
+                            <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding CurrentPage.Highlights}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                                                <Label Text="•" TextColor="#0A8491" FontSize="16" FontAttributes="Bold" VerticalOptions="Start" />
+                                                <Label Text="{Binding .}" TextColor="#1E293B" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+
+                        <!-- Official DRRMO Footer & Contact -->
+                        <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                    <Label Text="RESCUE 161 – DRRMO MARIKINA" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
+                                    <Label Text="DRRMO BLDG. Fortune Ave., Brgy. Fortune, Marikina City" TextColor="#64748B" FontSize="10" />
+                                    <Label Text="Tel: 7116 5532 | Email: drrmo.marikinacity@gmail.com" TextColor="#0A8491" FontSize="10" FontAttributes="Bold" />
+                                </VerticalStackLayout>
+                                <Button Grid.Column="1"
+                                        Text="Download PDF"
+                                        Command="{Binding DownloadPdfDocumentCommand}"
+                                        BackgroundColor="#0A8491"
+                                        TextColor="#FFFFFF"
+                                        FontSize="11"
+                                        FontAttributes="Bold"
+                                        CornerRadius="10"
+                                        Padding="10,6"
+                                        VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+
+                    </VerticalStackLayout>
+                </Border>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+=======
+>>>>>>> 63c8677abb8e3c6530495f523753f23824b500ee
 
         <!-- 1. TOP HEADER BANNER & DOWNLOAD ACTION -->
         <Border Grid.Row="0"

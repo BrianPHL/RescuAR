@@ -588,6 +588,17 @@ export default function Advisories() {
                   </p>
                 </div>
 
+                {selectedAdvisory.escalationActions && (
+                  <div className="detail-item" style={{ gridColumn: 'span 2', backgroundColor: '#fef2f2', padding: '10px 12px', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                    <span className="detail-label" style={{ color: '#dc2626', fontWeight: '700' }}>
+                      Escalated Actions (If conditions worsen)
+                    </span>
+                    <p className="detail-value" style={{ fontWeight: 'normal', fontSize: '13px', lineHeight: '1.5', marginTop: '4px', color: '#b91c1c' }}>
+                      {selectedAdvisory.escalationActions}
+                    </p>
+                  </div>
+                )}
+
                 <div className="detail-item">
                   <span className="detail-label">Category Group</span>
                   <span className="detail-value">{selectedAdvisory.category}</span>

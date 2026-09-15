@@ -46,17 +46,6 @@
                    CharacterSpacing="2"
                    HorizontalOptions="Center" />
             
-            <!-- Dynamic Safety Quote -->
-            <Label Text="{Binding QuoteText}"
-                   FontSize="16"
-                   FontFamily="OpenSansRegular"
-                   TextColor="#64748B"
-                   FontAttributes="Italic"
-                   HorizontalTextAlignment="Center"
-                   LineBreakMode="WordWrap"
-                   HorizontalOptions="Center"
-                   Margin="20,0" />
-            
         </VerticalStackLayout>
 
         <!-- Bottom Loading State & Version -->

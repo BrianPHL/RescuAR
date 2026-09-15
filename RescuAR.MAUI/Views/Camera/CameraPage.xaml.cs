@@ -633,6 +633,12 @@ namespace RescuAR.App.Views.Camera
                     mapModeLayer.IsVisible =
                         mapMode;
 
+                    evergineView.IsVisible =
+                        !mapMode;
+
+                    floodDepthOcclusionView.IsVisible =
+                        floodMode;
+
                     cameraModeStatusBanner.IsVisible =
                         arCameraMode;
 
@@ -717,6 +723,58 @@ namespace RescuAR.App.Views.Camera
                 "Camera module sub-tab changed: " +
                 $"mode={mode}, reason='{reason}'.");
 #endif
+
+            UpdateArCoreActivityForCurrentView(
+                reason);
+        }
+
+        private void UpdateArCoreActivityForCurrentView(
+            string reason)
+        {
+            if (!pageIsVisible)
+            {
+                return;
+            }
+
+            if (currentCameraModuleView ==
+                CameraModuleViewMode.Map2D)
+            {
+                arCoreAutoStartCancellation?.Cancel();
+                arCoreAutoStartCancellation?.Dispose();
+
+                arCoreAutoStartCancellation =
+                    null;
+
+                if (_arCoreService.IsInitialized &&
+                    !_arCoreService.IsSessionPaused)
+                {
+                    _arCoreService.PauseCameraSession();
+                }
+
+#if ANDROID
+                Log.Info(
+                    ArCoreLogTag,
+                    "AR WORKLOAD STATE: camera/session and 3D surface " +
+                    $"SUSPENDED for 2D Map; reason='{reason}'.");
+#endif
+                return;
+            }
+
+            if (_arCoreService.IsInitialized &&
+                !_arCoreService.IsSessionPaused)
+            {
+                return;
+            }
+
+            arCoreAutoStartCancellation?.Cancel();
+            arCoreAutoStartCancellation?.Dispose();
+
+            arCoreAutoStartCancellation =
+                new CancellationTokenSource();
+
+            _ =
+                EnsureArCoreActiveAsync(
+                    arCoreAutoStartCancellation.Token);
         }
 
         private void RefreshCameraModuleDynamicUi()
@@ -1525,10 +1583,6 @@ namespace RescuAR.App.Views.Camera
             lastDetailedStatusLogTimestamp =
                 long.MinValue;
 
-            ApplyCameraModuleView(
-                currentCameraModuleView,
-                "Camera tab entered");
-
             RefreshCameraControlUi();
 
 #if ANDROID
@@ -1575,23 +1629,9 @@ namespace RescuAR.App.Views.Camera
                 diagnosticTimer.Start();
             }
 
-            /*
-             * Camera is now a self-starting AR surface:
-             *
-             * - first visit -> request camera permission if needed, then create
-             *   the ARCore Session automatically;
-             * - later visits -> resume the retained Session automatically.
-             *
-             */
-            arCoreAutoStartCancellation?.Cancel();
-            arCoreAutoStartCancellation?.Dispose();
-
-            arCoreAutoStartCancellation =
-                new CancellationTokenSource();
-
-            _ =
-                EnsureArCoreActiveAsync(
-                    arCoreAutoStartCancellation.Token);
+            ApplyCameraModuleView(
+                currentCameraModuleView,
+                "Camera tab entered");
         }
 
         protected override void OnDisappearing()
@@ -1699,7 +1739,9 @@ namespace RescuAR.App.Views.Camera
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!pageIsVisible)
+                if (!pageIsVisible ||
+                    currentCameraModuleView ==
+                        CameraModuleViewMode.Map2D)
                 {
                     return false;
                 }
@@ -1724,6 +1766,15 @@ namespace RescuAR.App.Views.Camera
                         $"{resumed}; " +
                         $"paused={_arCoreService.IsSessionPaused}, " +
                         $"frameLoop={_arCoreService.IsFrameLoopRunning}");
+
+                    if (resumed &&
+                        currentCameraModuleView ==
+                            CameraModuleViewMode.Map2D)
+                    {
+                        _arCoreService.PauseCameraSession();
+
+                        return false;
+                    }
 
                     if (resumed &&
                         pageIsVisible)
@@ -1773,12 +1824,14 @@ namespace RescuAR.App.Views.Camera
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!pageIsVisible)
+                if (!pageIsVisible ||
+                    currentCameraModuleView ==
+                        CameraModuleViewMode.Map2D)
                 {
                     Log.Debug(
                         ArCoreLogTag,
                         "Automatic ARCore initialization cancelled because " +
-                        "Camera tab is no longer visible.");
+                        "the active view no longer needs the camera.");
 
                     return false;
                 }
@@ -1824,7 +1877,9 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                if (!pageIsVisible)
+                if (!pageIsVisible ||
+                    currentCameraModuleView ==
+                        CameraModuleViewMode.Map2D)
                 {
                     return false;
                 }
@@ -1885,6 +1940,15 @@ namespace RescuAR.App.Views.Camera
                             "ARCore could not be initialized. Check Logcat for RescuAR-ARCore.",
                             "OK");
                     }
+
+                    return false;
+                }
+
+                if (!pageIsVisible ||
+                    currentCameraModuleView ==
+                        CameraModuleViewMode.Map2D)
+                {
+                    _arCoreService.PauseCameraSession();
 
                     return false;
                 }
