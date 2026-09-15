@@ -18,8 +18,8 @@ public class PreparednessData
     public int PreparedItems { get; set; } = 6;
     public int TotalItems { get; set; } = 10;
     public string ActionText { get; set; } = "Preparation Progress";
-    public string ModuleRoute { get; set; } = "Prepare/Checklist";
-    public string ModuleName { get; set; } = "Preparation Progress / Checklist";
+    public string ModuleRoute { get; set; } = "PreparePage";
+    public string ModuleName { get; set; } = "Disaster Preparedness Hub";
 }
 
 public class EvacuationData
