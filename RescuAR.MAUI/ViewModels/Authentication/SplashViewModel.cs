@@ -23,9 +23,22 @@ namespace RescuAR.App.ViewModels.Authentication
         [ObservableProperty]
         private string _versionText = "v0.0.1a";
 
+        [ObservableProperty]
+        private string _quoteText = "";
+
+        private static readonly string[] SafetyQuotes = new[]
+        {
+            "\"Preparedness is the only way we can combat a natural disaster.\"",
+            "\"By failing to prepare, you are preparing to fail.\" - Benjamin Franklin",
+            "\"An ounce of prevention is worth a pound of cure.\" - Benjamin Franklin",
+            "\"Safety is a state of mind, accidents are an absence of mind.\"",
+            "\"Expect the best, plan for the worst, and prepare to be surprised.\" - Denis Waitley"
+        };
+
         public SplashViewModel(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
+            _quoteText = SafetyQuotes[new Random().Next(SafetyQuotes.Length)];
         }
 
         public async Task InitializeAsync()

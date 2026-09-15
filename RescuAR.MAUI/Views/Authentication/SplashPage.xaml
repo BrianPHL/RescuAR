@@ -5,67 +5,83 @@
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
     x:DataType="vm:SplashViewModel"
     x:Class="RescuAR.App.Views.Authentication.SplashPage"
+    Shell.NavBarIsVisible="False"
+    NavigationPage.HasNavigationBar="False"
     BackgroundColor="White">
 
-    <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*">
+    <Grid RowDefinitions="*, Auto" ColumnDefinitions="*">
         
-        <!-- Header Bar -->
-        <Grid Grid.Row="0" Grid.Column="0" HeightRequest="60" BackgroundColor="White">
-            <Label Text="RescuAR"
-                   FontFamily="OpenSansSemibold"
-                   FontSize="18"
-                   TextColor="#1E1E1E"
-                   HorizontalOptions="Center"
-                   VerticalOptions="Center" />
-        </Grid>
-
-        <!-- Center Content: Logo Card -->
-        <VerticalStackLayout Grid.Row="1" 
+        <!-- Center Content: Logo Card & Quote -->
+        <VerticalStackLayout Grid.Row="0" 
                              HorizontalOptions="Center" 
                              VerticalOptions="Center"
-                             Spacing="20">
+                             Spacing="40"
+                             Padding="24">
             
-            <Border WidthRequest="300"
-                    HeightRequest="120"
-                    StrokeThickness="0"
-                    BackgroundColor="White"
-                    StrokeShape="RoundRectangle 12">
+            <!-- Glassmorphic Logo Container -->
+            <Border WidthRequest="160"
+                    HeightRequest="160"
+                    StrokeThickness="1"
+                    Stroke="#E2E8F0"
+                    BackgroundColor="#F8FAFC"
+                    StrokeShape="RoundRectangle 40"
+                    HorizontalOptions="Center">
                 <Border.Shadow>
-                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.08" />
+                    <Shadow Brush="#000000" Offset="0,10" Radius="30" Opacity="0.05" />
                 </Border.Shadow>
                 
-                <Image Source="rescuar_logo.jpg"
-                       Aspect="AspectFit"
-                       Margin="10"
-                       HorizontalOptions="Fill"
-                       VerticalOptions="Fill" />
+                <Frame CornerRadius="30" Padding="0" IsClippedToBounds="True" HasShadow="False" BackgroundColor="White" Margin="16">
+                    <Image Source="rescuar_logo.jpg"
+                           Aspect="AspectFill"
+                           HorizontalOptions="Fill"
+                           VerticalOptions="Fill" />
+                </Frame>
             </Border>
+
+            <!-- App Title -->
+            <Label Text="RescuAR"
+                   FontFamily="OpenSansSemibold"
+                   FontSize="36"
+                   TextColor="#0F172A"
+                   CharacterSpacing="2"
+                   HorizontalOptions="Center" />
+            
+            <!-- Dynamic Safety Quote -->
+            <Label Text="{Binding QuoteText}"
+                   FontSize="16"
+                   FontFamily="OpenSansRegular"
+                   TextColor="#64748B"
+                   FontAttributes="Italic"
+                   HorizontalTextAlignment="Center"
+                   LineBreakMode="WordWrap"
+                   HorizontalOptions="Center"
+                   Margin="20,0" />
             
         </VerticalStackLayout>
 
         <!-- Bottom Loading State & Version -->
-        <VerticalStackLayout Grid.Row="2"
+        <VerticalStackLayout Grid.Row="1"
                              HorizontalOptions="Center"
                              VerticalOptions="End"
-                             Margin="0,0,0,40"
-                             Spacing="12">
+                             Margin="0,0,0,50"
+                             Spacing="16">
             
             <ActivityIndicator IsRunning="True"
                                Color="#00848E"
-                               WidthRequest="24"
-                               HeightRequest="24"
+                               WidthRequest="32"
+                               HeightRequest="32"
                                HorizontalOptions="Center" />
             
             <Label Text="{Binding StatusText}"
                    FontSize="14"
-                   FontFamily="OpenSansRegular"
-                   TextColor="#5A5A5A"
+                   FontFamily="OpenSansSemibold"
+                   TextColor="#334155"
                    HorizontalOptions="Center" />
             
             <Label Text="{Binding VersionText}"
                    FontSize="12"
                    FontFamily="OpenSansRegular"
-                   TextColor="#A0A0A0"
+                   TextColor="#94A3B8"
                    HorizontalOptions="Center" />
             
         </VerticalStackLayout>
@@ -73,4 +89,3 @@
     </Grid>
 
 </ContentPage>
-

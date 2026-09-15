@@ -56,6 +56,31 @@ namespace RescuAR.App.ViewModels.Authentication
                 // We'll perform a quick mock delay, then route to the Dashboard (AppShell).
                 await Task.Delay(1500);
 
+                string firstName = "User";
+                string lastName = "";
+
+                if (email == "qblcpasco@tip.edu.ph")
+                {
+                    firstName = "Brian Lawrence";
+                    lastName = "Pasco";
+                }
+                else if (email == "frances@example-email.com")
+                {
+                    firstName = "Frances";
+                    lastName = "Pasco";
+                }
+                else if (!string.IsNullOrWhiteSpace(email))
+                {
+                    string[] parts = email.Split('@');
+                    if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
+                    {
+                        firstName = char.ToUpper(parts[0][0]) + parts[0].Substring(1);
+                    }
+                }
+
+                Preferences.Default.Set("UserFirstName", firstName);
+                Preferences.Default.Set("UserLastName", lastName);
+
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
                     if (Application.Current != null)

@@ -1,26 +1,24 @@
 using RescuAR.App.Views.Authentication;
-
+using Microsoft.Extensions.DependencyInjection;
 namespace RescuAR.MAUI;
 
 public partial class App : Application
 {
-    private readonly SplashPage splashPage;
+    private readonly IServiceProvider serviceProvider;
 
     public App(
-        SplashPage splashPage)
+        IServiceProvider serviceProvider)
     {
         InitializeComponent();
 
-        this.splashPage =
-            splashPage;
+        this.serviceProvider =
+            serviceProvider;
     }
 
     protected override Window CreateWindow(
         IActivationState? activationState)
     {
         /*
-         * Keep the .NET 9 Window-based application architecture.
-         *
          * SplashViewModel owns the updated source startup decision:
          * - logged in + permissions complete -> AppShell
          * - logged in + permissions incomplete -> PermissionsPage
@@ -28,6 +26,6 @@ public partial class App : Application
          * - first run -> OnboardingPage
          */
         return new Window(
-            splashPage);
+            serviceProvider.GetRequiredService<SplashPage>());
     }
 }
