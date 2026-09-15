@@ -52,6 +52,7 @@ export default function Advisories() {
     affectedAreas: '',
     description: '',
     recommendedAction: '',
+    escalationActions: '',
     startDate: '',
     startTime: '',
     endDate: '',
@@ -78,6 +79,7 @@ export default function Advisories() {
           published: new Date(item.published_at || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           description: item.description || '',
           recommendedAction: item.recommended_action || '',
+          escalationActions: item.escalation_actions || '',
           durationStart: item.duration_start || '',
           durationEnd: item.duration_end || '',
           affectedAreas: item.affected_areas || ''
@@ -214,6 +216,7 @@ export default function Advisories() {
       affectedAreas: '',
       description: '',
       recommendedAction: '',
+      escalationActions: '',
       startDate: today,
       startTime: '08:00',
       endDate: today,
@@ -284,6 +287,7 @@ export default function Advisories() {
       status: 'Active',
       description: adv.description,
       recommended_action: adv.recommendedAction,
+      escalation_actions: adv.escalationActions || '',
       affected_areas: adv.affectedAreas
     };
 
@@ -307,6 +311,7 @@ export default function Advisories() {
       severity: tpl.severity,
       description: tpl.description,
       recommendedAction: tpl.recommendedAction,
+      escalationActions: tpl.escalationActions || '',
       affectedAreas: tpl.affectedAreas
     }));
   };
@@ -332,6 +337,7 @@ export default function Advisories() {
       status: formState.status,
       description: formState.description,
       recommended_action: formState.recommendedAction,
+      escalation_actions: formState.escalationActions,
       affected_areas: formState.affectedAreas,
       duration_start: durationStart,
       duration_end: durationEnd
@@ -938,6 +944,20 @@ export default function Advisories() {
                     value={formState.recommendedAction}
                     onChange={(e) => setFormState({ ...formState, recommendedAction: e.target.value })}
                     style={{ padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ color: '#dc2626', fontWeight: '600' }}>
+                    Escalation Actions (If conditions worsen)
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    rows="3"
+                    placeholder="Actions citizens should take if conditions worsen (e.g. Evacuate immediately; Turn off LPG; Contact hotlines)..."
+                    value={formState.escalationActions}
+                    onChange={(e) => setFormState({ ...formState, escalationActions: e.target.value })}
+                    style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', backgroundColor: '#fef2f2' }}
                   />
                 </div>
 

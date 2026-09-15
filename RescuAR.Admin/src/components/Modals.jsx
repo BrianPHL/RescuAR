@@ -31,6 +31,7 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
   const [affectedAreas, setAffectedAreas] = useState('Tumana, Nangka, Malanday');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [escalationActions, setEscalationActions] = useState('');
 
   // Prefill default template dynamically when modal opens or stationData updates
   useEffect(() => {
@@ -123,20 +124,26 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
       const generatedSubject = `FLOOD WARNING: ${displayStationTitle} reached ${alertStatus.toUpperCase()} (${level}m)`;
       
       let actionInstructions = '';
+      let computedEscalation = '';
       if (is3rd) {
         actionInstructions = `CRITICAL ACTION REQUIRED:\n1. Immediate mandatory evacuation is in effect for identified danger zones in ${affectedString}.\n2. Proceed to designated evacuation centers immediately.\n3. Turn off main electric switches before evacuating.`;
+        computedEscalation = 'Evacuate immediately when instructed and proceed to the designated safe area; Do not cross floodwaters or return until authorities say it is safe; Shut off main electrical breaker and LPG gas valve; Contact emergency hotlines for rescue assistance.';
       } else if (is2nd) {
         actionInstructions = `PREPARATION REQUIRED:\n1. Residents in ${affectedString} must secure emergency go-bags and vital documents.\n2. Move electrical appliances and vehicles to higher ground.\n3. Stand by for potential mandatory evacuation orders (Alert Level 3).`;
+        computedEscalation = 'Prepare to evacuate and move important belongings to a higher place; Keep evacuation routes clear; Standby for Alert Level 3 mandatory evacuation orders; Keep PASS Go-Bag ready.';
       } else if (is1st) {
         actionInstructions = `MONITORING ADVISORY:\n1. Communities in ${affectedString} should monitor river level updates closely.\n2. Keep emergency communications active and charge electronic devices.`;
+        computedEscalation = 'Monitor official river and weather updates closely; Prepare medicines, documents, food, water, and emergency supplies; Move vehicles to safe higher ground.';
       } else {
         actionInstructions = `ROUTINE NOTICE:\n1. Water level at ${displayStationTitle} is within normal bounds (${level}m).\n2. No immediate threat of overflow in ${affectedString}.`;
+        computedEscalation = 'Continue monitoring official updates; Keep emergency kit updated.';
       }
 
       const generatedMessage = `AUTOMATIC PUBLIC WATER LEVEL ADVISORY:\n\nPlease be advised that the ${displayStationTitle} has registered a water gauge reading of ${level} meters (${alertLabel}).\n\nDirectly Affected Barangays / Sectors:\n${affectedString}\n\n${actionInstructions}\n\n- Marikina Disaster Risk Reduction & Management Office (MCDRRMO)`;
 
       setSubject(generatedSubject);
       setMessage(generatedMessage);
+      setEscalationActions(computedEscalation);
     }
   }, [isOpen, stationData]);
 
@@ -164,6 +171,7 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
             status: 'Active',
             description: message,
             recommended_action: 'Monitor river levels, keep emergency kits ready, and obey local LGU instructions.',
+            escalation_actions: escalationActions,
             affected_areas: affectedAreas,
             duration_start: new Date().toISOString(),
             published_at: new Date().toISOString()
@@ -229,6 +237,31 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
             className="form-input" 
             value={subject} 
             onChange={(e) => setSubject(e.target.value)} 
+          />
+        </div>
+
+        <div className="form-group" style={{ marginBottom: '12px' }}>
+          <label className="form-label">Advisory Message Content</label>
+          <textarea
+            className="form-textarea"
+            rows="4"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            style={{ padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', width: '100%' }}
+          />
+        </div>
+
+        <div className="form-group" style={{ marginBottom: '12px' }}>
+          <label className="form-label" style={{ color: '#dc2626', fontWeight: '600' }}>
+            Escalation Actions (If conditions worsen)
+          </label>
+          <textarea
+            className="form-textarea"
+            rows="3"
+            value={escalationActions}
+            onChange={(e) => setEscalationActions(e.target.value)}
+            placeholder="Actions citizens should take if conditions worsen (e.g. Evacuate immediately; Turn off LPG; Contact hotlines)..."
+            style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '13px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', width: '100%', backgroundColor: '#fef2f2' }}
           />
         </div>
 
