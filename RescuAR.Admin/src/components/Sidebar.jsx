@@ -139,7 +139,7 @@ export default function Sidebar({ activeView, onViewChange }) {
                 className={`sidebar-link ${activeView === 'content-news' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-news')}
               >
-                <span></span>
+                <span>Evacuation Centers</span>
               </div>
               <div 
                 className={`sidebar-link ${activeView === 'content-hotlines' ? 'active' : ''}`}
@@ -159,7 +159,7 @@ export default function Sidebar({ activeView, onViewChange }) {
           >
             <div className="menu-group-title">
               <Settings size={18} />
-              <span>System</span>
+              <span>System Settings</span>
             </div>
             {expandedGroups.system ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </div>
@@ -170,13 +170,13 @@ export default function Sidebar({ activeView, onViewChange }) {
                 className={`sidebar-link ${activeView === 'system-settings' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-settings')}
               >
-                <span></span>
+                <span>Settings</span>
               </div>
               <div 
                 className={`sidebar-link ${activeView === 'system-logs' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-logs')}
               >
-                <span></span>
+                <span>System Logs</span>
               </div>
             </div>
           )}
