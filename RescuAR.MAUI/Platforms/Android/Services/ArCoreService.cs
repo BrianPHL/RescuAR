@@ -261,7 +261,17 @@ public sealed partial class ArCoreService : IArCoreService
 
     private int groundPlaneSearchHitTestCount;
 
+    private bool depthModeSupported;
+
     private bool depthModeEnabled;
+
+    /*
+     * Updated by the spatial-pose path on every tracked frame. Depth remains
+     * available while the local ground anchor is missing or a validated
+     * proactive replacement search is active.
+     */
+    private bool groundDepthRequested =
+        true;
 
     private bool hasGroundDepthCandidate;
 
@@ -548,6 +558,9 @@ public sealed partial class ArCoreService : IArCoreService
                     .PlaneFindingMode
                     .Horizontal);
 
+            planeFindingEnabled =
+                true;
+
             Log.Debug(
                 Tag,
                 "PlaneFindingMode = HORIZONTAL.");
@@ -556,10 +569,13 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 8: Configuring DepthMode when supported.");
 
-            depthModeEnabled =
+            depthModeSupported =
                 TryConfigureAutomaticDepth(
                     session,
                     config);
+
+            depthModeEnabled =
+                depthModeSupported;
 
             Log.Debug(
                 Tag,
@@ -1279,6 +1295,9 @@ public sealed partial class ArCoreService : IArCoreService
             LogTextureIntrinsicsOnce(
                 camera);
 
+            UpdateDepthModeForCurrentDemand(
+                currentSession);
+
             TryPublishDepthOcclusionFrame(
                 frame,
                 camera,
@@ -1713,6 +1732,9 @@ public sealed partial class ArCoreService : IArCoreService
         bool shouldSearchForGroundAnchor =
             spatialGroundAnchor is null ||
             ShouldSearchForProactiveGroundAnchorReplacement();
+
+        groundDepthRequested =
+            shouldSearchForGroundAnchor;
 
         if (shouldSearchForGroundAnchor)
         {
@@ -2562,6 +2584,9 @@ public sealed partial class ArCoreService : IArCoreService
 
     private void ReleaseSpatialGroundAnchor()
     {
+        groundDepthRequested =
+            true;
+
         Google.AR.Core.Anchor? anchor =
             Interlocked.Exchange(
                 ref spatialGroundAnchor,
