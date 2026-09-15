@@ -461,10 +461,21 @@ public static class ARCameraSpatialController
         bool enabled,
         string reason)
     {
+        bool changed;
+
         lock (sync)
         {
+            changed =
+                routeRenderingEnabled !=
+                    enabled;
+
             routeRenderingEnabled =
                 enabled;
+        }
+
+        if (!changed)
+        {
+            return;
         }
 
         AndroidLog.Debug(

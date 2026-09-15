@@ -204,6 +204,28 @@
             </Border>
 
             <Border
+                x:Name="arTrackingStatusBanner"
+                IsVisible="False"
+                InputTransparent="True"
+                ZIndex="22"
+                Margin="8,48,8,0"
+                Padding="8,6"
+                VerticalOptions="Start"
+                BackgroundColor="#FFF3CD"
+                Stroke="#E6B800"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 4">
+                <Label
+                    x:Name="arTrackingStatusLabel"
+                    Text="Preparing trustworthy AR guidance…"
+                    TextColor="#7A5700"
+                    FontSize="10"
+                    FontAttributes="Bold"
+                    HorizontalTextAlignment="Center"
+                    LineBreakMode="WordWrap" />
+            </Border>
+
+            <Border
                 x:Name="turnGuidancePanel"
                 IsVisible="False"
                 InputTransparent="True"
@@ -220,33 +242,13 @@
                     <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
                 </Border.Shadow>
                 <Grid
-                    RowDefinitions="Auto,*"
                     ColumnDefinitions="46,*,22"
                     ColumnSpacing="8"
                     RowSpacing="6">
-                    <Border
-                        x:Name="arTrackingStatusBanner"
-                        Grid.Row="0"
-                        Grid.ColumnSpan="3"
-                        IsVisible="False"
-                        Padding="8,4"
-                        BackgroundColor="#FFF3CD"
-                        Stroke="#E6B800"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 4">
-                        <Label
-                            x:Name="arTrackingStatusLabel"
-                            Text="AR tracking interrupted — hold still"
-                            TextColor="#7A5700"
-                            FontSize="10"
-                            FontAttributes="Bold"
-                            HorizontalTextAlignment="Center"
-                            LineBreakMode="WordWrap" />
-                    </Border>
 
                     <Image
                         x:Name="turnDirectionIconLabel"
-                        Grid.Row="1"
+                        Grid.Row="0"
                         Source="lucide_arrow_up_teal.png"
                         WidthRequest="38"
                         HeightRequest="38"
@@ -254,7 +256,7 @@
                         VerticalOptions="Center" />
 
                     <VerticalStackLayout
-                        Grid.Row="1"
+                        Grid.Row="0"
                         Grid.Column="1"
                         Spacing="2"
                         VerticalOptions="Center">
@@ -277,7 +279,7 @@
 
                     <Image
                         x:Name="turnChevronImage"
-                        Grid.Row="1"
+                        Grid.Row="0"
                         Grid.Column="2"
                         Source="lucide_chevron_down_black.png"
                         WidthRequest="16"

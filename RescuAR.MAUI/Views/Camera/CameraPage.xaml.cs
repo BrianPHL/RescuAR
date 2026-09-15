@@ -370,6 +370,10 @@ namespace RescuAR.App.Views.Camera
         private RouteMatchConfidence lastRouteMatchConfidence =
             RouteMatchConfidence.Unavailable;
 
+        private ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot
+            lastArGuidanceConfidence =
+                ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot.NotReady;
+
         private GpsPdrFusionPolicy.GpsFusionAction lastGpsFusionAction =
             GpsPdrFusionPolicy.GpsFusionAction.Ignore;
 
@@ -607,8 +611,10 @@ namespace RescuAR.App.Views.Camera
                     CameraModuleViewMode.FloodDepth;
 
             ARCameraSpatialController.SetRouteRenderingEnabled(
-                arCameraMode,
-                $"Camera module view = {mode}; {reason}");
+                arCameraMode &&
+                    lastArGuidanceConfidence.AllowsRouteGeometry,
+                $"Camera module view = {mode}; " +
+                $"guidanceState={lastArGuidanceConfidence.State}; {reason}");
 
             SetFloodVisualizationVisibility(
                 floodMode &&
@@ -782,15 +788,128 @@ namespace RescuAR.App.Views.Camera
             ARCameraSpatialController.SpatialContinuitySnapshot continuity =
                 ARCameraSpatialController.CurrentSpatialContinuity;
 
-            bool shouldShow =
+            ARRouteBridge.RouteSnapshot route =
+                ARRouteBridge.Current;
+
+            RouteProgressTracker.ProgressSnapshot progress =
+                _routeProgressTracker.Current;
+
+            DateTimeOffset? latestGpsTimestamp;
+
+            GpsPdrFusionPolicy.GpsConfidence gpsConfidence;
+
+            RouteMatchConfidence routeMatchConfidence;
+
+            bool routeIdentitySuspended;
+
+            bool verifiedRecoveryConnector;
+
+            lock (routeProgressFusionSync)
+            {
+                latestGpsTimestamp =
+                    latestGpsTimestampForRouting;
+
+                gpsConfidence =
+                    lastGpsConfidence;
+
+                routeMatchConfidence =
+                    lastRouteMatchConfidence;
+
+                routeIdentitySuspended =
+                    _gpsPdrFusionPolicy.IsRouteIdentitySuspended;
+
+                verifiedRecoveryConnector =
+                    recoveryConnectorVerified;
+            }
+
+            DateTimeOffset now =
+                DateTimeOffset.UtcNow;
+
+            TimeSpan gpsAge =
+                latestGpsTimestamp.HasValue
+                    ? now -
+                        latestGpsTimestamp.Value
+                    : TimeSpan.MaxValue;
+
+            bool gpsFresh =
+                gpsAge >=
+                    TimeSpan.FromSeconds(
+                        -2) &&
+                gpsAge <=
+                    TimeSpan.FromSeconds(
+                        10);
+
+            ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot confidence =
+                ARGuidanceConfidencePolicy.Evaluate(
+                    NavigationDestinationBridge.Current.IsAvailable,
+                    route.IsAvailable,
+                    route.NavigationState.VisualKind,
+                    progress.HasProgress,
+                    gpsFresh,
+                    gpsConfidence,
+                    routeMatchConfidence,
+                    routeIdentitySuspended,
+                    headingTrusted,
+                    continuity,
+                    dynamicRerouteInProgress,
+                    verifiedRecoveryConnector);
+
+            bool confidenceChanged =
+                confidence.State !=
+                    lastArGuidanceConfidence.State ||
+                confidence.AllowsRouteGeometry !=
+                    lastArGuidanceConfidence.AllowsRouteGeometry ||
+                confidence.DisplayMessage !=
+                    lastArGuidanceConfidence.DisplayMessage;
+
+            lastArGuidanceConfidence =
+                confidence;
+
+            bool arCameraMode =
                 currentCameraModuleView ==
-                    CameraModuleViewMode.ArCamera &&
+                    CameraModuleViewMode.ArCamera;
+
+            ARCameraSpatialController.SetRouteRenderingEnabled(
+                arCameraMode &&
+                    confidence.AllowsRouteGeometry,
+                $"guidanceState={confidence.State}, " +
+                $"score={confidence.Score}/100, " +
+                $"reason='{confidence.DisplayMessage}'");
+
+#if ANDROID
+            if (confidenceChanged)
+            {
+                Log.Info(
+                    RouteLogTag,
+                    "AR GUIDANCE CONFIDENCE: " +
+                    $"state={confidence.State}, " +
+                    $"score={confidence.Score}/100, " +
+                    $"routeVisible={confidence.AllowsRouteGeometry}, " +
+                    $"gpsFresh={gpsFresh}, " +
+                    $"gps={gpsConfidence}, " +
+                    $"routeMatch={routeMatchConfidence}, " +
+                    $"spatial={continuity.State}, " +
+                    $"reason='{confidence.DisplayMessage}'.");
+            }
+#endif
+
+            bool shouldShow =
+                arCameraMode &&
                 NavigationDestinationBridge.Current.IsAvailable &&
-                continuity.State !=
-                    ARCameraSpatialController.SpatialContinuityState.Live;
+                confidence.State !=
+                    ARGuidanceConfidencePolicy.GuidanceConfidenceState.Full;
 
             arTrackingStatusBanner.IsVisible =
                 shouldShow;
+
+            turnGuidancePanel.Margin =
+                new Thickness(
+                    8,
+                    shouldShow
+                        ? 88
+                        : 48,
+                    8,
+                    0);
 
             if (!shouldShow)
             {
@@ -798,10 +917,8 @@ namespace RescuAR.App.Views.Camera
             }
 
             bool severe =
-                continuity.State ==
-                    ARCameraSpatialController.SpatialContinuityState.LongLoss ||
-                continuity.State ==
-                    ARCameraSpatialController.SpatialContinuityState.Untrusted;
+                confidence.State ==
+                    ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden;
 
             arTrackingStatusBanner.BackgroundColor =
                 Color.FromArgb(
@@ -823,23 +940,7 @@ namespace RescuAR.App.Views.Camera
                         : "#7A5700");
 
             arTrackingStatusLabel.Text =
-                continuity.State switch
-                {
-                    ARCameraSpatialController.SpatialContinuityState.ShortHold =>
-                        "AR tracking interrupted — hold still",
-
-                    ARCameraSpatialController.SpatialContinuityState.Degraded =>
-                        "AR route hidden — follow the text guidance",
-
-                    ARCameraSpatialController.SpatialContinuityState.LongLoss =>
-                        "AR unavailable — move slowly to a well-lit area",
-
-                    ARCameraSpatialController.SpatialContinuityState.Untrusted =>
-                        "AR placement recovering — follow the text guidance",
-
-                    _ =>
-                        string.Empty
-                };
+                confidence.DisplayMessage;
         }
 
         private void RefreshEmergencyStatusBanner()
@@ -2857,6 +2958,13 @@ namespace RescuAR.App.Views.Camera
 
             latestGpsTimestampForRouting =
                 null;
+
+            lastArGuidanceConfidence =
+                ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot.NotReady;
+
+            ARCameraSpatialController.SetRouteRenderingEnabled(
+                false,
+                "Navigation destination changed; confidence must be rebuilt.");
 
             CancelConnectivityFailover(
                 "navigation destination changed");
@@ -8410,6 +8518,9 @@ namespace RescuAR.App.Views.Camera
             bool routeShouldBeVisible =
                 pageIsVisible &&
                 !_arCoreService.IsSessionPaused &&
+                currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera &&
+                lastArGuidanceConfidence.AllowsRouteGeometry &&
                 tracking &&
                 spatial.Anchor.IsAvailable &&
                 route.IsAvailable &&
@@ -8467,6 +8578,9 @@ namespace RescuAR.App.Views.Camera
                 $"spatialContinuity={continuityStatus.State}, " +
                 $"spatialLossDuration={continuityStatus.DurationMilliseconds}ms, " +
                 $"spatialTrustScore={continuityStatus.TrustScore}/100, " +
+                $"guidanceConfidence={lastArGuidanceConfidence.State}, " +
+                $"guidanceConfidenceScore={lastArGuidanceConfidence.Score}/100, " +
+                $"guidanceRouteAllowed={lastArGuidanceConfidence.AllowsRouteGeometry}, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
                 $"headingStable={lastHeadingAlignment?.IsStable ?? false}, " +
