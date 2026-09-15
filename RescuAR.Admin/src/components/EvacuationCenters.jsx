@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Shield, 
-  Users, 
-  MapPin, 
-  Phone, 
-  Plus, 
-  Search, 
-  CheckCircle2, 
+import {
+  Shield,
+  Users,
+  MapPin,
+  Phone,
+  Plus,
+  Search,
+  CheckCircle2,
   AlertTriangle,
   RefreshCw,
   Edit,
@@ -786,8 +786,8 @@ export default function EvacuationCenters() {
           headOfficer: item.head_officer || 'Unassigned',
           contact: item.contact || 'N/A',
           imageUrl: item.image_url || null,
-          facilities: Array.isArray(item.facilities) 
-            ? item.facilities 
+          facilities: Array.isArray(item.facilities)
+            ? item.facilities
             : typeof item.facilities === 'string'
               ? item.facilities.split(',').map(s => s.trim()).filter(Boolean)
               : ['Clean Water', 'Restrooms']
@@ -1003,7 +1003,7 @@ export default function EvacuationCenters() {
 
   return (
     <div className="main-view" style={{ backgroundColor: '#f1f5f9', minHeight: '100vh', padding: '30px' }}>
-      
+
       {/* PAGE HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
@@ -1012,8 +1012,8 @@ export default function EvacuationCenters() {
             Monitor shelter capacity, classifications, coordinates, and assigned LGU relief officers across Marikina
           </span>
         </div>
-        <button 
-          className="btn-refresh" 
+        <button
+          className="btn-refresh"
           onClick={handleRefresh}
           style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', color: '#334155' }}
         >
@@ -1024,7 +1024,7 @@ export default function EvacuationCenters() {
 
       {/* SPLIT PANEL LAYOUT */}
       <div style={styles.panelContainer}>
-        
+
         {/* LEFT PANEL: LIST OF EVACUATION CENTERS */}
         <div style={styles.leftPanel}>
           <div style={styles.headerFlex}>
@@ -1080,19 +1080,19 @@ export default function EvacuationCenters() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th 
+                <th
                   style={{ ...styles.tableHeader, cursor: 'pointer', userSelect: 'none' }}
                   onClick={() => setSortOrder(prev => prev === 'name-asc' ? 'name-desc' : 'name-asc')}
                 >
                   Shelter Name {sortOrder === 'name-asc' ? '↑' : sortOrder === 'name-desc' ? '↓' : ''}
                 </th>
-                <th 
+                <th
                   style={{ ...styles.tableHeader, cursor: 'pointer', userSelect: 'none' }}
                   onClick={() => setSortOrder('barangay-asc')}
                 >
                   Barangay {sortOrder === 'barangay-asc' ? '↑' : ''}
                 </th>
-                <th 
+                <th
                   style={{ ...styles.tableHeader, cursor: 'pointer', userSelect: 'none' }}
                   onClick={() => setSortOrder('classification-asc')}
                 >
@@ -1118,10 +1118,10 @@ export default function EvacuationCenters() {
                     <td style={{ ...styles.tableCell, fontWeight: '600', color: '#0f172a' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {c.imageUrl ? (
-                          <img 
-                            src={c.imageUrl} 
-                            alt={c.name} 
-                            style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid #e2e8f0' }} 
+                          <img
+                            src={c.imageUrl}
+                            alt={c.name}
+                            style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid #e2e8f0' }}
                           />
                         ) : (
                           <div style={{ width: '32px', height: '32px', borderRadius: '6px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e2e8f0' }}>
@@ -1163,7 +1163,7 @@ export default function EvacuationCenters() {
               Showing {filteredCenters.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredCenters.length)} of {filteredCenters.length} evacuation centers
             </span>
             <div style={styles.pageControls}>
-              <button 
+              <button
                 style={{
                   ...styles.pageBtn,
                   opacity: currentPage === 1 ? 0.4 : 1,
@@ -1174,7 +1174,7 @@ export default function EvacuationCenters() {
               >
                 <ChevronLeft size={14} />
               </button>
-              
+
               {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                 <button
                   key={page}
@@ -1191,7 +1191,7 @@ export default function EvacuationCenters() {
                 </button>
               ))}
 
-              <button 
+              <button
                 style={{
                   ...styles.pageBtn,
                   opacity: currentPage === totalPages ? 0.4 : 1,
@@ -1215,12 +1215,12 @@ export default function EvacuationCenters() {
               {/* SHELTER HERO PHOTO BANNER */}
               {activeCenter.imageUrl ? (
                 <div style={{ position: 'relative', width: '100%', height: '150px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
-                  <img 
-                    src={activeCenter.imageUrl} 
-                    alt={activeCenter.name} 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  <img
+                    src={activeCenter.imageUrl}
+                    alt={activeCenter.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                  <button 
+                  <button
                     onClick={() => openEditModal(activeCenter)}
                     style={{
                       position: 'absolute',
@@ -1247,7 +1247,7 @@ export default function EvacuationCenters() {
                 <div style={{ width: '100%', height: '110px', borderRadius: '8px', backgroundColor: '#f8fafc', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
                   <Camera size={22} color="#94a3b8" />
                   <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>No shelter photo added</span>
-                  <button 
+                  <button
                     onClick={() => openEditModal(activeCenter)}
                     style={{ fontSize: '11px', color: '#0d9488', fontWeight: '600', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
                   >
@@ -1330,7 +1330,7 @@ export default function EvacuationCenters() {
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>
                 {isEditing ? 'Edit Evacuation Center' : 'Add New Evacuation Center'}
               </h3>
-              <button 
+              <button
                 onClick={() => setIsDrawerOpen(false)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
               >
@@ -1339,11 +1339,11 @@ export default function EvacuationCenters() {
             </div>
 
             <div style={styles.drawerBody}>
-              
+
               {/* IMAGE UPLOAD & PREVIEW FORM GROUP */}
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Shelter Photo / Image</label>
-                
+
                 {formData.imageUrl && (
                   <div style={{ position: 'relative', width: '100%', height: '120px', borderRadius: '6px', overflow: 'hidden', marginBottom: '8px', border: '1px solid #cbd5e1' }}>
                     <img src={formData.imageUrl} alt="Shelter Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1374,17 +1374,17 @@ export default function EvacuationCenters() {
                   }}>
                     <Upload size={14} />
                     <span>Upload Photo</span>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
+                    <input
+                      type="file"
+                      accept="image/*"
                       style={{ display: 'none' }}
                       onChange={handleImageFileChange}
                     />
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="or paste image URL (https://...)" 
-                    style={{ ...styles.input, flex: 1 }} 
+                  <input
+                    type="text"
+                    placeholder="or paste image URL (https://...)"
+                    style={{ ...styles.input, flex: 1 }}
                     value={formData.imageUrl}
                     onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
                   />
@@ -1393,10 +1393,10 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Shelter Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Malanday Elementary School" 
-                  style={styles.input} 
+                <input
+                  type="text"
+                  placeholder="e.g. Malanday Elementary School"
+                  style={styles.input}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
@@ -1404,10 +1404,10 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Barangay Location</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Malanday" 
-                  style={styles.input} 
+                <input
+                  type="text"
+                  placeholder="e.g. Malanday"
+                  style={styles.input}
                   value={formData.barangay}
                   onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
                 />
@@ -1431,20 +1431,20 @@ export default function EvacuationCenters() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div style={styles.formGroup}>
                   <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Latitude</label>
-                  <input 
-                    type="text" 
-                    placeholder="14.650283" 
-                    style={styles.input} 
+                  <input
+                    type="text"
+                    placeholder="14.650283"
+                    style={styles.input}
                     value={formData.latitude}
                     onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
                   />
                 </div>
                 <div style={styles.formGroup}>
                   <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Longitude</label>
-                  <input 
-                    type="text" 
-                    placeholder="121.094409" 
-                    style={styles.input} 
+                  <input
+                    type="text"
+                    placeholder="121.094409"
+                    style={styles.input}
                     value={formData.longitude}
                     onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
                   />
@@ -1453,8 +1453,8 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Operating Status</label>
-                <select 
-                  style={styles.input} 
+                <select
+                  style={styles.input}
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                 >
@@ -1466,10 +1466,10 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Officer In Charge</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Captain Roberto Santos" 
-                  style={styles.input} 
+                <input
+                  type="text"
+                  placeholder="e.g. Captain Roberto Santos"
+                  style={styles.input}
                   value={formData.headOfficer}
                   onChange={(e) => setFormData({ ...formData, headOfficer: e.target.value })}
                 />
@@ -1477,10 +1477,10 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Contact Hotline Number</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. 0917-555-0192" 
-                  style={styles.input} 
+                <input
+                  type="text"
+                  placeholder="e.g. 0917-555-0192"
+                  style={styles.input}
                   value={formData.contact}
                   onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
                 />
@@ -1488,10 +1488,10 @@ export default function EvacuationCenters() {
 
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#64748b' }}>Facilities & Amenities (Comma separated)</label>
-                <textarea 
+                <textarea
                   rows="3"
-                  placeholder="e.g. Medical Station, Generator, Clean Water, Modular Tents" 
-                  style={{ ...styles.input, resize: 'vertical' }} 
+                  placeholder="e.g. Medical Station, Generator, Clean Water, Modular Tents"
+                  style={{ ...styles.input, resize: 'vertical' }}
                   value={formData.facilities}
                   onChange={(e) => setFormData({ ...formData, facilities: e.target.value })}
                 />
@@ -1499,13 +1499,13 @@ export default function EvacuationCenters() {
             </div>
 
             <div style={styles.drawerFooter}>
-              <button 
+              <button
                 onClick={() => setIsDrawerOpen(false)}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', color: '#334155' }}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleSave}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: '#0d9488', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
               >
