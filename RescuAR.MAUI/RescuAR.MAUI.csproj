@@ -10,9 +10,6 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
-		<!-- Embed assemblies into APK for standalone USB deployment -->
-		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
-
 		<!--
 			Migration constraint: the current Evergine integration is pinned to
 			net9.0-android. Suppress the SDK end-of-support diagnostic until the
@@ -51,10 +48,18 @@
 		version changes.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
-		<AndroidSdkDirectory>C:\Android\Sdk</AndroidSdkDirectory>
+		<!--
+			A verified ARM64 bridge is checked into Platforms\Android\lib.
+			Keep native compilation opt-in so normal MAUI builds do not require
+			a machine-specific NDK/CMake installation. Set this property to true
+			when intentionally rebuilding libnative_bridge.so from source.
+		-->
+		<BuildNativeBridgeOnBuild Condition="'$(BuildNativeBridgeOnBuild)' == ''">false</BuildNativeBridgeOnBuild>
 
-		<AndroidNdkDirectory>$(AndroidSdkDirectory)\ndk\27.1.12297006</AndroidNdkDirectory>
-		<AndroidCMakeDirectory>$(AndroidSdkDirectory)\cmake\3.22.1</AndroidCMakeDirectory>
+		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
+
+		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == ''">$(AndroidSdkDirectory)\ndk\28.2.13676358</AndroidNdkDirectory>
+		<AndroidCMakeDirectory Condition="'$(AndroidCMakeDirectory)' == ''">$(AndroidSdkDirectory)\cmake\3.22.1</AndroidCMakeDirectory>
 
 		<CMakeExecutable>$(AndroidCMakeDirectory)\bin\cmake.exe</CMakeExecutable>
 		<NinjaExecutable>$(AndroidCMakeDirectory)\bin\ninja.exe</NinjaExecutable>
@@ -107,7 +112,8 @@
 	<!--
 		Register the generated native shared libraries for Android packaging.
 
-		The files are generated and copied before PrepareForBuild runs.
+		The checked-in ARM64 library is packaged by default. Native source is
+		rebuilt first only when BuildNativeBridgeOnBuild=true is supplied.
 	-->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
 		<AndroidNativeLibrary Include="Platforms\Android\lib\arm64-v8a\libnative_bridge.so" Abi="arm64-v8a" />
@@ -136,10 +142,10 @@
 		This target runs before Android begins preparing build inputs.
 		It executes BuildNativeBridge first, followed by CopyNativeBridge.
 	-->
-	<Target Name="PrepareNativeBridge" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildNativeBridge;CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'" />
+	<Target Name="PrepareNativeBridge" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildNativeBridge;CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(BuildNativeBridgeOnBuild)' == 'true'" />
 
 	<!-- Build libnative_bridge.so for every supported ABI -->
-	<Target Name="BuildNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'">
+	<Target Name="BuildNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(BuildNativeBridgeOnBuild)' == 'true'">
 
 		<Message Text="Preparing ARM64 Android native bridge..." Importance="high" />
 
@@ -163,7 +169,7 @@
 	</Target>
 
 	<!-- Copy generated libraries into the Android native-library folders -->
-	<Target Name="CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android'">
+	<Target Name="CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(BuildNativeBridgeOnBuild)' == 'true'">
 
 		<Error Condition="!Exists('$(NativeBuildFolder)\arm64-v8a\libnative_bridge.so')" Text="The ARM64 native bridge was not generated: $(NativeBuildFolder)\arm64-v8a\libnative_bridge.so" />
 

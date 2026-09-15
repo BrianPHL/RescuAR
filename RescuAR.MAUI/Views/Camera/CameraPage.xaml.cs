@@ -65,6 +65,18 @@ namespace RescuAR.App.Views.Camera
         private const string HazardRerouteLogTag =
             "RescuAR-HazardReroute";
 
+        [System.Diagnostics.Conditional("DEBUG")]
+        private static void LogDetailedDebug(
+            string tag,
+            string message)
+        {
+#if ANDROID
+            Log.Debug(
+                tag,
+                message);
+#endif
+        }
+
 
         private readonly MyApplication evergineApplication;
         private readonly IArCoreService _arCoreService;
@@ -94,10 +106,21 @@ namespace RescuAR.App.Views.Camera
 
         private readonly IDispatcherTimer diagnosticTimer;
 
+#if DEBUG
         private const long DetailedStatusLogIntervalMilliseconds =
             10_000;
+#else
+        private const long DetailedStatusLogIntervalMilliseconds =
+            30_000;
+#endif
+
+        private const long DynamicUiRefreshIntervalMilliseconds =
+            2_000;
 
         private long lastDetailedStatusLogTimestamp =
+            long.MinValue;
+
+        private long lastDynamicUiRefreshTimestamp =
             long.MinValue;
 
         private CancellationTokenSource? routeRequestCancellation;
@@ -1581,6 +1604,9 @@ namespace RescuAR.App.Views.Camera
                 true;
 
             lastDetailedStatusLogTimestamp =
+                long.MinValue;
+
+            lastDynamicUiRefreshTimestamp =
                 long.MinValue;
 
             RefreshCameraControlUi();
@@ -3408,7 +3434,7 @@ namespace RescuAR.App.Views.Camera
                             }
 
 #if ANDROID
-                            Log.Debug(
+                            LogDetailedDebug(
                                 FusionLogTag,
                                 "GPS/PDR fusion: " +
                                 $"confidence={gpsFusionDecision.Confidence}, " +
@@ -7107,7 +7133,7 @@ namespace RescuAR.App.Views.Camera
             {
                 rejectedPdrStepCount++;
 
-                Log.Debug(
+                LogDetailedDebug(
                     PdrLogTag,
                     "PDR step held because the current route-segment match " +
                     $"is not trustworthy: confidence={lastRouteMatchConfidence}.");
@@ -7120,7 +7146,7 @@ namespace RescuAR.App.Views.Camera
             {
                 rejectedPdrStepCount++;
 
-                Log.Debug(
+                LogDetailedDebug(
                     PdrLogTag,
                     "PDR step held while GPS route identity is unresolved. " +
                     $"step={e.StepNumber}.");
@@ -7137,7 +7163,7 @@ namespace RescuAR.App.Views.Camera
             {
                 rejectedPdrStepCount++;
 
-                Log.Debug(
+                LogDetailedDebug(
                     PdrLogTag,
                     "PDR step held: route-direction validation unavailable. " +
                     $"step={e.StepNumber}, reason={unavailableReason}");
@@ -7168,7 +7194,7 @@ namespace RescuAR.App.Views.Camera
             {
                 rejectedPdrStepCount++;
 
-                Log.Debug(
+                LogDetailedDebug(
                     PdrLogTag,
                     "PDR step REJECTED by confidence gate: " +
                     $"step={e.StepNumber}, " +
@@ -7216,7 +7242,7 @@ namespace RescuAR.App.Views.Camera
             {
                 rejectedPdrStepCount++;
 
-                Log.Debug(
+                LogDetailedDebug(
                     PdrLogTag,
                     "PDR step could not advance route progress: " +
                     $"step={e.StepNumber}, " +
@@ -7230,7 +7256,7 @@ namespace RescuAR.App.Views.Camera
             UpdateTurnGuidance(
                 route);
 
-            Log.Debug(
+            LogDetailedDebug(
                 PdrLogTag,
                 "PDR step ACCEPTED: " +
                 $"step={e.StepNumber}, " +
@@ -8623,11 +8649,24 @@ namespace RescuAR.App.Views.Camera
                             spatial.Anchor.PositionZ)
                     : float.NaN;
 
-            Dispatcher.Dispatch(
-                RefreshCameraModuleDynamicUi);
+            long diagnosticTimestamp =
+                Environment.TickCount64;
+
+            if (lastDynamicUiRefreshTimestamp ==
+                    long.MinValue ||
+                diagnosticTimestamp -
+                    lastDynamicUiRefreshTimestamp >=
+                        DynamicUiRefreshIntervalMilliseconds)
+            {
+                lastDynamicUiRefreshTimestamp =
+                    diagnosticTimestamp;
+
+                Dispatcher.Dispatch(
+                    RefreshCameraModuleDynamicUi);
+            }
 
             long statusLogTimestamp =
-                Environment.TickCount64;
+                diagnosticTimestamp;
 
             if (lastDetailedStatusLogTimestamp !=
                     long.MinValue &&

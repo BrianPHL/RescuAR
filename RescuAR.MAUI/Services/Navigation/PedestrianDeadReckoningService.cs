@@ -131,7 +131,7 @@ public sealed class PedestrianDeadReckoningService
             try
             {
                 Accelerometer.Default.Start(
-                    SensorSpeed.Game);
+                    SensorSpeed.UI);
 
                 isRunning =
                     true;
@@ -334,7 +334,7 @@ public sealed class PedestrianDeadReckoningService
             return;
         }
 
-#if ANDROID
+#if ANDROID && DEBUG
         Log.Debug(
             LogTag,
             "STEP detected: " +

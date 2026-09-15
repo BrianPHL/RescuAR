@@ -167,6 +167,11 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool depthOcclusionAvailabilityLogged;
 
+#if DEBUG
+    private long lastDepthOcclusionWaitingLogTimestamp =
+        long.MinValue;
+#endif
+
     private long processedFrameCount;
     private long fpsWindowStartTimestamp =
         Environment.TickCount64;
@@ -219,10 +224,10 @@ public sealed partial class ArCoreService : IArCoreService
         0;
 
     private const long GroundPlaneSearchIntervalMilliseconds =
-        125;
+        250;
 
     private const long GroundPlaneSearchProgressLogIntervalMilliseconds =
-        2000;
+        10_000;
 
     private const int GroundDepthConfidenceWindowSweeps =
         5;
@@ -315,9 +320,6 @@ public sealed partial class ArCoreService : IArCoreService
 
     private long lastSpatialPoseTelemetryLogTimestamp =
         long.MinValue;
-
-    private const long SpatialPoseTelemetryLogIntervalMilliseconds =
-        1000;
 
     /*
      * Tracking diagnostics are transition-based so Logcat records the exact
@@ -2680,6 +2682,7 @@ public sealed partial class ArCoreService : IArCoreService
             trackingFailureReason;
     }
 
+    [System.Diagnostics.Conditional("DEBUG")]
     private void LogSpatialPoseTelemetryIfNeeded(
         string trackingState,
         string trackingFailureReason)
@@ -2690,7 +2693,8 @@ public sealed partial class ArCoreService : IArCoreService
         if (lastSpatialPoseTelemetryLogTimestamp !=
                 long.MinValue &&
             now - lastSpatialPoseTelemetryLogTimestamp <
-                SpatialPoseTelemetryLogIntervalMilliseconds)
+                powerThermalDecision
+                    .DiagnosticLogIntervalMilliseconds)
         {
             return;
         }
@@ -3101,19 +3105,35 @@ public sealed partial class ArCoreService : IArCoreService
         }
         catch (Exception exception)
         {
+            _ = exception;
+
             /*
              * NotYetAvailableException is expected while depth is warming up,
              * and other ARCore depth exceptions can occur transiently during
              * tracking loss. Keep the last good depth frame instead of
              * tearing down active flood or route occlusion.
              */
-            if (!depthOcclusionAvailabilityLogged)
+#if DEBUG
+            long now =
+                Environment.TickCount64;
+
+            if (!depthOcclusionAvailabilityLogged &&
+                (lastDepthOcclusionWaitingLogTimestamp ==
+                    long.MinValue ||
+                 now -
+                    lastDepthOcclusionWaitingLogTimestamp >=
+                        powerThermalDecision
+                            .DiagnosticLogIntervalMilliseconds))
             {
+                lastDepthOcclusionWaitingLogTimestamp =
+                    now;
+
                 Log.Debug(
                     "RescuAR-FloodDepth",
                     "ARCore depth occlusion waiting for a usable depth frame: " +
                     $"{exception.GetType().Name}: {exception.Message}");
             }
+#endif
         }
     }
 

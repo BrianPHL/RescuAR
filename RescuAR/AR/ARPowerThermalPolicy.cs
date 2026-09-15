@@ -86,7 +86,7 @@ public static class ARPowerThermalPolicy
                     33,
                     1,
                     true,
-                    10_000,
+                    30_000,
                     batteryTemperatureCelsius,
                     powerSaveMode)
         };

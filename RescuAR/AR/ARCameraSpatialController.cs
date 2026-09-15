@@ -193,7 +193,7 @@ public static class ARCameraSpatialController
     private static bool? lastLoggedFloodVisible;
 
     private const int FloodMetricTelemetryIntervalMilliseconds =
-        1000;
+        10_000;
 
     private static long lastFloodMetricTelemetryTimestamp =
         long.MinValue;
