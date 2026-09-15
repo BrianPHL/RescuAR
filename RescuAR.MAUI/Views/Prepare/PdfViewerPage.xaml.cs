@@ -11,15 +11,18 @@ public partial class PdfViewerPage : ContentPage, IQueryAttributable
         InitializeComponent();
     }
 
-    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    public async void ApplyQueryAttributes(IDictionary<string, object> query)
     {
         if (query.TryGetValue("pdfPath", out var encodedPathObj) && encodedPathObj is string encodedPath)
         {
             try
             {
                 var path = Uri.UnescapeDataString(encodedPath);
-                var uri = new Uri(path);
-                PdfWebView.Source = uri;
+                await Launcher.Default.OpenAsync(new OpenFileRequest
+                {
+                    Title = "Disaster Safety Guide PDF",
+                    File = new ReadOnlyFile(path)
+                });
             }
             catch (Exception ex)
             {
