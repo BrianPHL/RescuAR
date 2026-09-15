@@ -5,15 +5,17 @@ namespace RescuAR.App.Views.Prepare;
 
 public partial class PreparednessGuidePage : ContentPage
 {
+    public PreparednessGuideViewModel ViewModel { get; }
+
     public PreparednessGuidePage()
+        : this(new PreparednessGuideViewModel())
     {
-        InitializeComponent();
-        BindingContext = new PreparednessGuideViewModel();
     }
 
     public PreparednessGuidePage(PreparednessGuideViewModel viewModel)
     {
+        ViewModel = viewModel;
         InitializeComponent();
-        BindingContext = viewModel;
+        BindingContext = ViewModel;
     }
 }

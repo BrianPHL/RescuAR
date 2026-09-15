@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Prepare"
+    xmlns:views="clr-namespace:RescuAR.App.Views.Prepare"
     x:Class="RescuAR.App.Views.Prepare.PreparednessGuidePage"
     x:Name="PageRoot"
     x:DataType="vm:PreparednessGuideViewModel"
@@ -58,7 +59,7 @@
                                 Padding="12,6"
                                 BackgroundColor="{Binding HeaderBgColor}">
                             <Border.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding Source={x:Reference PageRoot}, Path=BindingContext.SelectPageCommand}"
+                                <TapGestureRecognizer Command="{Binding ViewModel.SelectPageCommand, Source={x:Reference PageRoot}, x:DataType=views:PreparednessGuidePage}"
                                                      CommandParameter="{Binding .}" />
                             </Border.GestureRecognizers>
                             <HorizontalStackLayout Spacing="6" VerticalOptions="Center">

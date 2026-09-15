@@ -590,6 +590,10 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "ARCore configuration applied successfully.");
 
+            LogDeviceCompatibilityProfile(
+                session,
+                availability);
+
             Log.Debug(
                 Tag,
                 "STEP 10: Applying initial display geometry.");

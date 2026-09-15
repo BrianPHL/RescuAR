@@ -8709,6 +8709,7 @@ namespace RescuAR.App.Views.Camera
                 $"guidanceConfidenceScore={lastArGuidanceConfidence.Score}/100, " +
                 $"guidanceRouteAllowed={lastArGuidanceConfidence.AllowsRouteGeometry}, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
+                $"routeAlgorithm='{activeRoute?.Algorithm ?? "<none>"}', " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
                 $"headingStable={lastHeadingAlignment?.IsStable ?? false}, " +
                 $"mapToArYaw=" +
