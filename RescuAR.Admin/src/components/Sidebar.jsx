@@ -161,8 +161,8 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>Advisories</span>
               </div>
               <div 
-                className={`sidebar-link ${activeView === 'content-news' ? 'active' : ''}`}
-                onClick={() => onViewChange('content-news')}
+                className={`sidebar-link ${activeView === 'content-evacuation' || activeView === 'content-news' ? 'active' : ''}`}
+                onClick={() => onViewChange('content-evacuation')}
               >
                 <span>Evacuation Centers</span>
               </div>

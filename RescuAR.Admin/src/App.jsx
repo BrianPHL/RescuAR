@@ -71,9 +71,9 @@ export default function App({ session }) {
       case 'community-alerts':
         return <BroadcastLogs />;
       case 'content-advisories':
-      case 'content-news': // Mapped to Advisories as per the second version
         return <Advisories onOpenAdvisoryModal={() => setIsAdvisoryOpen(true)} />;
       case 'content-evacuation':
+      case 'content-news':
         return <EvacuationCenters />;
       case 'content-hotlines':
         return <EmergencyHotlines />;
