@@ -94,6 +94,12 @@ namespace RescuAR.App.Views.Camera
 
         private readonly IDispatcherTimer diagnosticTimer;
 
+        private const long DetailedStatusLogIntervalMilliseconds =
+            10_000;
+
+        private long lastDetailedStatusLogTimestamp =
+            long.MinValue;
+
         private CancellationTokenSource? routeRequestCancellation;
         private CancellationTokenSource? routeProgressCancellation;
         private Task? routeProgressTask;
@@ -1515,6 +1521,9 @@ namespace RescuAR.App.Views.Camera
 
             pageIsVisible =
                 true;
+
+            lastDetailedStatusLogTimestamp =
+                long.MinValue;
 
             ApplyCameraModuleView(
                 currentCameraModuleView,
@@ -8552,6 +8561,21 @@ namespace RescuAR.App.Views.Camera
 
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
+
+            long statusLogTimestamp =
+                Environment.TickCount64;
+
+            if (lastDetailedStatusLogTimestamp !=
+                    long.MinValue &&
+                statusLogTimestamp -
+                    lastDetailedStatusLogTimestamp <
+                        DetailedStatusLogIntervalMilliseconds)
+            {
+                return;
+            }
+
+            lastDetailedStatusLogTimestamp =
+                statusLogTimestamp;
 
             Log.Debug(
                 RouteLogTag,
