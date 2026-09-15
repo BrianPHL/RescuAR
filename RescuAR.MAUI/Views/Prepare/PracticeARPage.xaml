@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    x:Class="RescuAR.App.Views.Prepare.PracticeARPage"
+    Title="AR Practice Drill"
+    BackgroundColor="#F8FAFC">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <ScrollView>
+        <VerticalStackLayout Spacing="16" Padding="20">
+            <Label Text="AR Emergency Simulation" FontSize="20" FontAttributes="Bold" TextColor="#0F172A" />
+            <Label Text="Interactive AR navigation practice and simulated flood hazard evacuation drills." TextColor="#64748B" FontSize="14" />
+        </VerticalStackLayout>
+    </ScrollView>
 
 </ContentPage>
