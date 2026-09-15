@@ -171,9 +171,6 @@ public sealed partial class ArCoreService : IArCoreService
     private long fpsWindowStartTimestamp =
         Environment.TickCount64;
 
-    private const long FpsLogIntervalMilliseconds =
-        1000;
-
     private const string SpatialPoseTag =
         "RescuAR-ARPose";
 
@@ -1110,10 +1107,23 @@ public sealed partial class ArCoreService : IArCoreService
 
         try
         {
+            RefreshPowerThermalDecisionIfNeeded(
+                force: true);
+
             while (!cancellationToken.IsCancellationRequested)
             {
+                long iterationStartedTimestamp =
+                    Environment.TickCount64;
+
                 UpdateFrameSerialized(
                     fromAutomaticLoop: true,
+                    cancellationToken);
+
+                RefreshPowerThermalDecisionIfNeeded(
+                    force: false);
+
+                ApplyFrameWorkloadDelay(
+                    iterationStartedTimestamp,
                     cancellationToken);
             }
         }
@@ -2825,6 +2835,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         bool nearbyRouteAvailable =
             ARRouteRenderer.DepthOcclusionRequested &&
+            powerThermalDecision.RouteDepthAllowed &&
             route.IsAvailable &&
             ARRouteVisualPolicy.HasNearbyRoute(
                 route.Points);
@@ -2854,6 +2865,11 @@ public sealed partial class ArCoreService : IArCoreService
             flood.IsAvailable
                 ? DepthOcclusionPublishIntervalNanoseconds
                 : RouteDepthOcclusionPublishIntervalNanoseconds;
+
+        publishIntervalNanoseconds =
+            ARPowerThermalPolicy.AdjustDepthIntervalNanoseconds(
+                publishIntervalNanoseconds,
+                powerThermalDecision);
 
         if (lastDepthOcclusionPublishTimestamp != long.MinValue &&
             timestamp > lastDepthOcclusionPublishTimestamp &&
@@ -3043,11 +3059,16 @@ public sealed partial class ArCoreService : IArCoreService
                 depthOcclusionAvailabilityLogged =
                     true;
 
+                double refreshCapHz =
+                    1_000_000_000.0 /
+                    publishIntervalNanoseconds;
+
                 Log.Info(
                     "RescuAR-FloodDepth",
                     "ARCore depth occlusion ACTIVE: " +
                     $"consumer={(flood.IsAvailable ? "flood" : "route")}, " +
-                    $"refreshCap={(flood.IsAvailable ? 10 : 5)}Hz, " +
+                    $"refreshCap={refreshCapHz:0.#}Hz, " +
+                    $"powerMode={powerThermalDecision.Mode}, " +
                     $"depthImage={width}x{height}, " +
                     $"textureIntrinsics={dimensions[0]}x{dimensions[1]}, " +
                     $"pixelStride={pixelStride}, rowStride={rowStride}.");
@@ -3456,7 +3477,7 @@ public sealed partial class ArCoreService : IArCoreService
             now - fpsWindowStartTimestamp;
 
         if (elapsedMilliseconds <
-            FpsLogIntervalMilliseconds)
+            powerThermalDecision.DiagnosticLogIntervalMilliseconds)
         {
             return;
         }
@@ -3466,9 +3487,20 @@ public sealed partial class ArCoreService : IArCoreService
             1000.0 /
             elapsedMilliseconds;
 
+        string temperatureText =
+            float.IsFinite(
+                powerThermalDecision.BatteryTemperatureCelsius)
+                ? $"{powerThermalDecision.BatteryTemperatureCelsius:F1}C"
+                : "unavailable";
+
         Log.Debug(
             Tag,
-            $"Camera pipeline FPS = {fps:F1}");
+            "Camera pipeline telemetry: " +
+            $"fps={fps:F1}, " +
+            $"targetMaxFps={powerThermalDecision.TargetMaximumFramesPerSecond}, " +
+            $"powerMode={powerThermalDecision.Mode}, " +
+            $"batteryTemperature={temperatureText}, " +
+            $"powerSaver={powerThermalDecision.PowerSaveMode}.");
 
         processedFrameCount =
             0;
