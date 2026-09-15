@@ -127,6 +127,8 @@ public static class MauiProgram
         builder.Services.AddTransient<WeatherInformationViewModel>();
 
         // Batch 4: Prepare pages / ViewModels
+        builder.Services.AddTransient<PreparePage>();
+        builder.Services.AddTransient<PrepareViewModel>();
         builder.Services.AddTransient<ChecklistPage>();
         builder.Services.AddTransient<ChecklistViewModel>();
         builder.Services.AddTransient<PASSPage>();
@@ -145,6 +147,10 @@ public static class MauiProgram
         builder.Services.AddTransient<DocumentaryVideosViewModel>();
         builder.Services.AddTransient<FloodTimelinePage>();
         builder.Services.AddTransient<FloodTimelineViewModel>();
+        builder.Services.AddTransient<PreparednessGuidePage>();
+        builder.Services.AddTransient<PreparednessGuideViewModel>();
+        builder.Services.AddTransient<PracticeARPage>();
+        builder.Services.AddTransient<PracticeARViewModel>();
 
         // Batch 4: Summary
         builder.Services.AddTransient<SummaryPage>();
