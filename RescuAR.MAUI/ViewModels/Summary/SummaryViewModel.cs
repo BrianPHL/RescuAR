@@ -225,10 +225,27 @@ public partial class SummaryViewModel : ObservableObject
         }
 
         // Escalation actions if conditions worsen
-        WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Initiate immediate evacuation to nearest safe zone", IsCompleted = false });
-        WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Activate AR Evacuation Route Guidance on camera", IsCompleted = false });
-        WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Shut off main electrical breaker and LPG gas valve", IsCompleted = false });
-        WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Contact emergency hotline for rescue assistance", IsCompleted = false });
+        string escalationText = advisory.DisplayEscalationActionsText;
+        if (!string.IsNullOrWhiteSpace(escalationText))
+        {
+            var lines = escalationText.Split(new[] { '\n', '•', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                string clean = line.Trim();
+                if (!string.IsNullOrWhiteSpace(clean))
+                {
+                    WorsenedConditionsActions.Add(new ChecklistActionItem { Text = clean, IsCompleted = false });
+                }
+            }
+        }
+
+        if (WorsenedConditionsActions.Count == 0)
+        {
+            WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Initiate immediate evacuation to nearest safe zone", IsCompleted = false });
+            WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Activate AR Evacuation Route Guidance on camera", IsCompleted = false });
+            WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Shut off main electrical breaker and LPG gas valve", IsCompleted = false });
+            WorsenedConditionsActions.Add(new ChecklistActionItem { Text = "Contact emergency hotline for rescue assistance", IsCompleted = false });
+        }
     }
 
     private void PopulateDefaultChecklist()

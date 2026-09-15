@@ -35,6 +35,9 @@ public class DisasterAdvisory : BaseModel, INotifyPropertyChanged
     [Column("recommended_action")]
     public string? RecommendedAction { get; set; }
 
+    [Column("escalation_actions")]
+    public string? EscalationActions { get; set; }
+
     [Column("category")]
     public string Category { get; set; } = "General";
 
@@ -67,6 +70,7 @@ public class DisasterAdvisory : BaseModel, INotifyPropertyChanged
         OnPropertyChanged(nameof(DisplayTitleText));
         OnPropertyChanged(nameof(DisplayMessageText));
         OnPropertyChanged(nameof(DisplayActionPlanText));
+        OnPropertyChanged(nameof(DisplayEscalationActionsText));
         OnPropertyChanged(nameof(DisplayAffectedAreaText));
         OnPropertyChanged(nameof(HeaderTagText));
         OnPropertyChanged(nameof(ActionPlanHeaderTagText));
@@ -136,7 +140,20 @@ public class DisasterAdvisory : BaseModel, INotifyPropertyChanged
     public string DisplayMessageText => IsTagalog ? AdvisoryTranslationService.TranslateText(DisplayMessage) : DisplayMessage;
 
     [JsonIgnore]
+    public string DisplayEscalationActions
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(EscalationActions)) return EscalationActions;
+            return string.Empty;
+        }
+    }
+
+    [JsonIgnore]
     public string DisplayActionPlanText => IsTagalog ? AdvisoryTranslationService.TranslateText(DisplayActionPlan) : DisplayActionPlan;
+
+    [JsonIgnore]
+    public string DisplayEscalationActionsText => IsTagalog ? AdvisoryTranslationService.TranslateText(DisplayEscalationActions) : DisplayEscalationActions;
 
     [JsonIgnore]
     public string DisplayAffectedAreaText => IsTagalog ? AdvisoryTranslationService.TranslateText(DisplayAffectedArea) : DisplayAffectedArea;
