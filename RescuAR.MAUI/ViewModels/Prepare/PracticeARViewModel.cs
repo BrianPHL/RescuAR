@@ -1,10 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace RescuAR.App.ViewModels.Prepare
+namespace RescuAR.App.ViewModels.Prepare;
+
+public partial class PracticeARViewModel : ObservableObject
 {
-    internal class PracticeARViewModel
-    {
-    }
+    [ObservableProperty]
+    private string _title = "AR Practice Drill";
 }
