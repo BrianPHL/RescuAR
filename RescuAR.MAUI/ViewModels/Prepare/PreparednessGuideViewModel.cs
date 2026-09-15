@@ -53,42 +53,9 @@ public partial class PreparednessGuideViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoadingPdfPages;
 
-    [ObservableProperty]
-    private double _pdfZoomScale = 1.0;
-
-    [ObservableProperty]
-    private string _pdfZoomText = "100%";
-
     public ObservableCollection<ProtocolPageItem> ProtocolPages { get; } = new();
 
     public ObservableCollection<ImageSource> PdfPageImages { get; } = new();
-
-    [RelayCommand]
-    private void ZoomIn()
-    {
-        if (PdfZoomScale < 3.0)
-        {
-            PdfZoomScale = Math.Min(3.0, Math.Round(PdfZoomScale + 0.25, 2));
-            PdfZoomText = $"{(int)(PdfZoomScale * 100)}%";
-        }
-    }
-
-    [RelayCommand]
-    private void ZoomOut()
-    {
-        if (PdfZoomScale > 0.75)
-        {
-            PdfZoomScale = Math.Max(0.75, Math.Round(PdfZoomScale - 0.25, 2));
-            PdfZoomText = $"{(int)(PdfZoomScale * 100)}%";
-        }
-    }
-
-    [RelayCommand]
-    private void ResetZoom()
-    {
-        PdfZoomScale = 1.0;
-        PdfZoomText = "100%";
-    }
 
     public PreparednessGuideViewModel()
     {
@@ -293,7 +260,6 @@ public partial class PreparednessGuideViewModel : ObservableObject
     [RelayCommand]
     private async Task ViewPdfAsync()
     {
-        ResetZoom();
         IsPdfModalVisible = true;
 
         if (PdfPageImages.Count > 0)

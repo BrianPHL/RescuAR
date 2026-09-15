@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using Microsoft.Maui.Controls;
 using RescuAR.App.ViewModels.Prepare;
 
@@ -6,7 +7,14 @@ namespace RescuAR.App.Views.Prepare;
 
 public partial class PreparednessGuidePage : ContentPage
 {
+    private View? _zoomedView;
+
+    private double _startTranslationX;
+
+    private double _startTranslationY;
+
     public PreparednessGuideViewModel ViewModel { get; }
+
     public PreparednessGuidePage()
         : this(new PreparednessGuideViewModel())
     {
@@ -17,6 +25,27 @@ public partial class PreparednessGuidePage : ContentPage
         ViewModel = viewModel;
         InitializeComponent();
         BindingContext = ViewModel;
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    protected override void OnDisappearing()
+    {
+        ResetPdfZoomState();
+        ViewModel.IsPdfModalVisible = false;
+        base.OnDisappearing();
+    }
+
+    private void OnViewModelPropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName ==
+                nameof(PreparednessGuideViewModel.IsPdfModalVisible) &&
+            !ViewModel.IsPdfModalVisible)
+        {
+            Dispatcher.Dispatch(
+                ResetPdfZoomState);
+        }
     }
 
     private void OnDoubleTapToggleZoom(object sender, TappedEventArgs e)
@@ -28,9 +57,8 @@ public partial class PreparednessGuidePage : ContentPage
                 // Reset any previously zoomed view
                 if (_zoomedView != null && _zoomedView != view)
                 {
-                    _zoomedView.Scale = 1.0;
-                    _zoomedView.TranslationX = 0;
-                    _zoomedView.TranslationY = 0;
+                    ResetViewTransform(
+                        _zoomedView);
                 }
 
                 // Zoom IN to 2.5x
@@ -44,14 +72,7 @@ public partial class PreparednessGuidePage : ContentPage
             }
             else
             {
-                // Zoom OUT & reset position
-                view.Scale = 1.0;
-                view.TranslationX = 0;
-                view.TranslationY = 0;
-                _zoomedView = null;
-
-                // Re-enable ScrollView vertical scrolling
-                PdfScrollView.Orientation = ScrollOrientation.Vertical;
+                ResetPdfZoomState();
             }
         }
     }
@@ -87,5 +108,39 @@ public partial class PreparednessGuidePage : ContentPage
                     break;
             }
         }
+    }
+
+    private void ResetPdfZoomState()
+    {
+        if (_zoomedView is not null)
+        {
+            ResetViewTransform(
+                _zoomedView);
+        }
+
+        _zoomedView =
+            null;
+
+        _startTranslationX =
+            0.0;
+
+        _startTranslationY =
+            0.0;
+
+        PdfScrollView.Orientation =
+            ScrollOrientation.Vertical;
+    }
+
+    private static void ResetViewTransform(
+        View view)
+    {
+        view.Scale =
+            1.0;
+
+        view.TranslationX =
+            0.0;
+
+        view.TranslationY =
+            0.0;
     }
 }
