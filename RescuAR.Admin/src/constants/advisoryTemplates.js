@@ -13,8 +13,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Micro (< 3.0)',
     category: 'Earthquake',
     severity: 'Low',
-    description: 'Usually not felt.',
-    recommendedAction: 'No action needed. Check official updates.',
+    description: 'Earthquake activity below magnitude 3.0 is usually not felt, but it may still be recorded by monitoring instruments.',
+    recommendedAction: 'No immediate protective action is normally needed. Check official earthquake updates and stay alert for any reported aftershocks or local advisories.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -23,8 +23,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Minor (3.0 - 3.9)',
     category: 'Earthquake',
     severity: 'Low',
-    description: 'Light shaking may be felt. Damage is unlikely.',
-    recommendedAction: 'Stay alert. Check official updates.',
+    description: 'Light shaking may be felt by some people, but significant structural damage is unlikely.',
+    recommendedAction: 'Stay calm and check your surroundings for minor hazards. Monitor official updates and be prepared for possible aftershocks.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -33,8 +33,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Light (4.0 - 4.9)',
     category: 'Earthquake',
     severity: 'Moderate',
-    description: 'Noticeable shaking. Objects may move.',
-    recommendedAction: 'Stay calm. Keep away from falling objects.',
+    description: 'Noticeable shaking may be felt indoors, and hanging or unsecured objects may move or fall.',
+    recommendedAction: 'During shaking, Drop, Cover, and Hold On. Stay away from windows and falling objects, then check your surroundings for hazards after the shaking stops.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -43,8 +43,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Moderate (5.0 - 5.9)',
     category: 'Earthquake',
     severity: 'Moderate',
-    description: 'Strong shaking may damage weaker structures.',
-    recommendedAction: 'Drop, Cover, and Hold On. Check for hazards after.',
+    description: 'Strong shaking may damage weak structures, move heavy objects, and create falling-object hazards in affected areas.',
+    recommendedAction: 'Drop, Cover, and Hold On until shaking stops. Afterward, check for injuries, fire, damaged utilities, and unsafe structures before moving to a safer location.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -53,8 +53,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Strong (6.0 - 6.9)',
     category: 'Earthquake',
     severity: 'High',
-    description: 'Severe shaking may damage buildings and roads.',
-    recommendedAction: 'Drop, Cover, and Hold On. Move to a safe area after.',
+    description: 'Severe shaking may cause major damage to buildings, roads, utilities, and other infrastructure in populated areas.',
+    recommendedAction: 'Drop, Cover, and Hold On during shaking. Afterward, leave visibly damaged buildings, avoid downed power lines, and follow evacuation or emergency instructions.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -63,8 +63,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Major (7.0 - 7.9)',
     category: 'Earthquake',
     severity: 'Critical',
-    description: 'Widespread, serious damage may occur.',
-    recommendedAction: 'Protect yourself. Evacuate unsafe buildings after shaking.',
+    description: 'Very strong shaking may cause widespread structural damage, blocked roads, utility failures, and dangerous debris across a large area.',
+    recommendedAction: 'Protect yourself during shaking, then evacuate unsafe buildings when it is safe to move. Expect aftershocks and follow official evacuation routes and emergency instructions.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -73,10 +73,11 @@ export const ADVISORY_TEMPLATES = [
     title: 'Great (8.0+)',
     category: 'Earthquake',
     severity: 'Critical',
-    description: 'Extreme shaking may cause widespread destruction.',
-    recommendedAction: 'Protect yourself. Evacuate dangerous areas and follow authorities.',
+    description: 'Extreme shaking may cause catastrophic and widespread destruction, major infrastructure failure, and prolonged disruption across affected communities.',
+    recommendedAction: 'Protect yourself during shaking and move away from severely damaged areas afterward. Follow authorities immediately, expect strong aftershocks, and use designated evacuation or safe areas.',
     affectedAreas: 'All Marikina City'
   },
+
   // ==========================================
   // 1. WEATHER MONITORING ADVISORIES
   // ==========================================
@@ -86,8 +87,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Light to Moderate Rain',
     category: 'Weather',
     severity: 'Low',
-    description: 'Light to moderate rain may affect parts of Marikina City.',
-    recommendedAction: 'Bring rain protection. Monitor weather updates.',
+    description: 'Light to moderate rain may affect parts of Marikina City, making roads wet and causing brief water buildup in low-lying areas.',
+    recommendedAction: 'Bring rain protection and use caution on wet roads. Monitor official weather updates, especially if you are near flood-prone areas.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -96,8 +97,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Occasional Rain',
     category: 'Weather',
     severity: 'Low',
-    description: 'Cloudy skies with occasional light rain may affect the city.',
-    recommendedAction: 'Carry rain protection. Monitor updates.',
+    description: 'Cloudy skies with occasional light rain may affect the city and make roads slippery in some areas.',
+    recommendedAction: 'Carry rain protection and travel carefully on wet roads. Continue checking official weather updates for any change in conditions.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -106,8 +107,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Heavy Rain Warning',
     category: 'Weather',
     severity: 'Moderate',
-    description: 'Heavy rain may cause water buildup in low-lying areas.',
-    recommendedAction: 'Limit unnecessary travel. Monitor local advisories.',
+    description: 'Heavy rain may cause water to collect quickly on roads and in low-lying areas, with possible localized flooding.',
+    recommendedAction: 'Avoid unnecessary travel and do not enter flooded roads. Keep essential items ready and monitor official advisories for worsening conditions.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -116,8 +117,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Thunderstorm Warning (Moderate)',
     category: 'Weather',
     severity: 'Moderate',
-    description: 'Thunderstorms may bring moderate to heavy rain across Marikina.',
-    recommendedAction: 'Stay indoors. Avoid open areas.',
+    description: 'Intense rain, lightning, and strong winds may affect Marikina and can cause sudden flooding in vulnerable areas.',
+    recommendedAction: 'Stay indoors and away from windows during the storm. Avoid flood-prone roads and open areas, and follow official safety updates.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -126,8 +127,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Strong Wind Warning',
     category: 'Weather',
     severity: 'Moderate',
-    description: 'Gusty winds may affect exposed areas and unsecured objects.',
-    recommendedAction: 'Secure loose objects. Stay away from power lines.',
+    description: 'Gusty winds may affect exposed areas and can move unsecured objects, tree branches, or lightweight materials.',
+    recommendedAction: 'Secure loose outdoor objects and stay away from trees, damaged structures, and power lines. Remain indoors if winds become stronger.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -136,8 +137,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Thunderstorm Warning (High)',
     category: 'Weather',
     severity: 'High',
-    description: 'Intense rain and thunderstorms may cause rapid flooding.',
-    recommendedAction: 'Stay indoors. Avoid flood-prone areas.',
+    description: 'Intense rain, lightning, and strong winds may affect Marikina and can cause sudden flooding in vulnerable areas.',
+    recommendedAction: 'Stay indoors and away from windows during the storm. Avoid flood-prone roads and open areas, and follow official safety updates.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -146,8 +147,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Extreme Heat Warning',
     category: 'Weather',
     severity: 'High',
-    description: 'High temperatures may increase the risk of heat-related illness.',
-    recommendedAction: 'Drink water. Reduce outdoor activity.',
+    description: 'High temperatures may increase the risk of heat exhaustion or heat-related illness, especially during prolonged outdoor activity.',
+    recommendedAction: 'Drink water regularly and reduce strenuous outdoor activity. Stay in shaded or cool areas and seek help if you feel dizzy, weak, or unwell.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -156,8 +157,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Damaging Wind Warning',
     category: 'Weather',
     severity: 'High',
-    description: 'Strong winds may damage lightweight structures and exposed areas.',
-    recommendedAction: 'Stay indoors. Keep away from trees and power lines.',
+    description: 'Strong winds may damage lightweight structures, trees, and power lines and may make outdoor travel unsafe.',
+    recommendedAction: 'Stay indoors and away from windows where possible. Keep clear of trees, signs, damaged structures, and fallen or hanging power lines.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -166,8 +167,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Severe Weather Warning',
     category: 'Weather',
     severity: 'Critical',
-    description: 'Severe rain and thunderstorms may cause dangerous flooding.',
-    recommendedAction: 'Move to a safe area. Follow LGU instructions.',
+    description: 'Severe rain, thunderstorms, and strong winds may create dangerous flooding and unsafe travel conditions across affected areas.',
+    recommendedAction: 'Move to a safe location before conditions worsen. Avoid floodwaters and follow LGU evacuation or emergency instructions immediately.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -176,8 +177,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Torrential Rain Warning',
     category: 'Weather',
     severity: 'Critical',
-    description: 'Torrential rain may cause rapid and dangerous flooding.',
-    recommendedAction: 'Seek higher ground. Follow evacuation instructions.',
+    description: 'Torrential rain may cause rapid and dangerous flooding, especially near rivers, drainage channels, and low-lying communities.',
+    recommendedAction: 'Move to higher ground before routes become flooded. Do not cross floodwaters and follow evacuation instructions from local authorities.',
     affectedAreas: 'All Marikina City'
   },
 
@@ -191,8 +192,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Batasan: 1st Alarm (15.0m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 15.0 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'Batasan, San Jose, Tumana'
   },
   {
@@ -201,8 +202,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Batasan: 2nd Alarm (16.0m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 16.0 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'Batasan, San Jose, Tumana'
   },
   {
@@ -211,8 +212,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Batasan: 3rd Alarm (18.0m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 18.0 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'Batasan, San Jose, Tumana'
   },
 
@@ -223,8 +224,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Nangka: 1st Alarm (16.5m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 16.5 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'Nangka'
   },
   {
@@ -233,8 +234,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Nangka: 2nd Alarm (17.1m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 17.1 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'Nangka'
   },
   {
@@ -243,8 +244,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Nangka: 3rd Alarm (17.7m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 17.7 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'Nangka'
   },
 
@@ -255,8 +256,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Rodriguez: 1st Alarm (28.8m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 28.8 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'Burgos, Rodriguez'
   },
   {
@@ -265,8 +266,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Rodriguez: 2nd Alarm (29.8m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 29.8 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'Burgos, Rodriguez'
   },
   {
@@ -275,8 +276,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Rodriguez: 3rd Alarm (30.7m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 30.7 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'Burgos, Rodriguez'
   },
 
@@ -287,8 +288,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'San Jose: 1st Alarm (22.4m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 22.4 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'San Jose'
   },
   {
@@ -297,8 +298,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'San Jose: 2nd Alarm (23.0m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 23.0 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'San Jose'
   },
   {
@@ -307,8 +308,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'San Jose: 3rd Alarm (23.6m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 23.6 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'San Jose'
   },
 
@@ -319,8 +320,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Sto. Niño: 1st Alarm (15.0m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 15.0 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'Sto. Niño'
   },
   {
@@ -329,8 +330,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Sto. Niño: 2nd Alarm (16.0m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 16.0 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'Sto. Niño'
   },
   {
@@ -339,8 +340,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Sto. Niño: 3rd Alarm (18.0m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 18.0 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'Sto. Niño'
   },
 
@@ -351,8 +352,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Tumana: 1st Alarm (15.0m)',
     category: 'Monitoring',
     severity: 'Moderate',
-    description: 'Water level is elevated at 15.0 m.',
-    recommendedAction: 'Monitor updates. Prepare emergency supplies.',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
     affectedAreas: 'Tumana'
   },
   {
@@ -361,8 +362,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Tumana: 2nd Alarm (16.0m)',
     category: 'Monitoring',
     severity: 'High',
-    description: 'Water level is 16.0 m. Water continues to rise and may affect nearby areas.',
-    recommendedAction: 'Prepare for possible evacuation. Follow LGU instructions.',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
     affectedAreas: 'Tumana'
   },
   {
@@ -371,8 +372,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Tumana: 3rd Alarm (18.0m)',
     category: 'Monitoring',
     severity: 'Critical',
-    description: 'Water level is 18.0 m. Flood risk is critical.',
-    recommendedAction: 'Evacuate when instructed. Proceed to a safe area.',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
     affectedAreas: 'Tumana'
   },
 
@@ -385,8 +386,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Marikina City',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in vulnerable areas.',
-    recommendedAction: 'Monitor updates. Avoid flood-prone roads.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -395,8 +396,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Marikina City',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding is developing in several low-lying areas.',
-    recommendedAction: 'Limit travel. Prepare emergency supplies.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -405,8 +406,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Marikina City',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect multiple communities.',
-    recommendedAction: 'Move to a safer area. Prepare to evacuate.',
+    description: 'Significant flooding may affect Marikina City, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -415,8 +416,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Marikina City',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting multiple areas.',
-    recommendedAction: 'Evacuate when ordered. Follow LGU instructions.',
+    description: 'Dangerous flooding is affecting Marikina City and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'All Marikina City'
   },
   {
@@ -425,8 +426,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: District 1',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in District 1.',
-    recommendedAction: 'Monitor conditions. Avoid flood-prone streets.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: d1Barangays
   },
   {
@@ -435,8 +436,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: District 1',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may affect several District 1 areas.',
-    recommendedAction: 'Limit travel. Prepare important belongings.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: d1Barangays
   },
   {
@@ -445,8 +446,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: District 1',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect District 1 communities.',
-    recommendedAction: 'Prepare to move to safer areas.',
+    description: 'Significant flooding may affect District 1, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: d1Barangays
   },
   {
@@ -455,8 +456,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: District 1',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting District 1.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting District 1 and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: d1Barangays
   },
   {
@@ -465,8 +466,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: District 2',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in District 2.',
-    recommendedAction: 'Monitor conditions. Avoid flood-prone streets.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: d2Barangays
   },
   {
@@ -475,8 +476,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: District 2',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may affect several District 2 areas.',
-    recommendedAction: 'Limit travel. Prepare important belongings.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: d2Barangays
   },
   {
@@ -485,8 +486,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: District 2',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect District 2 communities.',
-    recommendedAction: 'Prepare to move to safer areas.',
+    description: 'Significant flooding may affect District 2, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: d2Barangays
   },
   {
@@ -495,8 +496,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: District 2',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting District 2.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting District 2 and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: d2Barangays
   },
 
@@ -510,8 +511,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Barangka',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in low-lying areas.',
-    recommendedAction: 'Monitor updates. Avoid flood-prone roads.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Barangka'
   },
   {
@@ -520,8 +521,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Barangka',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding is developing on vulnerable roads.',
-    recommendedAction: 'Limit travel. Secure important belongings.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Barangka'
   },
   {
@@ -530,8 +531,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Barangka',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect parts of Barangka.',
-    recommendedAction: 'Move vehicles and valuables to higher ground.',
+    description: 'Significant flooding may affect Barangka, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Barangka'
   },
   {
@@ -540,8 +541,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Barangka',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Barangka.',
-    recommendedAction: 'Evacuate when instructed. Avoid floodwaters.',
+    description: 'Dangerous flooding is affecting Barangka and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Barangka'
   },
 
@@ -552,8 +553,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Industrial Valley Complex',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in vulnerable areas.',
-    recommendedAction: 'Monitor updates. Avoid flood-prone roads.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Industrial Valley Complex'
   },
   {
@@ -562,8 +563,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Industrial Valley Complex',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Rising water may affect local roads.',
-    recommendedAction: 'Limit travel. Secure important belongings.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Industrial Valley Complex'
   },
   {
@@ -572,8 +573,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Industrial Valley Complex',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect the area.',
-    recommendedAction: 'Move vehicles and valuables to higher ground.',
+    description: 'Significant flooding may affect Industrial Valley Complex, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Industrial Valley Complex'
   },
   {
@@ -582,8 +583,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Industrial Valley Complex',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting the area.',
-    recommendedAction: 'Move to a safe location when instructed.',
+    description: 'Dangerous flooding is affecting Industrial Valley Complex and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Industrial Valley Complex'
   },
 
@@ -594,8 +595,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Jesus dela Peña',
     category: 'Flood',
     severity: 'Low',
-    description: 'Water may rise in low-lying areas.',
-    recommendedAction: 'Monitor updates. Watch nearby waterways.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Jesus dela Peña'
   },
   {
@@ -604,8 +605,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Jesus dela Peña',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding is developing in vulnerable areas.',
-    recommendedAction: 'Avoid flooded roads. Prepare supplies.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Jesus dela Peña'
   },
   {
@@ -614,8 +615,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Jesus dela Peña',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect the barangay.',
-    recommendedAction: 'Prepare to move to higher ground.',
+    description: 'Significant flooding may affect Jesus dela Peña, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Jesus dela Peña'
   },
   {
@@ -624,8 +625,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Jesus dela Peña',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting the barangay.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting Jesus dela Peña and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Jesus dela Peña'
   },
 
@@ -636,8 +637,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Kalumpang',
     category: 'Flood',
     severity: 'Low',
-    description: 'Rising water may affect low-lying areas.',
-    recommendedAction: 'Monitor river levels. Follow local updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Kalumpang (Calumpang)'
   },
   {
@@ -646,8 +647,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Kalumpang',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may develop near vulnerable areas.',
-    recommendedAction: 'Prepare supplies. Avoid flood-prone roads.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Kalumpang (Calumpang)'
   },
   {
@@ -656,8 +657,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Kalumpang',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect the barangay.',
-    recommendedAction: 'Move to higher ground if conditions worsen.',
+    description: 'Significant flooding may affect Kalumpang, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Kalumpang (Calumpang)'
   },
   {
@@ -666,8 +667,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Kalumpang',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Kalumpang.',
-    recommendedAction: 'Evacuate immediately when instructed.',
+    description: 'Dangerous flooding is affecting Kalumpang and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Kalumpang (Calumpang)'
   },
 
@@ -678,8 +679,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Malanday',
     category: 'Flood',
     severity: 'Low',
-    description: 'Water levels may rise in low-lying areas.',
-    recommendedAction: 'Monitor updates. Watch nearby waterways.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Malanday'
   },
   {
@@ -688,8 +689,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Malanday',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding is developing in vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare emergency supplies.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Malanday'
   },
   {
@@ -698,8 +699,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Malanday',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect Malanday.',
-    recommendedAction: 'Prepare to move to higher ground.',
+    description: 'Significant flooding may affect Malanday, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Malanday'
   },
   {
@@ -708,8 +709,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Malanday',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Malanday.',
-    recommendedAction: 'Evacuate when ordered and avoid floodwaters.',
+    description: 'Dangerous flooding is affecting Malanday and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Malanday'
   },
 
@@ -720,8 +721,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: San Roque',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop in vulnerable areas.',
-    recommendedAction: 'Monitor updates. Check road conditions.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'San Roque'
   },
   {
@@ -730,8 +731,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: San Roque',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may affect low-lying roads.',
-    recommendedAction: 'Avoid flooded streets. Prepare supplies.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'San Roque'
   },
   {
@@ -740,8 +741,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: San Roque',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect parts of San Roque.',
-    recommendedAction: 'Move belongings to higher areas.',
+    description: 'Significant flooding may affect San Roque, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'San Roque'
   },
   {
@@ -750,8 +751,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: San Roque',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting San Roque.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting San Roque and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'San Roque'
   },
 
@@ -762,8 +763,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Sta. Elena',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during continued rain.',
-    recommendedAction: 'Monitor weather. Check road conditions.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Sta. Elena'
   },
   {
@@ -772,8 +773,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Sta. Elena',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect some roads.',
-    recommendedAction: 'Avoid flooded areas. Limit travel.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Sta. Elena'
   },
   {
@@ -782,8 +783,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Sta. Elena',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare to relocate.',
+    description: 'Significant flooding may affect Sta. Elena, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Sta. Elena'
   },
   {
@@ -792,8 +793,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Sta. Elena',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting the barangay.',
-    recommendedAction: 'Move to a designated safe area.',
+    description: 'Dangerous flooding is affecting Sta. Elena and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Sta. Elena'
   },
 
@@ -804,8 +805,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Sto. Niño',
     category: 'Flood',
     severity: 'Low',
-    description: 'River levels may affect low-lying areas.',
-    recommendedAction: 'Monitor river levels. Follow local updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Sto. Niño'
   },
   {
@@ -814,8 +815,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Sto. Niño',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may develop near riverside areas.',
-    recommendedAction: 'Prepare supplies. Avoid the riverbank.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Sto. Niño'
   },
   {
@@ -824,8 +825,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Sto. Niño',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect Sto. Niño.',
-    recommendedAction: 'Prepare to evacuate to higher ground.',
+    description: 'Significant flooding may affect Sto. Niño, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Sto. Niño'
   },
   {
@@ -834,8 +835,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Sto. Niño',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Sto. Niño.',
-    recommendedAction: 'Evacuate immediately when instructed.',
+    description: 'Dangerous flooding is affecting Sto. Niño and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Sto. Niño'
   },
 
@@ -846,8 +847,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Tañong',
     category: 'Flood',
     severity: 'Low',
-    description: 'Rising water may affect riverside areas.',
-    recommendedAction: 'Monitor conditions. Watch nearby waterways.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Tañong'
   },
   {
@@ -856,8 +857,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Tañong',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may develop in low-lying areas.',
-    recommendedAction: 'Avoid riverside roads. Prepare supplies.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Tañong'
   },
   {
@@ -866,8 +867,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Tañong',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect Tañong.',
-    recommendedAction: 'Move belongings higher. Prepare to relocate.',
+    description: 'Significant flooding may affect Tañong, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Tañong'
   },
   {
@@ -876,8 +877,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Tañong',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Tañong.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting Tañong and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Tañong'
   },
 
@@ -891,8 +892,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Concepcion I',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during continued rain.',
-    recommendedAction: 'Monitor weather. Check drainage conditions.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Concepcion I (Concepcion Uno)'
   },
   {
@@ -901,8 +902,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Concepcion I',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect some roads.',
-    recommendedAction: 'Avoid flooded streets. Limit travel.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Concepcion I (Concepcion Uno)'
   },
   {
@@ -911,8 +912,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Concepcion I',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare to relocate.',
+    description: 'Significant flooding may affect Concepcion I, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Concepcion I (Concepcion Uno)'
   },
   {
@@ -921,8 +922,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Concepcion I',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting the barangay.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting Concepcion I and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Concepcion I (Concepcion Uno)'
   },
 
@@ -933,8 +934,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Concepcion II',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during continued rain.',
-    recommendedAction: 'Monitor weather. Check drainage conditions.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Concepcion II (Concepcion Dos)'
   },
   {
@@ -943,8 +944,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Concepcion II',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect some roads.',
-    recommendedAction: 'Avoid flooded streets. Limit travel.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Concepcion II (Concepcion Dos)'
   },
   {
@@ -953,8 +954,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Concepcion II',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare to relocate.',
+    description: 'Significant flooding may affect Concepcion II, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Concepcion II (Concepcion Dos)'
   },
   {
@@ -963,8 +964,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Concepcion II',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting the barangay.',
-    recommendedAction: 'Evacuate when instructed by authorities.',
+    description: 'Dangerous flooding is affecting Concepcion II and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Concepcion II (Concepcion Dos)'
   },
 
@@ -975,8 +976,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Fortune',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during heavy rain.',
-    recommendedAction: 'Monitor conditions. Follow local updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Fortune'
   },
   {
@@ -985,8 +986,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Fortune',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect low-lying roads.',
-    recommendedAction: 'Limit travel. Avoid flooded areas.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Fortune'
   },
   {
@@ -995,8 +996,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Fortune',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare to move.',
+    description: 'Significant flooding may affect Fortune, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Fortune'
   },
   {
@@ -1005,8 +1006,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Fortune',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Fortune.',
-    recommendedAction: 'Proceed to a safe area when instructed.',
+    description: 'Dangerous flooding is affecting Fortune and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Fortune'
   },
 
@@ -1017,8 +1018,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Marikina Heights',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during heavy rain.',
-    recommendedAction: 'Monitor weather. Check drainage conditions.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Marikina Heights'
   },
   {
@@ -1027,8 +1028,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Marikina Heights',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect some roads.',
-    recommendedAction: 'Avoid flooded streets. Limit travel.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Marikina Heights'
   },
   {
@@ -1037,8 +1038,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Marikina Heights',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Remain prepared.',
+    description: 'Significant flooding may affect Marikina Heights, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Marikina Heights'
   },
   {
@@ -1047,8 +1048,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Marikina Heights',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting parts of the area.',
-    recommendedAction: 'Follow LGU evacuation instructions.',
+    description: 'Dangerous flooding is affecting Marikina Heights and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Marikina Heights'
   },
 
@@ -1059,8 +1060,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Nangka',
     category: 'Flood',
     severity: 'Low',
-    description: 'River levels may rise near vulnerable areas.',
-    recommendedAction: 'Monitor river levels. Follow official updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Nangka'
   },
   {
@@ -1069,8 +1070,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Nangka',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may develop near low-lying areas.',
-    recommendedAction: 'Prepare supplies. Avoid the riverbank.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Nangka'
   },
   {
@@ -1079,8 +1080,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Nangka',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect Nangka.',
-    recommendedAction: 'Prepare to move to higher ground.',
+    description: 'Significant flooding may affect Nangka, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Nangka'
   },
   {
@@ -1089,8 +1090,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Nangka',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Nangka.',
-    recommendedAction: 'Evacuate immediately when instructed.',
+    description: 'Dangerous flooding is affecting Nangka and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Nangka'
   },
 
@@ -1101,8 +1102,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Parang',
     category: 'Flood',
     severity: 'Low',
-    description: 'Minor flooding may develop during continued rain.',
-    recommendedAction: 'Monitor conditions. Follow local updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Parang'
   },
   {
@@ -1111,8 +1112,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Parang',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Localized flooding may affect some roads.',
-    recommendedAction: 'Avoid flooded streets. Limit travel.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Parang'
   },
   {
@@ -1121,8 +1122,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Parang',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect vulnerable areas.',
-    recommendedAction: 'Secure belongings. Prepare to relocate.',
+    description: 'Significant flooding may affect Parang, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Parang'
   },
   {
@@ -1131,8 +1132,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Parang',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting parts of Parang.',
-    recommendedAction: 'Follow LGU evacuation instructions.',
+    description: 'Dangerous flooding is affecting Parang and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Parang'
   },
 
@@ -1143,8 +1144,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Watch: Tumana',
     category: 'Flood',
     severity: 'Low',
-    description: 'River levels may rise near low-lying areas.',
-    recommendedAction: 'Monitor river levels. Follow local updates.',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
     affectedAreas: 'Tumana'
   },
   {
@@ -1153,8 +1154,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Advisory: Tumana',
     category: 'Flood',
     severity: 'Moderate',
-    description: 'Flooding may develop in vulnerable areas.',
-    recommendedAction: 'Prepare supplies. Move valuables higher.',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
     affectedAreas: 'Tumana'
   },
   {
@@ -1163,8 +1164,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Warning: Tumana',
     category: 'Flood',
     severity: 'High',
-    description: 'Significant flooding may affect Tumana.',
-    recommendedAction: 'Prepare to evacuate to higher ground.',
+    description: 'Significant flooding may affect Tumana, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
     affectedAreas: 'Tumana'
   },
   {
@@ -1173,8 +1174,8 @@ export const ADVISORY_TEMPLATES = [
     title: 'Flood Emergency: Tumana',
     category: 'Flood',
     severity: 'Critical',
-    description: 'Dangerous flooding is affecting Tumana.',
-    recommendedAction: 'Evacuate immediately when instructed.',
+    description: 'Dangerous flooding is affecting Tumana and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
     affectedAreas: 'Tumana'
   }
 ];
