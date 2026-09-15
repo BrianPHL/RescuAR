@@ -1,4 +1,5 @@
 using RescuAR.Diagnostics;
+using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Models;
 using System;
 
@@ -8,9 +9,10 @@ namespace RescuAR.Navigation.State;
 /// Cross-module handoff for the verified evacuation destination selected by
 /// the MAUI application.
 ///
-/// The Camera tab reads this state when it becomes active. A destination may
-/// also be changed while Camera is visible; DestinationChanged lets Camera
-/// request a new MLD route without polling.
+/// Besides the route target coordinate, the destination snapshot now carries
+/// the facility-specific safe-zone radius. This lets arrival confirmation
+/// treat an evacuation center as an area rather than requiring the user to
+/// stand on one exact map pin.
 /// </summary>
 public static class NavigationDestinationBridge
 {
@@ -63,18 +65,46 @@ public static class NavigationDestinationBridge
         string name,
         GeoCoordinate coordinate)
     {
+        double safeZoneRadiusMeters =
+            SafeZoneFacilityCatalog.GetArrivalRadiusMeters(
+                name);
+
+        Set(
+            name,
+            coordinate,
+            safeZoneRadiusMeters);
+    }
+
+    public static void Set(
+        string name,
+        GeoCoordinate coordinate,
+        double safeZoneRadiusMeters)
+    {
         if (!coordinate.IsValid)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(coordinate));
         }
 
+        double effectiveSafeZoneRadiusMeters =
+            double.IsFinite(
+                safeZoneRadiusMeters) &&
+            safeZoneRadiusMeters >
+                0.0
+                    ? Math.Clamp(
+                        safeZoneRadiusMeters,
+                        SafeZoneConfirmationService.MinimumSupportedArrivalRadiusMeters,
+                        SafeZoneConfirmationService.MaximumSupportedArrivalRadiusMeters)
+                    : SafeZoneFacilityCatalog.GetArrivalRadiusMeters(
+                        name);
+
         DestinationSnapshot next =
             new(
                 true,
                 name ??
                     string.Empty,
-                coordinate);
+                coordinate,
+                effectiveSafeZoneRadiusMeters);
 
         lock (sync)
         {
@@ -87,7 +117,8 @@ public static class NavigationDestinationBridge
             "Navigation destination published: " +
             $"name='{next.Name}', " +
             $"lat={next.Coordinate.Latitude:F7}, " +
-            $"lon={next.Coordinate.Longitude:F7}");
+            $"lon={next.Coordinate.Longitude:F7}, " +
+            $"safeZoneRadius={next.SafeZoneRadiusMeters:F1} m");
 
         DestinationChanged?.Invoke(
             null,
@@ -114,12 +145,14 @@ public static class NavigationDestinationBridge
     public readonly record struct DestinationSnapshot(
         bool IsAvailable,
         string Name,
-        GeoCoordinate Coordinate)
+        GeoCoordinate Coordinate,
+        double SafeZoneRadiusMeters)
     {
         public static DestinationSnapshot Unavailable =>
             new(
                 false,
                 string.Empty,
-                default);
+                default,
+                SafeZoneConfirmationService.ArrivalRadiusMeters);
     }
 }

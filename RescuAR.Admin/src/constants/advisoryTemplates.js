@@ -1,0 +1,1181 @@
+import { MARIKINA_DISTRICTS } from './marikinaData';
+
+const d1Barangays = MARIKINA_DISTRICTS[0].barangays.join(', ');
+const d2Barangays = MARIKINA_DISTRICTS[1].barangays.join(', ');
+
+export const ADVISORY_TEMPLATES = [
+  // ==========================================
+  // EARTHQUAKE MAGNITUDE MONITORING ADVISORIES
+  // ==========================================
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-micro',
+    title: 'Micro (< 3.0)',
+    category: 'Earthquake',
+    severity: 'Low',
+    description: 'Earthquake activity below magnitude 3.0 is usually not felt, but it may still be recorded by monitoring instruments.',
+    recommendedAction: 'No immediate protective action is normally needed. Check official earthquake updates and stay alert for any reported aftershocks or local advisories.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-minor',
+    title: 'Minor (3.0 - 3.9)',
+    category: 'Earthquake',
+    severity: 'Low',
+    description: 'Light shaking may be felt by some people, but significant structural damage is unlikely.',
+    recommendedAction: 'Stay calm and check your surroundings for minor hazards. Monitor official updates and be prepared for possible aftershocks.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-light',
+    title: 'Light (4.0 - 4.9)',
+    category: 'Earthquake',
+    severity: 'Moderate',
+    description: 'Noticeable shaking may be felt indoors, and hanging or unsecured objects may move or fall.',
+    recommendedAction: 'During shaking, Drop, Cover, and Hold On. Stay away from windows and falling objects, then check your surroundings for hazards after the shaking stops.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-moderate',
+    title: 'Moderate (5.0 - 5.9)',
+    category: 'Earthquake',
+    severity: 'Moderate',
+    description: 'Strong shaking may damage weak structures, move heavy objects, and create falling-object hazards in affected areas.',
+    recommendedAction: 'Drop, Cover, and Hold On until shaking stops. Afterward, check for injuries, fire, damaged utilities, and unsafe structures before moving to a safer location.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-strong',
+    title: 'Strong (6.0 - 6.9)',
+    category: 'Earthquake',
+    severity: 'High',
+    description: 'Severe shaking may cause major damage to buildings, roads, utilities, and other infrastructure in populated areas.',
+    recommendedAction: 'Drop, Cover, and Hold On during shaking. Afterward, leave visibly damaged buildings, avoid downed power lines, and follow evacuation or emergency instructions.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-major',
+    title: 'Major (7.0 - 7.9)',
+    category: 'Earthquake',
+    severity: 'Critical',
+    description: 'Very strong shaking may cause widespread structural damage, blocked roads, utility failures, and dangerous debris across a large area.',
+    recommendedAction: 'Protect yourself during shaking, then evacuate unsafe buildings when it is safe to move. Expect aftershocks and follow official evacuation routes and emergency instructions.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Earthquake Advisories',
+    id: 'earthquake-great',
+    title: 'Great (8.0+)',
+    category: 'Earthquake',
+    severity: 'Critical',
+    description: 'Extreme shaking may cause catastrophic and widespread destruction, major infrastructure failure, and prolonged disruption across affected communities.',
+    recommendedAction: 'Protect yourself during shaking and move away from severely damaged areas afterward. Follow authorities immediately, expect strong aftershocks, and use designated evacuation or safe areas.',
+    affectedAreas: 'All Marikina City'
+  },
+
+  // ==========================================
+  // 1. WEATHER MONITORING ADVISORIES
+  // ==========================================
+  {
+    group: 'Weather Advisories',
+    id: 'weather-light-rain',
+    title: 'Light to Moderate Rain',
+    category: 'Weather',
+    severity: 'Low',
+    description: 'Light to moderate rain may affect parts of Marikina City, making roads wet and causing brief water buildup in low-lying areas.',
+    recommendedAction: 'Bring rain protection and use caution on wet roads. Monitor official weather updates, especially if you are near flood-prone areas.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-occasional-rain',
+    title: 'Occasional Rain',
+    category: 'Weather',
+    severity: 'Low',
+    description: 'Cloudy skies with occasional light rain may affect the city and make roads slippery in some areas.',
+    recommendedAction: 'Carry rain protection and travel carefully on wet roads. Continue checking official weather updates for any change in conditions.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-heavy-rain',
+    title: 'Heavy Rain Warning',
+    category: 'Weather',
+    severity: 'Moderate',
+    description: 'Heavy rain may cause water to collect quickly on roads and in low-lying areas, with possible localized flooding.',
+    recommendedAction: 'Avoid unnecessary travel and do not enter flooded roads. Keep essential items ready and monitor official advisories for worsening conditions.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-thunderstorm-mod',
+    title: 'Thunderstorm Warning (Moderate)',
+    category: 'Weather',
+    severity: 'Moderate',
+    description: 'Intense rain, lightning, and strong winds may affect Marikina and can cause sudden flooding in vulnerable areas.',
+    recommendedAction: 'Stay indoors and away from windows during the storm. Avoid flood-prone roads and open areas, and follow official safety updates.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-strong-wind',
+    title: 'Strong Wind Warning',
+    category: 'Weather',
+    severity: 'Moderate',
+    description: 'Gusty winds may affect exposed areas and can move unsecured objects, tree branches, or lightweight materials.',
+    recommendedAction: 'Secure loose outdoor objects and stay away from trees, damaged structures, and power lines. Remain indoors if winds become stronger.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-thunderstorm-high',
+    title: 'Thunderstorm Warning (High)',
+    category: 'Weather',
+    severity: 'High',
+    description: 'Intense rain, lightning, and strong winds may affect Marikina and can cause sudden flooding in vulnerable areas.',
+    recommendedAction: 'Stay indoors and away from windows during the storm. Avoid flood-prone roads and open areas, and follow official safety updates.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-extreme-heat',
+    title: 'Extreme Heat Warning',
+    category: 'Weather',
+    severity: 'High',
+    description: 'High temperatures may increase the risk of heat exhaustion or heat-related illness, especially during prolonged outdoor activity.',
+    recommendedAction: 'Drink water regularly and reduce strenuous outdoor activity. Stay in shaded or cool areas and seek help if you feel dizzy, weak, or unwell.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-damaging-wind',
+    title: 'Damaging Wind Warning',
+    category: 'Weather',
+    severity: 'High',
+    description: 'Strong winds may damage lightweight structures, trees, and power lines and may make outdoor travel unsafe.',
+    recommendedAction: 'Stay indoors and away from windows where possible. Keep clear of trees, signs, damaged structures, and fallen or hanging power lines.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-severe',
+    title: 'Severe Weather Warning',
+    category: 'Weather',
+    severity: 'Critical',
+    description: 'Severe rain, thunderstorms, and strong winds may create dangerous flooding and unsafe travel conditions across affected areas.',
+    recommendedAction: 'Move to a safe location before conditions worsen. Avoid floodwaters and follow LGU evacuation or emergency instructions immediately.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'Weather Advisories',
+    id: 'weather-torrential-rain',
+    title: 'Torrential Rain Warning',
+    category: 'Weather',
+    severity: 'Critical',
+    description: 'Torrential rain may cause rapid and dangerous flooding, especially near rivers, drainage channels, and low-lying communities.',
+    recommendedAction: 'Move to higher ground before routes become flooded. Do not cross floodwaters and follow evacuation instructions from local authorities.',
+    affectedAreas: 'All Marikina City'
+  },
+
+  // ==========================================
+  // 2. RIVER MONITORING STATIONS
+  // ==========================================
+  // Batasan Station
+  {
+    group: 'River Monitoring: Batasan',
+    id: 'river-batasan-1st',
+    title: 'Batasan: 1st Alarm (15.0m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'Batasan, San Jose, Tumana'
+  },
+  {
+    group: 'River Monitoring: Batasan',
+    id: 'river-batasan-2nd',
+    title: 'Batasan: 2nd Alarm (16.0m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'Batasan, San Jose, Tumana'
+  },
+  {
+    group: 'River Monitoring: Batasan',
+    id: 'river-batasan-3rd',
+    title: 'Batasan: 3rd Alarm (18.0m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'Batasan, San Jose, Tumana'
+  },
+
+  // Nangka Station
+  {
+    group: 'River Monitoring: Nangka',
+    id: 'river-nangka-1st',
+    title: 'Nangka: 1st Alarm (16.5m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'Nangka'
+  },
+  {
+    group: 'River Monitoring: Nangka',
+    id: 'river-nangka-2nd',
+    title: 'Nangka: 2nd Alarm (17.1m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'Nangka'
+  },
+  {
+    group: 'River Monitoring: Nangka',
+    id: 'river-nangka-3rd',
+    title: 'Nangka: 3rd Alarm (17.7m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'Nangka'
+  },
+
+  // Rodriguez Station
+  {
+    group: 'River Monitoring: Rodriguez',
+    id: 'river-rodriguez-1st',
+    title: 'Rodriguez: 1st Alarm (28.8m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'Burgos, Rodriguez'
+  },
+  {
+    group: 'River Monitoring: Rodriguez',
+    id: 'river-rodriguez-2nd',
+    title: 'Rodriguez: 2nd Alarm (29.8m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'Burgos, Rodriguez'
+  },
+  {
+    group: 'River Monitoring: Rodriguez',
+    id: 'river-rodriguez-3rd',
+    title: 'Rodriguez: 3rd Alarm (30.7m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'Burgos, Rodriguez'
+  },
+
+  // San Jose Station
+  {
+    group: 'River Monitoring: San Jose',
+    id: 'river-sanjose-1st',
+    title: 'San Jose: 1st Alarm (22.4m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'San Jose'
+  },
+  {
+    group: 'River Monitoring: San Jose',
+    id: 'river-sanjose-2nd',
+    title: 'San Jose: 2nd Alarm (23.0m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'San Jose'
+  },
+  {
+    group: 'River Monitoring: San Jose',
+    id: 'river-sanjose-3rd',
+    title: 'San Jose: 3rd Alarm (23.6m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'San Jose'
+  },
+
+  // Sto. Niño Station
+  {
+    group: 'River Monitoring: Sto. Niño',
+    id: 'river-stonino-1st',
+    title: 'Sto. Niño: 1st Alarm (15.0m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'Sto. Niño'
+  },
+  {
+    group: 'River Monitoring: Sto. Niño',
+    id: 'river-stonino-2nd',
+    title: 'Sto. Niño: 2nd Alarm (16.0m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'Sto. Niño'
+  },
+  {
+    group: 'River Monitoring: Sto. Niño',
+    id: 'river-stonino-3rd',
+    title: 'Sto. Niño: 3rd Alarm (18.0m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'Sto. Niño'
+  },
+
+  // Tumana Station
+  {
+    group: 'River Monitoring: Tumana',
+    id: 'river-tumana-1st',
+    title: 'Tumana: 1st Alarm (15.0m)',
+    category: 'Monitoring',
+    severity: 'Moderate',
+    description: 'The river has reached the 1st Alarm level. Water is elevated and may continue rising if rain persists.',
+    recommendedAction: 'Monitor official river and weather updates closely. Prepare medicines, documents, food, water, and other emergency supplies in case evacuation becomes necessary.',
+    affectedAreas: 'Tumana'
+  },
+  {
+    group: 'River Monitoring: Tumana',
+    id: 'river-tumana-2nd',
+    title: 'Tumana: 2nd Alarm (16.0m)',
+    category: 'Monitoring',
+    severity: 'High',
+    description: 'The river has reached the 2nd Alarm level. Continued rise may cause flooding in nearby low-lying and riverside areas.',
+    recommendedAction: 'Prepare to evacuate and move important belongings to a higher place. Keep evacuation routes clear and follow LGU instructions for your area.',
+    affectedAreas: 'Tumana'
+  },
+  {
+    group: 'River Monitoring: Tumana',
+    id: 'river-tumana-3rd',
+    title: 'Tumana: 3rd Alarm (18.0m)',
+    category: 'Monitoring',
+    severity: 'Critical',
+    description: 'The river has reached the 3rd Alarm level. Flooding risk is critical and nearby communities may be in immediate danger.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Do not cross floodwaters or return until authorities say it is safe.',
+    affectedAreas: 'Tumana'
+  },
+
+  // ==========================================
+  // 3. CITY & DISTRICT FLOOD ADVISORIES
+  // ==========================================
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-city-watch',
+    title: 'Flood Watch: Marikina City',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-city-advisory',
+    title: 'Flood Advisory: Marikina City',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-city-warning',
+    title: 'Flood Warning: Marikina City',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Marikina City, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-city-emergency',
+    title: 'Flood Emergency: Marikina City',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Marikina City and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'All Marikina City'
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d1-watch',
+    title: 'Flood Watch: District 1',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: d1Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d1-advisory',
+    title: 'Flood Advisory: District 1',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: d1Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d1-warning',
+    title: 'Flood Warning: District 1',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect District 1, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: d1Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d1-emergency',
+    title: 'Flood Emergency: District 1',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting District 1 and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: d1Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d2-watch',
+    title: 'Flood Watch: District 2',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: d2Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d2-advisory',
+    title: 'Flood Advisory: District 2',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: d2Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d2-warning',
+    title: 'Flood Warning: District 2',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect District 2, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: d2Barangays
+  },
+  {
+    group: 'City & District Flood Advisories',
+    id: 'flood-d2-emergency',
+    title: 'Flood Emergency: District 2',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting District 2 and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: d2Barangays
+  },
+
+  // ==========================================
+  // 4. DISTRICT 1 BARANGAYS FLOOD ADVISORIES
+  // ==========================================
+  // Barangka
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-barangka-low',
+    title: 'Flood Watch: Barangka',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Barangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-barangka-mod',
+    title: 'Flood Advisory: Barangka',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Barangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-barangka-high',
+    title: 'Flood Warning: Barangka',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Barangka, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Barangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-barangka-crit',
+    title: 'Flood Emergency: Barangka',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Barangka and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Barangka'
+  },
+
+  // Industrial Valley Complex
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-ivc-low',
+    title: 'Flood Watch: Industrial Valley Complex',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Industrial Valley Complex'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-ivc-mod',
+    title: 'Flood Advisory: Industrial Valley Complex',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Industrial Valley Complex'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-ivc-high',
+    title: 'Flood Warning: Industrial Valley Complex',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Industrial Valley Complex, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Industrial Valley Complex'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-ivc-crit',
+    title: 'Flood Emergency: Industrial Valley Complex',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Industrial Valley Complex and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Industrial Valley Complex'
+  },
+
+  // Jesus dela Peña
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-jdp-low',
+    title: 'Flood Watch: Jesus dela Peña',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Jesus dela Peña'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-jdp-mod',
+    title: 'Flood Advisory: Jesus dela Peña',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Jesus dela Peña'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-jdp-high',
+    title: 'Flood Warning: Jesus dela Peña',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Jesus dela Peña, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Jesus dela Peña'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-jdp-crit',
+    title: 'Flood Emergency: Jesus dela Peña',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Jesus dela Peña and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Jesus dela Peña'
+  },
+
+  // Kalumpang
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-kalumpang-low',
+    title: 'Flood Watch: Kalumpang',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Kalumpang (Calumpang)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-kalumpang-mod',
+    title: 'Flood Advisory: Kalumpang',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Kalumpang (Calumpang)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-kalumpang-high',
+    title: 'Flood Warning: Kalumpang',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Kalumpang, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Kalumpang (Calumpang)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-kalumpang-crit',
+    title: 'Flood Emergency: Kalumpang',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Kalumpang and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Kalumpang (Calumpang)'
+  },
+
+  // Malanday
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-malanday-low',
+    title: 'Flood Watch: Malanday',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Malanday'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-malanday-mod',
+    title: 'Flood Advisory: Malanday',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Malanday'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-malanday-high',
+    title: 'Flood Warning: Malanday',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Malanday, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Malanday'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-malanday-crit',
+    title: 'Flood Emergency: Malanday',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Malanday and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Malanday'
+  },
+
+  // San Roque
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-sanroque-low',
+    title: 'Flood Watch: San Roque',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'San Roque'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-sanroque-mod',
+    title: 'Flood Advisory: San Roque',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'San Roque'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-sanroque-high',
+    title: 'Flood Warning: San Roque',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect San Roque, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'San Roque'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-sanroque-crit',
+    title: 'Flood Emergency: San Roque',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting San Roque and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'San Roque'
+  },
+
+  // Sta. Elena
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-staelena-low',
+    title: 'Flood Watch: Sta. Elena',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Sta. Elena'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-staelena-mod',
+    title: 'Flood Advisory: Sta. Elena',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Sta. Elena'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-staelena-high',
+    title: 'Flood Warning: Sta. Elena',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Sta. Elena, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Sta. Elena'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-staelena-crit',
+    title: 'Flood Emergency: Sta. Elena',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Sta. Elena and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Sta. Elena'
+  },
+
+  // Sto. Niño
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-stonino-low',
+    title: 'Flood Watch: Sto. Niño',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Sto. Niño'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-stonino-mod',
+    title: 'Flood Advisory: Sto. Niño',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Sto. Niño'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-stonino-high',
+    title: 'Flood Warning: Sto. Niño',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Sto. Niño, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Sto. Niño'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-stonino-crit',
+    title: 'Flood Emergency: Sto. Niño',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Sto. Niño and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Sto. Niño'
+  },
+
+  // Tañong
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-tanong-low',
+    title: 'Flood Watch: Tañong',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Tañong'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-tanong-mod',
+    title: 'Flood Advisory: Tañong',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Tañong'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-tanong-high',
+    title: 'Flood Warning: Tañong',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Tañong, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Tañong'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 1',
+    id: 'flood-tanong-crit',
+    title: 'Flood Emergency: Tañong',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Tañong and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Tañong'
+  },
+
+  // ==========================================
+  // 5. DISTRICT 2 BARANGAYS FLOOD ADVISORIES
+  // ==========================================
+  // Concepcion I
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion1-low',
+    title: 'Flood Watch: Concepcion I',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Concepcion I (Concepcion Uno)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion1-mod',
+    title: 'Flood Advisory: Concepcion I',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Concepcion I (Concepcion Uno)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion1-high',
+    title: 'Flood Warning: Concepcion I',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Concepcion I, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Concepcion I (Concepcion Uno)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion1-crit',
+    title: 'Flood Emergency: Concepcion I',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Concepcion I and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Concepcion I (Concepcion Uno)'
+  },
+
+  // Concepcion II
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion2-low',
+    title: 'Flood Watch: Concepcion II',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Concepcion II (Concepcion Dos)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion2-mod',
+    title: 'Flood Advisory: Concepcion II',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Concepcion II (Concepcion Dos)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion2-high',
+    title: 'Flood Warning: Concepcion II',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Concepcion II, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Concepcion II (Concepcion Dos)'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-concepcion2-crit',
+    title: 'Flood Emergency: Concepcion II',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Concepcion II and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Concepcion II (Concepcion Dos)'
+  },
+
+  // Fortune
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-fortune-low',
+    title: 'Flood Watch: Fortune',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Fortune'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-fortune-mod',
+    title: 'Flood Advisory: Fortune',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Fortune'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-fortune-high',
+    title: 'Flood Warning: Fortune',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Fortune, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Fortune'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-fortune-crit',
+    title: 'Flood Emergency: Fortune',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Fortune and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Fortune'
+  },
+
+  // Marikina Heights
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-mh-low',
+    title: 'Flood Watch: Marikina Heights',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Marikina Heights'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-mh-mod',
+    title: 'Flood Advisory: Marikina Heights',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Marikina Heights'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-mh-high',
+    title: 'Flood Warning: Marikina Heights',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Marikina Heights, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Marikina Heights'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-mh-crit',
+    title: 'Flood Emergency: Marikina Heights',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Marikina Heights and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Marikina Heights'
+  },
+
+  // Nangka
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-nangka-low',
+    title: 'Flood Watch: Nangka',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Nangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-nangka-mod',
+    title: 'Flood Advisory: Nangka',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Nangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-nangka-high',
+    title: 'Flood Warning: Nangka',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Nangka, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Nangka'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-nangka-crit',
+    title: 'Flood Emergency: Nangka',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Nangka and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Nangka'
+  },
+
+  // Parang
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-parang-low',
+    title: 'Flood Watch: Parang',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Parang'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-parang-mod',
+    title: 'Flood Advisory: Parang',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Parang'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-parang-high',
+    title: 'Flood Warning: Parang',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Parang, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Parang'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-parang-crit',
+    title: 'Flood Emergency: Parang',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Parang and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Parang'
+  },
+
+  // Tumana
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-tumana-low',
+    title: 'Flood Watch: Tumana',
+    category: 'Flood',
+    severity: 'Low',
+    description: 'Minor flooding may develop in low-lying or poorly drained areas, and some roads may begin to hold water.',
+    recommendedAction: 'Monitor official updates and nearby water levels. Avoid flood-prone roads and keep essential items ready in case conditions worsen.',
+    affectedAreas: 'Tumana'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-tumana-mod',
+    title: 'Flood Advisory: Tumana',
+    category: 'Flood',
+    severity: 'Moderate',
+    description: 'Flooding is developing in vulnerable areas and may begin affecting roads, homes, or normal travel.',
+    recommendedAction: 'Limit travel and avoid flooded streets. Secure valuables, prepare emergency supplies, and be ready to move if water continues rising.',
+    affectedAreas: 'Tumana'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-tumana-high',
+    title: 'Flood Warning: Tumana',
+    category: 'Flood',
+    severity: 'High',
+    description: 'Significant flooding may affect Tumana, making some roads unsafe and increasing the need to move to higher ground.',
+    recommendedAction: 'Move vehicles, valuables, and essential items to higher ground. Prepare to evacuate and use only safe routes identified by local authorities.',
+    affectedAreas: 'Tumana'
+  },
+  {
+    group: 'Barangay Flood Advisories: District 2',
+    id: 'flood-tumana-crit',
+    title: 'Flood Emergency: Tumana',
+    category: 'Flood',
+    severity: 'Critical',
+    description: 'Dangerous flooding is affecting Tumana and may threaten homes, roads, and access routes; evacuation may be required.',
+    recommendedAction: 'Evacuate immediately when instructed and proceed to the designated safe area. Never walk or drive through floodwaters, and follow LGU emergency instructions.',
+    affectedAreas: 'Tumana'
+  }
+];

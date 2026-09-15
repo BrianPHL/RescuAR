@@ -28,17 +28,6 @@ public sealed class RouteProgressTracker
         6371008.8;
 
     /*
-     * Pedestrian GPS commonly wanders by several meters, especially indoors
-     * or near buildings. Samples farther than this from the routed geometry
-     * are retained for diagnostics but do not advance the AR route window.
-     */
-    private const double NormalMaximumCrossTrackErrorMeters =
-        35.0;
-
-    private const double IndoorMaximumCrossTrackErrorMeters =
-        100.0;
-
-    /*
      * Reject very low-quality samples before they are allowed to move route
      * progress. Indoor test mode deliberately relaxes this so a nearby road
      * can still be used while GPS is degraded by the building.
@@ -81,11 +70,6 @@ public sealed class RouteProgressTracker
 
     private readonly bool indoorTestMode;
 
-    private double MaximumCrossTrackErrorMeters =>
-        indoorTestMode
-            ? IndoorMaximumCrossTrackErrorMeters
-            : NormalMaximumCrossTrackErrorMeters;
-
     private double MaximumAcceptedAccuracyMeters =>
         indoorTestMode
             ? IndoorMaximumAcceptedAccuracyMeters
@@ -123,8 +107,9 @@ public sealed class RouteProgressTracker
             indoorTestMode
                 ? "RouteProgressTracker created in INDOOR TEST MODE: " +
                   $"accuracyLimit={IndoorMaximumAcceptedAccuracyMeters:F0} m, " +
-                  $"crossTrackLimit={IndoorMaximumCrossTrackErrorMeters:F0} m."
-                : "RouteProgressTracker created in normal GPS mode.");
+                  "corridorRadius=100 m."
+                : "RouteProgressTracker created in normal GPS mode with an " +
+                  "accuracy-aware pedestrian route corridor.");
     }
 
     public bool IndoorTestMode =>
@@ -242,7 +227,9 @@ public sealed class RouteProgressTracker
     /// </summary>
     public RouteProgressUpdate Update(
         GeoCoordinate gpsCoordinate,
-        double? accuracyMeters)
+        double? accuracyMeters,
+        double? courseDegrees = null,
+        double? speedMetersPerSecond = null)
     {
         if (!gpsCoordinate.IsValid)
         {
@@ -326,7 +313,12 @@ public sealed class RouteProgressTracker
                     currentRoute,
                     gpsCoordinate,
                     startIndex,
-                    endIndex);
+                    endIndex,
+                    alreadyHasProgress,
+                    previousCommittedProgress,
+                    previousSegment,
+                    courseDegrees,
+                    speedMetersPerSecond);
 
             if (!best.IsAvailable ||
                 best.CrossTrackErrorMeters >
@@ -338,13 +330,18 @@ public sealed class RouteProgressTracker
                         gpsCoordinate,
                         0,
                         currentRoute.Points.Count -
-                            2);
+                            2,
+                        alreadyHasProgress,
+                        previousCommittedProgress,
+                        previousSegment,
+                        courseDegrees,
+                        speedMetersPerSecond);
 
                 if (fullSearch.IsAvailable &&
                     (!best.IsAvailable ||
-                     fullSearch.CrossTrackErrorMeters +
+                     fullSearch.MatchScore +
                          1.0 <
-                     best.CrossTrackErrorMeters))
+                     best.MatchScore))
                 {
                     best =
                         fullSearch;
@@ -359,7 +356,12 @@ public sealed class RouteProgressTracker
                     gpsCoordinate,
                     0,
                     currentRoute.Points.Count -
-                        2);
+                        2,
+                    alreadyHasProgress,
+                    previousCommittedProgress,
+                    previousSegment,
+                    courseDegrees,
+                    speedMetersPerSecond);
         }
 
         if (!best.IsAvailable)
@@ -370,8 +372,19 @@ public sealed class RouteProgressTracker
                 accuracyMeters);
         }
 
+        double corridorRadiusMeters =
+            RouteCorridorPolicy.GetCorridorRadiusMeters(
+                accuracyMeters,
+                indoorTestMode);
+
+        RouteMatchConfidence matchConfidence =
+            RouteCorridorPolicy.ClassifyMatch(
+                accuracyMeters,
+                best.CourseAlignmentErrorDegrees,
+                best.MatchScoreGap);
+
         if (best.CrossTrackErrorMeters >
-            MaximumCrossTrackErrorMeters)
+            corridorRadiusMeters)
         {
             RouteProgressUpdate offRoute =
                 new(
@@ -394,7 +407,10 @@ public sealed class RouteProgressTracker
                     gpsCoordinate,
                     best.SnappedCoordinate,
                     $"cross-track error exceeds " +
-                    $"{MaximumCrossTrackErrorMeters:F1} m");
+                    $"the {corridorRadiusMeters:F1} m accuracy-aware corridor",
+                    corridorRadiusMeters,
+                    matchConfidence,
+                    best.CourseAlignmentErrorDegrees);
 
             StoreSnapshot(
                 currentRoute,
@@ -406,8 +422,11 @@ public sealed class RouteProgressTracker
                 $"segment={best.SegmentIndex}, " +
                 $"rawProgress={best.ProgressMeters:F1} m, " +
                 $"crossTrack={best.CrossTrackErrorMeters:F1} m, " +
+                $"corridor={corridorRadiusMeters:F1} m, " +
+                $"matchConfidence={matchConfidence}, " +
+                $"courseError={FormatFinite(best.CourseAlignmentErrorDegrees)} deg, " +
                 $"accuracy={FormatNullable(accuracyMeters)} m. " +
-                "No reroute is performed in this milestone.");
+                "The reroute policy will require repeated trustworthy confirmation.");
 
             return offRoute;
         }
@@ -467,7 +486,10 @@ public sealed class RouteProgressTracker
                 accuracyMeters,
                 gpsCoordinate,
                 committedCoordinate,
-                string.Empty);
+                string.Empty,
+                corridorRadiusMeters,
+                matchConfidence,
+                best.CourseAlignmentErrorDegrees);
 
         lock (sync)
         {
@@ -506,6 +528,9 @@ public sealed class RouteProgressTracker
             $"committedProgress={committedProgress:F1} m, " +
             $"remaining={remainingMeters:F1} m, " +
             $"crossTrack={best.CrossTrackErrorMeters:F1} m, " +
+            $"corridor={corridorRadiusMeters:F1} m, " +
+            $"matchConfidence={matchConfidence}, " +
+            $"courseError={FormatFinite(best.CourseAlignmentErrorDegrees)} deg, " +
             $"accuracy={FormatNullable(accuracyMeters)} m, " +
             $"publishWindow={shouldPublish}");
 
@@ -615,7 +640,10 @@ public sealed class RouteProgressTracker
                 string.IsNullOrWhiteSpace(
                     fusionReason)
                     ? "GPS_PDR_FUSION"
-                    : fusionReason);
+                    : fusionReason,
+                gpsSource.CorridorRadiusMeters,
+                gpsSource.MatchConfidence,
+                gpsSource.CourseAlignmentErrorDegrees);
 
         lock (sync)
         {
@@ -758,7 +786,10 @@ public sealed class RouteProgressTracker
                 GetCoordinateAtDistance(
                     currentRoute,
                     currentProgress),
-                "PDR reached route geometry end");
+                "PDR reached route geometry end",
+                RouteCorridorPolicy.MinimumCorridorRadiusMeters,
+                RouteMatchConfidence.Unavailable,
+                double.NaN);
         }
 
         GeoCoordinate snappedCoordinate =
@@ -805,7 +836,10 @@ public sealed class RouteProgressTracker
                 null,
                 snappedCoordinate,
                 snappedCoordinate,
-                "PDR_STEP");
+                "PDR_STEP",
+                RouteCorridorPolicy.MinimumCorridorRadiusMeters,
+                RouteMatchConfidence.Unavailable,
+                double.NaN);
 
         lock (sync)
         {
@@ -932,7 +966,10 @@ public sealed class RouteProgressTracker
                 null,
                 snappedCoordinate,
                 snappedCoordinate,
-                "INDOOR_TEST_SYNTHETIC");
+                "INDOOR_TEST_SYNTHETIC",
+                100.0,
+                RouteMatchConfidence.High,
+                double.NaN);
 
         lock (sync)
         {
@@ -1016,7 +1053,12 @@ public sealed class RouteProgressTracker
                 accuracyMeters,
                 gpsCoordinate,
                 default,
-                reason);
+                reason,
+                RouteCorridorPolicy.GetCorridorRadiusMeters(
+                    accuracyMeters,
+                    indoorTestMode),
+                RouteMatchConfidence.Unavailable,
+                double.NaN);
 
         AndroidLog.Warn(
             LogTag,
@@ -1054,10 +1096,18 @@ public sealed class RouteProgressTracker
         RouteResult route,
         GeoCoordinate gpsCoordinate,
         int startSegmentIndex,
-        int endSegmentIndex)
+        int endSegmentIndex,
+        bool hasPreviousProgress,
+        double previousProgressMeters,
+        int previousSegmentIndex,
+        double? courseDegrees,
+        double? speedMetersPerSecond)
     {
         SegmentMatch best =
             SegmentMatch.Unavailable;
+
+        double secondBestScore =
+            double.PositiveInfinity;
 
         for (int i = startSegmentIndex;
              i <=
@@ -1082,16 +1132,154 @@ public sealed class RouteProgressTracker
                 continue;
             }
 
+            candidate =
+                ScoreCandidate(
+                    candidate,
+                    start,
+                    end,
+                    hasPreviousProgress,
+                    previousProgressMeters,
+                    previousSegmentIndex,
+                    courseDegrees,
+                    speedMetersPerSecond);
+
             if (!best.IsAvailable ||
-                candidate.CrossTrackErrorMeters <
-                    best.CrossTrackErrorMeters)
+                candidate.MatchScore <
+                    best.MatchScore)
             {
+                if (best.IsAvailable)
+                {
+                    secondBestScore =
+                        best.MatchScore;
+                }
+
                 best =
                     candidate;
             }
+            else if (candidate.MatchScore <
+                secondBestScore)
+            {
+                secondBestScore =
+                    candidate.MatchScore;
+            }
         }
 
-        return best;
+        if (!best.IsAvailable)
+        {
+            return best;
+        }
+
+        double scoreGap =
+            double.IsFinite(
+                secondBestScore)
+                ? Math.Max(
+                    0.0,
+                    secondBestScore -
+                        best.MatchScore)
+                : double.PositiveInfinity;
+
+        return best.WithScoreGap(
+            scoreGap);
+    }
+
+    private static SegmentMatch ScoreCandidate(
+        SegmentMatch candidate,
+        RoutePoint start,
+        RoutePoint end,
+        bool hasPreviousProgress,
+        double previousProgressMeters,
+        int previousSegmentIndex,
+        double? courseDegrees,
+        double? speedMetersPerSecond)
+    {
+        double score =
+            candidate.CrossTrackErrorMeters;
+
+        if (hasPreviousProgress)
+        {
+            double backwardJump =
+                previousProgressMeters -
+                candidate.ProgressMeters;
+
+            if (backwardJump >
+                3.0)
+            {
+                score +=
+                    Math.Min(
+                        60.0,
+                        backwardJump *
+                            0.80);
+            }
+
+            double forwardJump =
+                candidate.ProgressMeters -
+                previousProgressMeters;
+
+            if (forwardJump >
+                45.0)
+            {
+                score +=
+                    Math.Min(
+                        60.0,
+                        (forwardJump -
+                         45.0) *
+                            0.60);
+            }
+
+            if (previousSegmentIndex >=
+                0)
+            {
+                int segmentJump =
+                    Math.Abs(
+                        candidate.SegmentIndex -
+                        previousSegmentIndex);
+
+                if (segmentJump >
+                    SearchForwardSegments)
+                {
+                    score +=
+                        Math.Min(
+                            30.0,
+                            (segmentJump -
+                             SearchForwardSegments) *
+                                0.50);
+                }
+            }
+        }
+
+        double courseAlignmentError =
+            double.NaN;
+
+        if (RouteCorridorPolicy.IsCourseUsable(
+                courseDegrees,
+                speedMetersPerSecond))
+        {
+            double segmentBearing =
+                CalculateInitialBearingDegrees(
+                    start.Coordinate,
+                    end.Coordinate);
+
+            courseAlignmentError =
+                AbsoluteHeadingDifferenceDegrees(
+                    courseDegrees!.Value,
+                    segmentBearing);
+
+            score +=
+                courseAlignmentError /
+                180.0 *
+                25.0;
+
+            if (courseAlignmentError >
+                100.0)
+            {
+                score +=
+                    20.0;
+            }
+        }
+
+        return candidate.WithScore(
+            score,
+            courseAlignmentError);
     }
 
     private static SegmentMatch ProjectOntoSegment(
@@ -1225,7 +1413,72 @@ public sealed class RouteProgressTracker
             t,
             progress,
             crossTrack,
-            snapped);
+            snapped,
+            crossTrack,
+            double.PositiveInfinity,
+            double.NaN);
+    }
+
+    private static double CalculateInitialBearingDegrees(
+        GeoCoordinate start,
+        GeoCoordinate end)
+    {
+        double startLatitude =
+            DegreesToRadians(
+                start.Latitude);
+
+        double endLatitude =
+            DegreesToRadians(
+                end.Latitude);
+
+        double longitudeDelta =
+            DegreesToRadians(
+                end.Longitude -
+                start.Longitude);
+
+        double y =
+            Math.Sin(
+                longitudeDelta) *
+            Math.Cos(
+                endLatitude);
+
+        double x =
+            Math.Cos(
+                startLatitude) *
+            Math.Sin(
+                endLatitude) -
+            Math.Sin(
+                startLatitude) *
+            Math.Cos(
+                endLatitude) *
+            Math.Cos(
+                longitudeDelta);
+
+        double bearing =
+            Math.Atan2(
+                y,
+                x) *
+            180.0 /
+            Math.PI;
+
+        return (bearing +
+                360.0) %
+            360.0;
+    }
+
+    private static double AbsoluteHeadingDifferenceDegrees(
+        double firstDegrees,
+        double secondDegrees)
+    {
+        double difference =
+            (firstDegrees -
+             secondDegrees +
+             540.0) %
+            360.0 -
+            180.0;
+
+        return Math.Abs(
+            difference);
     }
 
     private static GeoCoordinate GetCoordinateAtDistance(
@@ -1331,6 +1584,16 @@ public sealed class RouteProgressTracker
             : "<unknown>";
     }
 
+    private static string FormatFinite(
+        double value)
+    {
+        return double.IsFinite(
+                value)
+            ? value.ToString(
+                "F1")
+            : "<unavailable>";
+    }
+
     private static double DegreesToRadians(
         double degrees)
     {
@@ -1345,7 +1608,10 @@ public sealed class RouteProgressTracker
         double SegmentT,
         double ProgressMeters,
         double CrossTrackErrorMeters,
-        GeoCoordinate SnappedCoordinate)
+        GeoCoordinate SnappedCoordinate,
+        double MatchScore,
+        double MatchScoreGap,
+        double CourseAlignmentErrorDegrees)
     {
         public static SegmentMatch Unavailable =>
             new(
@@ -1354,7 +1620,41 @@ public sealed class RouteProgressTracker
                 0.0,
                 0.0,
                 double.PositiveInfinity,
-                default);
+                default,
+                double.PositiveInfinity,
+                0.0,
+                double.NaN);
+
+        public SegmentMatch WithScore(
+            double matchScore,
+            double courseAlignmentErrorDegrees)
+        {
+            return new SegmentMatch(
+                IsAvailable,
+                SegmentIndex,
+                SegmentT,
+                ProgressMeters,
+                CrossTrackErrorMeters,
+                SnappedCoordinate,
+                matchScore,
+                MatchScoreGap,
+                courseAlignmentErrorDegrees);
+        }
+
+        public SegmentMatch WithScoreGap(
+            double matchScoreGap)
+        {
+            return new SegmentMatch(
+                IsAvailable,
+                SegmentIndex,
+                SegmentT,
+                ProgressMeters,
+                CrossTrackErrorMeters,
+                SnappedCoordinate,
+                MatchScore,
+                matchScoreGap,
+                CourseAlignmentErrorDegrees);
+        }
     }
 
     public readonly record struct RouteProgressUpdate(
@@ -1369,7 +1669,10 @@ public sealed class RouteProgressTracker
         double? AccuracyMeters,
         GeoCoordinate GpsCoordinate,
         GeoCoordinate SnappedCoordinate,
-        string RejectionReason);
+        string RejectionReason,
+        double CorridorRadiusMeters,
+        RouteMatchConfidence MatchConfidence,
+        double CourseAlignmentErrorDegrees);
 
     public readonly record struct ProgressSnapshot(
         bool HasRoute,

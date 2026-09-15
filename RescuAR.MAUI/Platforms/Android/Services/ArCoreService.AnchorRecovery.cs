@@ -1,5 +1,6 @@
 using Android.Util;
 using RescuAR.AR;
+using RescuAR.Navigation.Projection;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
@@ -31,11 +32,15 @@ public sealed partial class ArCoreService
      * PAUSED means ARCore may resume tracking the same anchor. Because the
      * renderer now holds the last valid visual placement during temporary
      * tracking loss, recovery can favor continuity over aggressive anchor
-     * replacement. Five seconds substantially reduces unnecessary detach /
-     * reacquire cycles after short lighting, feature, or motion failures.
+     * replacement. V3 begins a validated replacement search while the old
+     * anchor is retained, then releases it only if neither the old anchor nor
+     * a better candidate succeeds within the final grace period.
      */
     private const long GroundAnchorRecoveryGraceMilliseconds =
-        5000;
+        2500;
+
+    private const long ProactiveGroundAnchorSearchDelayMilliseconds =
+        750;
 
     /*
      * If the ordinary floor hit-test has not produced a replacement after a
@@ -63,9 +68,9 @@ public sealed partial class ArCoreService
     /*
      * V6 durable replacement event.
      *
-     * This increments ONLY after this recovery component itself releases a
-     * stale retained Anchor. It is deliberately independent from short-lived
-     * SpatialSnapshot.Anchor.IsAvailable changes.
+     * This increments only after this component releases an anchor because it
+     * is stale or has moved outside the local AR navigation radius. It remains
+     * independent from short-lived SpatialSnapshot.Anchor.IsAvailable changes.
      */
     private long groundAnchorReplacementGeneration;
 
@@ -75,6 +80,339 @@ public sealed partial class ArCoreService
         long.MinValue;
 
     private bool replacementAnchorSearchNoticeLogged;
+
+    private const long ImplausibleGroundHeightConfirmationMilliseconds =
+        1000;
+
+    private long implausibleGroundHeightCandidateStartedTimestamp =
+        long.MinValue;
+
+    private Google.AR.Core.Anchor?
+        implausibleGroundHeightCandidateAnchor;
+
+    private long proactiveGroundAnchorSearchStartedTimestamp =
+        long.MinValue;
+
+    private Google.AR.Core.Anchor?
+        proactiveGroundAnchorSearchSource;
+
+    private bool proactiveGroundAnchorSearchLogged;
+
+    /// <summary>
+    /// Returns true after a retained Anchor has remained non-tracking long
+    /// enough to justify searching for a validated replacement in parallel.
+    /// The old Anchor is not detached until a replacement succeeds or the
+    /// final recovery deadline expires.
+    /// </summary>
+    private bool ShouldSearchForProactiveGroundAnchorReplacement()
+    {
+        Google.AR.Core.Anchor? anchor =
+            spatialGroundAnchor;
+
+        if (anchor is null)
+        {
+            ResetProactiveGroundAnchorSearchObservation();
+
+            return false;
+        }
+
+        string trackingState =
+            GetAnchorTrackingState(
+                anchor);
+
+        if (trackingState.Equals(
+                "Tracking",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            bool hadPendingSearch =
+                proactiveGroundAnchorSearchStartedTimestamp !=
+                    long.MinValue;
+
+            ResetProactiveGroundAnchorSearchObservation();
+
+            if (hadPendingSearch)
+            {
+                ResetGroundPlaneSearchState();
+            }
+
+            return false;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (!ReferenceEquals(
+                proactiveGroundAnchorSearchSource,
+                anchor) ||
+            proactiveGroundAnchorSearchStartedTimestamp ==
+                long.MinValue)
+        {
+            proactiveGroundAnchorSearchSource =
+                anchor;
+
+            proactiveGroundAnchorSearchStartedTimestamp =
+                now;
+
+            proactiveGroundAnchorSearchLogged =
+                false;
+        }
+
+        bool stopped =
+            trackingState.Equals(
+                "Stopped",
+                StringComparison.OrdinalIgnoreCase);
+
+        bool searchReady =
+            stopped ||
+            now -
+                proactiveGroundAnchorSearchStartedTimestamp >=
+            ProactiveGroundAnchorSearchDelayMilliseconds;
+
+        if (searchReady &&
+            !proactiveGroundAnchorSearchLogged)
+        {
+            proactiveGroundAnchorSearchLogged =
+                true;
+
+            Log.Warn(
+                AnchorRecoveryLogTag,
+                "PROACTIVE GROUND RECOVERY: searching for a validated " +
+                "replacement while retaining the current anchor. " +
+                $"state={trackingState}, " +
+                $"delay={ProactiveGroundAnchorSearchDelayMilliseconds}ms, " +
+                $"finalGrace={GroundAnchorRecoveryGraceMilliseconds}ms.");
+        }
+
+        return searchReady;
+    }
+
+    private void RegisterProactiveGroundAnchorHandoff(
+        Google.AR.Core.Anchor previousAnchor,
+        string source)
+    {
+        InvalidatePendingRecoveryCountdown();
+
+        long replacementGeneration;
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorReplacementGeneration++;
+
+            replacementGeneration =
+                groundAnchorReplacementGeneration;
+
+            groundAnchorReacquisitionArmed =
+                false;
+
+            replacementAnchorSearchStartedTimestamp =
+                long.MinValue;
+
+            replacementAnchorSearchNoticeLogged =
+                false;
+        }
+
+        ARCameraSpatialController.SetRouteRecoveryRebasePending(
+            true,
+            "validated proactive ground-anchor handoff");
+
+        Log.Debug(
+            AnchorRecoveryLogTag,
+            "PROACTIVE GROUND HANDOFF COMPLETE: a validated replacement " +
+            "anchor was acquired before detaching the stale reference. " +
+            $"source={source}, " +
+            $"previousState={GetAnchorTrackingState(previousAnchor)}, " +
+            $"replacementGeneration={replacementGeneration}.");
+    }
+
+    private void ResetProactiveGroundAnchorSearchObservation()
+    {
+        proactiveGroundAnchorSearchStartedTimestamp =
+            long.MinValue;
+
+        proactiveGroundAnchorSearchSource =
+            null;
+
+        proactiveGroundAnchorSearchLogged =
+            false;
+    }
+
+    /// <summary>
+    /// Retires a still-valid anchor once it is no longer local to the camera
+    /// or remains vertically inconsistent with the tracked camera.
+    ///
+    /// This method runs from the ARCore frame worker while updateGate is held,
+    /// so releasing the anchor cannot race the normal pose read. Route state
+    /// is not cleared; CameraPage observes the replacement generation and
+    /// republishes the current geographic route progress in the new frame.
+    /// </summary>
+    private bool TryRetireGroundAnchorBeyondLocalWindow(
+        float cameraX,
+        float cameraY,
+        float cameraZ)
+    {
+        Google.AR.Core.Anchor? anchor =
+            spatialGroundAnchor;
+
+        if (anchor is null ||
+            !GetAnchorTrackingState(
+                    anchor)
+                .Equals(
+                    "Tracking",
+                    StringComparison.OrdinalIgnoreCase))
+        {
+            ResetImplausibleGroundHeightCandidate();
+
+            return false;
+        }
+
+        using Google.AR.Core.Pose? anchorPose =
+            anchor.Pose;
+
+        if (anchorPose is null)
+        {
+            ResetImplausibleGroundHeightCandidate();
+
+            return false;
+        }
+
+        float[] anchorTranslation =
+            new float[3];
+
+        anchorPose.GetTranslation(
+            anchorTranslation,
+            0);
+
+        float deltaX =
+            cameraX -
+            anchorTranslation[0];
+
+        float deltaZ =
+            cameraZ -
+            anchorTranslation[2];
+
+        float distanceMeters =
+            LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                deltaX,
+                deltaZ);
+
+        bool heightPlausible =
+            LocalArNavigationPolicy
+                .IsCameraHeightAboveGroundPlausible(
+                    cameraY,
+                    anchorTranslation[1],
+                    out float cameraHeightAboveGroundMeters);
+
+        long now =
+            Environment.TickCount64;
+
+        bool implausibleHeightConfirmed =
+            false;
+
+        if (heightPlausible)
+        {
+            ResetImplausibleGroundHeightCandidate();
+        }
+        else if (!ReferenceEquals(
+                     implausibleGroundHeightCandidateAnchor,
+                     anchor) ||
+                 implausibleGroundHeightCandidateStartedTimestamp ==
+                     long.MinValue)
+        {
+            implausibleGroundHeightCandidateAnchor =
+                anchor;
+
+            implausibleGroundHeightCandidateStartedTimestamp =
+                now;
+
+            Log.Warn(
+                AnchorRecoveryLogTag,
+                "Implausible ground height detected; awaiting confirmation: " +
+                $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
+                $"allowed=[{LocalArNavigationPolicy.MinimumPlausibleCameraHeightAboveGroundMeters:F2}," +
+                $"{LocalArNavigationPolicy.MaximumPlausibleCameraHeightAboveGroundMeters:F2}] m, " +
+                $"confirmation={ImplausibleGroundHeightConfirmationMilliseconds}ms.");
+        }
+        else
+        {
+            implausibleHeightConfirmed =
+                now -
+                    implausibleGroundHeightCandidateStartedTimestamp >=
+                ImplausibleGroundHeightConfirmationMilliseconds;
+        }
+
+        bool anchorOutsideLocalWindow =
+            float.IsFinite(
+                distanceMeters) &&
+            distanceMeters >=
+                LocalArNavigationPolicy
+                    .GroundAnchorRetirementDistanceMeters;
+
+        if (!anchorOutsideLocalWindow &&
+            !implausibleHeightConfirmed)
+        {
+            return false;
+        }
+
+        /*
+         * Make any delayed stale-anchor worker obsolete before detaching the
+         * valid-but-obsolete anchor. This prevents an old worker from acting
+         * on the replacement anchor.
+         */
+        InvalidatePendingRecoveryCountdown();
+
+        ResetImplausibleGroundHeightCandidate();
+
+        ReleaseSpatialGroundAnchor();
+
+        long replacementGeneration;
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorReplacementGeneration++;
+
+            replacementGeneration =
+                groundAnchorReplacementGeneration;
+
+            groundAnchorReacquisitionArmed =
+                true;
+
+            replacementAnchorSearchStartedTimestamp =
+                now;
+
+            replacementAnchorSearchNoticeLogged =
+                false;
+        }
+
+        ARCameraSpatialController.SetRouteRecoveryRebasePending(
+            true,
+            "ground anchor retired outside the trusted local frame");
+
+        hasLoggedGroundPlaneSearch =
+            false;
+
+        Log.Warn(
+            AnchorRecoveryLogTag,
+            "MOVING LOCAL AR FRAME: retired a ground anchor. " +
+            $"reason={(anchorOutsideLocalWindow ? "DISTANCE" : "IMPLAUSIBLE_HEIGHT")}, " +
+            $"cameraToAnchor={distanceMeters:F2} m, " +
+            $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
+            $"retirementThreshold=" +
+            $"{LocalArNavigationPolicy.GroundAnchorRetirementDistanceMeters:F1} m, " +
+            $"replacementGeneration={replacementGeneration}. " +
+            "The current geographic route progress is retained while a nearby " +
+            "floor anchor is acquired.");
+
+        return true;
+    }
+
+    private void ResetImplausibleGroundHeightCandidate()
+    {
+        implausibleGroundHeightCandidateAnchor =
+            null;
+
+        implausibleGroundHeightCandidateStartedTimestamp =
+            long.MinValue;
+    }
 
     /// <inheritdoc />
     public long GroundAnchorReplacementGeneration
@@ -250,7 +588,8 @@ public sealed partial class ArCoreService
                     "ARCore camera is TRACKING but retained ground anchor is " +
                     $"{observedTrackingState}. Allowing " +
                     $"{graceMilliseconds} ms for natural anchor relocalization " +
-                    "while the renderer keeps the last valid AR placement visible.");
+                    "while replacement search and bounded visual continuity " +
+                    "operate independently.");
             }
 
             CancellationTokenSource cancellation =
@@ -412,6 +751,10 @@ public sealed partial class ArCoreService
                         false;
                 }
 
+                ARCameraSpatialController.SetRouteRecoveryRebasePending(
+                    true,
+                    "stale ground anchor released for replacement");
+
                 Log.Debug(
                     AnchorRecoveryLogTag,
                     "Stale ground anchor released after queued grace-period " +
@@ -551,6 +894,8 @@ public sealed partial class ArCoreService
     private void InvalidatePendingRecoveryCountdown()
     {
         CancellationTokenSource? cancellationToCancel;
+
+        ResetProactiveGroundAnchorSearchObservation();
 
         lock (groundAnchorRecoveryLock)
         {

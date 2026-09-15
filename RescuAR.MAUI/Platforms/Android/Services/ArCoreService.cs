@@ -6,6 +6,7 @@ using Evergine.Vulkan;
 using Google.AR.Core;
 using RescuAR.AR;
 using RescuAR.MAUI.Services;
+using RescuAR.Navigation.Projection;
 using Frame = Google.AR.Core.Frame;
 using ArCoreCamera = Google.AR.Core.Camera;
 using ArCorePlane = Google.AR.Core.Plane;
@@ -150,10 +151,10 @@ public sealed partial class ArCoreService : IArCoreService
     /*
      * V7 FLOOD DEPTH OCCLUSION
      * -------------------------
-     * Smoothed ARCore depth is only copied while a local flood visualization
-     * is active. V7.3 caps depth-image copies at 10 Hz. The camera and ARCore
-     * tracking remain at their normal cadence; only the CPU-side occlusion
-     * handoff is throttled to reduce sustained thermal load.
+     * Smoothed ARCore depth is copied only while a local flood visualization
+     * is active or nearby route geometry can benefit from obstacle occlusion.
+     * Flood copies are capped at 10 Hz; route-only copies use 5 Hz. The camera
+     * and ARCore tracking remain at their normal cadence.
      */
     private long lastDepthOcclusionPublishTimestamp =
         long.MinValue;
@@ -161,20 +162,20 @@ public sealed partial class ArCoreService : IArCoreService
     private const long DepthOcclusionPublishIntervalNanoseconds =
         100_000_000L;
 
+    private const long RouteDepthOcclusionPublishIntervalNanoseconds =
+        200_000_000L;
+
     private bool depthOcclusionAvailabilityLogged;
 
     private long processedFrameCount;
     private long fpsWindowStartTimestamp =
         Environment.TickCount64;
 
-    private const long FpsLogIntervalMilliseconds =
-        1000;
-
     private const string SpatialPoseTag =
         "RescuAR-ARPose";
 
     /*
-     * GROUND ACQUISITION V3
+     * GROUND ACQUISITION V4
      * ---------------------
      * Prefer a real upward-facing ARCore Plane whenever one is available.
      * On Depth-capable devices, a lower-center DepthPoint acts as a fallback
@@ -182,14 +183,18 @@ public sealed partial class ArCoreService : IArCoreService
      * plane-polygon growth can otherwise take many seconds.
      *
      * Depth fallback is intentionally conservative: the candidate must be
-     * below the camera, approximately horizontal, and stable for several
-     * consecutive sweeps before an Anchor is created.
+     * below the camera, approximately horizontal, and supported by a rolling
+     * confidence window before an Anchor is created.
      */
     private static readonly (float XOffset, float ZOffset)[]
         GroundPlaneWorldDownSearchPattern =
     {
-        // One direct world-down probe is enough once a floor Plane exists.
-        (0.00f, 0.00f)
+        // Sample the same ARCore frame at the camera and four nearby points.
+        (0.00f, 0.00f),
+        (0.45f, 0.00f),
+        (-0.45f, 0.00f),
+        (0.00f, 0.45f),
+        (0.00f, -0.45f)
     };
 
     private static readonly float[] GroundPlaneWorldDownDirection =
@@ -201,7 +206,7 @@ public sealed partial class ArCoreService : IArCoreService
 
     private static readonly (float X, float Y)[] GroundPlaneSearchPattern =
     {
-        // First sample is also the DepthPoint stability sample.
+        // First sample is also the DepthPoint confidence sample.
         (0.50f, 0.80f),
 
         // Additional lower-view samples are Plane-only fallbacks.
@@ -214,12 +219,15 @@ public sealed partial class ArCoreService : IArCoreService
         0;
 
     private const long GroundPlaneSearchIntervalMilliseconds =
-        200;
+        125;
 
     private const long GroundPlaneSearchProgressLogIntervalMilliseconds =
         2000;
 
-    private const int GroundDepthStableSweepsRequired =
+    private const int GroundDepthConfidenceWindowSweeps =
+        5;
+
+    private const int GroundDepthValidSweepsRequired =
         3;
 
     private const float GroundDepthMinimumNormalY =
@@ -231,11 +239,14 @@ public sealed partial class ArCoreService : IArCoreService
     private const float GroundDepthMaximumHorizontalDeltaMeters =
         0.35f;
 
-    private const float GroundDepthMinimumCameraHeightMeters =
-        0.30f;
+    private const int GroundPlaneRequiredSpatialSamples =
+        2;
 
-    private const float GroundDepthMaximumCameraHeightMeters =
-        2.50f;
+    private const float GroundPlaneMaximumYDeltaMeters =
+        0.12f;
+
+    private const float GroundPlaneMinimumSampleSeparationMeters =
+        0.30f;
 
     private long nextGroundPlaneSearchTimestamp =
         long.MinValue;
@@ -258,7 +269,18 @@ public sealed partial class ArCoreService : IArCoreService
     private float groundDepthCandidateY;
     private float groundDepthCandidateZ;
 
-    private int groundDepthCandidateStableSweepCount;
+    private readonly bool[] groundDepthConfidenceWindow =
+        new bool[GroundDepthConfidenceWindowSweeps];
+
+    private int groundDepthConfidenceWindowCount;
+    private int groundDepthConfidenceWindowIndex;
+    private int groundDepthConfidenceValidSweepCount;
+
+    private bool hasGroundPlaneSweepCandidate;
+    private float groundPlaneSweepCandidateX;
+    private float groundPlaneSweepCandidateY;
+    private float groundPlaneSweepCandidateZ;
+    private int groundPlaneSweepCandidateSupportCount;
 
     /*
      * Match the Camera3D clipping planes serialized in MyScene.wescene.
@@ -1085,10 +1107,23 @@ public sealed partial class ArCoreService : IArCoreService
 
         try
         {
+            RefreshPowerThermalDecisionIfNeeded(
+                force: true);
+
             while (!cancellationToken.IsCancellationRequested)
             {
+                long iterationStartedTimestamp =
+                    Environment.TickCount64;
+
                 UpdateFrameSerialized(
                     fromAutomaticLoop: true,
+                    cancellationToken);
+
+                RefreshPowerThermalDecisionIfNeeded(
+                    force: false);
+
+                ApplyFrameWorkloadDelay(
+                    iterationStartedTimestamp,
                     cancellationToken);
             }
         }
@@ -1227,10 +1262,19 @@ public sealed partial class ArCoreService : IArCoreService
             ArCoreCamera camera =
                 frame.Camera;
 
+            /*
+             * Capture user zoom exactly once for this ARCore frame. Camera
+             * UVs, projection, depth mapping, and screen-space hit tests must
+             * all use the same ratio to preserve AR registration.
+             */
+            float frameZoomRatio =
+                cameraZoomRatio;
+
             PublishSpatialPose(
                 frame,
                 camera,
-                timestamp);
+                timestamp,
+                frameZoomRatio);
 
             LogTextureIntrinsicsOnce(
                 camera);
@@ -1238,7 +1282,8 @@ public sealed partial class ArCoreService : IArCoreService
             TryPublishDepthOcclusionFrame(
                 frame,
                 camera,
-                timestamp);
+                timestamp,
+                frameZoomRatio);
 
             if (captureCpuDiagnosticRequested)
             {
@@ -1320,7 +1365,8 @@ public sealed partial class ArCoreService : IArCoreService
 
                 float[] cameraUv =
                     TransformCameraUv(
-                        frame);
+                        frame,
+                        frameZoomRatio);
 
                 GetAppliedDisplaySize(
                     out uint outputWidth,
@@ -1557,7 +1603,8 @@ public sealed partial class ArCoreService : IArCoreService
     private void PublishSpatialPose(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp)
+        long timestamp,
+        float zoomRatio)
     {
         string trackingState =
             camera.TrackingState.ToString();
@@ -1638,17 +1685,41 @@ public sealed partial class ArCoreService : IArCoreService
             SpatialProjectionNearPlane,
             SpatialProjectionFarPlane);
 
+        ApplyCameraZoomToProjection(
+            projection,
+            zoomRatio);
+
+        /*
+         * MOVING LOCAL AR FRAME
+         * ---------------------
+         * A ground anchor is a nearby spatial reference, not a permanent
+         * city-scale origin. Retire it after the pedestrian has moved beyond
+         * the configured local radius or its sustained height becomes
+         * implausible. The existing frame loop then acquires a replacement
+         * floor anchor close to the current camera.
+         */
+        TryRetireGroundAnchorBeyondLocalWindow(
+            translation[0],
+            translation[1],
+            translation[2]);
+
         /*
          * Keep searching until a real upward-facing horizontal floor plane
-         * is acquired. The fast path uses world-space downward rays around
-         * the tracked camera; the visible-floor screen sweep remains as a
-         * fallback.
+         * is acquired. This also runs after a short non-tracking-anchor delay
+         * so a validated replacement can be prepared before the old anchor is
+         * detached. The fast path uses world-space downward rays around the
+         * tracked camera; the visible-floor screen sweep remains as a fallback.
          */
-        if (spatialGroundAnchor is null)
+        bool shouldSearchForGroundAnchor =
+            spatialGroundAnchor is null ||
+            ShouldSearchForProactiveGroundAnchorReplacement();
+
+        if (shouldSearchForGroundAnchor)
         {
             TryCreateSpatialGroundAnchor(
                 frame,
-                translation);
+                translation,
+                zoomRatio);
         }
 
         bool anchorAvailable =
@@ -1698,7 +1769,8 @@ public sealed partial class ArCoreService : IArCoreService
 
     private void TryCreateSpatialGroundAnchor(
         Frame frame,
-        float[] cameraTranslation)
+        float[] cameraTranslation,
+        float zoomRatio)
     {
         long now =
             Environment.TickCount64;
@@ -1744,6 +1816,8 @@ public sealed partial class ArCoreService : IArCoreService
 
         groundPlaneSearchSweepCount++;
 
+        ResetGroundPlaneSweepCandidate();
+
         if (!hasLoggedGroundPlaneSearch)
         {
             hasLoggedGroundPlaneSearch =
@@ -1751,18 +1825,23 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Searching for ARCore ground with V3 acquisition: " +
+                "Searching for ARCore ground with V4 acquisition: " +
                 $"depthEnabled={depthModeEnabled}, " +
                 $"{GroundPlaneWorldDownSearchPattern.Length} world-down Plane ray + " +
                 $"{GroundPlaneSearchPattern.Length} lower-view screen rays, " +
                 $"viewport={viewportWidth}x{viewportHeight}, " +
                 $"sweepInterval={GroundPlaneSearchIntervalMilliseconds}ms. " +
-                "Preference=upward Plane; fallback=stable upward DepthPoint.");
+                $"planeSpatialSupport={GroundPlaneRequiredSpatialSamples}, " +
+                $"depthConfidence={GroundDepthValidSweepsRequired}/" +
+                $"{GroundDepthConfidenceWindowSweeps}. " +
+                "Preference=spatially supported upward Plane; " +
+                "fallback=rolling-confidence upward DepthPoint.");
         }
 
         /*
-         * Plane fast path. Once ARCore has a horizontal floor model, a single
-         * gravity-aligned probe below the camera can acquire it immediately.
+         * Plane fast path. All probes run in the same ARCore frame. Two
+         * separated, height-consistent hits can therefore acquire a valid
+         * floor Plane in one sweep without trusting one raised surface hit.
          */
         float[] worldRayOrigin =
             new float[3];
@@ -1800,6 +1879,7 @@ public sealed partial class ArCoreService : IArCoreService
             if (TryCreatePlaneGroundAnchorFromHits(
                     hitResults,
                     now,
+                    cameraTranslation[1],
                     "PLANE_WORLD_DOWN",
                     sampleIndex,
                     GroundPlaneWorldDownSearchPattern.Length,
@@ -1812,7 +1892,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         /*
          * Lower-view samples. Every sample may acquire a real Plane. Only the
-         * first/central-lower sample is used for Depth stability so successive
+         * first/central-lower sample is used for Depth confidence so successive
          * depth candidates describe approximately the same physical patch.
          */
         for (int sampleIndex = 0;
@@ -1825,13 +1905,23 @@ public sealed partial class ArCoreService : IArCoreService
                 GroundPlaneSearchPattern[
                     sampleIndex];
 
+            float arCoreNormalizedX =
+                MapZoomedViewCoordinateToArCoreView(
+                    normalizedX,
+                    zoomRatio);
+
+            float arCoreNormalizedY =
+                MapZoomedViewCoordinateToArCoreView(
+                    normalizedY,
+                    zoomRatio);
+
             float hitX =
                 viewportWidth *
-                normalizedX;
+                arCoreNormalizedX;
 
             float hitY =
                 viewportHeight *
-                normalizedY;
+                arCoreNormalizedY;
 
             var hitResults =
                 frame.HitTest(
@@ -1841,12 +1931,14 @@ public sealed partial class ArCoreService : IArCoreService
             groundPlaneSearchHitTestCount++;
 
             string sampleDescription =
-                $"normalized=({normalizedX:F2},{normalizedY:F2}), " +
-                $"screen=({hitX:F1},{hitY:F1})";
+                $"displayNormalized=({normalizedX:F2},{normalizedY:F2}), " +
+                $"arCoreNormalized=({arCoreNormalizedX:F2},{arCoreNormalizedY:F2}), " +
+                $"zoom={zoomRatio:0.#}x, screen=({hitX:F1},{hitY:F1})";
 
             if (TryCreatePlaneGroundAnchorFromHits(
                     hitResults,
                     now,
+                    cameraTranslation[1],
                     "PLANE_SCREEN",
                     sampleIndex,
                     GroundPlaneSearchPattern.Length,
@@ -1889,8 +1981,9 @@ public sealed partial class ArCoreService : IArCoreService
                 SpatialPoseTag,
                 "Ground acquisition still active: " +
                 $"depthEnabled={depthModeEnabled}, " +
-                $"depthStable={groundDepthCandidateStableSweepCount}/" +
-                $"{GroundDepthStableSweepsRequired}, " +
+                $"depthConfidence={groundDepthConfidenceValidSweepCount}/" +
+                $"{GroundDepthConfidenceWindowSweeps}, " +
+                $"depthSamples={groundDepthConfidenceWindowCount}, " +
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms. " +
@@ -1903,6 +1996,7 @@ public sealed partial class ArCoreService : IArCoreService
     private bool TryCreatePlaneGroundAnchorFromHits(
         IEnumerable<Google.AR.Core.HitResult> hitResults,
         long acquisitionTimestamp,
+        float cameraY,
         string method,
         int sampleIndex,
         int sampleCount,
@@ -1952,6 +2046,21 @@ public sealed partial class ArCoreService : IArCoreService
                 hitTranslation,
                 0);
 
+            if (!LocalArNavigationPolicy
+                    .IsPreferredGroundCandidateHeight(
+                        cameraY,
+                        hitTranslation[1],
+                        out float cameraHeightAboveGroundMeters))
+            {
+                continue;
+            }
+
+            if (!TryAccumulateGroundPlaneSweepCandidate(
+                    hitTranslation))
+            {
+                continue;
+            }
+
             if (!TryAssignGroundAnchorFromHit(
                     hit,
                     "Plane"))
@@ -1979,7 +2088,10 @@ public sealed partial class ArCoreService : IArCoreService
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms, " +
+                $"spatialSupport={groundPlaneSweepCandidateSupportCount}/" +
+                $"{GroundPlaneRequiredSpatialSamples}, " +
                 $"hit=({hitTranslation[0]:F2},{hitTranslation[1]:F2},{hitTranslation[2]:F2}), " +
+                $"cameraHeight={cameraHeightAboveGroundMeters:F2}m, " +
                 $"normalY={planeNormal[1]:F2}.");
 
             ResetGroundPlaneSearchState();
@@ -1988,6 +2100,82 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         return false;
+    }
+
+    private bool TryAccumulateGroundPlaneSweepCandidate(
+        float[] hitTranslation)
+    {
+        if (!hasGroundPlaneSweepCandidate)
+        {
+            hasGroundPlaneSweepCandidate =
+                true;
+
+            groundPlaneSweepCandidateX =
+                hitTranslation[0];
+
+            groundPlaneSweepCandidateY =
+                hitTranslation[1];
+
+            groundPlaneSweepCandidateZ =
+                hitTranslation[2];
+
+            groundPlaneSweepCandidateSupportCount =
+                1;
+
+            return false;
+        }
+
+        float yDelta =
+            MathF.Abs(
+                hitTranslation[1] -
+                groundPlaneSweepCandidateY);
+
+        if (yDelta >
+            GroundPlaneMaximumYDeltaMeters)
+        {
+            /*
+             * Prefer the lower plausible surface. If the center ray lands on
+             * a bench and a nearby ray reaches the floor, later floor samples
+             * can still form the required spatial agreement in this sweep.
+             */
+            if (hitTranslation[1] <
+                groundPlaneSweepCandidateY)
+            {
+                groundPlaneSweepCandidateX =
+                    hitTranslation[0];
+
+                groundPlaneSweepCandidateY =
+                    hitTranslation[1];
+
+                groundPlaneSweepCandidateZ =
+                    hitTranslation[2];
+
+                groundPlaneSweepCandidateSupportCount =
+                    1;
+            }
+
+            return false;
+        }
+
+        float horizontalSeparation =
+            LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                hitTranslation[0] -
+                    groundPlaneSweepCandidateX,
+                hitTranslation[2] -
+                    groundPlaneSweepCandidateZ);
+
+        if (!float.IsFinite(
+                horizontalSeparation) ||
+            horizontalSeparation <
+                GroundPlaneMinimumSampleSeparationMeters)
+        {
+            return false;
+        }
+
+        groundPlaneSweepCandidateSupportCount++;
+
+        return groundPlaneSweepCandidateSupportCount >=
+            GroundPlaneRequiredSpatialSamples;
     }
 
     private bool TryCreateDepthGroundAnchorFromHits(
@@ -2033,14 +2221,11 @@ public sealed partial class ArCoreService : IArCoreService
                 hitTranslation,
                 0);
 
-            float cameraHeight =
-                cameraY -
-                hitTranslation[1];
-
-            if (cameraHeight <
-                    GroundDepthMinimumCameraHeightMeters ||
-                cameraHeight >
-                    GroundDepthMaximumCameraHeightMeters)
+            if (!LocalArNavigationPolicy
+                    .IsPreferredGroundCandidateHeight(
+                        cameraY,
+                        hitTranslation[1],
+                        out float cameraHeight))
             {
                 continue;
             }
@@ -2075,18 +2260,16 @@ public sealed partial class ArCoreService : IArCoreService
                         GroundDepthMaximumHorizontalDeltaMeters;
             }
 
-            if (!hasGroundDepthCandidate ||
+            if (hasGroundDepthCandidate &&
                 !stableWithPrevious)
+            {
+                continue;
+            }
+
+            if (!hasGroundDepthCandidate)
             {
                 hasGroundDepthCandidate =
                     true;
-
-                groundDepthCandidateStableSweepCount =
-                    1;
-            }
-            else
-            {
-                groundDepthCandidateStableSweepCount++;
             }
 
             groundDepthCandidateX =
@@ -2098,8 +2281,11 @@ public sealed partial class ArCoreService : IArCoreService
             groundDepthCandidateZ =
                 hitTranslation[2];
 
-            if (groundDepthCandidateStableSweepCount <
-                GroundDepthStableSweepsRequired)
+            RecordGroundDepthConfidenceSample(
+                valid: true);
+
+            if (groundDepthConfidenceValidSweepCount <
+                GroundDepthValidSweepsRequired)
             {
                 return false;
             }
@@ -2120,17 +2306,18 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "ARCore GROUND anchor created from stable DepthPoint fallback.");
+                "ARCore GROUND anchor created from rolling-confidence DepthPoint fallback.");
 
             Log.Debug(
                 SpatialPoseTag,
                 "Ground acquisition = " +
-                "method=DEPTH_STABLE, " +
+                "method=DEPTH_ROLLING, " +
                 $"depthEnabled={depthModeEnabled}, " +
                 $"sample={sampleIndex + 1}/{sampleCount}, " +
                 $"{sampleDescription}, " +
-                $"stableSweeps={groundDepthCandidateStableSweepCount}/" +
-                $"{GroundDepthStableSweepsRequired}, " +
+                $"depthConfidence={groundDepthConfidenceValidSweepCount}/" +
+                $"{GroundDepthConfidenceWindowSweeps}, " +
+                $"depthSamples={groundDepthConfidenceWindowCount}, " +
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms, " +
@@ -2145,11 +2332,61 @@ public sealed partial class ArCoreService : IArCoreService
 
         /*
          * The designated lower-center sample yielded no acceptable DepthPoint
-         * this sweep. Requiring consecutive valid sweeps prevents one noisy
-         * depth estimate from establishing the flood baseline.
+         * this sweep. Record one miss without discarding earlier consistent
+         * evidence; old evidence naturally expires from the rolling window.
          */
-        ResetGroundDepthCandidate();
+        RecordGroundDepthConfidenceSample(
+            valid: false);
+
         return false;
+    }
+
+    private void RecordGroundDepthConfidenceSample(
+        bool valid)
+    {
+        if (groundDepthConfidenceWindowCount ==
+            GroundDepthConfidenceWindowSweeps)
+        {
+            if (groundDepthConfidenceWindow[
+                    groundDepthConfidenceWindowIndex])
+            {
+                groundDepthConfidenceValidSweepCount--;
+            }
+        }
+        else
+        {
+            groundDepthConfidenceWindowCount++;
+        }
+
+        groundDepthConfidenceWindow[
+            groundDepthConfidenceWindowIndex] =
+                valid;
+
+        if (valid)
+        {
+            groundDepthConfidenceValidSweepCount++;
+        }
+
+        groundDepthConfidenceWindowIndex =
+            (groundDepthConfidenceWindowIndex + 1) %
+            GroundDepthConfidenceWindowSweeps;
+
+        if (groundDepthConfidenceValidSweepCount ==
+                0 &&
+            !valid)
+        {
+            hasGroundDepthCandidate =
+                false;
+
+            groundDepthCandidateX =
+                0.0f;
+
+            groundDepthCandidateY =
+                0.0f;
+
+            groundDepthCandidateZ =
+                0.0f;
+        }
     }
 
     private bool TryAssignGroundAnchorFromHit(
@@ -2178,8 +2415,23 @@ public sealed partial class ArCoreService : IArCoreService
             return false;
         }
 
-        spatialGroundAnchor =
-            newAnchor;
+        Google.AR.Core.Anchor? previousAnchor =
+            Interlocked.Exchange(
+                ref spatialGroundAnchor,
+                newAnchor);
+
+        if (previousAnchor is not null &&
+            !ReferenceEquals(
+                previousAnchor,
+                newAnchor))
+        {
+            RegisterProactiveGroundAnchorHandoff(
+                previousAnchor,
+                source);
+
+            DisposeGroundAnchor(
+                previousAnchor);
+        }
 
         return true;
     }
@@ -2198,7 +2450,36 @@ public sealed partial class ArCoreService : IArCoreService
         groundDepthCandidateZ =
             0.0f;
 
-        groundDepthCandidateStableSweepCount =
+        Array.Clear(
+            groundDepthConfidenceWindow,
+            0,
+            groundDepthConfidenceWindow.Length);
+
+        groundDepthConfidenceWindowCount =
+            0;
+
+        groundDepthConfidenceWindowIndex =
+            0;
+
+        groundDepthConfidenceValidSweepCount =
+            0;
+    }
+
+    private void ResetGroundPlaneSweepCandidate()
+    {
+        hasGroundPlaneSweepCandidate =
+            false;
+
+        groundPlaneSweepCandidateX =
+            0.0f;
+
+        groundPlaneSweepCandidateY =
+            0.0f;
+
+        groundPlaneSweepCandidateZ =
+            0.0f;
+
+        groundPlaneSweepCandidateSupportCount =
             0;
     }
 
@@ -2218,6 +2499,8 @@ public sealed partial class ArCoreService : IArCoreService
 
         groundPlaneSearchHitTestCount =
             0;
+
+        ResetGroundPlaneSweepCandidate();
 
         ResetGroundDepthCandidate();
     }
@@ -2291,6 +2574,13 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        DisposeGroundAnchor(
+            anchor);
+    }
+
+    private static void DisposeGroundAnchor(
+        Google.AR.Core.Anchor anchor)
+    {
         try
         {
             anchor.Detach();
@@ -2534,12 +2824,24 @@ public sealed partial class ArCoreService : IArCoreService
     private void TryPublishDepthOcclusionFrame(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp)
+        long timestamp,
+        float zoomRatio)
     {
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
-        if (!flood.IsAvailable)
+        ARRouteBridge.RouteSnapshot route =
+            ARRouteBridge.Current;
+
+        bool nearbyRouteAvailable =
+            ARRouteRenderer.DepthOcclusionRequested &&
+            powerThermalDecision.RouteDepthAllowed &&
+            route.IsAvailable &&
+            ARRouteVisualPolicy.HasNearbyRoute(
+                route.Points);
+
+        if (!flood.IsAvailable &&
+            !nearbyRouteAvailable)
         {
             if (ARDepthOcclusionBridge.Current.IsAvailable)
             {
@@ -2559,10 +2861,20 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        long publishIntervalNanoseconds =
+            flood.IsAvailable
+                ? DepthOcclusionPublishIntervalNanoseconds
+                : RouteDepthOcclusionPublishIntervalNanoseconds;
+
+        publishIntervalNanoseconds =
+            ARPowerThermalPolicy.AdjustDepthIntervalNanoseconds(
+                publishIntervalNanoseconds,
+                powerThermalDecision);
+
         if (lastDepthOcclusionPublishTimestamp != long.MinValue &&
             timestamp > lastDepthOcclusionPublishTimestamp &&
             timestamp - lastDepthOcclusionPublishTimestamp <
-                DepthOcclusionPublishIntervalNanoseconds)
+                publishIntervalNanoseconds)
         {
             return;
         }
@@ -2702,7 +3014,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             float[] viewToTextureUv =
                 TransformCameraUv(
-                    frame);
+                    frame,
+                    zoomRatio);
 
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
@@ -2746,9 +3059,16 @@ public sealed partial class ArCoreService : IArCoreService
                 depthOcclusionAvailabilityLogged =
                     true;
 
+                double refreshCapHz =
+                    1_000_000_000.0 /
+                    publishIntervalNanoseconds;
+
                 Log.Info(
                     "RescuAR-FloodDepth",
                     "ARCore depth occlusion ACTIVE: " +
+                    $"consumer={(flood.IsAvailable ? "flood" : "route")}, " +
+                    $"refreshCap={refreshCapHz:0.#}Hz, " +
+                    $"powerMode={powerThermalDecision.Mode}, " +
                     $"depthImage={width}x{height}, " +
                     $"textureIntrinsics={dimensions[0]}x{dimensions[1]}, " +
                     $"pixelStride={pixelStride}, rowStride={rowStride}.");
@@ -2760,7 +3080,7 @@ public sealed partial class ArCoreService : IArCoreService
              * NotYetAvailableException is expected while depth is warming up,
              * and other ARCore depth exceptions can occur transiently during
              * tracking loss. Keep the last good depth frame instead of
-             * tearing the user-facing flood visualization down.
+             * tearing down active flood or route occlusion.
              */
             if (!depthOcclusionAvailabilityLogged)
             {
@@ -2777,14 +3097,59 @@ public sealed partial class ArCoreService : IArCoreService
     /// coordinates into normalized camera-texture coordinates.
     /// </summary>
     private float[] TransformCameraUv(
-        Frame frame)
+        Frame frame,
+        float zoomRatio)
     {
+        float safeZoomRatio =
+            Math.Clamp(
+                zoomRatio,
+                MinimumCameraZoomRatio,
+                MaximumCameraZoomRatio);
+
+        float[] inputViewUv;
+
+        if (Math.Abs(
+                safeZoomRatio - 1.0f) < 0.001f)
+        {
+            inputViewUv =
+                ViewNormalizedCameraUv;
+        }
+        else
+        {
+            float halfSpan =
+                0.5f /
+                safeZoomRatio;
+
+            float minimum =
+                0.5f -
+                halfSpan;
+
+            float maximum =
+                0.5f +
+                halfSpan;
+
+            inputViewUv =
+            [
+                // Top-left
+                minimum, minimum,
+
+                // Top-right
+                maximum, minimum,
+
+                // Bottom-left
+                minimum, maximum,
+
+                // Bottom-right
+                maximum, maximum
+            ];
+        }
+
         float[] transformedUv =
             new float[8];
 
         frame.TransformCoordinates2d(
             Coordinates2d.ViewNormalized,
-            ViewNormalizedCameraUv,
+            inputViewUv,
             Coordinates2d.TextureNormalized,
             transformedUv);
 
@@ -2795,7 +3160,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "========== ARCore Camera UV ==========");
+                $"========== ARCore Camera UV ({safeZoomRatio:0.#}x) ==========");
 
             Log.Debug(
                 Tag,
@@ -3112,7 +3477,7 @@ public sealed partial class ArCoreService : IArCoreService
             now - fpsWindowStartTimestamp;
 
         if (elapsedMilliseconds <
-            FpsLogIntervalMilliseconds)
+            powerThermalDecision.DiagnosticLogIntervalMilliseconds)
         {
             return;
         }
@@ -3122,9 +3487,20 @@ public sealed partial class ArCoreService : IArCoreService
             1000.0 /
             elapsedMilliseconds;
 
+        string temperatureText =
+            float.IsFinite(
+                powerThermalDecision.BatteryTemperatureCelsius)
+                ? $"{powerThermalDecision.BatteryTemperatureCelsius:F1}C"
+                : "unavailable";
+
         Log.Debug(
             Tag,
-            $"Camera pipeline FPS = {fps:F1}");
+            "Camera pipeline telemetry: " +
+            $"fps={fps:F1}, " +
+            $"targetMaxFps={powerThermalDecision.TargetMaximumFramesPerSecond}, " +
+            $"powerMode={powerThermalDecision.Mode}, " +
+            $"batteryTemperature={temperatureText}, " +
+            $"powerSaver={powerThermalDecision.PowerSaveMode}.");
 
         processedFrameCount =
             0;
@@ -3140,7 +3516,7 @@ public sealed partial class ArCoreService : IArCoreService
         try
         {
             Google.AR.Core.Config.DepthMode automaticDepthMode =
-                Google.AR.Core.Config.DepthMode.Automatic;
+                Google.AR.Core.Config.DepthMode.Automatic!;
 
             bool isSupported =
                 currentSession.IsDepthModeSupported(
@@ -3156,7 +3532,7 @@ public sealed partial class ArCoreService : IArCoreService
                 "ARCore Depth API configuration: " +
                 $"supported={isSupported}, " +
                 $"requested={(isSupported ? "AUTOMATIC" : "DISABLED")}. " +
-                "Ground acquisition uses Plane first and stable DepthPoint fallback when enabled.");
+                "Ground acquisition uses spatially supported Plane hits first and rolling-confidence DepthPoint fallback when enabled.");
 
             return isSupported;
         }

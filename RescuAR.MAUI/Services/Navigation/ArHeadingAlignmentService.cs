@@ -26,8 +26,9 @@ namespace RescuAR.MAUI.Services.Navigation;
 /// ArRouteAlignment then rotates East/North route coordinates into AR X/Z
 /// using that constant yaw.
 ///
-/// The calibration is sampled only when a route is requested. Raw magnetic
-/// sensor updates are NOT applied continuously to the rendered route.
+/// Magnetic orientation provides the initial estimate. CameraPage may later
+/// replace it with a movement-validated yaw; raw magnetic sensor updates are
+/// never applied directly to the rendered route.
 /// </summary>
 public sealed class ArHeadingAlignmentService : IDisposable
 {
@@ -319,7 +320,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
 #if ANDROID
         Log.Debug(
             LogTag,
-            "No retained session heading exists. Starting one-time calibration. " +
+            "No retained session heading exists. Starting initial calibration. " +
             "Hold the phone reasonably steady for about one second.");
 #endif
 
@@ -447,11 +448,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
             Log.Warn(
                 LogTag,
                 "Heading calibration timed out before reaching the stability " +
-                "threshold; using circular mean of valid samples.");
+                "threshold; using the circular mean without locking it for the session.");
 #endif
-
-            StoreAndLogResult(
-                bestEffort);
 
             return bestEffort;
         }
@@ -464,6 +462,87 @@ public sealed class ArHeadingAlignmentService : IDisposable
 #endif
 
         return null;
+    }
+
+    /// <summary>
+    /// Stores a yaw correction only after CameraPage has validated sustained
+    /// walking direction against GPS, route geometry, and ARCore movement.
+    /// </summary>
+    public HeadingAlignmentResult ApplyMovementValidatedYaw(
+        double correctedMapToArYawDegrees,
+        int confirmationCount,
+        double residualAlignmentErrorDegrees,
+        DateTimeOffset timestampUtc)
+    {
+        ThrowIfDisposed();
+
+        if (!double.IsFinite(
+                correctedMapToArYawDegrees))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(correctedMapToArYawDegrees));
+        }
+
+        HeadingAlignmentResult corrected;
+
+        lock (sessionCalibrationSync)
+        {
+            HeadingAlignmentResult previous =
+                sessionCalibration ??
+                new HeadingAlignmentResult(
+                    true,
+                    correctedMapToArYawDegrees,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    ARCameraPoseBridge.CurrentFrame.Version,
+                    0,
+                    double.NaN,
+                    false,
+                    timestampUtc);
+
+            corrected =
+                previous with
+                {
+                    IsAvailable =
+                        true,
+                    MapToArYawDegrees =
+                        NormalizeSignedDegrees(
+                            correctedMapToArYawDegrees),
+                    SpatialVersion =
+                        ARCameraPoseBridge.CurrentFrame.Version,
+                    SampleCount =
+                        Math.Max(
+                            previous.SampleCount,
+                            confirmationCount),
+                    MaxSampleDeviationDegrees =
+                        Math.Abs(
+                            residualAlignmentErrorDegrees),
+                    IsStable =
+                        Math.Abs(
+                            residualAlignmentErrorDegrees) <=
+                            StableMaxDeviationDegrees,
+                    Timestamp =
+                        timestampUtc
+                };
+
+            sessionCalibration =
+                corrected;
+        }
+
+#if ANDROID
+        Log.Warn(
+            LogTag,
+            "Heading alignment UPDATED from sustained movement: " +
+            $"mapToArYaw={corrected.MapToArYawDegrees:F2} deg, " +
+            $"confirmations={confirmationCount}, " +
+            $"residualError={residualAlignmentErrorDegrees:F2} deg, " +
+            $"stable={corrected.IsStable}, " +
+            $"spatialVersion={corrected.SpatialVersion}.");
+#endif
+
+        return corrected;
     }
 
     private void OnOrientationReadingChanged(

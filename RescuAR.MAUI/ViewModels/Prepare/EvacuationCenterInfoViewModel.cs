@@ -205,40 +205,44 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 Name = "Malanday Elementary School", 
                 Address = "48 Visayas St., Malanday, 1805 Marikina City, Philippines", 
                 VerifiedBy = "Marikina LGU",
-                Latitude = 14.6612,
-                Longitude = 121.0963,
+                // Verified school-site coordinate (Marikina public-school inventory).
+                Latitude = 14.65023889,
+                Longitude = 121.0943917,
                 FacilityImageUrl = "https://pbs.twimg.com/media/Emm23rQVQAAbUe3?format=jpg&name=large",
-                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6612,121.0963&zoom=16&size=600x300&markers=14.6612,121.0963,red-pushpin"
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.65023889,121.0943917&zoom=16&size=600x300&markers=14.65023889,121.0943917,red-pushpin"
             },
             new EvacuationCenterItem 
             { 
                 Name = "San Roque High School", 
-                Address = "Abad Santos Street, San Roque, 1801 Marikina City, Philippines", 
+                Address = "Nicanor Roxas St., San Roque, 1801 Marikina City, Philippines", 
                 VerifiedBy = "Marikina LGU",
-                Latitude = 14.6258,
-                Longitude = 121.1042,
+                // Verified school-site coordinate (Marikina public-school inventory).
+                Latitude = 14.622798,
+                Longitude = 121.0971046,
                 FacilityImageUrl = "https://www.airesingegneria.it/site/assets/files/1208/metro-manila-edifici.jpg",
-                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6258,121.1042&zoom=16&size=600x300&markers=14.6258,121.1042,red-pushpin"
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.622798,121.0971046&zoom=16&size=600x300&markers=14.622798,121.0971046,red-pushpin"
             },
             new EvacuationCenterItem 
             { 
                 Name = "Concepcion Uno Covered Court", 
                 Address = "J.P. Rizal St., Concepcion Uno, 1807 Marikina City, Philippines", 
                 VerifiedBy = "Red Cross PH Verified",
-                Latitude = 14.6521,
-                Longitude = 121.1084,
+                // User-verified coordinate for Concepcion Subdivision Covered Court.
+                Latitude = 14.6492203,
+                Longitude = 121.106447,
                 FacilityImageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Barangay_Concepcion_Uno%2C_Marikina_City_%28Rizal%2C_Metro_Manila%3B_2023-08-07%29_E911a_22.jpg/3840px-Barangay_Concepcion_Uno%2C_Marikina_City_%28Rizal%2C_Metro_Manila%3B_2023-08-07%29_E911a_22.jpg",
-                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6521,121.1084&zoom=16&size=600x300&markers=14.6521,121.1084,red-pushpin"
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6492203,121.106447&zoom=16&size=600x300&markers=14.6492203,121.106447,red-pushpin"
             },
             new EvacuationCenterItem 
             { 
                 Name = "Marikina Elementary School", 
                 Address = "W.C. Paz St., Sta. Elena, 1800 Marikina City, Philippines", 
                 VerifiedBy = "Marikina LGU",
-                Latitude = 14.6335,
-                Longitude = 121.0968,
+                // Verified school-site coordinate (Marikina public-school inventory).
+                Latitude = 14.6311963,
+                Longitude = 121.0976139,
                 FacilityImageUrl = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgfm1_L35DOsZzEP6Op7KXLa44OxSrijBZ3zuIF4bczTgTQvA4c2GWNhzxlmy1UqFaZz47_IyXrAWuM6zZv8CDTR7ZwVITldWURKjINOxGi94kvfhRuN5mXYWT3geYrG3KJmemaYDL7hKc/w1200-h630-p-k-no-nu/2018-02-25_05.54.17_1%255B1%255D.jpg",
-                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6335,121.0968&zoom=16&size=600x300&markers=14.6335,121.0968,red-pushpin"
+                MapImageSource = "https://staticmap.openstreetmap.de/staticmap.php?center=14.6311963,121.0976139&zoom=16&size=600x300&markers=14.6311963,121.0976139,red-pushpin"
             }
         };
 

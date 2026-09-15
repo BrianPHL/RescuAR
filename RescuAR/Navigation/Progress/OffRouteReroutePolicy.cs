@@ -19,7 +19,7 @@ public sealed class OffRouteReroutePolicy
 
     private static readonly TimeSpan RerouteCooldown =
         TimeSpan.FromSeconds(
-            20);
+            45);
 
     private int consecutiveOffRouteSamples;
 
@@ -58,6 +58,7 @@ public sealed class OffRouteReroutePolicy
             update.IsOffRoute,
             update.CrossTrackErrorMeters,
             update.AccuracyMeters,
+            update.MatchConfidence,
             timestampUtc,
             developerSimulation: false);
     }
@@ -67,7 +68,7 @@ public sealed class OffRouteReroutePolicy
     /// harness. It deliberately bypasses geometric route matching while still
     /// exercising the SAME confirmation/cooldown policy used by real GPS.
     ///
-    /// It does not alter the production 35 m RouteProgressTracker threshold.
+    /// It does not alter the production accuracy-aware route corridor.
     /// The caller should use the device's real GPS coordinate as the reroute
     /// origin when the third simulated confirmation triggers.
     /// </summary>
@@ -96,6 +97,7 @@ public sealed class OffRouteReroutePolicy
             isOffRoute: true,
             crossTrackErrorMeters: simulatedCrossTrackErrorMeters,
             accuracyMeters: simulatedAccuracyMeters,
+            matchConfidence: RouteMatchConfidence.High,
             timestampUtc,
             developerSimulation: true);
     }
@@ -104,6 +106,7 @@ public sealed class OffRouteReroutePolicy
         bool isOffRoute,
         double crossTrackErrorMeters,
         double? accuracyMeters,
+        RouteMatchConfidence matchConfidence,
         DateTimeOffset timestampUtc,
         bool developerSimulation)
     {
@@ -114,8 +117,13 @@ public sealed class OffRouteReroutePolicy
             accuracyMeters.Value <=
                 MaximumAccuracyForRerouteMeters;
 
+        bool matchTrustworthy =
+            matchConfidence >=
+                RouteMatchConfidence.Medium;
+
         if (!isOffRoute ||
-            !accuracyUsable)
+            !accuracyUsable ||
+            !matchTrustworthy)
         {
             consecutiveOffRouteSamples =
                 0;
@@ -127,8 +135,11 @@ public sealed class OffRouteReroutePolicy
                 RequiredConsecutiveOffRouteSamples,
                 crossTrackErrorMeters,
                 accuracyMeters,
+                matchConfidence,
                 isOffRoute
-                    ? "off-route match ignored because GPS accuracy is too weak"
+                    ? !accuracyUsable
+                        ? "off-route match ignored because GPS accuracy is too weak"
+                        : "off-route match ignored because segment identity is ambiguous"
                     : "GPS match is not off-route");
         }
 
@@ -155,6 +166,7 @@ public sealed class OffRouteReroutePolicy
                 RequiredConsecutiveOffRouteSamples,
                 crossTrackErrorMeters,
                 accuracyMeters,
+                matchConfidence,
                 $"reroute cooldown active for another {remainingSeconds:F0} s");
         }
 
@@ -187,6 +199,7 @@ public sealed class OffRouteReroutePolicy
             RequiredConsecutiveOffRouteSamples,
             crossTrackErrorMeters,
             accuracyMeters,
+            matchConfidence,
             shouldReroute
                 ? developerSimulation
                     ? "DEVELOPER SIMULATION: repeated trustworthy off-route confirmations injected"
@@ -203,5 +216,6 @@ public sealed class OffRouteReroutePolicy
         int RequiredConfirmationCount,
         double CrossTrackErrorMeters,
         double? AccuracyMeters,
+        RouteMatchConfidence MatchConfidence,
         string Reason);
 }
