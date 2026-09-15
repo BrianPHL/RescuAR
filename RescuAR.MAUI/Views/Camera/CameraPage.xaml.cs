@@ -2363,8 +2363,7 @@ namespace RescuAR.App.Views.Camera
 
                 _headingRevalidationPolicy.Reset();
 
-                UpdateTurnGuidance(
-                    route);
+                UpdateTurnGuidance();
 
                 StartRouteProgress();
 
@@ -3121,8 +3120,7 @@ namespace RescuAR.App.Views.Camera
                 Connectivity.Current.NetworkAccess ==
                     NetworkAccess.Internet);
 
-            UpdateTurnGuidance(
-                activeRoute);
+            UpdateTurnGuidance();
 
             StartPdrIfPossible();
 
@@ -3605,8 +3603,7 @@ namespace RescuAR.App.Views.Camera
                              turnGuidanceUpdate.HasValue) &&
                             !safeZoneConfirmed)
                         {
-                            UpdateTurnGuidance(
-                                route);
+                            UpdateTurnGuidance();
                         }
 
                         bool hazardRerouteOwnsThisCycle =
@@ -4704,8 +4701,7 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                UpdateTurnGuidance(
-                    replacementRoute);
+                UpdateTurnGuidance();
 
                 lastRerouteResult =
                     hazardAware
@@ -4797,16 +4793,55 @@ namespace RescuAR.App.Views.Camera
 #endif
         }
 
-        private void UpdateTurnGuidance(
-            RouteResult route)
+        private void UpdateTurnGuidance()
         {
-            ARRouteBridge.RouteSnapshot visibleRoute =
-                ARRouteBridge.Current;
+            RouteResult? acceptedRoute;
+
+            RouteProgressTracker.ProgressSnapshot acceptedProgress;
+
+            ARRouteBridge.RouteSnapshot visibleRoute;
+
+            /*
+             * Capture the accepted geographic route, its matched progress, and
+             * the currently displayed AR route under the same outer lock used
+             * by route replacement and GPS/PDR fusion. Turn geometry stays tied
+             * to the visible AR window, while the displayed total remaining
+             * distance comes only from accepted tracker progress.
+             */
+            lock (routeProgressFusionSync)
+            {
+                acceptedRoute =
+                    activeRoute;
+
+                acceptedProgress =
+                    _routeProgressTracker.Current;
+
+                visibleRoute =
+                    ARRouteBridge.Current;
+            }
 
             RouteNavigationState navigationState =
                 visibleRoute.NavigationState;
 
-            if (!visibleRoute.IsAvailable ||
+            bool visibleRouteMatchesAcceptedRoute =
+                acceptedRoute is not null &&
+                string.Equals(
+                    visibleRoute.Algorithm,
+                    acceptedRoute.Algorithm,
+                    StringComparison.Ordinal) &&
+                double.IsFinite(
+                    visibleRoute.TotalDistanceMeters) &&
+                double.IsFinite(
+                    acceptedRoute.TotalDistanceMeters) &&
+                Math.Abs(
+                    visibleRoute.TotalDistanceMeters -
+                    acceptedRoute.TotalDistanceMeters) <=
+                        0.50;
+
+            if (acceptedRoute is null ||
+                !acceptedProgress.HasRoute ||
+                !visibleRoute.IsAvailable ||
+                !visibleRouteMatchesAcceptedRoute ||
                 !navigationState.IsAvailable ||
                 navigationState.VisualKind !=
                     RouteVisualKind.RouteWindow)
@@ -4818,9 +4853,11 @@ namespace RescuAR.App.Views.Camera
                 Log.Debug(
                     TurnLogTag,
                     "TURN GUIDANCE HELD: visible AR geometry is not a " +
-                    "validated route-progress window. " +
+                    "validated window for the accepted route/progress state. " +
                     $"routeVersion={visibleRoute.Version}, " +
-                    $"visualKind={navigationState.VisualKind}.");
+                    $"visualKind={navigationState.VisualKind}, " +
+                    $"routeMatches={visibleRouteMatchesAcceptedRoute}, " +
+                    $"acceptedProgress={acceptedProgress.HasRoute}.");
 #endif
 
                 Dispatcher.Dispatch(
@@ -4835,9 +4872,21 @@ namespace RescuAR.App.Views.Camera
 
             PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance =
                 _turnGuidanceService.Evaluate(
-                    route,
+                    acceptedRoute,
                     navigationState.WindowStartProgressMeters,
                     navigationState.SourceSegmentIndex);
+
+            if (guidance.IsAvailable)
+            {
+                guidance =
+                    guidance with
+                    {
+                        RemainingRouteMeters =
+                            Math.Max(
+                                0.0,
+                                acceptedProgress.RemainingMeters)
+                    };
+            }
 
             lastTurnGuidance =
                 guidance;
@@ -4867,7 +4916,10 @@ namespace RescuAR.App.Views.Camera
                     $"{(double.IsFinite(guidance.DistanceToTurnMeters) ? guidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
                     $"turnAngle={guidance.TurnAngleDegrees:F1} deg, " +
                     $"remaining={guidance.RemainingRouteMeters:F1} m, " +
-                    $"progress={navigationState.WindowStartProgressMeters:F1} m, " +
+                    $"visualProgress={navigationState.WindowStartProgressMeters:F1} m, " +
+                    $"acceptedProgress={acceptedProgress.CommittedProgressMeters:F1} m, " +
+                    $"publicationLag=" +
+                    $"{Math.Max(0.0, acceptedProgress.CommittedProgressMeters - navigationState.WindowStartProgressMeters):F1} m, " +
                     $"sourceSegment={navigationState.SourceSegmentIndex}, " +
                     $"routeVersion={visibleRoute.Version}");
 
@@ -7253,8 +7305,7 @@ namespace RescuAR.App.Views.Camera
 
             acceptedPdrStepCount++;
 
-            UpdateTurnGuidance(
-                route);
+            UpdateTurnGuidance();
 
             LogDetailedDebug(
                 PdrLogTag,
@@ -7954,8 +8005,7 @@ namespace RescuAR.App.Views.Camera
             ARRouteBridge.RouteSnapshot rebasedRoute =
                 ARRouteBridge.Current;
 
-            UpdateTurnGuidance(
-                route);
+            UpdateTurnGuidance();
 
             Log.Warn(
                 "RescuAR-AnchorRecovery",
@@ -8086,8 +8136,7 @@ namespace RescuAR.App.Views.Camera
             ARRouteBridge.RouteSnapshot recoveredRoute =
                 ARRouteBridge.Current;
 
-            UpdateTurnGuidance(
-                route);
+            UpdateTurnGuidance();
 
             Log.Warn(
                 "RescuAR-AnchorRecovery",
