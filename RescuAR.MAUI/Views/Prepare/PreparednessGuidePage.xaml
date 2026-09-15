@@ -10,156 +10,220 @@
     Title="Disaster Safety Guide"
     BackgroundColor="#F8FAFC">
 
-    <Grid RowDefinitions="Auto,Auto,*">
+    <Grid RowDefinitions="Auto,*">
 
-        <!-- 1. TOP HEADER BANNER & DOWNLOAD ACTION -->
+        <!-- 1. TOP HEADER BANNER & CLEAN ACTION BUTTONS -->
         <Border Grid.Row="0"
                 BackgroundColor="#0A8491"
                 StrokeThickness="0"
-                Padding="16,16,16,14">
-            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                Padding="20,18">
+            <VerticalStackLayout Spacing="14">
+                <VerticalStackLayout Spacing="2">
                     <Label Text="OFFICIAL DRRMO PROTOCOL" TextColor="#E0F2FE" FontSize="11" FontAttributes="Bold" CharacterSpacing="1" />
-                    <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="20" FontAttributes="Bold" />
-                    <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="12" />
+                    <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="22" FontAttributes="Bold" />
+                    <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="13" />
                 </VerticalStackLayout>
 
-                <!-- Download PDF Button -->
-                <Button Grid.Column="1"
-                        Text="⬇ Download PDF"
-                        Command="{Binding DownloadPdfDocumentCommand}"
-                        BackgroundColor="#065F69"
-                        TextColor="#FFFFFF"
-                        FontAttributes="Bold"
-                        FontSize="12"
-                        CornerRadius="14"
-                        Padding="14,8"
-                        VerticalOptions="Center" />
+                <!-- Clean Action Buttons (No Eye Emoji) -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Button Grid.Column="0"
+                            Text="Download PDF"
+                            Command="{Binding DownloadPdfDocumentCommand}"
+                            BackgroundColor="#FFFFFF"
+                            TextColor="#0A8491"
+                            FontAttributes="Bold"
+                            FontSize="13"
+                            CornerRadius="12"
+                            HeightRequest="44" />
 
-                <Button Grid.Column="2"
-                        Text="👁 View PDF"
-                        Command="{Binding ViewPdfCommand}"
-                        BackgroundColor="#065F69"
-                        TextColor="#FFFFFF"
-                        FontAttributes="Bold"
-                        FontSize="12"
-                        CornerRadius="14"
-                        Padding="14,8"
-                        VerticalOptions="Center" />
-            </Grid>
+                    <Button Grid.Column="1"
+                            Text="View PDF"
+                            Command="{Binding ViewPdfCommand}"
+                            BackgroundColor="#065F69"
+                            TextColor="#FFFFFF"
+                            FontAttributes="Bold"
+                            FontSize="13"
+                            CornerRadius="12"
+                            HeightRequest="44" />
+                </Grid>
+            </VerticalStackLayout>
         </Border>
 
-        <!-- 2. SECTION PAGE SELECTOR CHIPS -->
-        <ScrollView Grid.Row="1" Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Padding="12,10">
-            <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding ProtocolPages}">
-                <BindableLayout.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProtocolPageItem">
-                        <Border StrokeThickness="0"
-                                StrokeShape="RoundRectangle 12"
-                                Padding="12,6"
-                                BackgroundColor="{Binding HeaderBgColor}">
-                            <Border.GestureRecognizers>
-                                <TapGestureRecognizer Command="{Binding ViewModel.SelectPageCommand, Source={x:Reference PageRoot}, x:DataType=views:PreparednessGuidePage}"
-                                                     CommandParameter="{Binding .}" />
-                            </Border.GestureRecognizers>
-                            <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                <Label Text="{Binding PageNumber, StringFormat='P{0}'}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
-                                <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" />
-                            </HorizontalStackLayout>
-                        </Border>
-                    </DataTemplate>
-                </BindableLayout.ItemTemplate>
-            </HorizontalStackLayout>
-        </ScrollView>
+        <!-- 2. MAIN SCROLLABLE CLEAN DISASTER PROTOCOL GUIDE -->
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never" Padding="16,20">
+            <VerticalStackLayout Spacing="20">
 
-        <!-- 3. MAIN PDF PROTOCOL IMAGE VIEWER -->
-        <ScrollView Grid.Row="2" VerticalScrollBarVisibility="Never" Padding="16">
-            <VerticalStackLayout Spacing="16">
+                <!-- Protocol Cards List (No AI Images, No Page Tabs) -->
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding ProtocolPages}" Spacing="16">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProtocolPageItem">
+                            <Border BackgroundColor="#FFFFFF"
+                                    Stroke="#E2E8F0"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 16"
+                                    Padding="16">
+                                <VerticalStackLayout Spacing="14">
 
-                <!-- PDF Document Sheet Container -->
-                <Border BackgroundColor="#FFFFFF"
-                        Stroke="#CBD5E1"
-                        StrokeThickness="1"
-                        StrokeShape="RoundRectangle 20"
-                        Padding="16">
-                    <VerticalStackLayout Spacing="14">
+                                    <!-- Section Header Banner -->
+                                    <Border BackgroundColor="{Binding HeaderBgColor}"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 12"
+                                            Padding="14,12">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalOptions="Center">
+                                            <Border Grid.Column="0" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 10" WidthRequest="36" HeightRequest="36">
+                                                <Path Data="{Binding IconData}" Fill="{Binding HeaderBgColor}" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                            </Border>
 
-                        <!-- Document Header Banner -->
-                        <Border BackgroundColor="{Binding CurrentPage.HeaderBgColor}"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 14"
-                                Padding="14,12">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
-                                <Border Grid.Column="0" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 10" WidthRequest="38" HeightRequest="38">
-                                    <Path Data="{Binding CurrentPage.IconData}" Fill="{Binding CurrentPage.HeaderBgColor}" WidthRequest="20" HeightRequest="20" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
-                                </Border>
+                                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                <HorizontalStackLayout Spacing="8">
+                                                    <Label Text="MARIKINA CITY PROTOCOL" TextColor="#E0F2FE" FontSize="10" FontAttributes="Bold" CharacterSpacing="1" />
+                                                    <Border BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,1">
+                                                        <Label Text="{Binding SectionLetter, StringFormat='SECTION {0}'}" TextColor="{Binding HeaderBgColor}" FontSize="9" FontAttributes="Bold" />
+                                                    </Border>
+                                                </HorizontalStackLayout>
+                                                <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="16" FontAttributes="Bold" />
+                                                <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="11" />
+                                            </VerticalStackLayout>
+                                        </Grid>
+                                    </Border>
 
-                                <VerticalStackLayout Grid.Column="1" Spacing="2">
-                                    <HorizontalStackLayout Spacing="8">
-                                        <Label Text="MARIKINA CITY PROTOCOL" TextColor="#E0F2FE" FontSize="10" FontAttributes="Bold" CharacterSpacing="1" />
-                                        <Border BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,1">
-                                            <Label Text="{Binding CurrentPage.PageNumber, StringFormat='Page {0} of 8'}" TextColor="{Binding CurrentPage.HeaderBgColor}" FontSize="9" FontAttributes="Bold" />
-                                        </Border>
-                                    </HorizontalStackLayout>
-                                    <Label Text="{Binding CurrentPage.Title}" TextColor="#FFFFFF" FontSize="17" FontAttributes="Bold" />
-                                    <Label Text="{Binding CurrentPage.Subtitle}" TextColor="#E0F2FE" FontSize="11" />
+                                    <!-- Protocol Key Steps & Guidelines -->
+                                    <VerticalStackLayout Spacing="8">
+                                        <Label Text="KEY STEPS &amp; GUIDELINES" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.8" />
+                                        
+                                        <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding Highlights}">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,10">
+                                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalOptions="Center">
+                                                            <Label Grid.Column="0" Text="•" TextColor="#0A8491" FontSize="16" FontAttributes="Bold" VerticalOptions="Start" />
+                                                            <Label Grid.Column="1" Text="{Binding .}" TextColor="#1E293B" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+
                                 </VerticalStackLayout>
-                            </Grid>
-                        </Border>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
 
-                        <!-- High Quality Protocol Image View -->
-                        <Border Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" BackgroundColor="#F8FAFC" Padding="4">
-                            <Image Source="{Binding CurrentPage.ImageSource}"
-                                   Aspect="AspectFit"
-                                   MaximumHeightRequest="480"
-                                   HorizontalOptions="Fill"
-                                   VerticalOptions="Fill" />
-                        </Border>
-
-                        <!-- Key Highlights / Step Cards -->
-                        <VerticalStackLayout Spacing="8">
-                            <Label Text="KEY PROTOCOL SUMMARY &amp; STEPS" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.8" />
-                            
-                            <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding CurrentPage.Highlights}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="x:String">
-                                        <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
-                                            <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                                                <Label Text="•" TextColor="#0A8491" FontSize="16" FontAttributes="Bold" VerticalOptions="Start" />
-                                                <Label Text="{Binding .}" TextColor="#1E293B" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center" />
-                                            </HorizontalStackLayout>
-                                        </Border>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </VerticalStackLayout>
+                <!-- Official DRRMO Footer & Action Card -->
+                <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="OFFICIAL DISASTER DIRECTORY" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                        
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="RESCUE 161 – DRRMO MARIKINA CITY" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" />
+                            <Label Text="DRRMO BLDG. Fortune Ave., Brgy. Fortune, Marikina City" TextColor="#64748B" FontSize="11" />
+                            <Label Text="Hotline: Dial 161 | Tel: 7116 5532 | Email: drrmo.marikinacity@gmail.com" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
                         </VerticalStackLayout>
 
-                        <!-- Official DRRMO Footer & Contact -->
-                        <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
-                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                                <VerticalStackLayout Grid.Column="0" Spacing="2">
-                                    <Label Text="RESCUE 161 – DRRMO MARIKINA" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                    <Label Text="DRRMO BLDG. Fortune Ave., Brgy. Fortune, Marikina City" TextColor="#64748B" FontSize="10" />
-                                    <Label Text="Tel: 7116 5532 | Email: drrmo.marikinacity@gmail.com" TextColor="#0A8491" FontSize="10" FontAttributes="Bold" />
-                                </VerticalStackLayout>
-                                <Button Grid.Column="1"
-                                        Text="Download PDF"
-                                        Command="{Binding DownloadPdfDocumentCommand}"
-                                        BackgroundColor="#0A8491"
-                                        TextColor="#FFFFFF"
-                                        FontSize="11"
-                                        FontAttributes="Bold"
-                                        CornerRadius="10"
-                                        Padding="10,6"
-                                        VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,4,0,0">
+                            <Button Grid.Column="0"
+                                    Text="Download PDF"
+                                    Command="{Binding DownloadPdfDocumentCommand}"
+                                    BackgroundColor="#0A8491"
+                                    TextColor="#FFFFFF"
+                                    FontSize="12"
+                                    FontAttributes="Bold"
+                                    CornerRadius="10"
+                                    HeightRequest="42" />
 
+                            <Button Grid.Column="1"
+                                    Text="View PDF"
+                                    Command="{Binding ViewPdfCommand}"
+                                    BackgroundColor="#F1F5F9"
+                                    TextColor="#0F172A"
+                                    FontSize="12"
+                                    FontAttributes="Bold"
+                                    CornerRadius="10"
+                                    HeightRequest="42" />
+                        </Grid>
                     </VerticalStackLayout>
                 </Border>
 
             </VerticalStackLayout>
         </ScrollView>
+
+        <!-- 3. IN-APP NATIVE PDF POPUP MODAL OVERLAY WITH PINCH-TO-ZOOM -->
+        <Grid Grid.RowSpan="2"
+              BackgroundColor="#CC000000"
+              IsVisible="{Binding IsPdfModalVisible}">
+            
+            <Border Margin="12,24,12,16"
+                    BackgroundColor="#0F172A"
+                    Stroke="#334155"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 20"
+                    Padding="0">
+                <Grid RowDefinitions="Auto,*,Auto">
+                    
+                    <!-- Modal Header Bar -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="14,12" BackgroundColor="#1E293B">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                            <Label Text="Marikina DRRMO Protocol PDF" TextColor="#FFFFFF" FontSize="14" FontAttributes="Bold" />
+                            <Label Text="Official Emergency Guidelines Document" TextColor="#94A3B8" FontSize="10" />
+                        </VerticalStackLayout>
+
+                        <!-- Close Button [ X ] -->
+                        <Border Grid.Column="1" WidthRequest="32" HeightRequest="32" StrokeShape="RoundRectangle 16" BackgroundColor="#334155" StrokeThickness="0" HorizontalOptions="Center" VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding ClosePdfModalCommand}" />
+                            </Border.GestureRecognizers>
+                            <Label Text="✕" TextColor="#FFFFFF" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Modal Body: Rendered PDF Pages List (Supports Pinch-to-Zoom & 2D Pan/Scroll) -->
+                    <Grid Grid.Row="1" BackgroundColor="#0F172A">
+                        <ActivityIndicator IsRunning="{Binding IsLoadingPdfPages}"
+                                           IsVisible="{Binding IsLoadingPdfPages}"
+                                           Color="#0A8491"
+                                           WidthRequest="40"
+                                           HeightRequest="40"
+                                           HorizontalOptions="Center"
+                                           VerticalOptions="Center" />
+
+                        <ScrollView x:Name="PdfScrollView" Orientation="Vertical" VerticalScrollBarVisibility="Always" Padding="12">
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding PdfPageImages}" Spacing="16" HorizontalOptions="FillAndExpand">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="ImageSource">
+                                        <Border StrokeThickness="0" StrokeShape="RoundRectangle 8" BackgroundColor="#FFFFFF" HorizontalOptions="FillAndExpand">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer NumberOfTapsRequired="2" Tapped="OnDoubleTapToggleZoom" />
+                                                <PanGestureRecognizer PanUpdated="OnPanUpdated" />
+                                            </Border.GestureRecognizers>
+                                            <Image Source="{Binding .}" Aspect="AspectFit" HorizontalOptions="FillAndExpand" VerticalOptions="Center" InputTransparent="True" Scale="1.0" />
+                                        </Border>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </ScrollView>
+                    </Grid>
+
+                    <!-- Modal Footer Bar -->
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Padding="14,10" BackgroundColor="#1E293B">
+                        <Label Text="Double-tap to zoom in/out • Drag/move page when zoomed" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+                        
+                        <Button Grid.Column="1"
+                                Text="Close Viewer"
+                                Command="{Binding ClosePdfModalCommand}"
+                                BackgroundColor="#0A8491"
+                                TextColor="#FFFFFF"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                Padding="14,6" />
+                    </Grid>
+
+                </Grid>
+            </Border>
+        </Grid>
+
     </Grid>
 
 </ContentPage>
