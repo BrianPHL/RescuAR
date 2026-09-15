@@ -30,6 +30,22 @@ public sealed class PedestrianTurnGuidanceService
         RouteResult route,
         double progressMeters)
     {
+        return Evaluate(
+            route,
+            progressMeters,
+            sourceSegmentIndex:
+                -1);
+    }
+
+    /// <summary>
+    /// Evaluates guidance from the same progress and matched segment used by
+    /// the currently published AR route window.
+    /// </summary>
+    public TurnGuidanceSnapshot Evaluate(
+        RouteResult route,
+        double progressMeters,
+        int sourceSegmentIndex)
+    {
         ArgumentNullException.ThrowIfNull(
             route);
 
@@ -49,6 +65,21 @@ public sealed class PedestrianTurnGuidanceService
                 route.Points[0]
                     .DistanceFromStartMeters,
                 routeEnd);
+
+        if (sourceSegmentIndex >=
+                0 &&
+            sourceSegmentIndex +
+                1 <
+                route.Points.Count)
+        {
+            progress =
+                Math.Clamp(
+                    progress,
+                    route.Points[sourceSegmentIndex]
+                        .DistanceFromStartMeters,
+                    route.Points[sourceSegmentIndex + 1]
+                        .DistanceFromStartMeters);
+        }
 
         double remaining =
             Math.Max(

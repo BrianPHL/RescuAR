@@ -93,6 +93,8 @@ public sealed class MLDARIntegrationService
                     0.0f,
                 arWindowMeters:
                     arWindowMeters,
+                sourceSegmentIndex:
+                    0,
                 logTag:
                     ProgressLogTag,
                 clearRouteOnFailure:
@@ -149,7 +151,8 @@ public sealed class MLDARIntegrationService
         float arOriginOffsetX,
         float arOriginOffsetZ,
         double arWindowMeters = 7.5,
-        bool clearRouteOnFailure = true)
+        bool clearRouteOnFailure = true,
+        int sourceSegmentIndex = -1)
     {
         ArgumentNullException.ThrowIfNull(
             route);
@@ -163,6 +166,10 @@ public sealed class MLDARIntegrationService
                 arOriginOffsetX,
                 arOriginOffsetZ,
                 arWindowMeters,
+                ResolveSourceSegmentIndex(
+                    route,
+                    progressMeters,
+                    sourceSegmentIndex),
                 ProgressLogTag,
                 clearRouteOnFailure);
 
@@ -172,6 +179,8 @@ public sealed class MLDARIntegrationService
                 ProgressLogTag,
                 "Moving AR route window published: " +
                 $"progress={progressMeters:F1} m, " +
+                $"sourceSegment=" +
+                $"{ResolveSourceSegmentIndex(route, progressMeters, sourceSegmentIndex)}, " +
                 $"window={arWindowMeters:F1} m, " +
                 $"arOriginOffset=({arOriginOffsetX:F2}," +
                 $"{arOriginOffsetZ:F2}) m");
@@ -328,7 +337,8 @@ public sealed class MLDARIntegrationService
         ARRouteBridge.Publish(
             shifted,
             route.Algorithm,
-            route.TotalDistanceMeters);
+            route.TotalDistanceMeters,
+            RouteVisualKind.ApproachConnector);
 
         AndroidLog.Debug(
             ProgressLogTag,
@@ -358,6 +368,7 @@ public sealed class MLDARIntegrationService
         float arOriginOffsetX,
         float arOriginOffsetZ,
         double arWindowMeters,
+        int sourceSegmentIndex,
         string logTag,
         bool clearRouteOnFailure)
     {
@@ -493,9 +504,51 @@ public sealed class MLDARIntegrationService
         ARRouteBridge.Publish(
             shifted,
             route.Algorithm,
-            route.TotalDistanceMeters);
+            route.TotalDistanceMeters,
+            RouteVisualKind.RouteWindow,
+            startDistanceMeters,
+            sourceSegmentIndex);
 
         return true;
+    }
+
+    private static int ResolveSourceSegmentIndex(
+        RouteResult route,
+        double progressMeters,
+        int requestedSegmentIndex)
+    {
+        int maximumSegmentIndex =
+            route.Points.Count -
+            2;
+
+        if (maximumSegmentIndex <
+            0)
+        {
+            return -1;
+        }
+
+        if (requestedSegmentIndex >=
+                0 &&
+            requestedSegmentIndex <=
+                maximumSegmentIndex)
+        {
+            return requestedSegmentIndex;
+        }
+
+        for (int i = 0;
+             i <=
+                maximumSegmentIndex;
+             i++)
+        {
+            if (progressMeters <=
+                route.Points[i + 1]
+                    .DistanceFromStartMeters)
+            {
+                return i;
+            }
+        }
+
+        return maximumSegmentIndex;
     }
 
     private static bool ValidateLocalRouteOriginOffset(

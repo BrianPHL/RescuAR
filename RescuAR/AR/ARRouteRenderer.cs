@@ -7,6 +7,7 @@ using Evergine.Mathematics;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Projection;
 using System;
+using System.Collections.Generic;
 
 namespace RescuAR.AR;
 
@@ -35,11 +36,18 @@ public static class ARRouteRenderer
 
     /*
      * Adjacent cube segments meet at different yaw angles around road bends.
-     * A small longitudinal overlap removes hairline gaps between those cubes
-     * so the cyan polyline reads as one continuous solid route.
+     * A bounded longitudinal extension removes hairline gaps on nearly
+     * straight joins. It tapers to zero as bends sharpen so overlapping cubes
+     * cannot form a large wedge around a corner.
      */
-    private const float RouteSegmentOverlapMeters =
-        0.24f;
+    private const float MaximumJoinExtensionMeters =
+        0.12f;
+
+    private const double FullOverlapTurnDegrees =
+        20.0;
+
+    private const double NoOverlapTurnDegrees =
+        60.0;
 
     private const float ArrowWingLengthMeters =
         0.82f;
@@ -292,9 +300,37 @@ public static class ARRouteRenderer
             return false;
         }
 
+        ARRouteGeometrySanitizer.GeometryPreparationResult prepared =
+            ARRouteGeometrySanitizer.Prepare(
+                snapshot.Points,
+                slots.Length +
+                    1);
+
+        IReadOnlyList<ArHorizontalRoutePoint> renderPoints =
+            prepared.Points;
+
+        if (renderPoints.Count <
+            2)
+        {
+            DisableAll(
+                slots);
+
+            DisableAll(
+                arrows);
+
+            activeSegmentCount =
+                0;
+
+            AndroidLog.Warn(
+                LogTag,
+                "Renderer rejected route geometry after removing invalid or tiny segments.");
+
+            return false;
+        }
+
         int requestedSegmentCount =
             Math.Min(
-                snapshot.Points.Count -
+                renderPoints.Count -
                     1,
                 slots.Length);
 
@@ -306,15 +342,23 @@ public static class ARRouteRenderer
              i++)
         {
             ArHorizontalRoutePoint start =
-                snapshot.Points[i];
+                renderPoints[i];
 
             ArHorizontalRoutePoint end =
-                snapshot.Points[i + 1];
+                renderPoints[i + 1];
 
             if (TryApplySegment(
                     slots[i],
                     start,
-                    end))
+                    end,
+                    RouteWidthMeters,
+                    GetJoinExtensionMeters(
+                        renderPoints,
+                        i),
+                    GetJoinExtensionMeters(
+                        renderPoints,
+                        i +
+                            1)))
             {
                 renderedSegmentCount++;
             }
@@ -336,7 +380,7 @@ public static class ARRouteRenderer
         bool arrowVisible =
             ApplyForwardArrow(
                 arrows,
-                snapshot.Points);
+                renderPoints);
 
         activeSegmentCount =
             renderedSegmentCount;
@@ -346,6 +390,11 @@ public static class ARRouteRenderer
             "Renderer applied route snapshot: " +
             $"routeVersion={snapshot.Version}, " +
             $"inputPoints={snapshot.Points.Count}, " +
+            $"preparedPoints={renderPoints.Count}, " +
+            $"removedPoints={prepared.RemovedPointCount}, " +
+            $"beveledCorners={prepared.BeveledCornerCount}, " +
+            $"subdivisionPoints={prepared.InsertedSubdivisionPointCount}, " +
+            $"truncated={prepared.WasTruncated}, " +
             $"requestedSegments={requestedSegmentCount}, " +
             $"activeSegments={activeSegmentCount}, " +
             $"forwardArrow={arrowVisible}");
@@ -358,7 +407,9 @@ public static class ARRouteRenderer
         SegmentSlot slot,
         ArHorizontalRoutePoint start,
         ArHorizontalRoutePoint end,
-        float widthMeters = RouteWidthMeters)
+        float widthMeters = RouteWidthMeters,
+        float startExtensionMeters = 0.0f,
+        float endExtensionMeters = 0.0f)
     {
         Vector3 startPoint =
             new(
@@ -382,10 +433,59 @@ public static class ARRouteRenderer
                 delta.Z * delta.Z);
 
         if (horizontalLength <=
-            0.01f)
+            0.05f)
         {
             return false;
         }
+
+        float directionX =
+            delta.X /
+            horizontalLength;
+
+        float directionZ =
+            delta.Z /
+            horizontalLength;
+
+        float maximumExtension =
+            MathF.Min(
+                MaximumJoinExtensionMeters,
+                horizontalLength *
+                    0.25f);
+
+        float boundedStartExtension =
+            Math.Clamp(
+                startExtensionMeters,
+                0.0f,
+                maximumExtension);
+
+        float boundedEndExtension =
+            Math.Clamp(
+                endExtensionMeters,
+                0.0f,
+                maximumExtension);
+
+        Vector3 horizontalDirection =
+            new(
+                directionX,
+                0.0f,
+                directionZ);
+
+        startPoint -=
+            horizontalDirection *
+            boundedStartExtension;
+
+        endPoint +=
+            horizontalDirection *
+            boundedEndExtension;
+
+        delta =
+            endPoint -
+            startPoint;
+
+        horizontalLength =
+            MathF.Sqrt(
+                delta.X * delta.X +
+                delta.Z * delta.Z);
 
         Vector3 midpoint =
             (startPoint + endPoint) *
@@ -409,13 +509,114 @@ public static class ARRouteRenderer
             new Vector3(
                 widthMeters,
                 RouteThicknessMeters,
-                horizontalLength +
-                    RouteSegmentOverlapMeters);
+                horizontalLength);
 
         slot.Entity.IsEnabled =
             true;
 
         return true;
+    }
+
+    private static float GetJoinExtensionMeters(
+        IReadOnlyList<ArHorizontalRoutePoint> points,
+        int vertexIndex)
+    {
+        if (vertexIndex <=
+                0 ||
+            vertexIndex >=
+                points.Count -
+                    1)
+        {
+            return 0.0f;
+        }
+
+        ArHorizontalRoutePoint previous =
+            points[vertexIndex - 1];
+
+        ArHorizontalRoutePoint corner =
+            points[vertexIndex];
+
+        ArHorizontalRoutePoint next =
+            points[vertexIndex + 1];
+
+        float incomingX =
+            corner.X -
+            previous.X;
+
+        float incomingZ =
+            corner.Z -
+            previous.Z;
+
+        float outgoingX =
+            next.X -
+            corner.X;
+
+        float outgoingZ =
+            next.Z -
+            corner.Z;
+
+        float incomingLength =
+            MathF.Sqrt(
+                incomingX * incomingX +
+                incomingZ * incomingZ);
+
+        float outgoingLength =
+            MathF.Sqrt(
+                outgoingX * outgoingX +
+                outgoingZ * outgoingZ);
+
+        if (incomingLength <=
+                0.05f ||
+            outgoingLength <=
+                0.05f)
+        {
+            return 0.0f;
+        }
+
+        double dot =
+            incomingX /
+                incomingLength *
+                outgoingX /
+                outgoingLength +
+            incomingZ /
+                incomingLength *
+                outgoingZ /
+                outgoingLength;
+
+        double turnDegrees =
+            Math.Acos(
+                Math.Clamp(
+                    dot,
+                    -1.0,
+                    1.0)) *
+            180.0 /
+            Math.PI;
+
+        if (turnDegrees >=
+            NoOverlapTurnDegrees)
+        {
+            return 0.0f;
+        }
+
+        double overlapScale =
+            turnDegrees <=
+                FullOverlapTurnDegrees
+                ? 1.0
+                : (NoOverlapTurnDegrees -
+                   turnDegrees) /
+                    (NoOverlapTurnDegrees -
+                     FullOverlapTurnDegrees);
+
+        float lengthLimit =
+            MathF.Min(
+                incomingLength,
+                outgoingLength) *
+            0.25f;
+
+        return MathF.Min(
+                MaximumJoinExtensionMeters,
+                lengthLimit) *
+            (float)overlapScale;
     }
 
     private static bool ApplyForwardArrow(

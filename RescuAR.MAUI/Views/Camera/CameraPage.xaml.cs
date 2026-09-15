@@ -2164,8 +2164,7 @@ namespace RescuAR.App.Views.Camera
                 _headingRevalidationPolicy.Reset();
 
                 UpdateTurnGuidance(
-                    route,
-                    0.0);
+                    route);
 
                 StartRouteProgress();
 
@@ -2915,14 +2914,8 @@ namespace RescuAR.App.Views.Camera
                 Connectivity.Current.NetworkAccess ==
                     NetworkAccess.Internet);
 
-            RouteProgressTracker.ProgressSnapshot retainedProgress =
-                _routeProgressTracker.Current;
-
             UpdateTurnGuidance(
-                activeRoute,
-                retainedProgress.HasProgress
-                    ? retainedProgress.CommittedProgressMeters
-                    : 0.0);
+                activeRoute);
 
             StartPdrIfPossible();
 
@@ -3401,13 +3394,12 @@ namespace RescuAR.App.Views.Camera
                                 false;
                         }
 
-                        if (turnGuidanceUpdate.HasValue &&
+                        if ((publishedRealProgress ||
+                             turnGuidanceUpdate.HasValue) &&
                             !safeZoneConfirmed)
                         {
                             UpdateTurnGuidance(
-                                route,
-                                turnGuidanceUpdate.Value
-                                    .CommittedProgressMeters);
+                                route);
                         }
 
                         bool hazardRerouteOwnsThisCycle =
@@ -4418,7 +4410,9 @@ namespace RescuAR.App.Views.Camera
                                 arWindowMeters:
                                     GetCurrentArRouteVisualWindowMeters(),
                                 clearRouteOnFailure:
-                                    false);
+                                    false,
+                                sourceSegmentIndex:
+                                    0);
                     }
 
                     if (published)
@@ -4504,8 +4498,7 @@ namespace RescuAR.App.Views.Camera
                 }
 
                 UpdateTurnGuidance(
-                    replacementRoute,
-                    0.0);
+                    replacementRoute);
 
                 lastRerouteResult =
                     hazardAware
@@ -4598,13 +4591,46 @@ namespace RescuAR.App.Views.Camera
         }
 
         private void UpdateTurnGuidance(
-            RouteResult route,
-            double progressMeters)
+            RouteResult route)
         {
+            ARRouteBridge.RouteSnapshot visibleRoute =
+                ARRouteBridge.Current;
+
+            RouteNavigationState navigationState =
+                visibleRoute.NavigationState;
+
+            if (!visibleRoute.IsAvailable ||
+                !navigationState.IsAvailable ||
+                navigationState.VisualKind !=
+                    RouteVisualKind.RouteWindow)
+            {
+                lastTurnGuidance =
+                    PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
+
+#if ANDROID
+                Log.Debug(
+                    TurnLogTag,
+                    "TURN GUIDANCE HELD: visible AR geometry is not a " +
+                    "validated route-progress window. " +
+                    $"routeVersion={visibleRoute.Version}, " +
+                    $"visualKind={navigationState.VisualKind}.");
+#endif
+
+                Dispatcher.Dispatch(
+                    () =>
+                    {
+                        turnGuidancePanel.IsVisible =
+                            false;
+                    });
+
+                return;
+            }
+
             PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance =
                 _turnGuidanceService.Evaluate(
                     route,
-                    progressMeters);
+                    navigationState.WindowStartProgressMeters,
+                    navigationState.SourceSegmentIndex);
 
             lastTurnGuidance =
                 guidance;
@@ -4634,7 +4660,9 @@ namespace RescuAR.App.Views.Camera
                     $"{(double.IsFinite(guidance.DistanceToTurnMeters) ? guidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
                     $"turnAngle={guidance.TurnAngleDegrees:F1} deg, " +
                     $"remaining={guidance.RemainingRouteMeters:F1} m, " +
-                    $"progress={progressMeters:F1} m");
+                    $"progress={navigationState.WindowStartProgressMeters:F1} m, " +
+                    $"sourceSegment={navigationState.SourceSegmentIndex}, " +
+                    $"routeVersion={visibleRoute.Version}");
 
                 lastLoggedTurnInstruction =
                     guidance.Instruction;
@@ -7019,8 +7047,7 @@ namespace RescuAR.App.Views.Camera
             acceptedPdrStepCount++;
 
             UpdateTurnGuidance(
-                route,
-                update.CommittedProgressMeters);
+                route);
 
             Log.Debug(
                 PdrLogTag,
@@ -7542,8 +7569,10 @@ namespace RescuAR.App.Views.Camera
                     activeMapToArYawDegrees,
                     arOriginOffsetX,
                     arOriginOffsetZ,
-                    arWindowMeters:
-                        GetCurrentArRouteVisualWindowMeters());
+                arWindowMeters:
+                    GetCurrentArRouteVisualWindowMeters(),
+                sourceSegmentIndex:
+                    update.SegmentIndex);
 
             if (!published)
             {
@@ -7631,6 +7660,7 @@ namespace RescuAR.App.Views.Camera
 
             double startDistanceMeters;
             GeoCoordinate referenceCoordinate;
+            int sourceSegmentIndex;
 
             if (progress.HasProgress &&
                 progress.SnappedCoordinate.IsValid)
@@ -7640,6 +7670,9 @@ namespace RescuAR.App.Views.Camera
 
                 referenceCoordinate =
                     progress.SnappedCoordinate;
+
+                sourceSegmentIndex =
+                    progress.SegmentIndex;
             }
             else
             {
@@ -7650,6 +7683,9 @@ namespace RescuAR.App.Views.Camera
                 referenceCoordinate =
                     route.Points[0]
                         .Coordinate;
+
+                sourceSegmentIndex =
+                    0;
             }
 
             /*
@@ -7686,7 +7722,9 @@ namespace RescuAR.App.Views.Camera
                         arWindowMeters:
                             GetCurrentArRouteVisualWindowMeters(),
                         clearRouteOnFailure:
-                            false);
+                            false,
+                        sourceSegmentIndex:
+                            sourceSegmentIndex);
 
                 if (published)
                 {
@@ -7708,6 +7746,9 @@ namespace RescuAR.App.Views.Camera
 
             ARRouteBridge.RouteSnapshot rebasedRoute =
                 ARRouteBridge.Current;
+
+            UpdateTurnGuidance(
+                route);
 
             Log.Warn(
                 "RescuAR-AnchorRecovery",
@@ -7773,6 +7814,7 @@ namespace RescuAR.App.Views.Camera
 
             double startDistanceMeters;
             GeoCoordinate referenceCoordinate;
+            int sourceSegmentIndex;
 
             if (progress.HasProgress &&
                 progress.SnappedCoordinate.IsValid)
@@ -7782,6 +7824,9 @@ namespace RescuAR.App.Views.Camera
 
                 referenceCoordinate =
                     progress.SnappedCoordinate;
+
+                sourceSegmentIndex =
+                    progress.SegmentIndex;
             }
             else
             {
@@ -7792,6 +7837,9 @@ namespace RescuAR.App.Views.Camera
                 referenceCoordinate =
                     route.Points[0]
                         .Coordinate;
+
+                sourceSegmentIndex =
+                    0;
             }
 
             float arOriginOffsetX =
@@ -7810,8 +7858,10 @@ namespace RescuAR.App.Views.Camera
                     activeMapToArYawDegrees,
                     arOriginOffsetX,
                     arOriginOffsetZ,
-                    arWindowMeters:
-                        GetCurrentArRouteVisualWindowMeters());
+                arWindowMeters:
+                    GetCurrentArRouteVisualWindowMeters(),
+                sourceSegmentIndex:
+                    sourceSegmentIndex);
 
             if (!published)
             {
@@ -7828,6 +7878,9 @@ namespace RescuAR.App.Views.Camera
 
             ARRouteBridge.RouteSnapshot recoveredRoute =
                 ARRouteBridge.Current;
+
+            UpdateTurnGuidance(
+                route);
 
             Log.Warn(
                 "RescuAR-AnchorRecovery",
@@ -8422,6 +8475,10 @@ namespace RescuAR.App.Views.Camera
                 $"routePublished={route.IsAvailable}, " +
                 $"routeVersion={route.Version}, " +
                 $"routePoints={route.Points.Count}, " +
+                $"routeVisualKind={route.NavigationState.VisualKind}, " +
+                $"routeWindowProgress=" +
+                $"{(route.NavigationState.IsAvailable ? route.NavigationState.WindowStartProgressMeters.ToString("F1") : "<none>")}m, " +
+                $"routeSourceSegment={route.NavigationState.SourceSegmentIndex}, " +
                 $"localRouteWindow={GetCurrentArRouteVisualWindowMeters():F1}m, " +
                 $"rendererVersion={ARRouteRenderer.AppliedRouteVersion}, " +
                 $"activeSegments={activeSegments}, " +

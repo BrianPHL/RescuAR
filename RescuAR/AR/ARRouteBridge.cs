@@ -51,7 +51,13 @@ public static class ARRouteBridge
     public static void Publish(
         IReadOnlyList<ArHorizontalRoutePoint> points,
         string algorithm,
-        double totalDistanceMeters)
+        double totalDistanceMeters,
+        RouteVisualKind visualKind =
+            RouteVisualKind.Unavailable,
+        double windowStartProgressMeters =
+            double.NaN,
+        int sourceSegmentIndex =
+            -1)
     {
         ArgumentNullException.ThrowIfNull(
             points);
@@ -59,6 +65,12 @@ public static class ARRouteBridge
         string normalizedAlgorithm =
             algorithm ??
                 string.Empty;
+
+        RouteNavigationState navigationState =
+            RouteNavigationState.Create(
+                visualKind,
+                windowStartProgressMeters,
+                sourceSegmentIndex);
 
         RouteSnapshot next;
         int suppressedCount =
@@ -70,7 +82,8 @@ public static class ARRouteBridge
                     current,
                     points,
                     normalizedAlgorithm,
-                    totalDistanceMeters))
+                    totalDistanceMeters,
+                    navigationState))
             {
                 equivalentPublicationSuppressionCount++;
 
@@ -104,7 +117,8 @@ public static class ARRouteBridge
                         copy.Length >= 2,
                         normalizedAlgorithm,
                         totalDistanceMeters,
-                        copy);
+                        copy,
+                        navigationState);
 
                 equivalentPublicationSuppressionCount =
                     0;
@@ -137,14 +151,19 @@ public static class ARRouteBridge
             $"available={next.IsAvailable}, " +
             $"points={points.Count}, " +
             $"algorithm='{next.Algorithm}', " +
-            $"totalDistance={totalDistanceMeters:F1} m");
+            $"totalDistance={totalDistanceMeters:F1} m, " +
+            $"visualKind={next.NavigationState.VisualKind}, " +
+            $"windowProgress=" +
+            $"{(next.NavigationState.IsAvailable ? next.NavigationState.WindowStartProgressMeters.ToString("F1") : "<none>")} m, " +
+            $"sourceSegment={next.NavigationState.SourceSegmentIndex}");
     }
 
     private static bool IsEquivalentPublication(
         RouteSnapshot existing,
         IReadOnlyList<ArHorizontalRoutePoint> candidatePoints,
         string candidateAlgorithm,
-        double candidateTotalDistanceMeters)
+        double candidateTotalDistanceMeters,
+        RouteNavigationState candidateNavigationState)
     {
         bool candidateAvailable =
             candidatePoints.Count >= 2;
@@ -165,7 +184,10 @@ public static class ARRouteBridge
             Math.Abs(
                 existing.TotalDistanceMeters -
                 candidateTotalDistanceMeters) >
-                EquivalentTotalDistanceToleranceMeters)
+                EquivalentTotalDistanceToleranceMeters ||
+            !AreEquivalentNavigationStates(
+                existing.NavigationState,
+                candidateNavigationState))
         {
             return false;
         }
@@ -208,6 +230,31 @@ public static class ARRouteBridge
         return true;
     }
 
+    private static bool AreEquivalentNavigationStates(
+        RouteNavigationState existing,
+        RouteNavigationState candidate)
+    {
+        if (existing.VisualKind !=
+                candidate.VisualKind ||
+            existing.IsAvailable !=
+                candidate.IsAvailable)
+        {
+            return false;
+        }
+
+        if (!existing.IsAvailable)
+        {
+            return true;
+        }
+
+        return existing.SourceSegmentIndex ==
+                candidate.SourceSegmentIndex &&
+            Math.Abs(
+                existing.WindowStartProgressMeters -
+                candidate.WindowStartProgressMeters) <=
+                    EquivalentProgressToleranceMeters;
+    }
+
     public static void Clear()
     {
         long nextVersion;
@@ -233,7 +280,8 @@ public static class ARRouteBridge
                     false,
                     string.Empty,
                     0.0,
-                    []);
+                    [],
+                    RouteNavigationState.Unavailable);
         }
 
         AndroidLog.Debug(
@@ -249,14 +297,16 @@ public static class ARRouteBridge
                 false,
                 string.Empty,
                 0.0,
-                []);
+                [],
+                RouteNavigationState.Unavailable);
 
         public RouteSnapshot(
             long version,
             bool isAvailable,
             string algorithm,
             double totalDistanceMeters,
-            IReadOnlyList<ArHorizontalRoutePoint> points)
+            IReadOnlyList<ArHorizontalRoutePoint> points,
+            RouteNavigationState navigationState)
         {
             Version =
                 version;
@@ -272,6 +322,9 @@ public static class ARRouteBridge
 
             Points =
                 points;
+
+            NavigationState =
+                navigationState;
         }
 
         public long Version { get; }
@@ -279,5 +332,53 @@ public static class ARRouteBridge
         public string Algorithm { get; }
         public double TotalDistanceMeters { get; }
         public IReadOnlyList<ArHorizontalRoutePoint> Points { get; }
+        public RouteNavigationState NavigationState { get; }
+    }
+}
+
+public enum RouteVisualKind
+{
+    Unavailable,
+    RouteWindow,
+    ApproachConnector
+}
+
+public readonly record struct RouteNavigationState(
+    bool IsAvailable,
+    RouteVisualKind VisualKind,
+    double WindowStartProgressMeters,
+    int SourceSegmentIndex)
+{
+    public static RouteNavigationState Unavailable =>
+        new(
+            false,
+            RouteVisualKind.Unavailable,
+            double.NaN,
+            -1);
+
+    public static RouteNavigationState Create(
+        RouteVisualKind visualKind,
+        double windowStartProgressMeters,
+        int sourceSegmentIndex)
+    {
+        bool available =
+            visualKind ==
+                RouteVisualKind.RouteWindow &&
+            double.IsFinite(
+                windowStartProgressMeters) &&
+            sourceSegmentIndex >=
+                0;
+
+        return new RouteNavigationState(
+            available,
+            visualKind,
+            available
+                ? Math.Max(
+                    0.0,
+                    windowStartProgressMeters)
+                : double.NaN,
+            available
+                ? sourceSegmentIndex
+                : -1);
     }
 }
