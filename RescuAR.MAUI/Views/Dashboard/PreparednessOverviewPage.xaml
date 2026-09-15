@@ -7,7 +7,7 @@
     x:DataType="vm:PreparednessOverviewViewModel">
 
     <Border StrokeShape="RoundRectangle 16"
-            StrokeThickness="0"
+            StrokeTheickness="0"
             BackgroundColor="#DCFCE7"
             Padding="14"
             VerticalOptions="Fill">
