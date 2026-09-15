@@ -16,19 +16,44 @@ import {
 } from 'lucide-react';
 
 export default function Sidebar({ activeView, onViewChange }) {
-  // Manage expand/collapse state for collapsible groups
+  // Determine initial active group from activeView
+  const getInitialGroup = () => {
+    if (activeView.startsWith('monitoring-')) return 'monitoring';
+    if (activeView.startsWith('community-')) return 'community';
+    if (activeView.startsWith('content-')) return 'content';
+    if (activeView.startsWith('system-')) return 'system';
+    return 'monitoring';
+  };
+
   const [expandedGroups, setExpandedGroups] = useState({
-    monitoring: true,
-    community: false,
-    content: false,
-    system: false
+    monitoring: getInitialGroup() === 'monitoring',
+    community: getInitialGroup() === 'community',
+    content: getInitialGroup() === 'content',
+    system: getInitialGroup() === 'system'
   });
 
+  // Auto-expand group when activeView changes externally
+  React.useEffect(() => {
+    const activeGroup = getInitialGroup();
+    setExpandedGroups({
+      monitoring: activeGroup === 'monitoring',
+      community: activeGroup === 'community',
+      content: activeGroup === 'content',
+      system: activeGroup === 'system'
+    });
+  }, [activeView]);
+
   const toggleGroup = (group) => {
-    setExpandedGroups(prev => ({
-      ...prev,
-      [group]: !prev[group]
-    }));
+    setExpandedGroups(prev => {
+      const nextState = {
+        monitoring: false,
+        community: false,
+        content: false,
+        system: false
+      };
+      nextState[group] = !prev[group];
+      return nextState;
+    });
   };
 
   return (
