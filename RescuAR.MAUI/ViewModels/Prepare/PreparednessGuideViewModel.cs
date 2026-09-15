@@ -9,6 +9,7 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage;
+using RescuAR.App.Services.Prepare;
 
 namespace RescuAR.App.ViewModels.Prepare;
 
@@ -46,7 +47,48 @@ public partial class PreparednessGuideViewModel : ObservableObject
     [ObservableProperty]
     private string _downloadStatusMessage = string.Empty;
 
+    [ObservableProperty]
+    private bool _isPdfModalVisible;
+
+    [ObservableProperty]
+    private bool _isLoadingPdfPages;
+
+    [ObservableProperty]
+    private double _pdfZoomScale = 1.0;
+
+    [ObservableProperty]
+    private string _pdfZoomText = "100%";
+
     public ObservableCollection<ProtocolPageItem> ProtocolPages { get; } = new();
+
+    public ObservableCollection<ImageSource> PdfPageImages { get; } = new();
+
+    [RelayCommand]
+    private void ZoomIn()
+    {
+        if (PdfZoomScale < 3.0)
+        {
+            PdfZoomScale = Math.Min(3.0, Math.Round(PdfZoomScale + 0.25, 2));
+            PdfZoomText = $"{(int)(PdfZoomScale * 100)}%";
+        }
+    }
+
+    [RelayCommand]
+    private void ZoomOut()
+    {
+        if (PdfZoomScale > 0.75)
+        {
+            PdfZoomScale = Math.Max(0.75, Math.Round(PdfZoomScale - 0.25, 2));
+            PdfZoomText = $"{(int)(PdfZoomScale * 100)}%";
+        }
+    }
+
+    [RelayCommand]
+    private void ResetZoom()
+    {
+        PdfZoomScale = 1.0;
+        PdfZoomText = "100%";
+    }
 
     public PreparednessGuideViewModel()
     {
@@ -251,7 +293,19 @@ public partial class PreparednessGuideViewModel : ObservableObject
     [RelayCommand]
     private async Task ViewPdfAsync()
     {
-        const string fileName = "Marikina_City_Disaster_Protocol.pdf";
+        ResetZoom();
+        IsPdfModalVisible = true;
+
+        if (PdfPageImages.Count > 0)
+        {
+            // Already loaded in memory - modal opens instantly (0 seconds delay)
+            IsLoadingPdfPages = false;
+            return;
+        }
+
+        IsLoadingPdfPages = true;
+
+        const string fileName = "MarikinaDRRMO_PreparednessProtocol.pdf";
         var cachePath = Path.Combine(FileSystem.CacheDirectory, fileName);
 
         if (!File.Exists(cachePath))
@@ -262,15 +316,29 @@ public partial class PreparednessGuideViewModel : ObservableObject
                 using var dest = File.Create(cachePath);
                 await stream.CopyToAsync(dest);
             }
-            catch (Exception ex)
+            catch
             {
-                await Shell.Current.DisplayAlert("Error", $"PDF not found: {ex.Message}", "OK");
-                return;
+                // Fallback: Generate emergency protocol summary file if asset PDF is not present
+                var textPath = Path.Combine(FileSystem.CacheDirectory, "Marikina_Disaster_Protocol_Summary.txt");
+                await File.WriteAllTextAsync(textPath, BuildProtocolTextSummary(), Encoding.UTF8);
+                cachePath = textPath;
             }
         }
 
-        var encoded = Uri.EscapeDataString(cachePath);
-        await Shell.Current.GoToAsync($"Prepare/PdfViewer?pdfPath={encoded}");
+        var pages = await PdfPageRenderService.RenderPdfPagesAsync(cachePath);
+        PdfPageImages.Clear();
+        foreach (var pageImg in pages)
+        {
+            PdfPageImages.Add(pageImg);
+        }
+
+        IsLoadingPdfPages = false;
+    }
+
+    [RelayCommand]
+    private void ClosePdfModal()
+    {
+        IsPdfModalVisible = false;
     }
 
     [RelayCommand]
@@ -279,19 +347,28 @@ public partial class PreparednessGuideViewModel : ObservableObject
         IsDownloading = true;
         try
         {
-            const string fileName = "Marikina_City_Disaster_Protocol.pdf";
+            const string fileName = "MarikinaDRRMO_PreparednessProtocol.pdf";
             var cachePath = Path.Combine(FileSystem.CacheDirectory, fileName);
 
             if (!File.Exists(cachePath))
             {
-                using var stream = await FileSystem.OpenAppPackageFileAsync(fileName);
-                using var dest = File.Create(cachePath);
-                await stream.CopyToAsync(dest);
+                try
+                {
+                    using var stream = await FileSystem.OpenAppPackageFileAsync(fileName);
+                    using var dest = File.Create(cachePath);
+                    await stream.CopyToAsync(dest);
+                }
+                catch
+                {
+                    var textPath = Path.Combine(FileSystem.CacheDirectory, "Marikina_Disaster_Protocol_Summary.txt");
+                    await File.WriteAllTextAsync(textPath, BuildProtocolTextSummary(), Encoding.UTF8);
+                    cachePath = textPath;
+                }
             }
 
             await Share.Default.RequestAsync(new ShareFileRequest
             {
-                Title = "Download Disaster Protocol PDF",
+                Title = "Marikina Disaster Protocol Document",
                 File = new ShareFile(cachePath)
             });
         }
@@ -303,5 +380,25 @@ public partial class PreparednessGuideViewModel : ObservableObject
         {
             IsDownloading = false;
         }
+    }
+
+    private string BuildProtocolTextSummary()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("==================================================");
+        sb.AppendLine("OFFICIAL MARIKINA CITY DISASTER PROTOCOL");
+        sb.AppendLine("Rescue 161 - DRRMO Marikina Standard Operating Guidelines");
+        sb.AppendLine("==================================================\n");
+
+        foreach (var page in ProtocolPages)
+        {
+            sb.AppendLine($"[SECTION {page.SectionLetter}: {page.Title}]");
+            sb.AppendLine($"{page.Subtitle}\n");
+            sb.AppendLine(page.DetailedContent);
+            sb.AppendLine("\n--------------------------------------------------\n");
+        }
+
+        sb.AppendLine("Emergency Hotlines: Dial 161 | 7116-5532 | 0928-5593341");
+        return sb.ToString();
     }
 }
