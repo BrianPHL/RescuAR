@@ -12,7 +12,7 @@ public class SupabaseService
 
     public string SupabaseUrl { get; private set; } = PlaceholderUrl;
     public string SupabaseKey { get; private set; } = PlaceholderKey;
-    public string GoogleWebClientId { get; private set; } = "110430882823-ck8pi6d9ngiedo78mmg3gpsf6f2p9ove.apps.googleusercontent.com";
+    public string GoogleWebClientId { get; private set; } = "446111251118-bfh5o5dshiff7ttcgre1vmesbtsctgit.apps.googleusercontent.com";
 
     public Client? Client { get; private set; }
 
@@ -44,7 +44,7 @@ public class SupabaseService
             Preferences.Default.Set("SupabaseKey", PlaceholderKey);
         }
 
-        GoogleWebClientId = Preferences.Default.Get("GoogleWebClientId", "110430882823-ck8pi6d9ngiedo78mmg3gpsf6f2p9ove.apps.googleusercontent.com");
+        GoogleWebClientId = Preferences.Default.Get("GoogleWebClientId", "446111251118-bfh5o5dshiff7ttcgre1vmesbtsctgit.apps.googleusercontent.com");
     }
 
     public void SaveKeys(string url, string key, string googleWebClientId)
