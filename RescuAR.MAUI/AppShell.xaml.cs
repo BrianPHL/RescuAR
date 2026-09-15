@@ -13,6 +13,14 @@ public partial class AppShell : Shell
     {
         // Prepare
         Routing.RegisterRoute(
+            "PreparePage",
+            typeof(RescuAR.App.Views.Prepare.PreparePage));
+
+        Routing.RegisterRoute(
+            "Prepare",
+            typeof(RescuAR.App.Views.Prepare.PreparePage));
+
+        Routing.RegisterRoute(
             "Prepare/Checklist",
             typeof(RescuAR.App.Views.Prepare.ChecklistPage));
 
@@ -31,6 +39,14 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(
             "Prepare/HotlineDirectory",
             typeof(RescuAR.App.Views.Prepare.HotlineDirectoryPage));
+
+        Routing.RegisterRoute(
+            "Prepare/PreparednessGuide",
+            typeof(RescuAR.App.Views.Prepare.PreparednessGuidePage));
+
+        Routing.RegisterRoute(
+            "Prepare/PracticeAR",
+            typeof(RescuAR.App.Views.Prepare.PracticeARPage));
 
         // Reports
         Routing.RegisterRoute(
@@ -128,5 +144,10 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(
             "Prepare/FloodTimeline",
             typeof(RescuAR.App.Views.Prepare.FloodTimelinePage));
+
+        // PDF Viewer for Disaster Safety Guide
+        Routing.RegisterRoute(
+            "Prepare/PdfViewer",
+            typeof(RescuAR.App.Views.Prepare.PdfViewerPage));
     }
 }

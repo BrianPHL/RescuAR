@@ -980,7 +980,7 @@ public partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenChecklistAsync()
     {
-        await FastNavigateAsync("Prepare/Checklist");
+        await FastNavigateAsync("PreparePage");
     }
 
     [RelayCommand]

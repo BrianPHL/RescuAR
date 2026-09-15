@@ -21,7 +21,7 @@ public partial class PreparednessOverviewViewModel : ObservableObject
     private string _actionText = string.Empty;
 
     [ObservableProperty]
-    private string _moduleRoute = "Prepare/Checklist";
+    private string _moduleRoute = "PreparePage";
 
     [ObservableProperty]
     private string _moduleName = string.Empty;
@@ -42,7 +42,7 @@ public partial class PreparednessOverviewViewModel : ObservableObject
         Title = $"{data.PercentReady}% Ready";
         Subtitle = $"{data.PreparedItems} of {data.TotalItems} items prepared";
         ActionText = data.ActionText;
-        ModuleRoute = "Prepare/Checklist";
+        ModuleRoute = "PreparePage";
         ModuleName = data.ModuleName;
     }
 
@@ -53,12 +53,7 @@ public partial class PreparednessOverviewViewModel : ObservableObject
         {
             try
             {
-                if (Shell.Current.Navigation != null)
-                {
-                    await Shell.Current.Navigation.PushAsync(new Views.Prepare.ChecklistPage());
-                    return;
-                }
-                await Shell.Current.GoToAsync("Prepare/Checklist");
+                await Shell.Current.GoToAsync("PreparePage");
             }
             catch (Exception ex)
             {
