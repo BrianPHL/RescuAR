@@ -1029,6 +1029,18 @@ public static class ARCameraSpatialController
             hasValidRouteSpatialPlacement &&
             (!trackingValid || !anchor.IsAvailable);
 
+        ARRouteRenderer.SetDepthOcclusionRequested(
+            route.IsEnabled &&
+            trackingValid);
+
+        if (route.IsEnabled &&
+            trackingValid)
+        {
+            ARRouteRenderer.ApplyCameraVisualPolicy(
+                routeRootTransform.Position,
+                frame);
+        }
+
         LogVisualContinuityHoldIfChanged(
             trackingValid,
             anchor.IsAvailable,

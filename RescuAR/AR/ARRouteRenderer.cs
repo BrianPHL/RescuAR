@@ -8,6 +8,8 @@ using RescuAR.Diagnostics;
 using RescuAR.Navigation.Projection;
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using NumericsVector3 = System.Numerics.Vector3;
 
 namespace RescuAR.AR;
 
@@ -86,6 +88,13 @@ public static class ARRouteRenderer
         -1;
 
     private static int activeSegmentCount;
+
+    private static int depthOcclusionRequested;
+
+    public static bool DepthOcclusionRequested =>
+        Volatile.Read(
+            ref depthOcclusionRequested) ==
+        1;
 
     public static int ActiveSegmentCount
     {
@@ -222,6 +231,10 @@ public static class ARRouteRenderer
 
             activeSegmentCount =
                 0;
+
+            Volatile.Write(
+                ref depthOcclusionRequested,
+                0);
         }
 
         AndroidLog.Debug(
@@ -373,6 +386,9 @@ public static class ARRouteRenderer
              i < slots.Length;
              i++)
         {
+            slots[i].GeometryAvailable =
+                false;
+
             slots[i].Entity.IsEnabled =
                 false;
         }
@@ -403,6 +419,145 @@ public static class ARRouteRenderer
             0;
     }
 
+    public static void SetDepthOcclusionRequested(
+        bool requested)
+    {
+        Volatile.Write(
+            ref depthOcclusionRequested,
+            requested
+                ? 1
+                : 0);
+    }
+
+    /// <summary>
+    /// Applies camera-relative width and conservative nearby depth occlusion
+    /// to the already-pooled route geometry. Called once per tracked ARCore
+    /// frame; it performs no scene allocation and samples one depth location
+    /// per nearby segment.
+    /// </summary>
+    public static void ApplyCameraVisualPolicy(
+        Vector3 routeRootWorldPosition,
+        ARCameraPoseBridge.SpatialSnapshot frame)
+    {
+        if (!frame.IsTracking ||
+            !frame.Pose.IsTracking)
+        {
+            return;
+        }
+
+        SegmentSlot[] slots;
+        SegmentSlot[] arrows;
+
+        lock (sync)
+        {
+            slots =
+                segmentSlots;
+
+            arrows =
+                arrowSlots;
+        }
+
+        ARDepthOcclusionBridge.DepthSnapshot depth =
+            ARDepthOcclusionBridge.Current;
+
+        ApplyCameraVisualPolicy(
+            slots,
+            routeRootWorldPosition,
+            frame,
+            depth);
+
+        ApplyCameraVisualPolicy(
+            arrows,
+            routeRootWorldPosition,
+            frame,
+            depth);
+    }
+
+    private static void ApplyCameraVisualPolicy(
+        SegmentSlot[] slots,
+        Vector3 routeRootWorldPosition,
+        ARCameraPoseBridge.SpatialSnapshot frame,
+        ARDepthOcclusionBridge.DepthSnapshot depth)
+    {
+        float cameraX =
+            frame.Pose.PositionX;
+
+        float cameraZ =
+            frame.Pose.PositionZ;
+
+        for (int i = 0;
+             i < slots.Length;
+             i++)
+        {
+            SegmentSlot slot =
+                slots[i];
+
+            if (!slot.GeometryAvailable)
+            {
+                slot.Entity.IsEnabled =
+                    false;
+
+                continue;
+            }
+
+            float worldX =
+                routeRootWorldPosition.X +
+                slot.LocalMidpoint.X;
+
+            float worldY =
+                routeRootWorldPosition.Y +
+                slot.LocalMidpoint.Y;
+
+            float worldZ =
+                routeRootWorldPosition.Z +
+                slot.LocalMidpoint.Z;
+
+            float deltaX =
+                worldX -
+                cameraX;
+
+            float deltaZ =
+                worldZ -
+                cameraZ;
+
+            float horizontalDistance =
+                MathF.Sqrt(
+                    deltaX * deltaX +
+                    deltaZ * deltaZ);
+
+            float routeWidth =
+                ARRouteVisualPolicy.GetRouteWidthMeters(
+                    horizontalDistance);
+
+            float widthScale =
+                routeWidth /
+                RouteWidthMeters;
+
+            slot.Transform.LocalScale =
+                new Vector3(
+                    MathF.Max(
+                        0.18f,
+                        slot.BaseWidthMeters *
+                            widthScale),
+                    slot.Transform.LocalScale.Y,
+                    slot.Transform.LocalScale.Z);
+
+            bool occluded =
+                horizontalDistance <=
+                    ARRouteVisualPolicy.MaximumOcclusionDistanceMeters &&
+                ARRouteVisualPolicy.IsWorldPointOccluded(
+                    depth,
+                    frame.FrameTimestamp,
+                    new NumericsVector3(
+                        worldX,
+                        worldY,
+                        worldZ));
+
+            slot.Entity.IsEnabled =
+                !occluded;
+        }
+    }
+
     private static bool TryApplySegment(
         SegmentSlot slot,
         ArHorizontalRoutePoint start,
@@ -411,6 +566,9 @@ public static class ARRouteRenderer
         float startExtensionMeters = 0.0f,
         float endExtensionMeters = 0.0f)
     {
+        slot.GeometryAvailable =
+            false;
+
         Vector3 startPoint =
             new(
                 start.X,
@@ -510,6 +668,15 @@ public static class ARRouteRenderer
                 widthMeters,
                 RouteThicknessMeters,
                 horizontalLength);
+
+        slot.LocalMidpoint =
+            midpoint;
+
+        slot.BaseWidthMeters =
+            widthMeters;
+
+        slot.GeometryAvailable =
+            true;
 
         slot.Entity.IsEnabled =
             true;
@@ -850,6 +1017,9 @@ public static class ARRouteRenderer
              i < slots.Length;
              i++)
         {
+            slots[i].GeometryAvailable =
+                false;
+
             slots[i].Entity.IsEnabled =
                 false;
         }
@@ -871,5 +1041,12 @@ public static class ARRouteRenderer
         public Entity Entity { get; }
 
         public Transform3D Transform { get; }
+
+        public Vector3 LocalMidpoint { get; set; }
+
+        public float BaseWidthMeters { get; set; } =
+            RouteWidthMeters;
+
+        public bool GeometryAvailable { get; set; }
     }
 }

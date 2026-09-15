@@ -151,16 +151,19 @@ public sealed partial class ArCoreService : IArCoreService
     /*
      * V7 FLOOD DEPTH OCCLUSION
      * -------------------------
-     * Smoothed ARCore depth is only copied while a local flood visualization
-     * is active. V7.3 caps depth-image copies at 10 Hz. The camera and ARCore
-     * tracking remain at their normal cadence; only the CPU-side occlusion
-     * handoff is throttled to reduce sustained thermal load.
+     * Smoothed ARCore depth is copied only while a local flood visualization
+     * is active or nearby route geometry can benefit from obstacle occlusion.
+     * Flood copies are capped at 10 Hz; route-only copies use 5 Hz. The camera
+     * and ARCore tracking remain at their normal cadence.
      */
     private long lastDepthOcclusionPublishTimestamp =
         long.MinValue;
 
     private const long DepthOcclusionPublishIntervalNanoseconds =
         100_000_000L;
+
+    private const long RouteDepthOcclusionPublishIntervalNanoseconds =
+        200_000_000L;
 
     private bool depthOcclusionAvailabilityLogged;
 
@@ -2817,7 +2820,17 @@ public sealed partial class ArCoreService : IArCoreService
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
-        if (!flood.IsAvailable)
+        ARRouteBridge.RouteSnapshot route =
+            ARRouteBridge.Current;
+
+        bool nearbyRouteAvailable =
+            ARRouteRenderer.DepthOcclusionRequested &&
+            route.IsAvailable &&
+            ARRouteVisualPolicy.HasNearbyRoute(
+                route.Points);
+
+        if (!flood.IsAvailable &&
+            !nearbyRouteAvailable)
         {
             if (ARDepthOcclusionBridge.Current.IsAvailable)
             {
@@ -2837,10 +2850,15 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        long publishIntervalNanoseconds =
+            flood.IsAvailable
+                ? DepthOcclusionPublishIntervalNanoseconds
+                : RouteDepthOcclusionPublishIntervalNanoseconds;
+
         if (lastDepthOcclusionPublishTimestamp != long.MinValue &&
             timestamp > lastDepthOcclusionPublishTimestamp &&
             timestamp - lastDepthOcclusionPublishTimestamp <
-                DepthOcclusionPublishIntervalNanoseconds)
+                publishIntervalNanoseconds)
         {
             return;
         }
@@ -3028,6 +3046,8 @@ public sealed partial class ArCoreService : IArCoreService
                 Log.Info(
                     "RescuAR-FloodDepth",
                     "ARCore depth occlusion ACTIVE: " +
+                    $"consumer={(flood.IsAvailable ? "flood" : "route")}, " +
+                    $"refreshCap={(flood.IsAvailable ? 10 : 5)}Hz, " +
                     $"depthImage={width}x{height}, " +
                     $"textureIntrinsics={dimensions[0]}x{dimensions[1]}, " +
                     $"pixelStride={pixelStride}, rowStride={rowStride}.");
@@ -3039,7 +3059,7 @@ public sealed partial class ArCoreService : IArCoreService
              * NotYetAvailableException is expected while depth is warming up,
              * and other ARCore depth exceptions can occur transiently during
              * tracking loss. Keep the last good depth frame instead of
-             * tearing the user-facing flood visualization down.
+             * tearing down active flood or route occlusion.
              */
             if (!depthOcclusionAvailabilityLogged)
             {
@@ -3464,7 +3484,7 @@ public sealed partial class ArCoreService : IArCoreService
         try
         {
             Google.AR.Core.Config.DepthMode automaticDepthMode =
-                Google.AR.Core.Config.DepthMode.Automatic;
+                Google.AR.Core.Config.DepthMode.Automatic!;
 
             bool isSupported =
                 currentSession.IsDepthModeSupported(
