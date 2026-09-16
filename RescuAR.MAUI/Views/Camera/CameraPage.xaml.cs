@@ -151,11 +151,19 @@ namespace RescuAR.App.Views.Camera
         private static readonly TimeSpan
             ConsultationBootstrapLocationMaximumAge =
                 TimeSpan.FromSeconds(
-                    60);
+                    120);
 
         private const double
             ConsultationBootstrapLocationMaximumAccuracyMeters =
+                25.0;
+
+        private const double
+            RouteStartupFreshLocationMaximumAccuracyMeters =
                 50.0;
+
+        private const double
+            ConsultationBootstrapFreshAccuracyDisadvantageMeters =
+                15.0;
 
         private bool destinationEventSubscribed;
         private bool emergencyAdvisoryEventSubscribed;
@@ -3023,16 +3031,42 @@ namespace RescuAR.App.Views.Camera
                     freshCoordinateValid &&
                     (!fresh!.AccuracyMeters.HasValue ||
                      fresh.AccuracyMeters.Value <=
-                        ConsultationBootstrapLocationMaximumAccuracyMeters);
+                        RouteStartupFreshLocationMaximumAccuracyMeters);
 
-                if (freshAccuracyAcceptable ||
-                    !cachedAccepted)
+                bool strictCacheSaferThanFresh =
+                    cachedAccepted &&
+                    IsStrictConsultationCacheSaferThanFresh(
+                        cached!,
+                        fresh);
+
+                if (!strictCacheSaferThanFresh &&
+                    (freshAccuracyAcceptable ||
+                     !cachedAccepted))
                 {
                     return (
                         fresh,
                         "CURRENT",
                         false);
                 }
+
+#if ANDROID
+                if (strictCacheSaferThanFresh)
+                {
+                    string freshAccuracyText =
+                        fresh?.AccuracyMeters is double freshAccuracy
+                            ? freshAccuracy.ToString(
+                                "F1")
+                            : "<unknown>";
+
+                    Log.Warn(
+                        MldLogTag,
+                        "CONSULTATION ROUTE STARTUP QUALITY FALLBACK: " +
+                        $"strictCacheAccuracy={cached!.AccuracyMeters!.Value:F1}m, " +
+                        $"freshAccuracy={freshAccuracyText}m. " +
+                        "Using the materially safer cached origin for initial " +
+                        "geometry only; route-progress safety remains unchanged.");
+                }
+#endif
 
                 return (
                     cached,
@@ -3115,6 +3149,31 @@ namespace RescuAR.App.Views.Camera
                         -2) &&
                 age <=
                     ConsultationBootstrapLocationMaximumAge;
+        }
+
+        private static bool IsStrictConsultationCacheSaferThanFresh(
+            LocationReading cached,
+            LocationReading? fresh)
+        {
+            if (!cached.AccuracyMeters.HasValue)
+            {
+                return false;
+            }
+
+            if (fresh is null ||
+                !fresh.Coordinate.IsValid ||
+                !fresh.AccuracyMeters.HasValue ||
+                !double.IsFinite(
+                    fresh.AccuracyMeters.Value) ||
+                fresh.AccuracyMeters.Value <
+                    0.0)
+            {
+                return true;
+            }
+
+            return fresh.AccuracyMeters.Value -
+                    cached.AccuracyMeters.Value >=
+                ConsultationBootstrapFreshAccuracyDisadvantageMeters;
         }
 
         /// <summary>

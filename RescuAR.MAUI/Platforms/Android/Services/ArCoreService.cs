@@ -180,7 +180,7 @@ public sealed partial class ArCoreService : IArCoreService
         "RescuAR-ARPose";
 
     /*
-     * GROUND ACQUISITION V4
+     * GROUND ACQUISITION V5
      * ---------------------
      * Prefer a real upward-facing ARCore Plane whenever one is available.
      * On Depth-capable devices, a lower-center DepthPoint acts as a fallback
@@ -190,6 +190,11 @@ public sealed partial class ArCoreService : IArCoreService
      * Depth fallback is intentionally conservative: the candidate must be
      * below the camera, approximately horizontal, and supported by a rolling
      * confidence window before an Anchor is created.
+     *
+     * When several sweeps contain no DepthPoint, intermediate sweeps retain
+     * only the lower-center probe. A complete nine-ray Plane/Depth sweep still
+     * runs every fourth interval. This limits ARCore's repeated
+     * depth-not-yet-available work without stopping floor verification.
      */
     private static readonly (float XOffset, float ZOffset)[]
         GroundPlaneWorldDownSearchPattern =
@@ -234,6 +239,12 @@ public sealed partial class ArCoreService : IArCoreService
 
     private const int GroundDepthValidSweepsRequired =
         3;
+
+    private const int GroundDepthUnavailableSweepsBeforeReducedProbing =
+        3;
+
+    private const int GroundReducedProbeFullSweepCadence =
+        4;
 
     private const float GroundDepthMinimumNormalY =
         0.70f;
@@ -309,6 +320,7 @@ public sealed partial class ArCoreService : IArCoreService
     private int groundDepthConfidenceWindowCount;
     private int groundDepthConfidenceWindowIndex;
     private int groundDepthConfidenceValidSweepCount;
+    private int groundDepthUnavailableSweepCount;
 
     private bool hasGroundPlaneSweepCandidate;
     private float groundPlaneSweepCandidateX;
@@ -1897,6 +1909,14 @@ public sealed partial class ArCoreService : IArCoreService
 
         groundPlaneSearchSweepCount++;
 
+        bool reducedProbeSweep =
+            depthModeEnabled &&
+            groundDepthUnavailableSweepCount >=
+                GroundDepthUnavailableSweepsBeforeReducedProbing &&
+            groundPlaneSearchSweepCount %
+                GroundReducedProbeFullSweepCadence !=
+                    0;
+
         ResetGroundPlaneSweepCandidate();
 
         if (!hasLoggedGroundPlaneSearch)
@@ -1906,7 +1926,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Searching for ARCore ground with V4 acquisition: " +
+                "Searching for ARCore ground with V5 adaptive acquisition: " +
                 $"depthEnabled={depthModeEnabled}, " +
                 $"{GroundPlaneWorldDownSearchPattern.Length} world-down Plane ray + " +
                 $"{GroundPlaneSearchPattern.Length} lower-view screen rays, " +
@@ -1915,6 +1935,9 @@ public sealed partial class ArCoreService : IArCoreService
                 $"planeSpatialSupport={GroundPlaneRequiredSpatialSamples}, " +
                 $"depthConfidence={GroundDepthValidSweepsRequired}/" +
                 $"{GroundDepthConfidenceWindowSweeps}. " +
+                $"reducedProbeAfter=" +
+                $"{GroundDepthUnavailableSweepsBeforeReducedProbing} misses, " +
+                $"fullSweepCadence={GroundReducedProbeFullSweepCadence}. " +
                 "Preference=spatially supported upward Plane; " +
                 "fallback=rolling-confidence upward DepthPoint.");
         }
@@ -1928,6 +1951,7 @@ public sealed partial class ArCoreService : IArCoreService
             new float[3];
 
         for (int sampleIndex = 0;
+             !reducedProbeSweep &&
              sampleIndex <
                 GroundPlaneWorldDownSearchPattern.Length;
              sampleIndex++)
@@ -1978,7 +2002,9 @@ public sealed partial class ArCoreService : IArCoreService
          */
         for (int sampleIndex = 0;
              sampleIndex <
-                GroundPlaneSearchPattern.Length;
+                (reducedProbeSweep
+                    ? 1
+                    : GroundPlaneSearchPattern.Length);
              sampleIndex++)
         {
             (float normalizedX,
@@ -2030,16 +2056,28 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (depthModeEnabled &&
                 sampleIndex ==
-                    GroundDepthCandidateSampleIndex &&
-                TryCreateDepthGroundAnchorFromHits(
-                    hitResults,
-                    now,
-                    cameraTranslation[1],
-                    sampleIndex,
-                    GroundPlaneSearchPattern.Length,
-                    sampleDescription))
+                    GroundDepthCandidateSampleIndex)
             {
-                return;
+                bool depthAnchorCreated =
+                    TryCreateDepthGroundAnchorFromHits(
+                        hitResults,
+                        now,
+                        cameraTranslation[1],
+                        sampleIndex,
+                        GroundPlaneSearchPattern.Length,
+                        sampleDescription,
+                        out bool depthPointObserved);
+
+                groundDepthUnavailableSweepCount =
+                    depthPointObserved
+                        ? 0
+                        : groundDepthUnavailableSweepCount +
+                            1;
+
+                if (depthAnchorCreated)
+                {
+                    return;
+                }
             }
         }
 
@@ -2065,6 +2103,8 @@ public sealed partial class ArCoreService : IArCoreService
                 $"depthConfidence={groundDepthConfidenceValidSweepCount}/" +
                 $"{GroundDepthConfidenceWindowSweeps}, " +
                 $"depthSamples={groundDepthConfidenceWindowCount}, " +
+                $"depthUnavailableSweeps={groundDepthUnavailableSweepCount}, " +
+                $"reducedProbe={reducedProbeSweep}, " +
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms. " +
@@ -2265,14 +2305,21 @@ public sealed partial class ArCoreService : IArCoreService
         float cameraY,
         int sampleIndex,
         int sampleCount,
-        string sampleDescription)
+        string sampleDescription,
+        out bool depthPointObserved)
     {
+        depthPointObserved =
+            false;
+
         foreach (Google.AR.Core.HitResult hit in hitResults)
         {
             if (hit.Trackable is not Google.AR.Core.DepthPoint)
             {
                 continue;
             }
+
+            depthPointObserved =
+                true;
 
             using Google.AR.Core.Pose? hitPose =
                 hit.HitPose;
@@ -2579,6 +2626,9 @@ public sealed partial class ArCoreService : IArCoreService
             0;
 
         groundPlaneSearchHitTestCount =
+            0;
+
+        groundDepthUnavailableSweepCount =
             0;
 
         ResetGroundPlaneSweepCandidate();
