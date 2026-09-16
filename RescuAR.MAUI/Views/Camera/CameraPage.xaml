@@ -344,6 +344,7 @@
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 8">
                 <Label
+                    x:Name="floodWaitingLabel"
                     Text="Waiting for simulation..."
                     TextColor="#0876B9"
                     FontSize="13"

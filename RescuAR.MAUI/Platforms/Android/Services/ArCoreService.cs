@@ -3251,7 +3251,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             bool groundAvailable =
                 spatial.FrameTimestamp == timestamp &&
-                spatial.Anchor.IsAvailable;
+                spatial.Anchor.IsAvailable &&
+                !spatial.Anchor.IsProvisional;
 
             float groundWorldY =
                 groundAvailable

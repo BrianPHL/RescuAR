@@ -144,6 +144,19 @@ namespace RescuAR.App.Views.Camera
             5000;
 
         private bool routeRequestInProgress;
+
+        private const int RouteStartupFreshLocationBudgetMilliseconds =
+            4000;
+
+        private static readonly TimeSpan
+            ConsultationBootstrapLocationMaximumAge =
+                TimeSpan.FromSeconds(
+                    60);
+
+        private const double
+            ConsultationBootstrapLocationMaximumAccuracyMeters =
+                50.0;
+
         private bool destinationEventSubscribed;
         private bool emergencyAdvisoryEventSubscribed;
         private bool emergencyAdvisoryVisible;
@@ -184,6 +197,8 @@ namespace RescuAR.App.Views.Camera
         private FloodDepthVisualizationService.FloodVisualizationSnapshot
             currentFloodVisualization =
                 FloodDepthVisualizationService.FloodVisualizationSnapshot.Unavailable;
+
+        private bool? lastFloodGroundVerified;
 
         private int developerFloodDepthSequenceIndex;
 
@@ -704,8 +719,16 @@ namespace RescuAR.App.Views.Camera
 
                     floodWaitingBanner.IsVisible =
                         floodMode &&
-                        !currentFloodVisualization.IsAvailable &&
+                        (!currentFloodVisualization.IsAvailable ||
+                         (HasLocalFloodDepth() &&
+                          !HasVerifiedArGround())) &&
                         !safeZoneConfirmed;
+
+                    floodWaitingLabel.Text =
+                        HasLocalFloodDepth() &&
+                        !HasVerifiedArGround()
+                            ? "Waiting for verified ground..."
+                            : "Waiting for simulation...";
 
                     floodVisualizationLayer.IsVisible =
                         floodMode &&
@@ -839,6 +862,8 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshCameraModuleDynamicUi()
         {
+            RefreshFloodGroundTrustState();
+
             bool arCameraMode =
                 currentCameraModuleView ==
                     CameraModuleViewMode.ArCamera;
@@ -850,6 +875,12 @@ namespace RescuAR.App.Views.Camera
             bool mapMode =
                 currentCameraModuleView ==
                     CameraModuleViewMode.Map2D;
+
+            bool verifiedFloodGround =
+                HasVerifiedArGround();
+
+            bool hasLocalFloodDepth =
+                HasLocalFloodDepth();
 
             bool hasDestination =
                 NavigationDestinationBridge.Current.IsAvailable;
@@ -889,12 +920,91 @@ namespace RescuAR.App.Views.Camera
 
             floodWaitingBanner.IsVisible =
                 floodMode &&
-                !currentFloodVisualization.IsAvailable &&
+                (!currentFloodVisualization.IsAvailable ||
+                 (hasLocalFloodDepth &&
+                  !verifiedFloodGround)) &&
                 !safeZoneConfirmed;
+
+            floodWaitingLabel.Text =
+                hasLocalFloodDepth &&
+                !verifiedFloodGround
+                    ? "Waiting for verified ground..."
+                    : "Waiting for simulation...";
 
             RefreshEmergencyStatusBanner();
             RefreshArTrackingStatusBanner();
             RefreshRouteLocatorCue();
+        }
+
+        private static bool HasVerifiedArGround()
+        {
+            ARCameraPoseBridge.AnchorSnapshot anchor =
+                ARCameraPoseBridge.CurrentFrame.Anchor;
+
+            return anchor.IsAvailable &&
+                !anchor.IsProvisional;
+        }
+
+        private bool HasLocalFloodDepth()
+        {
+            return currentFloodVisualization.IsAvailable &&
+                currentFloodVisualization.Mode ==
+                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
+                currentFloodVisualization.LocalDepthMeters.HasValue &&
+                double.IsFinite(
+                    currentFloodVisualization.LocalDepthMeters.Value) &&
+                currentFloodVisualization.LocalDepthMeters.Value >
+                    0.0;
+        }
+
+        private void RefreshFloodGroundTrustState()
+        {
+            bool verifiedGround =
+                HasVerifiedArGround();
+
+            if (lastFloodGroundVerified.HasValue &&
+                lastFloodGroundVerified.Value ==
+                    verifiedGround)
+            {
+                return;
+            }
+
+            lastFloodGroundVerified =
+                verifiedGround;
+
+            bool localFloodActive =
+                pageIsVisible &&
+                currentCameraModuleView ==
+                    CameraModuleViewMode.FloodDepth &&
+                HasLocalFloodDepth();
+
+            if (!localFloodActive)
+            {
+                return;
+            }
+
+            if (verifiedGround)
+            {
+                ARFloodDepthBridge.PublishLocalDepth(
+                    currentFloodVisualization.LocalDepthMeters!.Value,
+                    currentFloodVisualization.SourceText);
+            }
+            else
+            {
+                ARFloodDepthBridge.Clear(
+                    "provisional ground cannot support metric flood depth");
+            }
+
+#if ANDROID
+            Log.Info(
+                FloodDepthLogTag,
+                "FLOOD GROUND TRUST CHANGED: " +
+                $"verified={verifiedGround}, " +
+                $"arSpaceWater={verifiedGround}. " +
+                (verifiedGround
+                    ? "Verified ARCore ground now authorizes flood placement."
+                    : "Flood placement is held until verified ARCore ground is available."));
+#endif
         }
 
         private void RefreshArTrackingStatusBanner()
@@ -2584,8 +2694,8 @@ namespace RescuAR.App.Views.Camera
             {
                 Log.Debug(
                     MldLogTag,
-                    "Requesting current GPS location for MLD origin through " +
-                    "RescuAR location service.");
+                    "Resolving the MLD route-start origin with bounded fresh " +
+                    "GPS and the strict consultation cache policy.");
 
                 if (!await _locationService.EnsurePermissionAsync(
                         cancellationToken))
@@ -2597,8 +2707,10 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                LocationReading? locationReading =
-                    await _locationService.GetCurrentLocationAsync(
+                (LocationReading? locationReading,
+                 string locationSource,
+                 bool usedConsultationBootstrap) =
+                    await ResolveRouteStartupLocationAsync(
                         cancellationToken);
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -2611,6 +2723,16 @@ namespace RescuAR.App.Views.Camera
 
                     return false;
                 }
+
+                Log.Info(
+                    MldLogTag,
+                    "MLD route-start location selected: " +
+                    $"source={locationSource}, " +
+                    $"consultationBootstrap={usedConsultationBootstrap}, " +
+                    $"accuracy=" +
+                    $"{(locationReading.AccuracyMeters.HasValue ? locationReading.AccuracyMeters.Value.ToString("F1") : "<unknown>")}m, " +
+                    $"age=" +
+                    $"{Math.Max(0.0, (DateTimeOffset.UtcNow - locationReading.Timestamp).TotalSeconds):F1}s.");
 
                 GeoCoordinate origin =
                     locationReading.Coordinate;
@@ -2822,6 +2944,177 @@ namespace RescuAR.App.Views.Camera
             await Task.CompletedTask;
             return false;
 #endif
+        }
+
+        private async Task<(
+            LocationReading? Reading,
+            string Source,
+            bool UsedConsultationBootstrap)>
+            ResolveRouteStartupLocationAsync(
+                CancellationToken cancellationToken)
+        {
+            LocationReading? cached =
+                null;
+
+            bool cachedAccepted =
+                false;
+
+            TimeSpan cachedAge =
+                TimeSpan.MaxValue;
+
+            if (EnableConsultationRouteVisibilityOverride)
+            {
+                cached =
+                    await _locationService.GetLastKnownLocationAsync(
+                        cancellationToken);
+
+                cachedAccepted =
+                    IsConsultationBootstrapLocationAcceptable(
+                        cached,
+                        out cachedAge);
+
+#if ANDROID
+                if (cached is not null)
+                {
+                    Log.Debug(
+                        MldLogTag,
+                        "Consultation route-start cache evaluated: " +
+                        $"accepted={cachedAccepted}, " +
+                        $"accuracy=" +
+                        $"{(cached.AccuracyMeters.HasValue ? cached.AccuracyMeters.Value.ToString("F1") : "<unknown>")}m, " +
+                        $"age={Math.Max(0.0, cachedAge.TotalSeconds):F1}s, " +
+                        $"limits={ConsultationBootstrapLocationMaximumAccuracyMeters:F0}m/" +
+                        $"{ConsultationBootstrapLocationMaximumAge.TotalSeconds:F0}s.");
+                }
+#endif
+            }
+
+            using CancellationTokenSource freshLocationCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken);
+
+            Task<LocationReading?> freshLocationTask =
+                _locationService.GetCurrentLocationAsync(
+                    freshLocationCancellation.Token);
+
+            Task startupBudget =
+                Task.Delay(
+                    RouteStartupFreshLocationBudgetMilliseconds,
+                    cancellationToken);
+
+            Task completed =
+                await Task.WhenAny(
+                    freshLocationTask,
+                    startupBudget);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (completed ==
+                freshLocationTask)
+            {
+                LocationReading? fresh =
+                    await freshLocationTask;
+
+                bool freshCoordinateValid =
+                    fresh is not null &&
+                    fresh.Coordinate.IsValid;
+
+                bool freshAccuracyAcceptable =
+                    freshCoordinateValid &&
+                    (!fresh!.AccuracyMeters.HasValue ||
+                     fresh.AccuracyMeters.Value <=
+                        ConsultationBootstrapLocationMaximumAccuracyMeters);
+
+                if (freshAccuracyAcceptable ||
+                    !cachedAccepted)
+                {
+                    return (
+                        fresh,
+                        "CURRENT",
+                        false);
+                }
+
+                return (
+                    cached,
+                    "LAST_KNOWN_STRICT",
+                    true);
+            }
+
+            if (!cachedAccepted)
+            {
+#if ANDROID
+                Log.Debug(
+                    MldLogTag,
+                    "Fresh GPS exceeded the consultation startup budget, " +
+                    "but no safe cached fix exists. Preserving the original " +
+                    "fresh-location wait.");
+#endif
+
+                LocationReading? fresh =
+                    await freshLocationTask;
+
+                return (
+                    fresh,
+                    "CURRENT_DELAYED",
+                    false);
+            }
+
+            freshLocationCancellation.Cancel();
+
+            try
+            {
+                await freshLocationTask;
+            }
+            catch (OperationCanceledException)
+                when (!cancellationToken.IsCancellationRequested)
+            {
+                // Expected: the strict cached fix won the bounded startup race.
+            }
+
+#if ANDROID
+            Log.Warn(
+                MldLogTag,
+                "CONSULTATION ROUTE STARTUP FALLBACK: fresh GPS exceeded " +
+                $"{RouteStartupFreshLocationBudgetMilliseconds}ms; using a " +
+                "strict recent cached fix for initial route geometry. GPS/PDR " +
+                "progress, connector, and reroute validation remain unchanged.");
+#endif
+
+            return (
+                cached,
+                "LAST_KNOWN_STRICT",
+                true);
+        }
+
+        private static bool IsConsultationBootstrapLocationAcceptable(
+            LocationReading? reading,
+            out TimeSpan age)
+        {
+            age =
+                TimeSpan.MaxValue;
+
+            if (reading is null ||
+                !reading.Coordinate.IsValid ||
+                !reading.AccuracyMeters.HasValue ||
+                !double.IsFinite(
+                    reading.AccuracyMeters.Value) ||
+                reading.AccuracyMeters.Value <
+                    0.0 ||
+                reading.AccuracyMeters.Value >
+                    ConsultationBootstrapLocationMaximumAccuracyMeters)
+            {
+                return false;
+            }
+
+            age =
+                DateTimeOffset.UtcNow -
+                    reading.Timestamp;
+
+            return age >=
+                    TimeSpan.FromSeconds(
+                        -2) &&
+                age <=
+                    ConsultationBootstrapLocationMaximumAge;
         }
 
         /// <summary>
@@ -6148,6 +6441,7 @@ namespace RescuAR.App.Views.Camera
 
             bool renderLocalDepthInAr =
                 hasLocalArDepth &&
+                HasVerifiedArGround() &&
                 currentCameraModuleView ==
                     CameraModuleViewMode.FloodDepth &&
                 pageIsVisible;
@@ -6197,7 +6491,11 @@ namespace RescuAR.App.Views.Camera
                         !safeZoneConfirmed;
 
                     floodWaitingBanner.IsVisible =
-                        false;
+                        hasLocalArDepth &&
+                        !HasVerifiedArGround();
+
+                    floodWaitingLabel.Text =
+                        "Waiting for verified ground...";
 
                     floodModeDepthSummaryLabel.Text =
                         snapshot.PrimaryText;
@@ -6243,6 +6541,9 @@ namespace RescuAR.App.Views.Camera
                 currentCameraModuleView ==
                     CameraModuleViewMode.FloodDepth;
 
+            bool verifiedGround =
+                HasVerifiedArGround();
+
             bool shouldShow =
                 visible &&
                 floodModeActive;
@@ -6252,7 +6553,8 @@ namespace RescuAR.App.Views.Camera
                 ARFloodDepthBridge.Clear(
                     reason);
             }
-            else if (hasLocalArDepth)
+            else if (hasLocalArDepth &&
+                     verifiedGround)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
@@ -6261,7 +6563,9 @@ namespace RescuAR.App.Views.Camera
             else
             {
                 ARFloodDepthBridge.Clear(
-                    "Flood Depth sub-tab has context but no trusted local depth");
+                    hasLocalArDepth
+                        ? "Flood Depth is waiting for verified ARCore ground"
+                        : "Flood Depth sub-tab has context but no trusted local depth");
             }
 
             Dispatcher.Dispatch(
@@ -6275,16 +6579,25 @@ namespace RescuAR.App.Views.Camera
 
                     floodWaitingBanner.IsVisible =
                         floodModeActive &&
-                        !currentFloodVisualization.IsAvailable &&
+                        (!currentFloodVisualization.IsAvailable ||
+                         (hasLocalArDepth &&
+                          !verifiedGround)) &&
                         pageIsVisible &&
                         !safeZoneConfirmed;
+
+                    floodWaitingLabel.Text =
+                        hasLocalArDepth &&
+                        !verifiedGround
+                            ? "Waiting for verified ground..."
+                            : "Waiting for simulation...";
                 });
 
 #if ANDROID
             Log.Debug(
                 FloodDepthLogTag,
                 $"Flood visualization visibility={shouldShow}; " +
-                $"arSpaceWater={(shouldShow && hasLocalArDepth)}; " +
+                $"verifiedGround={verifiedGround}; " +
+                $"arSpaceWater={(shouldShow && hasLocalArDepth && verifiedGround)}; " +
                 $"reason='{reason}'.");
 #endif
         }
@@ -6312,6 +6625,9 @@ namespace RescuAR.App.Views.Camera
                             CameraModuleViewMode.FloodDepth &&
                         pageIsVisible &&
                         !safeZoneConfirmed;
+
+                    floodWaitingLabel.Text =
+                        "Waiting for simulation...";
 
                     floodModeDepthSummaryLabel.Text =
                         "No trusted local depth is currently available";
