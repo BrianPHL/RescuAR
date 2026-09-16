@@ -249,6 +249,23 @@ namespace RescuAR.App.Views.Camera
         private bool recoveryConnectorVerified;
 
         /*
+         * TEMPORARY ADVISER-CONSULTATION OVERRIDE
+         *
+         * Keep the last accepted cyan RouteWindow visible when GPS freshness,
+         * accuracy, or route identity deteriorates. This does not accept weak
+         * GPS progress, bypass heading/spatial tracking requirements, publish a
+         * recovery connector, or change rerouting decisions.
+         *
+         * Set false immediately after adviser consultation to restore the
+         * production confidence gate.
+         */
+        private static readonly bool
+            EnableConsultationRouteVisibilityOverride =
+                true;
+
+        private bool consultationRouteVisibilityOverrideActive;
+
+        /*
          * TEST SWITCH:
          * Normal navigation baseline. Set true only for deliberate indoor
          * GPS-freeze diagnostics.
@@ -926,7 +943,8 @@ namespace RescuAR.App.Views.Camera
                     TimeSpan.FromSeconds(
                         10);
 
-            ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot confidence =
+            ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot
+                policyConfidence =
                 ARGuidanceConfidencePolicy.Evaluate(
                     NavigationDestinationBridge.Current.IsAvailable,
                     route.IsAvailable,
@@ -940,6 +958,25 @@ namespace RescuAR.App.Views.Camera
                     continuity,
                     dynamicRerouteInProgress,
                     verifiedRecoveryConnector);
+
+            consultationRouteVisibilityOverrideActive =
+                ShouldEnableConsultationRouteVisibilityOverride(
+                    policyConfidence,
+                    route,
+                    progress,
+                    headingTrusted,
+                    continuity);
+
+            ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot confidence =
+                consultationRouteVisibilityOverrideActive
+                    ? policyConfidence with
+                    {
+                        AllowsRouteGeometry = true,
+                        DisplayMessage =
+                            "CONSULTATION PREVIEW — GPS accuracy reduced; " +
+                            "do not use for evacuation"
+                    }
+                    : policyConfidence;
 
             bool confidenceChanged =
                 confidence.State !=
@@ -976,6 +1013,8 @@ namespace RescuAR.App.Views.Camera
                     $"gps={gpsConfidence}, " +
                     $"routeMatch={routeMatchConfidence}, " +
                     $"spatial={continuity.State}, " +
+                    $"consultationOverride=" +
+                    $"{consultationRouteVisibilityOverrideActive}, " +
                     $"reason='{confidence.DisplayMessage}'.");
             }
 #endif
@@ -997,6 +1036,8 @@ namespace RescuAR.App.Views.Camera
                         : 48,
                     8,
                     0);
+
+            RefreshTurnGuidancePanelForCurrentState();
 
             if (!shouldShow)
             {
@@ -1028,6 +1069,98 @@ namespace RescuAR.App.Views.Camera
 
             arTrackingStatusLabel.Text =
                 confidence.DisplayMessage;
+        }
+
+        private bool ShouldEnableConsultationRouteVisibilityOverride(
+            ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot
+                policyConfidence,
+            ARRouteBridge.RouteSnapshot route,
+            RouteProgressTracker.ProgressSnapshot progress,
+            bool headingTrusted,
+            ARCameraSpatialController.SpatialContinuitySnapshot spatial)
+        {
+            if (!EnableConsultationRouteVisibilityOverride ||
+                policyConfidence.AllowsRouteGeometry ||
+                !NavigationDestinationBridge.Current.IsAvailable ||
+                !route.IsAvailable ||
+                !route.NavigationState.IsAvailable ||
+                route.NavigationState.VisualKind !=
+                    RouteVisualKind.RouteWindow ||
+                !progress.HasRoute ||
+                !headingTrusted ||
+                dynamicRerouteInProgress)
+            {
+                return false;
+            }
+
+            return spatial.State ==
+                       ARCameraSpatialController.SpatialContinuityState.Live ||
+                   spatial.State ==
+                       ARCameraSpatialController.SpatialContinuityState.ShortHold;
+        }
+
+        private void RefreshTurnGuidancePanelForCurrentState()
+        {
+            if (dynamicRerouteInProgress)
+            {
+                return;
+            }
+
+            RouteResult? acceptedRoute;
+
+            ARRouteBridge.RouteSnapshot route;
+
+            lock (routeProgressFusionSync)
+            {
+                acceptedRoute =
+                    activeRoute;
+
+                route =
+                    ARRouteBridge.Current;
+            }
+
+            bool routeIdentityMatches =
+                acceptedRoute is not null &&
+                string.Equals(
+                    route.Algorithm,
+                    acceptedRoute.Algorithm,
+                    StringComparison.Ordinal) &&
+                double.IsFinite(
+                    route.TotalDistanceMeters) &&
+                double.IsFinite(
+                    acceptedRoute.TotalDistanceMeters) &&
+                Math.Abs(
+                    route.TotalDistanceMeters -
+                    acceptedRoute.TotalDistanceMeters) <=
+                        0.50;
+
+            bool shouldShow =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera &&
+                pageIsVisible &&
+                !emergencyAdvisoryVisible &&
+                !safeZoneConfirmed &&
+                NavigationDestinationBridge.Current.IsAvailable &&
+                routeIdentityMatches &&
+                route.IsAvailable &&
+                route.NavigationState.IsAvailable &&
+                route.NavigationState.VisualKind ==
+                    RouteVisualKind.RouteWindow &&
+                lastTurnGuidance.IsAvailable;
+
+            if (!shouldShow)
+            {
+                turnGuidancePanel.IsVisible =
+                    false;
+
+                return;
+            }
+
+            ApplyPrototypeTurnGuidance(
+                lastTurnGuidance);
+
+            turnGuidancePanel.IsVisible =
+                true;
         }
 
         private void RefreshEmergencyStatusBanner()
@@ -8757,6 +8890,8 @@ namespace RescuAR.App.Views.Camera
                 $"guidanceConfidence={lastArGuidanceConfidence.State}, " +
                 $"guidanceConfidenceScore={lastArGuidanceConfidence.Score}/100, " +
                 $"guidanceRouteAllowed={lastArGuidanceConfidence.AllowsRouteGeometry}, " +
+                $"consultationRouteOverride=" +
+                $"{consultationRouteVisibilityOverrideActive}, " +
                 $"destination={NavigationDestinationBridge.Current.IsAvailable}, " +
                 $"routeAlgorithm='{activeRoute?.Algorithm ?? "<none>"}', " +
                 $"headingAligned={lastHeadingAlignment.HasValue}, " +
@@ -8806,6 +8941,7 @@ namespace RescuAR.App.Views.Camera
                 $"{(lastTurnGuidance.IsAvailable ? lastTurnGuidance.Instruction.ToString() : "<none>")}, " +
                 $"turnDistance=" +
                 $"{(lastTurnGuidance.IsAvailable && double.IsFinite(lastTurnGuidance.DistanceToTurnMeters) ? lastTurnGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")}m, " +
+                $"turnPanelVisible={turnGuidancePanel.IsVisible}, " +
                 $"safeZoneCandidate={lastSafeZoneDecision.IsCandidate}, " +
                 $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +
                 $"{lastSafeZoneDecision.RequiredConfirmationCount}, " +
