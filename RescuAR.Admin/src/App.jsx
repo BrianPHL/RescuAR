@@ -12,7 +12,7 @@ import InundationPrediction from './components/InundationPrediction';
 
 // Community & Reports Components
 import ReportsModeration from './components/ReportsModeration';
-import BroadcastLogs from './components/UserManagement';
+import UserManagement from './components/UserManagement';
 
 // Content & Management Components
 import Advisories from './components/Advisories';
@@ -68,8 +68,8 @@ export default function App({ session }) {
         return <div style={{ padding: '20px' }}>Residents Directory View (Placeholder)</div>;
       case 'community-sms-parser':
         return <div style={{ padding: '20px' }}>SMS Parser Console View (Placeholder)</div>;
-      case 'community-alerts':
-        return <BroadcastLogs />;
+      case 'community-user-management':
+        return <UserManagement />;
       case 'content-advisories':
         return <Advisories onOpenAdvisoryModal={() => setIsAdvisoryOpen(true)} />;
       case 'content-evacuation':

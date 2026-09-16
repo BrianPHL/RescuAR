@@ -130,8 +130,8 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>Reports Moderation</span>
               </div>
               <div 
-                className={`sidebar-link ${activeView === 'community-alerts' ? 'active' : ''}`}
-                onClick={() => onViewChange('community-alerts')}
+                className={`sidebar-link ${activeView === 'community-user-management' ? 'active' : ''}`}
+                onClick={() => onViewChange('community-user-management')}
               >
                 <span>User Management</span>
               </div>
