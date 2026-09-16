@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -164,16 +165,35 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QuickActionsToggleIconText))]
     [NotifyPropertyChangedFor(nameof(QuickActionsToggleLabelText))]
+    [NotifyPropertyChangedFor(nameof(IsQuickActionsCardVisible))]
+    [NotifyPropertyChangedFor(nameof(QuickActionsCarouselHeight))]
     private bool _isQuickActionsExpanded = true;
 
     public string QuickActionsToggleIconText => IsQuickActionsExpanded ? "▲" : "▼";
     public string QuickActionsToggleLabelText => IsQuickActionsExpanded ? "Hide" : "Show";
+
+    public bool HasQuickActions => QuickActions.Count > 0;
+    public bool IsQuickActionsCardVisible => QuickActions.Count > 0 && IsQuickActionsExpanded;
+
+    public double QuickActionsCarouselHeight
+    {
+        get
+        {
+            if (QuickActions.Count == 0 || !IsQuickActionsExpanded) return 0;
+            int maxItemsOnAnyPage = QuickActionPages.Select(p => p.Items.Count).DefaultIfEmpty(0).Max();
+            if (maxItemsOnAnyPage == 0) return 0;
+            int rows = (int)Math.Ceiling(maxItemsOnAnyPage / 3.0);
+            return Math.Min(2, rows) * 78.0;
+        }
+    }
 
     [RelayCommand]
     private void ToggleQuickActionsMinimize()
     {
         IsQuickActionsExpanded = !IsQuickActionsExpanded;
         Preferences.Default.Set("IsQuickActionsExpanded", IsQuickActionsExpanded);
+        OnPropertyChanged(nameof(IsQuickActionsCardVisible));
+        OnPropertyChanged(nameof(QuickActionsCarouselHeight));
     }
 
     [ObservableProperty]
@@ -455,8 +475,26 @@ public partial class DashboardViewModel : ObservableObject
         };
     }
 
+    private void SubscribeQuickActionItems()
+    {
+        foreach (var item in AllAvailableQuickActions)
+        {
+            item.PropertyChanged -= OnQuickActionItemPropertyChanged;
+            item.PropertyChanged += OnQuickActionItemPropertyChanged;
+        }
+    }
+
+    private void OnQuickActionItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(QuickActionItem.IsEnabled))
+        {
+            SyncEnabledQuickActions();
+        }
+    }
+
     private void SyncEnabledQuickActions()
     {
+        SubscribeQuickActionItems();
         QuickActions.Clear();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in AllAvailableQuickActions.Where(x => x.IsEnabled))
@@ -479,7 +517,10 @@ public partial class DashboardViewModel : ObservableObject
             });
         }
 
+        OnPropertyChanged(nameof(HasQuickActions));
+        OnPropertyChanged(nameof(IsQuickActionsCardVisible));
         OnPropertyChanged(nameof(HasMultipleQuickActionPages));
+        OnPropertyChanged(nameof(QuickActionsCarouselHeight));
         SaveQuickActions();
     }
 
