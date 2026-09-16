@@ -226,6 +226,64 @@
             </Border>
 
             <Border
+                x:Name="lowLightFallbackBanner"
+                IsVisible="False"
+                ZIndex="23"
+                Margin="8,48,8,0"
+                Padding="10,8"
+                VerticalOptions="Start"
+                BackgroundColor="#FBE1E3"
+                Stroke="#F2B4BA"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 5">
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+                    <Label
+                        x:Name="lowLightFallbackTitleLabel"
+                        Text="Low light—ground route unavailable"
+                        TextColor="#B4232B"
+                        FontSize="11"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center" />
+                    <Label
+                        x:Name="lowLightFallbackMessageLabel"
+                        Grid.Row="1"
+                        Text="Text guidance remains active. Open the 2D map or use the flashlight when safe."
+                        TextColor="#7A252B"
+                        FontSize="9.5"
+                        HorizontalTextAlignment="Center"
+                        LineBreakMode="WordWrap" />
+                    <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button
+                            x:Name="lowLightMapButton"
+                            Grid.Column="0"
+                            Text="Open 2D Map"
+                            HeightRequest="34"
+                            Padding="8,0"
+                            BackgroundColor="#0A929C"
+                            TextColor="White"
+                            FontSize="10"
+                            FontAttributes="Bold"
+                            CornerRadius="5"
+                            Clicked="OnLowLightMapClicked" />
+                        <Button
+                            x:Name="lowLightFlashlightButton"
+                            Grid.Column="1"
+                            Text="Turn On Flashlight"
+                            HeightRequest="34"
+                            Padding="8,0"
+                            BackgroundColor="#FFFFFF"
+                            BorderColor="#B4232B"
+                            BorderWidth="1"
+                            TextColor="#B4232B"
+                            FontSize="10"
+                            FontAttributes="Bold"
+                            CornerRadius="5"
+                            Clicked="OnLowLightFlashlightClicked" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border
                 x:Name="turnGuidancePanel"
                 IsVisible="False"
                 InputTransparent="True"

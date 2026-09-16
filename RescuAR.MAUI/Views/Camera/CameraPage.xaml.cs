@@ -115,7 +115,7 @@ namespace RescuAR.App.Views.Camera
 #endif
 
         private const long DynamicUiRefreshIntervalMilliseconds =
-            2_000;
+            1_000;
 
         private long lastDetailedStatusLogTimestamp =
             long.MinValue;
@@ -288,6 +288,11 @@ namespace RescuAR.App.Views.Camera
 
         private bool consultationRouteVisibilityOverrideActive;
 
+        private const int LowLightFallbackActivationMilliseconds =
+            1500;
+
+        private bool lowLightFallbackActive;
+
         private const double RouteLocatorVisibleHalfAngleDegrees =
             32.0;
 
@@ -307,6 +312,14 @@ namespace RescuAR.App.Views.Camera
 
         private RouteLocatorDirection lastLoggedRouteLocatorDirection =
             RouteLocatorDirection.Hidden;
+
+        private RouteLocatorDirection pendingRouteLocatorDirection =
+            RouteLocatorDirection.Hidden;
+
+        private int pendingRouteLocatorConfirmationCount;
+
+        private const int RouteLocatorConfirmationRefreshes =
+            2;
 
         /*
          * TEST SWITCH:
@@ -727,16 +740,14 @@ namespace RescuAR.App.Views.Camera
 
                     floodWaitingBanner.IsVisible =
                         floodMode &&
+                        !lowLightFallbackActive &&
                         (!currentFloodVisualization.IsAvailable ||
                          (HasLocalFloodDepth() &&
                           !HasVerifiedArGround())) &&
                         !safeZoneConfirmed;
 
                     floodWaitingLabel.Text =
-                        HasLocalFloodDepth() &&
-                        !HasVerifiedArGround()
-                            ? "Waiting for verified ground..."
-                            : "Waiting for simulation...";
+                        GetFloodWaitingMessage();
 
                     floodVisualizationLayer.IsVisible =
                         floodMode &&
@@ -787,6 +798,13 @@ namespace RescuAR.App.Views.Camera
 
                     developerHazardRerouteTestButton.IsVisible =
                         EnableDeveloperDynamicHazardValidation;
+
+                    if (!arCameraMode &&
+                        !floodMode)
+                    {
+                        lowLightFallbackBanner.IsVisible =
+                            false;
+                    }
 
                     if (!arCameraMode)
                     {
@@ -870,6 +888,7 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshCameraModuleDynamicUi()
         {
+            RefreshLowLightFallbackState();
             RefreshFloodGroundTrustState();
 
             bool arCameraMode =
@@ -928,20 +947,107 @@ namespace RescuAR.App.Views.Camera
 
             floodWaitingBanner.IsVisible =
                 floodMode &&
+                !lowLightFallbackActive &&
                 (!currentFloodVisualization.IsAvailable ||
                  (hasLocalFloodDepth &&
                   !verifiedFloodGround)) &&
                 !safeZoneConfirmed;
 
             floodWaitingLabel.Text =
-                hasLocalFloodDepth &&
-                !verifiedFloodGround
-                    ? "Waiting for verified ground..."
-                    : "Waiting for simulation...";
+                GetFloodWaitingMessage();
 
             RefreshEmergencyStatusBanner();
             RefreshArTrackingStatusBanner();
             RefreshRouteLocatorCue();
+        }
+
+        private void RefreshLowLightFallbackState()
+        {
+            ARCameraPoseBridge.SpatialSnapshot spatial =
+                ARCameraPoseBridge.CurrentFrame;
+
+            bool insufficientLight =
+                !spatial.IsTracking &&
+                !string.IsNullOrWhiteSpace(
+                    spatial.TrackingFailureReason) &&
+                spatial.TrackingFailureReason.Contains(
+                    "LIGHT",
+                    StringComparison.OrdinalIgnoreCase);
+
+            ARCameraSpatialController.SpatialContinuitySnapshot continuity =
+                ARCameraSpatialController.CurrentSpatialContinuity;
+
+            bool shouldActivate =
+                insufficientLight &&
+                continuity.DurationMilliseconds >=
+                    LowLightFallbackActivationMilliseconds;
+
+            bool stateChanged =
+                shouldActivate !=
+                    lowLightFallbackActive;
+
+            lowLightFallbackActive =
+                shouldActivate;
+
+            if (stateChanged)
+            {
+                if (lowLightFallbackActive)
+                {
+                    ARFloodDepthBridge.Clear(
+                        "sustained insufficient light");
+                }
+                else if (currentCameraModuleView ==
+                             CameraModuleViewMode.FloodDepth &&
+                         HasLocalFloodDepth() &&
+                         HasVerifiedArGround())
+                {
+                    ARFloodDepthBridge.PublishLocalDepth(
+                        currentFloodVisualization.LocalDepthMeters!.Value,
+                        currentFloodVisualization.SourceText);
+                }
+            }
+
+            bool showFallback =
+                pageIsVisible &&
+                (currentCameraModuleView ==
+                     CameraModuleViewMode.ArCamera ||
+                 currentCameraModuleView ==
+                     CameraModuleViewMode.FloodDepth) &&
+                lowLightFallbackActive &&
+                !safeZoneConfirmed;
+
+            lowLightFallbackBanner.IsVisible =
+                showFallback;
+
+            lowLightFlashlightButton.Text =
+                _arCoreService.IsFlashlightOn
+                    ? "Turn Off Flashlight"
+                    : "Turn On Flashlight";
+
+            bool floodMode =
+                currentCameraModuleView ==
+                    CameraModuleViewMode.FloodDepth;
+
+            lowLightFallbackTitleLabel.Text =
+                floodMode
+                    ? "Low light—flood visualization unavailable"
+                    : "Low light—ground route unavailable";
+
+            lowLightFallbackMessageLabel.Text =
+                floodMode
+                    ? "Flood depth is paused until tracking recovers. Open the 2D map or use the flashlight when safe."
+                    : "Text guidance remains active. Open the 2D map or use the flashlight when safe.";
+
+#if ANDROID
+            if (stateChanged)
+            {
+                Log.Info(
+                    RouteLogTag,
+                    lowLightFallbackActive
+                        ? "LOW-LIGHT FALLBACK ACTIVE: cyan ground geometry hidden; text guidance, real map access, and flashlight control remain available."
+                        : "LOW-LIGHT FALLBACK CLEARED: AR tracking recovered; normal cyan route confidence evaluation resumed.");
+            }
+#endif
         }
 
         private static bool HasVerifiedArGround()
@@ -951,6 +1057,37 @@ namespace RescuAR.App.Views.Camera
 
             return anchor.IsAvailable &&
                 !anchor.IsProvisional;
+        }
+
+        private static bool HasProvisionalArGround()
+        {
+            ARCameraPoseBridge.AnchorSnapshot anchor =
+                ARCameraPoseBridge.CurrentFrame.Anchor;
+
+            return anchor.IsAvailable &&
+                anchor.IsProvisional;
+        }
+
+        private string GetFloodWaitingMessage()
+        {
+            if (lowLightFallbackActive)
+            {
+                return "Low light — flood visualization paused.";
+            }
+
+            if (HasLocalFloodDepth() &&
+                HasProvisionalArGround())
+            {
+                return "Estimated ground only — scanning for verified floor...";
+            }
+
+            if (HasLocalFloodDepth() &&
+                !HasVerifiedArGround())
+            {
+                return "Scanning for verified floor...";
+            }
+
+            return "Waiting for simulation...";
         }
 
         private bool HasLocalFloodDepth()
@@ -991,7 +1128,8 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            if (verifiedGround)
+            if (verifiedGround &&
+                !lowLightFallbackActive)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
@@ -1000,7 +1138,9 @@ namespace RescuAR.App.Views.Camera
             else
             {
                 ARFloodDepthBridge.Clear(
-                    "provisional ground cannot support metric flood depth");
+                    lowLightFallbackActive
+                        ? "sustained insufficient light"
+                        : "provisional ground cannot support metric flood depth");
             }
 
 #if ANDROID
@@ -1008,10 +1148,12 @@ namespace RescuAR.App.Views.Camera
                 FloodDepthLogTag,
                 "FLOOD GROUND TRUST CHANGED: " +
                 $"verified={verifiedGround}, " +
-                $"arSpaceWater={verifiedGround}. " +
-                (verifiedGround
+                $"arSpaceWater={(verifiedGround && !lowLightFallbackActive)}. " +
+                (verifiedGround && !lowLightFallbackActive
                     ? "Verified ARCore ground now authorizes flood placement."
-                    : "Flood placement is held until verified ARCore ground is available."));
+                    : lowLightFallbackActive
+                        ? "Flood placement is held while insufficient light prevents reliable tracking."
+                        : "Flood placement is held until verified ARCore ground is available."));
 #endif
         }
 
@@ -1121,12 +1263,25 @@ namespace RescuAR.App.Views.Camera
                         AllowsRouteGeometry = true,
                         DisplayMessage =
                             provisionalGround
-                                ? "CONSULTATION PREVIEW — estimated floor; " +
-                                  "keep camera on clear ground"
-                                : "CONSULTATION PREVIEW — GPS accuracy reduced; " +
-                                  "do not use for evacuation"
+                                ? "Ground position estimated — keep the floor visible at the bottom of the camera"
+                                : "GPS accuracy reduced — verify direction with the 2D map"
                     }
                     : policyConfidence;
+
+            if (lowLightFallbackActive)
+            {
+                confidence =
+                    confidence with
+                    {
+                        State =
+                            ARGuidanceConfidencePolicy
+                                .GuidanceConfidenceState
+                                .Hidden,
+                        AllowsRouteGeometry = false,
+                        DisplayMessage =
+                            "Low light—ground route unavailable"
+                    };
+            }
 
             bool confidenceChanged =
                 confidence.State !=
@@ -1173,6 +1328,7 @@ namespace RescuAR.App.Views.Camera
             bool shouldShow =
                 arCameraMode &&
                 NavigationDestinationBridge.Current.IsAvailable &&
+                !lowLightFallbackActive &&
                 confidence.State !=
                     ARGuidanceConfidencePolicy.GuidanceConfidenceState.Full;
 
@@ -1182,9 +1338,11 @@ namespace RescuAR.App.Views.Camera
             turnGuidancePanel.Margin =
                 new Thickness(
                     8,
-                    shouldShow
-                        ? 88
-                        : 48,
+                    lowLightFallbackActive
+                        ? 158
+                        : shouldShow
+                            ? 88
+                            : 48,
                     8,
                     0);
 
@@ -1254,11 +1412,14 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshRouteLocatorCue()
         {
-            RouteLocatorDirection direction =
+            RouteLocatorDirection candidateDirection =
                 RouteLocatorDirection.Hidden;
 
             double signedAngleDegrees =
                 0.0;
+
+            bool routeVisibleInView =
+                false;
 
             if (currentCameraModuleView ==
                     CameraModuleViewMode.ArCamera &&
@@ -1268,7 +1429,9 @@ namespace RescuAR.App.Views.Camera
                 !dynamicRerouteInProgress &&
                 lastArGuidanceConfidence.AllowsRouteGeometry &&
                 TryGetRouteLocatorAngle(
-                    out signedAngleDegrees))
+                    out signedAngleDegrees,
+                    out routeVisibleInView) &&
+                !routeVisibleInView)
             {
                 double absoluteAngle =
                     Math.Abs(
@@ -1277,19 +1440,23 @@ namespace RescuAR.App.Views.Camera
                 if (absoluteAngle >=
                     RouteLocatorBehindAngleDegrees)
                 {
-                    direction =
+                    candidateDirection =
                         RouteLocatorDirection.Behind;
                 }
                 else if (absoluteAngle >
                          RouteLocatorVisibleHalfAngleDegrees)
                 {
-                    direction =
+                    candidateDirection =
                         signedAngleDegrees <
                             0.0
                             ? RouteLocatorDirection.Left
                             : RouteLocatorDirection.Right;
                 }
             }
+
+            RouteLocatorDirection direction =
+                StabilizeRouteLocatorDirection(
+                    candidateDirection);
 
             routeLocatorPanel.IsVisible =
                 direction !=
@@ -1330,7 +1497,8 @@ namespace RescuAR.App.Views.Camera
                     RouteLogTag,
                     "ROUTE LOCATOR CUE: " +
                     $"direction={direction}, " +
-                    $"cameraToRouteAngle={signedAngleDegrees:F1} deg. " +
+                    $"cameraToRouteAngle={signedAngleDegrees:F1} deg, " +
+                    $"routeVisibleInView={routeVisibleInView}. " +
                     "Cue is view-only; route geometry and search decisions " +
                     "remain unchanged.");
             }
@@ -1340,11 +1508,77 @@ namespace RescuAR.App.Views.Camera
                 direction;
         }
 
+        private RouteLocatorDirection StabilizeRouteLocatorDirection(
+            RouteLocatorDirection candidate)
+        {
+            /*
+             * Hiding a locator that is no longer trustworthy must be
+             * immediate. Showing it (or changing its side) requires two
+             * consecutive one-second observations so phone rotation and
+             * route-window updates do not make the cue flicker.
+             */
+            if (candidate ==
+                RouteLocatorDirection.Hidden)
+            {
+                pendingRouteLocatorDirection =
+                    RouteLocatorDirection.Hidden;
+
+                pendingRouteLocatorConfirmationCount =
+                    0;
+
+                return RouteLocatorDirection.Hidden;
+            }
+
+            if (candidate ==
+                lastLoggedRouteLocatorDirection)
+            {
+                pendingRouteLocatorDirection =
+                    RouteLocatorDirection.Hidden;
+
+                pendingRouteLocatorConfirmationCount =
+                    0;
+
+                return candidate;
+            }
+
+            if (candidate !=
+                pendingRouteLocatorDirection)
+            {
+                pendingRouteLocatorDirection =
+                    candidate;
+
+                pendingRouteLocatorConfirmationCount =
+                    1;
+
+                return RouteLocatorDirection.Hidden;
+            }
+
+            pendingRouteLocatorConfirmationCount++;
+
+            if (pendingRouteLocatorConfirmationCount <
+                RouteLocatorConfirmationRefreshes)
+            {
+                return RouteLocatorDirection.Hidden;
+            }
+
+            pendingRouteLocatorDirection =
+                RouteLocatorDirection.Hidden;
+
+            pendingRouteLocatorConfirmationCount =
+                0;
+
+            return candidate;
+        }
+
         private static bool TryGetRouteLocatorAngle(
-            out double signedAngleDegrees)
+            out double signedAngleDegrees,
+            out bool routeVisibleInView)
         {
             signedAngleDegrees =
                 0.0;
+
+            routeVisibleInView =
+                false;
 
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
@@ -1380,38 +1614,37 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            Vector3 cameraForward =
-                Vector3.Transform(
-                    new Vector3(
-                        0.0f,
-                        0.0f,
-                        -1.0f),
+            Quaternion cameraInverseRotation =
+                Quaternion.Inverse(
                     Quaternion.Normalize(
                         rotation));
 
-            double cameraHorizontalMagnitude =
-                Math.Sqrt(
-                    cameraForward.X *
-                        cameraForward.X +
-                    cameraForward.Z *
-                        cameraForward.Z);
-
-            if (!double.IsFinite(
-                    cameraHorizontalMagnitude) ||
-                cameraHorizontalMagnitude <
-                    0.10)
-            {
-                return false;
-            }
-
-            float targetDeltaX =
-                0.0f;
-
-            float targetDeltaZ =
-                0.0f;
-
-            bool targetAvailable =
+            bool preferredTargetAvailable =
                 false;
+
+            float preferredTargetDistance =
+                float.MaxValue;
+
+            double preferredTargetAngle =
+                0.0;
+
+            bool fallbackTargetAvailable =
+                false;
+
+            float fallbackTargetDistance =
+                float.MinValue;
+
+            double fallbackTargetAngle =
+                0.0;
+
+            bool previousPointAvailable =
+                false;
+
+            bool previousPointInFront =
+                false;
+
+            double previousPointAngle =
+                0.0;
 
             for (int i = 0;
                  i < route.Points.Count;
@@ -1436,67 +1669,128 @@ namespace RescuAR.App.Views.Camera
                     worldZ -
                         spatial.Pose.PositionZ;
 
+                Vector3 cameraLocalDelta =
+                    Vector3.Transform(
+                        new Vector3(
+                            deltaX,
+                            0.0f,
+                            deltaZ),
+                        cameraInverseRotation);
+
                 float distance =
                     MathF.Sqrt(
-                        deltaX *
-                            deltaX +
-                        deltaZ *
-                            deltaZ);
+                        cameraLocalDelta.X *
+                            cameraLocalDelta.X +
+                        cameraLocalDelta.Z *
+                            cameraLocalDelta.Z);
 
-                targetDeltaX =
-                    deltaX;
-
-                targetDeltaZ =
-                    deltaZ;
-
-                targetAvailable =
-                    float.IsFinite(
-                        distance);
-
-                if (targetAvailable &&
-                    distance >=
-                        RouteLocatorMinimumTargetDistanceMeters)
+                if (!float.IsFinite(distance) ||
+                    distance <
+                        0.10f)
                 {
-                    break;
+                    continue;
+                }
+
+                bool pointInFront =
+                    cameraLocalDelta.Z <
+                        -0.10f;
+
+                double pointAngle =
+                    NormalizeSignedDegrees(
+                        RadiansToDegrees(
+                            Math.Atan2(
+                                cameraLocalDelta.X,
+                                -cameraLocalDelta.Z)));
+
+                /*
+                 * Camera-local +X is screen-right. This is the coordinate
+                 * system the user actually sees and avoids the former
+                 * world-azimuth sign inversion. Suppress the locator whenever
+                 * a route point or segment already crosses the visible view.
+                 */
+                if (pointInFront &&
+                    Math.Abs(pointAngle) <=
+                        RouteLocatorVisibleHalfAngleDegrees)
+                {
+                    signedAngleDegrees =
+                        pointAngle;
+
+                    routeVisibleInView =
+                        true;
+
+                    return true;
+                }
+
+                if (previousPointAvailable &&
+                    previousPointInFront &&
+                    pointInFront &&
+                    Math.Sign(previousPointAngle) !=
+                        Math.Sign(pointAngle))
+                {
+                    signedAngleDegrees =
+                        0.0;
+
+                    routeVisibleInView =
+                        true;
+
+                    return true;
+                }
+
+                previousPointAvailable =
+                    true;
+
+                previousPointInFront =
+                    pointInFront;
+
+                previousPointAngle =
+                    pointAngle;
+
+                if (distance >=
+                        RouteLocatorMinimumTargetDistanceMeters &&
+                    distance <
+                        preferredTargetDistance)
+                {
+                    preferredTargetAvailable =
+                        true;
+
+                    preferredTargetDistance =
+                        distance;
+
+                    preferredTargetAngle =
+                        pointAngle;
+                }
+
+                if (distance >
+                    fallbackTargetDistance)
+                {
+                    fallbackTargetAvailable =
+                        true;
+
+                    fallbackTargetDistance =
+                        distance;
+
+                    fallbackTargetAngle =
+                        pointAngle;
                 }
             }
 
-            double targetHorizontalMagnitude =
-                Math.Sqrt(
-                    targetDeltaX *
-                        targetDeltaX +
-                    targetDeltaZ *
-                        targetDeltaZ);
-
-            if (!targetAvailable ||
-                !double.IsFinite(
-                    targetHorizontalMagnitude) ||
-                targetHorizontalMagnitude <
-                    0.10)
+            if (preferredTargetAvailable)
             {
-                return false;
+                signedAngleDegrees =
+                    preferredTargetAngle;
+
+                return true;
             }
 
-            double cameraAzimuthDegrees =
-                Normalize360Degrees(
-                    RadiansToDegrees(
-                        Math.Atan2(
-                            cameraForward.X,
-                            cameraForward.Z)));
+            if (fallbackTargetAvailable)
+            {
+                signedAngleDegrees =
+                    fallbackTargetAngle;
 
-            double targetAzimuthDegrees =
-                Normalize360Degrees(
-                    RadiansToDegrees(
-                        Math.Atan2(
-                            targetDeltaX,
-                            targetDeltaZ)));
+                return true;
+            }
 
-            signedAngleDegrees =
-                NormalizeSignedDegrees(
-                    targetAzimuthDegrees -
-                        cameraAzimuthDegrees);
-
-            return true;
+            return false;
         }
 
         private void RefreshTurnGuidancePanelForCurrentState()
@@ -1827,6 +2121,11 @@ namespace RescuAR.App.Views.Camera
 
             bool flashlightOn =
                 _arCoreService.IsFlashlightOn;
+
+            lowLightFlashlightButton.Text =
+                flashlightOn
+                    ? "Turn Off Flashlight"
+                    : "Turn On Flashlight";
 
             cameraFlashlightButton.BackgroundColor =
                 Color.FromArgb(
@@ -2952,6 +3251,26 @@ namespace RescuAR.App.Views.Camera
             await Task.CompletedTask;
             return false;
 #endif
+        }
+
+        private void OnLowLightFlashlightClicked(
+            object? sender,
+            EventArgs e)
+        {
+            OnCameraFlashlightClicked(
+                sender,
+                null!);
+        }
+
+        private async void OnLowLightMapClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (Shell.Current is not null)
+            {
+                await Shell.Current.GoToAsync(
+                    "//Map");
+            }
         }
 
         private async Task<(
@@ -6501,6 +6820,7 @@ namespace RescuAR.App.Views.Camera
             bool renderLocalDepthInAr =
                 hasLocalArDepth &&
                 HasVerifiedArGround() &&
+                !lowLightFallbackActive &&
                 currentCameraModuleView ==
                     CameraModuleViewMode.FloodDepth &&
                 pageIsVisible;
@@ -6551,10 +6871,11 @@ namespace RescuAR.App.Views.Camera
 
                     floodWaitingBanner.IsVisible =
                         hasLocalArDepth &&
+                        !lowLightFallbackActive &&
                         !HasVerifiedArGround();
 
                     floodWaitingLabel.Text =
-                        "Waiting for verified ground...";
+                        GetFloodWaitingMessage();
 
                     floodModeDepthSummaryLabel.Text =
                         snapshot.PrimaryText;
@@ -6605,7 +6926,8 @@ namespace RescuAR.App.Views.Camera
 
             bool shouldShow =
                 visible &&
-                floodModeActive;
+                floodModeActive &&
+                !lowLightFallbackActive;
 
             if (!shouldShow)
             {
@@ -6638,6 +6960,7 @@ namespace RescuAR.App.Views.Camera
 
                     floodWaitingBanner.IsVisible =
                         floodModeActive &&
+                        !lowLightFallbackActive &&
                         (!currentFloodVisualization.IsAvailable ||
                          (hasLocalArDepth &&
                           !verifiedGround)) &&
@@ -6645,10 +6968,7 @@ namespace RescuAR.App.Views.Camera
                         !safeZoneConfirmed;
 
                     floodWaitingLabel.Text =
-                        hasLocalArDepth &&
-                        !verifiedGround
-                            ? "Waiting for verified ground..."
-                            : "Waiting for simulation...";
+                        GetFloodWaitingMessage();
                 });
 
 #if ANDROID
@@ -6656,7 +6976,8 @@ namespace RescuAR.App.Views.Camera
                 FloodDepthLogTag,
                 $"Flood visualization visibility={shouldShow}; " +
                 $"verifiedGround={verifiedGround}; " +
-                $"arSpaceWater={(shouldShow && hasLocalArDepth && verifiedGround)}; " +
+                $"lowLight={lowLightFallbackActive}; " +
+                $"arSpaceWater={(shouldShow && hasLocalArDepth && verifiedGround && !lowLightFallbackActive)}; " +
                 $"reason='{reason}'.");
 #endif
         }
@@ -6686,7 +7007,7 @@ namespace RescuAR.App.Views.Camera
                         !safeZoneConfirmed;
 
                     floodWaitingLabel.Text =
-                        "Waiting for simulation...";
+                        GetFloodWaitingMessage();
 
                     floodModeDepthSummaryLabel.Text =
                         "No trusted local depth is currently available";

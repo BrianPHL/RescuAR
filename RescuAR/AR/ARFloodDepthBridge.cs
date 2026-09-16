@@ -1,6 +1,5 @@
 using RescuAR.Diagnostics;
 using System;
-using System.Threading;
 
 namespace RescuAR.AR;
 
@@ -72,22 +71,39 @@ public static class ARFloodDepthBridge
                 2.0f,
                 DefaultHorizontalExtentMeters);
 
-        long nextVersion =
-            Interlocked.Increment(
-                ref version);
+        string normalizedSource =
+            string.IsNullOrWhiteSpace(source)
+                ? "local flood depth"
+                : source.Trim();
 
-        FloodDepthSnapshot next =
-            new(
-                nextVersion,
-                true,
-                depth,
-                extent,
-                string.IsNullOrWhiteSpace(source)
-                    ? "local flood depth"
-                    : source.Trim());
+        long nextVersion;
+
+        FloodDepthSnapshot next;
 
         lock (sync)
         {
+            if (current.IsAvailable &&
+                MathF.Abs(current.LocalDepthMeters - depth) < 0.0001f &&
+                MathF.Abs(current.HorizontalExtentMeters - extent) < 0.0001f &&
+                string.Equals(
+                    current.Source,
+                    normalizedSource,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            nextVersion =
+                ++version;
+
+            next =
+                new FloodDepthSnapshot(
+                    nextVersion,
+                    true,
+                    depth,
+                    extent,
+                    normalizedSource);
+
             current =
                 next;
         }
@@ -104,12 +120,18 @@ public static class ARFloodDepthBridge
     public static void Clear(
         string reason = "cleared")
     {
-        long nextVersion =
-            Interlocked.Increment(
-                ref version);
+        long nextVersion;
 
         lock (sync)
         {
+            if (!current.IsAvailable)
+            {
+                return;
+            }
+
+            nextVersion =
+                ++version;
+
             current =
                 new FloodDepthSnapshot(
                     nextVersion,

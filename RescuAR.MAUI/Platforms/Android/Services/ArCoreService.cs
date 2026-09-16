@@ -216,13 +216,18 @@ public sealed partial class ArCoreService : IArCoreService
 
     private static readonly (float X, float Y)[] GroundPlaneSearchPattern =
     {
-        // First sample is also the DepthPoint confidence sample.
-        (0.50f, 0.80f),
+        /*
+         * Keep the primary confidence ray in the bottom-center camera region.
+         * A normally held phone can therefore see enough floor for acquisition
+         * without requiring the user to point the whole camera downward. Keep
+         * every ray clear of ARCore's unreliable bottom-edge hit-test margin.
+         */
+        (0.50f, 0.84f),
 
-        // Additional lower-view samples are Plane-only fallbacks.
-        (0.34f, 0.76f),
-        (0.66f, 0.76f),
-        (0.50f, 0.90f)
+        // Nearby Plane probes provide same-frame spatial verification.
+        (0.34f, 0.82f),
+        (0.66f, 0.82f),
+        (0.50f, 0.76f)
     };
 
     private const int GroundDepthCandidateSampleIndex =
@@ -1926,7 +1931,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 SpatialPoseTag,
-                "Searching for ARCore ground with V5 adaptive acquisition: " +
+                "Searching for ARCore ground with V6 safe-margin adaptive acquisition: " +
                 $"depthEnabled={depthModeEnabled}, " +
                 $"{GroundPlaneWorldDownSearchPattern.Length} world-down Plane ray + " +
                 $"{GroundPlaneSearchPattern.Length} lower-view screen rays, " +
@@ -2066,10 +2071,10 @@ public sealed partial class ArCoreService : IArCoreService
                         sampleIndex,
                         GroundPlaneSearchPattern.Length,
                         sampleDescription,
-                        out bool depthPointObserved);
+                        out bool acceptableDepthCandidateObserved);
 
                 groundDepthUnavailableSweepCount =
-                    depthPointObserved
+                    acceptableDepthCandidateObserved
                         ? 0
                         : groundDepthUnavailableSweepCount +
                             1;
@@ -2109,7 +2114,7 @@ public sealed partial class ArCoreService : IArCoreService
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms. " +
                 (depthModeEnabled
-                    ? "Aim the lower-center camera region at the floor and move slowly."
+                    ? "Keep the floor visible along the bottom of the camera view and move slowly."
                     : "Depth unavailable; keep textured floor visible while ARCore expands its Plane polygon."));
         }
     }
@@ -2306,9 +2311,9 @@ public sealed partial class ArCoreService : IArCoreService
         int sampleIndex,
         int sampleCount,
         string sampleDescription,
-        out bool depthPointObserved)
+        out bool acceptableDepthCandidateObserved)
     {
-        depthPointObserved =
+        acceptableDepthCandidateObserved =
             false;
 
         foreach (Google.AR.Core.HitResult hit in hitResults)
@@ -2317,9 +2322,6 @@ public sealed partial class ArCoreService : IArCoreService
             {
                 continue;
             }
-
-            depthPointObserved =
-                true;
 
             using Google.AR.Core.Pose? hitPose =
                 hit.HitPose;
@@ -2408,6 +2410,15 @@ public sealed partial class ArCoreService : IArCoreService
 
             groundDepthCandidateZ =
                 hitTranslation[2];
+
+            /*
+             * Only a height-, normal-, and stability-validated DepthPoint
+             * resets adaptive backoff. A raw rejected point is still a miss;
+             * otherwise one noisy edge hit can keep the expensive full sweep
+             * running indefinitely.
+             */
+            acceptableDepthCandidateObserved =
+                true;
 
             RecordGroundDepthConfidenceSample(
                 valid: true);
