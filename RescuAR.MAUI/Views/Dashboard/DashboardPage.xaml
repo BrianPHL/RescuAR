@@ -176,15 +176,17 @@
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- 4. Customizable Quick Actions Section (Compact 3-column × 2-row Grid with Horizontal Swipe Pages) -->
+                <!-- 4. Customizable Quick Actions Section (Always-Visible Header, 3x3 Grid Pages with Carousel Swipe) -->
                 <VerticalStackLayout Spacing="8">
+                    
+                    <!-- Header Bar (Always Visible: Title, Hide/Show Toggle, Customize Icon) -->
                     <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                         <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center" Margin="4,0,0,0">
                             <Path Data="M13,10V3L4,14H11V21L20,10H13Z" Fill="#0A8491" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
                             <Label Text="Quick Actions" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" VerticalOptions="Center" />
                         </HorizontalStackLayout>
                         
-                        <!-- Top Right Action Buttons: Minimize/Expand + Customize -->
+                        <!-- Top Right Action Buttons: Hide/Show Toggle + Customize -->
                         <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
                             <!-- Minimize / Expand Toggle Icon Button -->
                             <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="8,6" VerticalOptions="Center">
@@ -211,58 +213,90 @@
                         </HorizontalStackLayout>
                     </Grid>
 
-                    <!-- Compact 4-Column Quick Actions Grid (Evenly Distributed, No Overlap, Natural Tight Height) -->
-                    <Border IsVisible="{Binding IsQuickActionsExpanded}" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="6,10">
-                        <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                            <FlexLayout BindableLayout.ItemsSource="{Binding QuickActions}"
-                                        Direction="Column"
-                                        Wrap="Wrap"
-                                        HeightRequest="118"
-                                        AlignContent="Start"
-                                        JustifyContent="SpaceBetween">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="models:QuickActionItem">
-                                        <Grid WidthRequest="76"
-                                              HeightRequest="56"
-                                              Padding="1,0"
-                                              RowDefinitions="Auto,Auto"
-                                              RowSpacing="3"
-                                              HorizontalOptions="Center"
-                                              VerticalOptions="Center">
-                                            <Grid.GestureRecognizers>
-                                                <TapGestureRecognizer Command="{Binding ViewModel.ExecuteQuickActionCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
-                                                                      CommandParameter="{Binding .}" />
-                                            </Grid.GestureRecognizers>
-                                            <!-- Clean Vector Icon (Centered Top - No Box) -->
-                                            <Grid Grid.Row="0"
-                                                  WidthRequest="24"
-                                                  HeightRequest="24"
-                                                  HorizontalOptions="Center"
-                                                  VerticalOptions="Center">
-                                                <Image Source="{Binding IconImage}"
-                                                       WidthRequest="22"
-                                                       HeightRequest="22"
-                                                       Aspect="AspectFit"
-                                                       HorizontalOptions="Center"
-                                                       VerticalOptions="Center" />
-                                            </Grid>
+                    <!-- White Rectangle Box Card (Only visible when actions exist and expanded; hidden when 0 actions enabled) -->
+                    <Border IsVisible="{Binding IsQuickActionsCardVisible}"
+                            BackgroundColor="#FFFFFF"
+                            Stroke="#E2E8F0"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 16"
+                            Padding="6,10">
+                        <VerticalStackLayout Spacing="6">
+                            
+                            <!-- 3x3 Grid CarouselView (Swipe horizontally to see remaining turned-on actions) -->
+                            <CarouselView ItemsSource="{Binding QuickActionPages}"
+                                          IndicatorView="QuickActionsIndicator"
+                                          HeightRequest="{Binding QuickActionsCarouselHeight}"
+                                          Loop="False"
+                                          HorizontalScrollBarVisibility="Never">
+                                <CarouselView.ItemsLayout>
+                                    <LinearItemsLayout Orientation="Horizontal"
+                                                       SnapPointsAlignment="Center"
+                                                       SnapPointsType="MandatorySingle" />
+                                </CarouselView.ItemsLayout>
+                                <CarouselView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:QuickActionPage">
+                                        <FlexLayout BindableLayout.ItemsSource="{Binding Items}"
+                                                    Direction="Row"
+                                                    Wrap="Wrap"
+                                                    JustifyContent="Start"
+                                                    AlignItems="Start">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate x:DataType="models:QuickActionItem">
+                                                    <Grid FlexLayout.Basis="33.33%"
+                                                          Margin="0,4,0,6"
+                                                          HorizontalOptions="Center"
+                                                          VerticalOptions="Start">
+                                                        <Grid.GestureRecognizers>
+                                                            <TapGestureRecognizer Command="{Binding ViewModel.ExecuteQuickActionCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
+                                                                                  CommandParameter="{Binding .}" />
+                                                        </Grid.GestureRecognizers>
 
-                                            <!-- Action Label Centered Directly Below -->
-                                            <Label Grid.Row="1"
-                                                   Text="{Binding Title}"
-                                                   TextColor="#475569"
-                                                   FontSize="9.5"
-                                                   FontAttributes="Bold"
-                                                   HorizontalTextAlignment="Center"
-                                                   VerticalTextAlignment="Start"
-                                                   LineBreakMode="WordWrap"
-                                                   MaxLines="2"
-                                                   HorizontalOptions="Center" />
-                                        </Grid>
+                                                        <VerticalStackLayout Spacing="5" HorizontalOptions="Center" VerticalOptions="Start">
+                                                            <!-- Centered Vector Icon Badge Box -->
+                                                            <Border BackgroundColor="#F8FAFC"
+                                                                    Stroke="#E2E8F0"
+                                                                    StrokeThickness="1"
+                                                                    StrokeShape="RoundRectangle 14"
+                                                                    WidthRequest="46"
+                                                                    HeightRequest="46"
+                                                                    HorizontalOptions="Center"
+                                                                    VerticalOptions="Center">
+                                                                <Image Source="{Binding IconImage}"
+                                                                       WidthRequest="22"
+                                                                       HeightRequest="22"
+                                                                       Aspect="AspectFit"
+                                                                       HorizontalOptions="Center"
+                                                                       VerticalOptions="Center" />
+                                                            </Border>
+
+                                                            <!-- Centered Action Title -->
+                                                            <Label Text="{Binding Title}"
+                                                                   TextColor="#334155"
+                                                                   FontSize="10"
+                                                                   FontAttributes="Bold"
+                                                                   HorizontalTextAlignment="Center"
+                                                                   VerticalTextAlignment="Start"
+                                                                   LineBreakMode="TailTruncation"
+                                                                   MaxLines="1"
+                                                                   HorizontalOptions="Center" />
+                                                        </VerticalStackLayout>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </FlexLayout>
                                     </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                            </FlexLayout>
-                        </ScrollView>
+                                </CarouselView.ItemTemplate>
+                            </CarouselView>
+
+                            <!-- Subtle Page Dots Indicator (Slide/Swipe to next page if turned-on actions exceed 6 items) -->
+                            <IndicatorView x:Name="QuickActionsIndicator"
+                                           IsVisible="{Binding HasMultipleQuickActionPages}"
+                                           IndicatorColor="#CBD5E1"
+                                           SelectedIndicatorColor="#0A8491"
+                                           IndicatorSize="6"
+                                           HorizontalOptions="Center"
+                                           Margin="0,2,0,2" />
+                        </VerticalStackLayout>
                     </Border>
                 </VerticalStackLayout>
 
@@ -549,12 +583,7 @@
                                                 </VerticalStackLayout>
 
                                                 <!-- Toggle Switch -->
-                                                <Switch Grid.Column="2" IsToggled="{Binding IsEnabled}" OnColor="#0A8491" VerticalOptions="Center">
-                                                    <Switch.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding ViewModel.ToggleQuickActionItemCommand, Source={x:Reference DashboardRoot}, x:DataType=dashboard:DashboardPage}"
-                                                                              CommandParameter="{Binding .}" />
-                                                    </Switch.GestureRecognizers>
-                                                </Switch>
+                                                <Switch Grid.Column="2" IsToggled="{Binding IsEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
 
                                                 <!-- Solid Trash Can Delete Button for Custom Actions -->
                                                 <Border Grid.Column="3" IsVisible="{Binding IsCustom}" BackgroundColor="#FEE2E2" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6" VerticalOptions="Center">
