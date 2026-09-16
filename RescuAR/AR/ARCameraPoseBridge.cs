@@ -101,6 +101,7 @@ public static class ARCameraPoseBridge
         float nearPlane,
         float farPlane,
         bool anchorAvailable,
+        bool anchorIsProvisional,
         float anchorX,
         float anchorY,
         float anchorZ,
@@ -128,6 +129,7 @@ public static class ARCameraPoseBridge
             anchorAvailable
                 ? new AnchorSnapshot(
                     true,
+                    anchorIsProvisional,
                     anchorX,
                     anchorY,
                     anchorZ)
@@ -394,23 +396,27 @@ public static class ARCameraPoseBridge
         public static AnchorSnapshot Unavailable =>
             new(
                 false,
+                false,
                 0,
                 0,
                 0);
 
         public AnchorSnapshot(
             bool isAvailable,
+            bool isProvisional,
             float positionX,
             float positionY,
             float positionZ)
         {
             IsAvailable = isAvailable;
+            IsProvisional = isProvisional;
             PositionX = positionX;
             PositionY = positionY;
             PositionZ = positionZ;
         }
 
         public bool IsAvailable { get; }
+        public bool IsProvisional { get; }
         public float PositionX { get; }
         public float PositionY { get; }
         public float PositionZ { get; }

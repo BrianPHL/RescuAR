@@ -774,6 +774,7 @@ public static class ARCameraSpatialController
         if (hasFloodDepthGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
+            !anchor.IsProvisional &&
             routeGroundHeightPlausible)
         {
             Vector3 markerPosition =
@@ -798,6 +799,20 @@ public static class ARCameraSpatialController
              * Explicit bridge clear / Flood Depth mode exit wins over visual
              * continuity. Do not resurrect geometry the feature no longer
              * considers active.
+             */
+            floodDepthRoot.IsEnabled =
+                false;
+
+            hasValidFloodDepthSpatialPlacement =
+                false;
+        }
+        else if (anchor.IsProvisional)
+        {
+            /*
+             * Flood height is a metric measurement and must never inherit the
+             * consultation-only estimated floor. Wait for a verified ARCore
+             * Plane/Depth anchor even if an older frozen flood placement was
+             * previously available.
              */
             floodDepthRoot.IsEnabled =
                 false;

@@ -265,6 +265,26 @@ namespace RescuAR.App.Views.Camera
 
         private bool consultationRouteVisibilityOverrideActive;
 
+        private const double RouteLocatorVisibleHalfAngleDegrees =
+            32.0;
+
+        private const double RouteLocatorBehindAngleDegrees =
+            145.0;
+
+        private const float RouteLocatorMinimumTargetDistanceMeters =
+            2.5f;
+
+        private enum RouteLocatorDirection
+        {
+            Hidden = 0,
+            Left = 1,
+            Right = 2,
+            Behind = 3
+        }
+
+        private RouteLocatorDirection lastLoggedRouteLocatorDirection =
+            RouteLocatorDirection.Hidden;
+
         /*
          * TEST SWITCH:
          * Normal navigation baseline. Set true only for deliberate indoor
@@ -874,6 +894,7 @@ namespace RescuAR.App.Views.Camera
 
             RefreshEmergencyStatusBanner();
             RefreshArTrackingStatusBanner();
+            RefreshRouteLocatorCue();
         }
 
         private void RefreshArTrackingStatusBanner()
@@ -959,22 +980,33 @@ namespace RescuAR.App.Views.Camera
                     dynamicRerouteInProgress,
                     verifiedRecoveryConnector);
 
+            bool provisionalGround =
+                _arCoreService.IsGroundAnchorProvisional;
+
             consultationRouteVisibilityOverrideActive =
                 ShouldEnableConsultationRouteVisibilityOverride(
                     policyConfidence,
                     route,
                     progress,
                     headingTrusted,
-                    continuity);
+                    continuity,
+                    provisionalGround);
 
             ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot confidence =
                 consultationRouteVisibilityOverrideActive
                     ? policyConfidence with
                     {
+                        State =
+                            ARGuidanceConfidencePolicy
+                                .GuidanceConfidenceState
+                                .Degraded,
                         AllowsRouteGeometry = true,
                         DisplayMessage =
-                            "CONSULTATION PREVIEW — GPS accuracy reduced; " +
-                            "do not use for evacuation"
+                            provisionalGround
+                                ? "CONSULTATION PREVIEW — estimated floor; " +
+                                  "keep camera on clear ground"
+                                : "CONSULTATION PREVIEW — GPS accuracy reduced; " +
+                                  "do not use for evacuation"
                     }
                     : policyConfidence;
 
@@ -1013,6 +1045,7 @@ namespace RescuAR.App.Views.Camera
                     $"gps={gpsConfidence}, " +
                     $"routeMatch={routeMatchConfidence}, " +
                     $"spatial={continuity.State}, " +
+                    $"provisionalGround={provisionalGround}, " +
                     $"consultationOverride=" +
                     $"{consultationRouteVisibilityOverrideActive}, " +
                     $"reason='{confidence.DisplayMessage}'.");
@@ -1077,10 +1110,12 @@ namespace RescuAR.App.Views.Camera
             ARRouteBridge.RouteSnapshot route,
             RouteProgressTracker.ProgressSnapshot progress,
             bool headingTrusted,
-            ARCameraSpatialController.SpatialContinuitySnapshot spatial)
+            ARCameraSpatialController.SpatialContinuitySnapshot spatial,
+            bool provisionalGround)
         {
             if (!EnableConsultationRouteVisibilityOverride ||
-                policyConfidence.AllowsRouteGeometry ||
+                (policyConfidence.AllowsRouteGeometry &&
+                 !provisionalGround) ||
                 !NavigationDestinationBridge.Current.IsAvailable ||
                 !route.IsAvailable ||
                 !route.NavigationState.IsAvailable ||
@@ -1097,6 +1132,253 @@ namespace RescuAR.App.Views.Camera
                        ARCameraSpatialController.SpatialContinuityState.Live ||
                    spatial.State ==
                        ARCameraSpatialController.SpatialContinuityState.ShortHold;
+        }
+
+        private void RefreshRouteLocatorCue()
+        {
+            RouteLocatorDirection direction =
+                RouteLocatorDirection.Hidden;
+
+            double signedAngleDegrees =
+                0.0;
+
+            if (currentCameraModuleView ==
+                    CameraModuleViewMode.ArCamera &&
+                pageIsVisible &&
+                !emergencyAdvisoryVisible &&
+                !safeZoneConfirmed &&
+                !dynamicRerouteInProgress &&
+                lastArGuidanceConfidence.AllowsRouteGeometry &&
+                TryGetRouteLocatorAngle(
+                    out signedAngleDegrees))
+            {
+                double absoluteAngle =
+                    Math.Abs(
+                        signedAngleDegrees);
+
+                if (absoluteAngle >=
+                    RouteLocatorBehindAngleDegrees)
+                {
+                    direction =
+                        RouteLocatorDirection.Behind;
+                }
+                else if (absoluteAngle >
+                         RouteLocatorVisibleHalfAngleDegrees)
+                {
+                    direction =
+                        signedAngleDegrees <
+                            0.0
+                            ? RouteLocatorDirection.Left
+                            : RouteLocatorDirection.Right;
+                }
+            }
+
+            routeLocatorPanel.IsVisible =
+                direction !=
+                    RouteLocatorDirection.Hidden;
+
+            switch (direction)
+            {
+                case RouteLocatorDirection.Left:
+                    routeLocatorIcon.Source =
+                        "lucide_arrow_up_left_teal.png";
+                    routeLocatorLabel.Text =
+                        "Look left to find the cyan route";
+                    break;
+
+                case RouteLocatorDirection.Right:
+                    routeLocatorIcon.Source =
+                        "lucide_arrow_up_right_teal.png";
+                    routeLocatorLabel.Text =
+                        "Look right to find the cyan route";
+                    break;
+
+                case RouteLocatorDirection.Behind:
+                    routeLocatorIcon.Source =
+                        signedAngleDegrees <
+                            0.0
+                            ? "lucide_arrow_up_left_teal.png"
+                            : "lucide_arrow_up_right_teal.png";
+                    routeLocatorLabel.Text =
+                        "Turn your phone around to find the cyan route";
+                    break;
+            }
+
+#if ANDROID
+            if (direction !=
+                lastLoggedRouteLocatorDirection)
+            {
+                Log.Debug(
+                    RouteLogTag,
+                    "ROUTE LOCATOR CUE: " +
+                    $"direction={direction}, " +
+                    $"cameraToRouteAngle={signedAngleDegrees:F1} deg. " +
+                    "Cue is view-only; route geometry and search decisions " +
+                    "remain unchanged.");
+            }
+#endif
+
+            lastLoggedRouteLocatorDirection =
+                direction;
+        }
+
+        private static bool TryGetRouteLocatorAngle(
+            out double signedAngleDegrees)
+        {
+            signedAngleDegrees =
+                0.0;
+
+            ARCameraPoseBridge.SpatialSnapshot spatial =
+                ARCameraPoseBridge.CurrentFrame;
+
+            ARRouteBridge.RouteSnapshot route =
+                ARRouteBridge.Current;
+
+            if (!spatial.IsTracking ||
+                !spatial.Pose.IsTracking ||
+                !spatial.Anchor.IsAvailable ||
+                !route.IsAvailable ||
+                route.Points.Count <
+                    2)
+            {
+                return false;
+            }
+
+            Quaternion rotation =
+                new(
+                    spatial.Pose.RotationX,
+                    spatial.Pose.RotationY,
+                    spatial.Pose.RotationZ,
+                    spatial.Pose.RotationW);
+
+            float quaternionLengthSquared =
+                rotation.LengthSquared();
+
+            if (!float.IsFinite(
+                    quaternionLengthSquared) ||
+                quaternionLengthSquared <
+                    0.0001f)
+            {
+                return false;
+            }
+
+            Vector3 cameraForward =
+                Vector3.Transform(
+                    new Vector3(
+                        0.0f,
+                        0.0f,
+                        -1.0f),
+                    Quaternion.Normalize(
+                        rotation));
+
+            double cameraHorizontalMagnitude =
+                Math.Sqrt(
+                    cameraForward.X *
+                        cameraForward.X +
+                    cameraForward.Z *
+                        cameraForward.Z);
+
+            if (!double.IsFinite(
+                    cameraHorizontalMagnitude) ||
+                cameraHorizontalMagnitude <
+                    0.10)
+            {
+                return false;
+            }
+
+            float targetDeltaX =
+                0.0f;
+
+            float targetDeltaZ =
+                0.0f;
+
+            bool targetAvailable =
+                false;
+
+            for (int i = 0;
+                 i < route.Points.Count;
+                 i++)
+            {
+                ArHorizontalRoutePoint point =
+                    route.Points[i];
+
+                float worldX =
+                    spatial.Anchor.PositionX +
+                        point.X;
+
+                float worldZ =
+                    spatial.Anchor.PositionZ +
+                        point.Z;
+
+                float deltaX =
+                    worldX -
+                        spatial.Pose.PositionX;
+
+                float deltaZ =
+                    worldZ -
+                        spatial.Pose.PositionZ;
+
+                float distance =
+                    MathF.Sqrt(
+                        deltaX *
+                            deltaX +
+                        deltaZ *
+                            deltaZ);
+
+                targetDeltaX =
+                    deltaX;
+
+                targetDeltaZ =
+                    deltaZ;
+
+                targetAvailable =
+                    float.IsFinite(
+                        distance);
+
+                if (targetAvailable &&
+                    distance >=
+                        RouteLocatorMinimumTargetDistanceMeters)
+                {
+                    break;
+                }
+            }
+
+            double targetHorizontalMagnitude =
+                Math.Sqrt(
+                    targetDeltaX *
+                        targetDeltaX +
+                    targetDeltaZ *
+                        targetDeltaZ);
+
+            if (!targetAvailable ||
+                !double.IsFinite(
+                    targetHorizontalMagnitude) ||
+                targetHorizontalMagnitude <
+                    0.10)
+            {
+                return false;
+            }
+
+            double cameraAzimuthDegrees =
+                Normalize360Degrees(
+                    RadiansToDegrees(
+                        Math.Atan2(
+                            cameraForward.X,
+                            cameraForward.Z)));
+
+            double targetAzimuthDegrees =
+                Normalize360Degrees(
+                    RadiansToDegrees(
+                        Math.Atan2(
+                            targetDeltaX,
+                            targetDeltaZ)));
+
+            signedAngleDegrees =
+                NormalizeSignedDegrees(
+                    targetAzimuthDegrees -
+                        cameraAzimuthDegrees);
+
+            return true;
         }
 
         private void RefreshTurnGuidancePanelForCurrentState()
@@ -5102,6 +5384,25 @@ namespace RescuAR.App.Views.Camera
                 guidance.Instruction ==
                     PedestrianTurnGuidanceService.TurnInstruction.UTurn;
 
+            double visibleRouteHorizonMeters =
+                GetVisibleRouteHorizonMeters();
+
+            bool turnInstruction =
+                IsDirectionalTurnInstruction(
+                    guidance.Instruction);
+
+            bool turnBeyondVisibleCyanRoute =
+                turnInstruction &&
+                double.IsFinite(
+                    guidance.DistanceToTurnMeters) &&
+                double.IsFinite(
+                    visibleRouteHorizonMeters) &&
+                guidance.DistanceToTurnMeters >
+                    Math.Max(
+                        10.0,
+                        visibleRouteHorizonMeters +
+                            2.0);
+
             /*
              * The Figma prototype uses a pale green corrective card for
              * "Go back" while ordinary route instructions use the neutral
@@ -5146,13 +5447,22 @@ namespace RescuAR.App.Views.Camera
                     "lucide_chevron_down_black.png";
             }
 
-            switch (guidance.Instruction)
+            if (turnBeyondVisibleCyanRoute)
+            {
+                turnDirectionIconLabel.Source =
+                    "lucide_arrow_up_teal.png";
+
+                turnInstructionLabel.Text =
+                    $"Continue straight — {GetUpcomingTurnText(guidance.Instruction)} " +
+                    $"in {distanceText}";
+            }
+            else switch (guidance.Instruction)
             {
                 case PedestrianTurnGuidanceService.TurnInstruction.SlightLeft:
                     turnDirectionIconLabel.Source =
                         "lucide_arrow_up_left_teal.png";
                     turnInstructionLabel.Text =
-                        $"Bear left for {distanceText}";
+                        $"Bear left in {distanceText}";
                     break;
 
                 case PedestrianTurnGuidanceService.TurnInstruction.Left:
@@ -5167,7 +5477,7 @@ namespace RescuAR.App.Views.Camera
                     turnDirectionIconLabel.Source =
                         "lucide_arrow_up_right_teal.png";
                     turnInstructionLabel.Text =
-                        $"Bear right for {distanceText}";
+                        $"Bear right in {distanceText}";
                     break;
 
                 case PedestrianTurnGuidanceService.TurnInstruction.Right:
@@ -5203,6 +5513,86 @@ namespace RescuAR.App.Views.Camera
             turnDistanceLabel.Text =
                 $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} meters away from the " +
                 "nearest evacuation center";
+        }
+
+        private static bool IsDirectionalTurnInstruction(
+            PedestrianTurnGuidanceService.TurnInstruction instruction)
+        {
+            return instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.SlightLeft ||
+                   instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.Left ||
+                   instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.SharpLeft ||
+                   instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.SlightRight ||
+                   instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.Right ||
+                   instruction ==
+                       PedestrianTurnGuidanceService.TurnInstruction.SharpRight;
+        }
+
+        private static string GetUpcomingTurnText(
+            PedestrianTurnGuidanceService.TurnInstruction instruction)
+        {
+            return instruction switch
+            {
+                PedestrianTurnGuidanceService.TurnInstruction.SlightLeft =>
+                    "bear left",
+                PedestrianTurnGuidanceService.TurnInstruction.Left =>
+                    "turn left",
+                PedestrianTurnGuidanceService.TurnInstruction.SharpLeft =>
+                    "sharp left",
+                PedestrianTurnGuidanceService.TurnInstruction.SlightRight =>
+                    "bear right",
+                PedestrianTurnGuidanceService.TurnInstruction.Right =>
+                    "turn right",
+                PedestrianTurnGuidanceService.TurnInstruction.SharpRight =>
+                    "sharp right",
+                _ =>
+                    "turn"
+            };
+        }
+
+        private static double GetVisibleRouteHorizonMeters()
+        {
+            ARRouteBridge.RouteSnapshot route =
+                ARRouteBridge.Current;
+
+            if (!route.IsAvailable ||
+                route.Points.Count ==
+                    0)
+            {
+                return double.NaN;
+            }
+
+            double maximumDistance =
+                double.NaN;
+
+            for (int i = 0;
+                 i < route.Points.Count;
+                 i++)
+            {
+                double distance =
+                    route.Points[i]
+                        .DistanceFromWindowStartMeters;
+
+                if (!double.IsFinite(
+                        distance))
+                {
+                    continue;
+                }
+
+                maximumDistance =
+                    !double.IsFinite(
+                        maximumDistance)
+                        ? distance
+                        : Math.Max(
+                            maximumDistance,
+                            distance);
+            }
+
+            return maximumDistance;
         }
 
         private void ApplyPrototypeHazardReroutingState(

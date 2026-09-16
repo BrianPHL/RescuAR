@@ -84,6 +84,14 @@ public interface IArCoreService
     /// </summary>
     long GroundAnchorReplacementGeneration { get; }
 
+    /// <summary>
+    /// True while the spatial bridge is using a short-lived camera-height
+    /// floor estimate so guidance can start before ARCore confirms a Plane or
+    /// DepthPoint. The service continues searching for verified ground and
+    /// clears this flag as soon as a tracked ARCore anchor replaces it.
+    /// </summary>
+    bool IsGroundAnchorProvisional { get; }
+
     bool IsInitialized { get; }
 
     Session? Session { get; }

@@ -253,6 +253,25 @@ public sealed partial class ArCoreService : IArCoreService
     private const float GroundPlaneMinimumSampleSeparationMeters =
         0.30f;
 
+    /*
+     * EMERGENCY STARTUP FLOOR ESTIMATE
+     * --------------------------------
+     * ARCore Plane growth can take 10-16 seconds on glossy or repetitive
+     * indoor floors. After a short verified-tracking interval, publish a
+     * fixed camera-relative floor estimate so consultation guidance can begin
+     * without waiting for Plane polygon growth. Real Plane/Depth acquisition
+     * continues unchanged in the background and always replaces this estimate.
+     *
+     * The value approximates a hand-held phone height. It is deliberately a
+     * presentation reference, never an ARCore Anchor and never evidence that
+     * the physical floor has been verified.
+     */
+    private const long ProvisionalGroundDelayMilliseconds =
+        1500;
+
+    private const float ProvisionalCameraHeightMeters =
+        1.35f;
+
     private long nextGroundPlaneSearchTimestamp =
         long.MinValue;
 
@@ -308,6 +327,19 @@ public sealed partial class ArCoreService : IArCoreService
         1000.0f;
 
     private Google.AR.Core.Anchor? spatialGroundAnchor;
+
+    private bool hasProvisionalGroundReference;
+
+    private float provisionalGroundX;
+    private float provisionalGroundY;
+    private float provisionalGroundZ;
+
+    private int isGroundAnchorProvisional;
+
+    public bool IsGroundAnchorProvisional =>
+        Volatile.Read(
+            ref isGroundAnchorProvisional) ==
+                1;
 
     /*
      * Ground-anchor recovery is owned exclusively by
@@ -1756,6 +1788,26 @@ public sealed partial class ArCoreService : IArCoreService
                 out float anchorY,
                 out float anchorZ);
 
+        if (anchorAvailable)
+        {
+            if (hasProvisionalGroundReference)
+            {
+                RegisterProvisionalGroundVerification();
+            }
+
+            ClearProvisionalGroundReference(
+                "verified ARCore ground anchor is tracking");
+        }
+        else if (spatialGroundAnchor is null)
+        {
+            anchorAvailable =
+                TryGetProvisionalGroundReference(
+                    translation,
+                    out anchorX,
+                    out anchorY,
+                    out anchorZ);
+        }
+
         /*
          * Publish camera, projection, anchor, tracking, and timestamp as one
          * coherent snapshot.
@@ -1774,6 +1826,7 @@ public sealed partial class ArCoreService : IArCoreService
             SpatialProjectionNearPlane,
             SpatialProjectionFarPlane,
             anchorAvailable,
+            IsGroundAnchorProvisional,
             anchorX,
             anchorY,
             anchorZ,
@@ -2588,10 +2641,153 @@ public sealed partial class ArCoreService : IArCoreService
         return true;
     }
 
+    private bool TryGetProvisionalGroundReference(
+        float[] cameraTranslation,
+        out float anchorX,
+        out float anchorY,
+        out float anchorZ)
+    {
+        anchorX = 0.0f;
+        anchorY = 0.0f;
+        anchorZ = 0.0f;
+
+        if (cameraTranslation is null ||
+            cameraTranslation.Length <
+                3 ||
+            groundPlaneSearchStartedTimestamp ==
+                long.MinValue)
+        {
+            return false;
+        }
+
+        long elapsedMilliseconds =
+            Math.Max(
+                0,
+                Environment.TickCount64 -
+                    groundPlaneSearchStartedTimestamp);
+
+        if (!hasProvisionalGroundReference)
+        {
+            if (elapsedMilliseconds <
+                ProvisionalGroundDelayMilliseconds)
+            {
+                return false;
+            }
+
+            provisionalGroundX =
+                cameraTranslation[0];
+
+            provisionalGroundY =
+                cameraTranslation[1] -
+                    ProvisionalCameraHeightMeters;
+
+            provisionalGroundZ =
+                cameraTranslation[2];
+
+            hasProvisionalGroundReference =
+                true;
+
+            Volatile.Write(
+                ref isGroundAnchorProvisional,
+                1);
+
+            Log.Warn(
+                SpatialPoseTag,
+                "PROVISIONAL ground reference published for emergency-start " +
+                "consultation: " +
+                $"delay={elapsedMilliseconds}ms, " +
+                $"estimatedCameraHeight={ProvisionalCameraHeightMeters:F2}m, " +
+                $"reference=({provisionalGroundX:F2}," +
+                $"{provisionalGroundY:F2},{provisionalGroundZ:F2}). " +
+                "Plane/Depth verification remains active; do not treat this " +
+                "estimate as a verified physical floor.");
+        }
+
+        anchorX =
+            provisionalGroundX;
+
+        anchorY =
+            provisionalGroundY;
+
+        anchorZ =
+            provisionalGroundZ;
+
+        return true;
+    }
+
+    private void ClearProvisionalGroundReference(
+        string reason)
+    {
+        if (!hasProvisionalGroundReference &&
+            Volatile.Read(
+                ref isGroundAnchorProvisional) ==
+                    0)
+        {
+            return;
+        }
+
+        hasProvisionalGroundReference =
+            false;
+
+        provisionalGroundX =
+            0.0f;
+
+        provisionalGroundY =
+            0.0f;
+
+        provisionalGroundZ =
+            0.0f;
+
+        Volatile.Write(
+            ref isGroundAnchorProvisional,
+            0);
+
+        Log.Debug(
+            SpatialPoseTag,
+            "Provisional ground reference cleared: " +
+            reason +
+            ". Verified-anchor placement/rebase is now authoritative.");
+    }
+
+    private void RegisterProvisionalGroundVerification()
+    {
+        long replacementGeneration;
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorReplacementGeneration++;
+
+            replacementGeneration =
+                groundAnchorReplacementGeneration;
+
+            groundAnchorReacquisitionArmed =
+                false;
+
+            replacementAnchorSearchStartedTimestamp =
+                long.MinValue;
+
+            replacementAnchorSearchNoticeLogged =
+                false;
+        }
+
+        ARCameraSpatialController.SetRouteRecoveryRebasePending(
+            true,
+            "verified floor replaced provisional consultation reference");
+
+        Log.Debug(
+            SpatialPoseTag,
+            "PROVISIONAL GROUND VERIFIED: ARCore Plane/Depth is now " +
+            "authoritative. Requesting one current-window route rebase: " +
+            $"replacementGeneration={replacementGeneration}.");
+    }
+
     private void ReleaseSpatialGroundAnchor()
     {
         groundDepthRequested =
             true;
+
+        ClearProvisionalGroundReference(
+            "ground-anchor state was released");
 
         Google.AR.Core.Anchor? anchor =
             Interlocked.Exchange(
