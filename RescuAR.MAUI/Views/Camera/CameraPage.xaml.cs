@@ -104,6 +104,9 @@ namespace RescuAR.App.Views.Camera
         private readonly object routeProgressFusionSync =
             new();
 
+        private readonly object turnGuidanceSync =
+            new();
+
         private readonly IDispatcherTimer diagnosticTimer;
 
 #if DEBUG
@@ -511,12 +514,62 @@ namespace RescuAR.App.Views.Camera
             lastTurnGuidance =
                 PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
 
+        private PedestrianTurnGuidanceService.VisibleTurnGuidanceSnapshot
+            lastVisibleTurnGuidance =
+                PedestrianTurnGuidanceService.VisibleTurnGuidanceSnapshot.Unavailable;
+
+        private string lastTurnGuidanceConsolidationReason =
+            "Unavailable";
+
+        private double? lastCameraToRouteHeadingDegrees;
+
+        /*
+         * CAMERA-RELATIVE GUIDANCE ALIGNMENT
+         *
+         * The live camera forward direction is always treated as 0 degrees.
+         * Unlike a one-time startup calibration, this remains correct after
+         * the pedestrian turns the phone. Left/right maneuver wording is only
+         * shown while the phone faces along the first cyan route leg.
+         * Hysteresis prevents the instruction from flickering at the boundary.
+         */
+        private const double CameraRouteAlignmentEnterDegrees =
+            25.0;
+
+        private const double CameraRouteAlignmentExitDegrees =
+            40.0;
+
+        private bool cameraAlignedWithVisibleRoute;
+
+        private bool cameraRouteAlignmentInitialized;
+
+        private TurnGuidanceFamily pendingTurnGuidanceFamily =
+            TurnGuidanceFamily.Unavailable;
+
+        private int pendingTurnGuidanceConfirmationCount;
+
+        private const int TurnGuidanceChangeRequiredConfirmations =
+            2;
+
+        private string lastLoggedTurnConsolidationSignature =
+            string.Empty;
+
         private PedestrianTurnGuidanceService.TurnInstruction
             lastLoggedTurnInstruction =
                 PedestrianTurnGuidanceService.TurnInstruction.Continue;
 
         private int lastLoggedTurnDistanceBucket =
             -1;
+
+        private enum TurnGuidanceFamily
+        {
+            Unavailable = 0,
+            Straight = 1,
+            FollowRoute = 2,
+            Left = 3,
+            Right = 4,
+            UTurn = 5,
+            Arrive = 6
+        }
 
         /*
          * STAGE 5 SAFE ZONE CONFIRMATION
@@ -5954,8 +6007,7 @@ namespace RescuAR.App.Views.Camera
                 navigationState.VisualKind !=
                     RouteVisualKind.RouteWindow)
             {
-                lastTurnGuidance =
-                    PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
+                ResetTurnGuidance();
 
 #if ANDROID
                 Log.Debug(
@@ -5978,16 +6030,16 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance =
+            PedestrianTurnGuidanceService.TurnGuidanceSnapshot mapGuidance =
                 _turnGuidanceService.Evaluate(
                     acceptedRoute,
                     navigationState.WindowStartProgressMeters,
                     navigationState.SourceSegmentIndex);
 
-            if (guidance.IsAvailable)
+            if (mapGuidance.IsAvailable)
             {
-                guidance =
-                    guidance with
+                mapGuidance =
+                    mapGuidance with
                     {
                         RemainingRouteMeters =
                             Math.Max(
@@ -5996,8 +6048,61 @@ namespace RescuAR.App.Views.Camera
                     };
             }
 
-            lastTurnGuidance =
-                guidance;
+            PedestrianTurnGuidanceService.VisibleTurnGuidanceSnapshot
+                visibleGuidance =
+                    _turnGuidanceService.EvaluateVisibleRoute(
+                        visibleRoute.Points);
+
+            bool cameraHeadingAvailable =
+                TryGetCameraToVisibleRouteHeading(
+                    visibleRoute,
+                    out double cameraToRouteHeadingDegrees);
+
+            bool cameraAligned;
+
+            string consolidationReason;
+
+            PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance;
+
+            lock (turnGuidanceSync)
+            {
+                lastVisibleTurnGuidance =
+                    visibleGuidance;
+
+                lastCameraToRouteHeadingDegrees =
+                    cameraHeadingAvailable
+                        ? cameraToRouteHeadingDegrees
+                        : null;
+
+                cameraAligned =
+                    UpdateCameraRouteAlignment(
+                        cameraHeadingAvailable,
+                        cameraToRouteHeadingDegrees);
+
+                guidance =
+                    ConsolidateTurnGuidance(
+                        mapGuidance,
+                        visibleGuidance,
+                        cameraHeadingAvailable,
+                        cameraToRouteHeadingDegrees,
+                        cameraAligned,
+                        out consolidationReason);
+
+                guidance =
+                    StabilizeTurnGuidance(
+                        guidance,
+                        consolidationReason,
+                        out string stabilizedReason);
+
+                consolidationReason =
+                    stabilizedReason;
+
+                lastTurnGuidanceConsolidationReason =
+                    consolidationReason;
+
+                lastTurnGuidance =
+                    guidance;
+            }
 
             int distanceBucket =
                 guidance.IsAvailable &&
@@ -6009,20 +6114,40 @@ namespace RescuAR.App.Views.Camera
                     : -1;
 
 #if ANDROID
+            string consolidationSignature =
+                $"{mapGuidance.Instruction}|" +
+                $"{GetDistanceBucket(mapGuidance.DistanceToTurnMeters)}|" +
+                $"{visibleGuidance.Instruction}|" +
+                $"{GetDistanceBucket(visibleGuidance.DistanceToTurnMeters)}|" +
+                $"{guidance.Instruction}|" +
+                $"{distanceBucket}|" +
+                $"{(cameraHeadingAvailable ? Math.Round(cameraToRouteHeadingDegrees / 5.0) : double.NaN)}|" +
+                consolidationReason;
+
             if (guidance.IsAvailable &&
-                (guidance.Instruction !=
-                    lastLoggedTurnInstruction ||
-                 distanceBucket !=
-                    lastLoggedTurnDistanceBucket))
+                !string.Equals(
+                    consolidationSignature,
+                    lastLoggedTurnConsolidationSignature,
+                    StringComparison.Ordinal))
             {
                 Log.Debug(
                     TurnLogTag,
-                    "TURN GUIDANCE: " +
-                    $"instruction={guidance.Instruction}, " +
-                    $"text='{guidance.DisplayText}', " +
-                    $"distanceToTurn=" +
-                    $"{(double.IsFinite(guidance.DistanceToTurnMeters) ? guidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
-                    $"turnAngle={guidance.TurnAngleDegrees:F1} deg, " +
+                    "TURN GUIDANCE CONSOLIDATED: " +
+                    $"mapInstruction={mapGuidance.Instruction}, " +
+                    $"mapDistance=" +
+                    $"{(double.IsFinite(mapGuidance.DistanceToTurnMeters) ? mapGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
+                    $"mapAngle={mapGuidance.TurnAngleDegrees:F1} deg, " +
+                    $"cyanInstruction={visibleGuidance.Instruction}, " +
+                    $"cyanDistance=" +
+                    $"{(double.IsFinite(visibleGuidance.DistanceToTurnMeters) ? visibleGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")} m, " +
+                    $"cyanAngle={visibleGuidance.TurnAngleDegrees:F1} deg, " +
+                    $"cyanHorizon={visibleGuidance.VisibleHorizonMeters:F1} m, " +
+                    $"cameraToRoute=" +
+                    $"{(cameraHeadingAvailable ? cameraToRouteHeadingDegrees.ToString("F1") : "<unavailable>")} deg, " +
+                    $"cameraAligned={cameraAligned}, " +
+                    $"finalInstruction={guidance.Instruction}, " +
+                    $"finalText='{guidance.DisplayText}', " +
+                    $"reason='{consolidationReason}', " +
                     $"remaining={guidance.RemainingRouteMeters:F1} m, " +
                     $"visualProgress={navigationState.WindowStartProgressMeters:F1} m, " +
                     $"acceptedProgress={acceptedProgress.CommittedProgressMeters:F1} m, " +
@@ -6030,6 +6155,9 @@ namespace RescuAR.App.Views.Camera
                     $"{Math.Max(0.0, acceptedProgress.CommittedProgressMeters - navigationState.WindowStartProgressMeters):F1} m, " +
                     $"sourceSegment={navigationState.SourceSegmentIndex}, " +
                     $"routeVersion={visibleRoute.Version}");
+
+                lastLoggedTurnConsolidationSignature =
+                    consolidationSignature;
 
                 lastLoggedTurnInstruction =
                     guidance.Instruction;
@@ -6060,6 +6188,552 @@ namespace RescuAR.App.Views.Camera
                     turnGuidancePanel.IsVisible =
                         true;
                 });
+        }
+
+        private PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+            ConsolidateTurnGuidance(
+                PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+                    mapGuidance,
+                PedestrianTurnGuidanceService.VisibleTurnGuidanceSnapshot
+                    visibleGuidance,
+                bool cameraHeadingAvailable,
+                double cameraToRouteHeadingDegrees,
+                bool cameraAligned,
+                out string reason)
+        {
+            if (!mapGuidance.IsAvailable ||
+                !visibleGuidance.IsAvailable)
+            {
+                reason =
+                    "MAP_OR_CYAN_GUIDANCE_UNAVAILABLE";
+
+                return PedestrianTurnGuidanceService
+                    .TurnGuidanceSnapshot
+                    .Unavailable;
+            }
+
+            if (mapGuidance.Instruction ==
+                PedestrianTurnGuidanceService.TurnInstruction.Arrive)
+            {
+                reason =
+                    "ARRIVAL_FROM_ACCEPTED_ROUTE";
+
+                return mapGuidance;
+            }
+
+            TurnGuidanceFamily mapFamily =
+                GetTurnGuidanceFamily(
+                    mapGuidance.Instruction);
+
+            TurnGuidanceFamily visibleFamily =
+                GetTurnGuidanceFamily(
+                    visibleGuidance.Instruction);
+
+            bool mapTurnBeyondVisibleWindow =
+                IsDirectionalTurnInstruction(
+                    mapGuidance.Instruction) &&
+                double.IsFinite(
+                    mapGuidance.DistanceToTurnMeters) &&
+                double.IsFinite(
+                    visibleGuidance.VisibleHorizonMeters) &&
+                mapGuidance.DistanceToTurnMeters >
+                    visibleGuidance.VisibleHorizonMeters +
+                        2.0;
+
+            bool mapHasTurn =
+                mapFamily ==
+                    TurnGuidanceFamily.Left ||
+                mapFamily ==
+                    TurnGuidanceFamily.Right ||
+                mapFamily ==
+                    TurnGuidanceFamily.UTurn;
+
+            bool visibleHasTurn =
+                visibleFamily ==
+                    TurnGuidanceFamily.Left ||
+                visibleFamily ==
+                    TurnGuidanceFamily.Right ||
+                visibleFamily ==
+                    TurnGuidanceFamily.UTurn;
+
+            bool turnDistancesAgree =
+                mapHasTurn &&
+                visibleHasTurn &&
+                double.IsFinite(
+                    mapGuidance.DistanceToTurnMeters) &&
+                double.IsFinite(
+                    visibleGuidance.DistanceToTurnMeters) &&
+                Math.Abs(
+                    mapGuidance.DistanceToTurnMeters -
+                        visibleGuidance.DistanceToTurnMeters) <=
+                            7.5;
+
+            if (mapTurnBeyondVisibleWindow &&
+                visibleFamily ==
+                    TurnGuidanceFamily.Straight)
+            {
+                if (!cameraAligned)
+                {
+                    reason =
+                        cameraHeadingAvailable
+                            ? "CAMERA_NOT_ALIGNED_WITH_CYAN_ENTRY"
+                            : "CAMERA_HEADING_UNAVAILABLE";
+
+                    return CreateFollowCyanRouteGuidance(
+                        mapGuidance,
+                        cameraHeadingAvailable,
+                        cameraToRouteHeadingDegrees);
+                }
+
+                reason =
+                    "MAP_TURN_BEYOND_CYAN_WINDOW";
+
+                return mapGuidance;
+            }
+
+            if (mapHasTurn &&
+                visibleHasTurn &&
+                mapFamily ==
+                    visibleFamily &&
+                turnDistancesAgree)
+            {
+                if (!cameraAligned)
+                {
+                    reason =
+                        cameraHeadingAvailable
+                            ? "CAMERA_NOT_ALIGNED_WITH_CYAN_ENTRY"
+                            : "CAMERA_HEADING_UNAVAILABLE";
+
+                    return CreateFollowCyanRouteGuidance(
+                        mapGuidance,
+                        cameraHeadingAvailable,
+                        cameraToRouteHeadingDegrees);
+                }
+
+                reason =
+                    "MAP_AND_CYAN_TURN_AGREE";
+
+                return new PedestrianTurnGuidanceService.TurnGuidanceSnapshot(
+                    true,
+                    visibleGuidance.Instruction,
+                    visibleGuidance.DistanceToTurnMeters,
+                    visibleGuidance.TurnAngleDegrees,
+                    mapGuidance.RemainingRouteMeters,
+                    mapGuidance.DisplayText);
+            }
+
+            if (mapFamily ==
+                    TurnGuidanceFamily.Straight &&
+                visibleFamily ==
+                    TurnGuidanceFamily.Straight)
+            {
+                if (!cameraAligned)
+                {
+                    reason =
+                        cameraHeadingAvailable
+                            ? "CAMERA_NOT_ALIGNED_WITH_CYAN_ENTRY"
+                            : "CAMERA_HEADING_UNAVAILABLE";
+
+                    return CreateFollowCyanRouteGuidance(
+                        mapGuidance,
+                        cameraHeadingAvailable,
+                        cameraToRouteHeadingDegrees);
+                }
+
+                reason =
+                    "MAP_AND_CYAN_STRAIGHT_AGREE";
+
+                return mapGuidance;
+            }
+
+            reason =
+                mapHasTurn &&
+                visibleHasTurn &&
+                mapFamily ==
+                    visibleFamily &&
+                !turnDistancesAgree
+                    ? "MAP_CYAN_TURN_DISTANCE_DISAGREEMENT"
+                    : $"MAP_CYAN_DISAGREE_{mapFamily}_VS_{visibleFamily}";
+
+            return CreateFollowCyanRouteGuidance(
+                mapGuidance,
+                cameraHeadingAvailable: false,
+                cameraToRouteHeadingDegrees: 0.0);
+        }
+
+        private static PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+            CreateFollowCyanRouteGuidance(
+                PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+                    mapGuidance,
+                bool cameraHeadingAvailable,
+                double cameraToRouteHeadingDegrees)
+        {
+            string displayText =
+                "Follow the cyan route";
+
+            if (cameraHeadingAvailable)
+            {
+                double absoluteAngle =
+                    Math.Abs(
+                        cameraToRouteHeadingDegrees);
+
+                if (absoluteAngle >=
+                    RouteLocatorBehindAngleDegrees)
+                {
+                    displayText =
+                        "Turn around to face the cyan route";
+                }
+                else if (cameraToRouteHeadingDegrees >
+                    CameraRouteAlignmentExitDegrees)
+                {
+                    displayText =
+                        "Face the cyan route — look right";
+                }
+                else if (cameraToRouteHeadingDegrees <
+                    -CameraRouteAlignmentExitDegrees)
+                {
+                    displayText =
+                        "Face the cyan route — look left";
+                }
+            }
+
+            return new PedestrianTurnGuidanceService.TurnGuidanceSnapshot(
+                true,
+                PedestrianTurnGuidanceService.TurnInstruction.FollowRoute,
+                mapGuidance.DistanceToTurnMeters,
+                mapGuidance.TurnAngleDegrees,
+                mapGuidance.RemainingRouteMeters,
+                displayText);
+        }
+
+        private bool UpdateCameraRouteAlignment(
+            bool cameraHeadingAvailable,
+            double cameraToRouteHeadingDegrees)
+        {
+            if (!cameraHeadingAvailable ||
+                !double.IsFinite(
+                    cameraToRouteHeadingDegrees))
+            {
+                cameraAlignedWithVisibleRoute =
+                    false;
+
+                cameraRouteAlignmentInitialized =
+                    false;
+
+                return false;
+            }
+
+            double absoluteAngle =
+                Math.Abs(
+                    cameraToRouteHeadingDegrees);
+
+            if (!cameraRouteAlignmentInitialized)
+            {
+                cameraAlignedWithVisibleRoute =
+                    absoluteAngle <=
+                        CameraRouteAlignmentEnterDegrees;
+
+                cameraRouteAlignmentInitialized =
+                    true;
+
+                return cameraAlignedWithVisibleRoute;
+            }
+
+            if (cameraAlignedWithVisibleRoute)
+            {
+                if (absoluteAngle >
+                    CameraRouteAlignmentExitDegrees)
+                {
+                    cameraAlignedWithVisibleRoute =
+                        false;
+                }
+            }
+            else if (absoluteAngle <=
+                CameraRouteAlignmentEnterDegrees)
+            {
+                cameraAlignedWithVisibleRoute =
+                    true;
+            }
+
+            return cameraAlignedWithVisibleRoute;
+        }
+
+        private static bool TryGetCameraToVisibleRouteHeading(
+            ARRouteBridge.RouteSnapshot route,
+            out double signedAngleDegrees)
+        {
+            signedAngleDegrees =
+                0.0;
+
+            ARCameraPoseBridge.SpatialSnapshot spatial =
+                ARCameraPoseBridge.CurrentFrame;
+
+            if (!route.IsAvailable ||
+                route.Points.Count <
+                    2 ||
+                !spatial.IsTracking ||
+                !spatial.Pose.IsTracking)
+            {
+                return false;
+            }
+
+            Quaternion rotation =
+                new(
+                    spatial.Pose.RotationX,
+                    spatial.Pose.RotationY,
+                    spatial.Pose.RotationZ,
+                    spatial.Pose.RotationW);
+
+            float lengthSquared =
+                rotation.LengthSquared();
+
+            if (!float.IsFinite(
+                    lengthSquared) ||
+                lengthSquared <
+                    0.0001f)
+            {
+                return false;
+            }
+
+            rotation =
+                Quaternion.Normalize(
+                    rotation);
+
+            Vector3 cameraForward =
+                Vector3.Transform(
+                    new Vector3(
+                        0.0f,
+                        0.0f,
+                        -1.0f),
+                    rotation);
+
+            double cameraMagnitude =
+                Math.Sqrt(
+                    cameraForward.X *
+                        cameraForward.X +
+                    cameraForward.Z *
+                        cameraForward.Z);
+
+            if (!double.IsFinite(
+                    cameraMagnitude) ||
+                cameraMagnitude <
+                    0.10)
+            {
+                return false;
+            }
+
+            ArHorizontalRoutePoint routeStart =
+                route.Points[0];
+
+            double routeDeltaX =
+                0.0;
+
+            double routeDeltaZ =
+                0.0;
+
+            bool routeTangentAvailable =
+                false;
+
+            for (int i = 1;
+                 i < route.Points.Count;
+                 i++)
+            {
+                routeDeltaX =
+                    route.Points[i].X -
+                        routeStart.X;
+
+                routeDeltaZ =
+                    route.Points[i].Z -
+                        routeStart.Z;
+
+                double tangentLength =
+                    Math.Sqrt(
+                        routeDeltaX *
+                            routeDeltaX +
+                        routeDeltaZ *
+                            routeDeltaZ);
+
+                if (double.IsFinite(
+                        tangentLength) &&
+                    tangentLength >=
+                        2.0)
+                {
+                    routeTangentAvailable =
+                        true;
+
+                    break;
+                }
+            }
+
+            if (!routeTangentAvailable)
+            {
+                return false;
+            }
+
+            double cameraAzimuthDegrees =
+                Normalize360Degrees(
+                    RadiansToDegrees(
+                        Math.Atan2(
+                            cameraForward.X,
+                            cameraForward.Z)));
+
+            double routeAzimuthDegrees =
+                Normalize360Degrees(
+                    RadiansToDegrees(
+                        Math.Atan2(
+                            routeDeltaX,
+                            routeDeltaZ)));
+
+            signedAngleDegrees =
+                NormalizeSignedDegrees(
+                    routeAzimuthDegrees -
+                        cameraAzimuthDegrees);
+
+            return double.IsFinite(
+                signedAngleDegrees);
+        }
+
+        private PedestrianTurnGuidanceService.TurnGuidanceSnapshot
+            StabilizeTurnGuidance(
+                PedestrianTurnGuidanceService.TurnGuidanceSnapshot candidate,
+                string candidateReason,
+                out string stabilizedReason)
+        {
+            stabilizedReason =
+                candidateReason;
+
+            if (!candidate.IsAvailable)
+            {
+                pendingTurnGuidanceFamily =
+                    TurnGuidanceFamily.Unavailable;
+
+                pendingTurnGuidanceConfirmationCount =
+                    0;
+
+                return candidate;
+            }
+
+            TurnGuidanceFamily candidateFamily =
+                GetTurnGuidanceFamily(
+                    candidate.Instruction);
+
+            TurnGuidanceFamily currentFamily =
+                lastTurnGuidance.IsAvailable
+                    ? GetTurnGuidanceFamily(
+                        lastTurnGuidance.Instruction)
+                    : TurnGuidanceFamily.Unavailable;
+
+            /*
+             * A disagreement or camera misalignment must suppress an unsafe
+             * directional command immediately. Recovery into a directional
+             * command is still confirmed below.
+             */
+            if (candidateFamily ==
+                TurnGuidanceFamily.FollowRoute)
+            {
+                pendingTurnGuidanceFamily =
+                    TurnGuidanceFamily.Unavailable;
+
+                pendingTurnGuidanceConfirmationCount =
+                    0;
+
+                return candidate;
+            }
+
+            if (currentFamily ==
+                    TurnGuidanceFamily.Unavailable ||
+                currentFamily ==
+                    candidateFamily)
+            {
+                pendingTurnGuidanceFamily =
+                    TurnGuidanceFamily.Unavailable;
+
+                pendingTurnGuidanceConfirmationCount =
+                    0;
+
+                return candidate;
+            }
+
+            if (pendingTurnGuidanceFamily !=
+                candidateFamily)
+            {
+                pendingTurnGuidanceFamily =
+                    candidateFamily;
+
+                pendingTurnGuidanceConfirmationCount =
+                    1;
+            }
+            else
+            {
+                pendingTurnGuidanceConfirmationCount++;
+            }
+
+            if (pendingTurnGuidanceConfirmationCount >=
+                TurnGuidanceChangeRequiredConfirmations)
+            {
+                pendingTurnGuidanceFamily =
+                    TurnGuidanceFamily.Unavailable;
+
+                pendingTurnGuidanceConfirmationCount =
+                    0;
+
+                stabilizedReason =
+                    candidateReason +
+                    "; CHANGE_CONFIRMED";
+
+                return candidate;
+            }
+
+            stabilizedReason =
+                candidateReason +
+                "; CHANGE_PENDING";
+
+            return CreateFollowCyanRouteGuidance(
+                candidate,
+                cameraHeadingAvailable: false,
+                cameraToRouteHeadingDegrees: 0.0);
+        }
+
+        private static TurnGuidanceFamily GetTurnGuidanceFamily(
+            PedestrianTurnGuidanceService.TurnInstruction instruction)
+        {
+            return instruction switch
+            {
+                PedestrianTurnGuidanceService.TurnInstruction.SlightLeft or
+                PedestrianTurnGuidanceService.TurnInstruction.Left or
+                PedestrianTurnGuidanceService.TurnInstruction.SharpLeft =>
+                    TurnGuidanceFamily.Left,
+
+                PedestrianTurnGuidanceService.TurnInstruction.SlightRight or
+                PedestrianTurnGuidanceService.TurnInstruction.Right or
+                PedestrianTurnGuidanceService.TurnInstruction.SharpRight =>
+                    TurnGuidanceFamily.Right,
+
+                PedestrianTurnGuidanceService.TurnInstruction.UTurn =>
+                    TurnGuidanceFamily.UTurn,
+
+                PedestrianTurnGuidanceService.TurnInstruction.Arrive =>
+                    TurnGuidanceFamily.Arrive,
+
+                PedestrianTurnGuidanceService.TurnInstruction.FollowRoute =>
+                    TurnGuidanceFamily.FollowRoute,
+
+                _ =>
+                    TurnGuidanceFamily.Straight
+            };
+        }
+
+        private static int GetDistanceBucket(
+            double distanceMeters)
+        {
+            return double.IsFinite(
+                distanceMeters)
+                ? (int)Math.Floor(
+                    Math.Max(
+                        0.0,
+                        distanceMeters) /
+                    5.0)
+                : -1;
         }
 
         private void ApplyPrototypeTurnGuidance(
@@ -6151,6 +6825,45 @@ namespace RescuAR.App.Views.Camera
             }
             else switch (guidance.Instruction)
             {
+                case PedestrianTurnGuidanceService.TurnInstruction.FollowRoute:
+                {
+                    double cameraToRoute =
+                        lastCameraToRouteHeadingDegrees ??
+                            0.0;
+
+                    if (Math.Abs(
+                            cameraToRoute) >=
+                        RouteLocatorBehindAngleDegrees)
+                    {
+                        turnDirectionIconLabel.Source =
+                            "lucide_undo_2_green.png";
+                    }
+                    else if (cameraToRoute >
+                        CameraRouteAlignmentExitDegrees)
+                    {
+                        turnDirectionIconLabel.Source =
+                            "lucide_arrow_up_right_teal.png";
+                    }
+                    else if (cameraToRoute <
+                        -CameraRouteAlignmentExitDegrees)
+                    {
+                        turnDirectionIconLabel.Source =
+                            "lucide_arrow_up_left_teal.png";
+                    }
+                    else
+                    {
+                        turnDirectionIconLabel.Source =
+                            "lucide_arrow_up_teal.png";
+                    }
+
+                    turnInstructionLabel.Text =
+                        string.IsNullOrWhiteSpace(
+                            guidance.DisplayText)
+                            ? "Follow the cyan route"
+                            : guidance.DisplayText;
+                    break;
+                }
+
                 case PedestrianTurnGuidanceService.TurnInstruction.SlightLeft:
                     turnDirectionIconLabel.Source =
                         "lucide_arrow_up_left_teal.png";
@@ -6379,14 +7092,41 @@ namespace RescuAR.App.Views.Camera
 
         private void ResetTurnGuidance()
         {
-            lastTurnGuidance =
-                PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
+            lock (turnGuidanceSync)
+            {
+                lastTurnGuidance =
+                    PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable;
 
-            lastLoggedTurnInstruction =
-                PedestrianTurnGuidanceService.TurnInstruction.Continue;
+                lastVisibleTurnGuidance =
+                    PedestrianTurnGuidanceService.VisibleTurnGuidanceSnapshot.Unavailable;
 
-            lastLoggedTurnDistanceBucket =
-                -1;
+                lastTurnGuidanceConsolidationReason =
+                    "Unavailable";
+
+                lastCameraToRouteHeadingDegrees =
+                    null;
+
+                cameraAlignedWithVisibleRoute =
+                    false;
+
+                cameraRouteAlignmentInitialized =
+                    false;
+
+                pendingTurnGuidanceFamily =
+                    TurnGuidanceFamily.Unavailable;
+
+                pendingTurnGuidanceConfirmationCount =
+                    0;
+
+                lastLoggedTurnConsolidationSignature =
+                    string.Empty;
+
+                lastLoggedTurnInstruction =
+                    PedestrianTurnGuidanceService.TurnInstruction.Continue;
+
+                lastLoggedTurnDistanceBucket =
+                    -1;
+            }
 
             Dispatcher.Dispatch(
                 () =>
@@ -9959,6 +10699,22 @@ namespace RescuAR.App.Views.Camera
                 lastDynamicUiRefreshTimestamp =
                     diagnosticTimestamp;
 
+                /*
+                 * Camera-relative alignment changes when the user rotates the
+                 * phone even if GPS progress does not change. Reconcile the
+                 * text panel on the same one-second UI cadence so an unsafe
+                 * left/right label is removed promptly instead of waiting for
+                 * the next location poll.
+                 */
+                if (currentCameraModuleView ==
+                        CameraModuleViewMode.ArCamera &&
+                    activeRoute is not null &&
+                    !dynamicRerouteInProgress &&
+                    !safeZoneConfirmed)
+                {
+                    UpdateTurnGuidance();
+                }
+
                 Dispatcher.Dispatch(
                     RefreshCameraModuleDynamicUi);
             }
@@ -10057,6 +10813,14 @@ namespace RescuAR.App.Views.Camera
                 $"{(lastTurnGuidance.IsAvailable ? lastTurnGuidance.Instruction.ToString() : "<none>")}, " +
                 $"turnDistance=" +
                 $"{(lastTurnGuidance.IsAvailable && double.IsFinite(lastTurnGuidance.DistanceToTurnMeters) ? lastTurnGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")}m, " +
+                $"cyanTurnInstruction=" +
+                $"{(lastVisibleTurnGuidance.IsAvailable ? lastVisibleTurnGuidance.Instruction.ToString() : "<none>")}, " +
+                $"cyanTurnDistance=" +
+                $"{(lastVisibleTurnGuidance.IsAvailable && double.IsFinite(lastVisibleTurnGuidance.DistanceToTurnMeters) ? lastVisibleTurnGuidance.DistanceToTurnMeters.ToString("F1") : "<none>")}m, " +
+                $"cameraToRoute=" +
+                $"{(lastCameraToRouteHeadingDegrees.HasValue ? lastCameraToRouteHeadingDegrees.Value.ToString("F1") : "<none>")}deg, " +
+                $"cameraRouteAligned={cameraAlignedWithVisibleRoute}, " +
+                $"turnConsolidationReason='{lastTurnGuidanceConsolidationReason}', " +
                 $"turnPanelVisible={turnGuidancePanel.IsVisible}, " +
                 $"safeZoneCandidate={lastSafeZoneDecision.IsCandidate}, " +
                 $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Projection;
 
 namespace RescuAR.Navigation.Guidance;
 
@@ -228,6 +229,252 @@ public sealed class PedestrianTurnGuidanceService
             "Continue straight");
     }
 
+    /// <summary>
+    /// Evaluates the cyan route that is actually published to AR. Sampling
+    /// intentionally mirrors the geographic classifier above so both systems
+    /// use the same spacing, threshold, sign convention, and turn labels.
+    ///
+    /// AR horizontal azimuth uses 0 degrees = +Z and +90 degrees = +X,
+    /// matching geographic north/east before map-to-AR rotation. A yaw
+    /// rotation therefore cannot reverse left and right.
+    /// </summary>
+    public VisibleTurnGuidanceSnapshot EvaluateVisibleRoute(
+        IReadOnlyList<ArHorizontalRoutePoint> points)
+    {
+        ArgumentNullException.ThrowIfNull(
+            points);
+
+        if (points.Count <
+            2)
+        {
+            return VisibleTurnGuidanceSnapshot.Unavailable;
+        }
+
+        double routeStart =
+            points[0]
+                .DistanceFromWindowStartMeters;
+
+        double routeEnd =
+            points[^1]
+                .DistanceFromWindowStartMeters;
+
+        if (!double.IsFinite(
+                routeStart) ||
+            !double.IsFinite(
+                routeEnd) ||
+            routeEnd -
+                routeStart <
+                    0.50)
+        {
+            return VisibleTurnGuidanceSnapshot.Unavailable;
+        }
+
+        double horizonMeters =
+            Math.Max(
+                0.0,
+                routeEnd -
+                    routeStart);
+
+        List<double> distances =
+            new();
+
+        List<ArSamplePoint> samples =
+            new();
+
+        double firstDistance =
+            Math.Min(
+                routeEnd,
+                routeStart +
+                    1.0);
+
+        distances.Add(
+            firstDistance);
+
+        samples.Add(
+            GetArPointAtDistance(
+                points,
+                firstDistance));
+
+        for (double offset = SampleSpacingMeters;
+             offset <= horizonMeters + SampleSpacingMeters;
+             offset += SampleSpacingMeters)
+        {
+            double distance =
+                Math.Min(
+                    routeEnd,
+                    routeStart +
+                        offset);
+
+            if (distance <=
+                distances[^1] +
+                    0.25)
+            {
+                break;
+            }
+
+            distances.Add(
+                distance);
+
+            samples.Add(
+                GetArPointAtDistance(
+                    points,
+                    distance));
+
+            if (distance >=
+                routeEnd -
+                    0.01)
+            {
+                break;
+            }
+        }
+
+        if (samples.Count <
+            3)
+        {
+            return new VisibleTurnGuidanceSnapshot(
+                true,
+                TurnInstruction.Continue,
+                double.NaN,
+                0.0,
+                horizonMeters);
+        }
+
+        double baselineBearing =
+            ArBearingDegrees(
+                samples[0],
+                samples[1]);
+
+        if (!double.IsFinite(
+                baselineBearing))
+        {
+            return VisibleTurnGuidanceSnapshot.Unavailable;
+        }
+
+        for (int i = 1;
+             i < samples.Count - 1;
+             i++)
+        {
+            double futureBearing =
+                ArBearingDegrees(
+                    samples[i],
+                    samples[i + 1]);
+
+            if (!double.IsFinite(
+                    futureBearing))
+            {
+                continue;
+            }
+
+            double signedDelta =
+                NormalizeSignedDegrees(
+                    futureBearing -
+                        baselineBearing);
+
+            if (Math.Abs(
+                    signedDelta) <
+                MinimumTurnAngleDegrees)
+            {
+                continue;
+            }
+
+            return new VisibleTurnGuidanceSnapshot(
+                true,
+                ClassifyTurn(
+                    signedDelta),
+                Math.Max(
+                    0.0,
+                    distances[i] -
+                        routeStart),
+                signedDelta,
+                horizonMeters);
+        }
+
+        return new VisibleTurnGuidanceSnapshot(
+            true,
+            TurnInstruction.Continue,
+            double.NaN,
+            0.0,
+            horizonMeters);
+    }
+
+    private static ArSamplePoint GetArPointAtDistance(
+        IReadOnlyList<ArHorizontalRoutePoint> points,
+        double distanceMeters)
+    {
+        if (distanceMeters <=
+            points[0]
+                .DistanceFromWindowStartMeters)
+        {
+            return new ArSamplePoint(
+                points[0].X,
+                points[0].Z);
+        }
+
+        for (int i = 0;
+             i < points.Count - 1;
+             i++)
+        {
+            ArHorizontalRoutePoint start =
+                points[i];
+
+            ArHorizontalRoutePoint end =
+                points[i + 1];
+
+            if (distanceMeters >
+                end.DistanceFromWindowStartMeters)
+            {
+                continue;
+            }
+
+            double span =
+                end.DistanceFromWindowStartMeters -
+                    start.DistanceFromWindowStartMeters;
+
+            if (span <=
+                0.001)
+            {
+                return new ArSamplePoint(
+                    end.X,
+                    end.Z);
+            }
+
+            double t =
+                Math.Clamp(
+                    (distanceMeters -
+                     start.DistanceFromWindowStartMeters) /
+                        span,
+                    0.0,
+                    1.0);
+
+            return new ArSamplePoint(
+                Lerp(
+                    start.X,
+                    end.X,
+                    t),
+                Lerp(
+                    start.Z,
+                    end.Z,
+                    t));
+        }
+
+        return new ArSamplePoint(
+            points[^1].X,
+            points[^1].Z);
+    }
+
+    private static double ArBearingDegrees(
+        ArSamplePoint from,
+        ArSamplePoint to)
+    {
+        return Normalize360Degrees(
+            RadiansToDegrees(
+                Math.Atan2(
+                    to.X -
+                        from.X,
+                    to.Z -
+                        from.Z)));
+    }
+
     private static TurnInstruction ClassifyTurn(
         double signedDeltaDegrees)
     {
@@ -271,6 +518,9 @@ public sealed class PedestrianTurnGuidanceService
     {
         return instruction switch
         {
+            TurnInstruction.FollowRoute =>
+                "Follow the cyan route",
+
             TurnInstruction.SlightLeft =>
                 "Slight left",
 
@@ -528,8 +778,29 @@ public sealed class PedestrianTurnGuidanceService
         Right,
         SharpRight,
         UTurn,
-        Arrive
+        Arrive,
+        FollowRoute
     }
+
+    public readonly record struct VisibleTurnGuidanceSnapshot(
+        bool IsAvailable,
+        TurnInstruction Instruction,
+        double DistanceToTurnMeters,
+        double TurnAngleDegrees,
+        double VisibleHorizonMeters)
+    {
+        public static VisibleTurnGuidanceSnapshot Unavailable =>
+            new(
+                false,
+                TurnInstruction.Continue,
+                double.NaN,
+                0.0,
+                double.NaN);
+    }
+
+    private readonly record struct ArSamplePoint(
+        double X,
+        double Z);
 
     public readonly record struct TurnGuidanceSnapshot(
         bool IsAvailable,
