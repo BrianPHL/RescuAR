@@ -34,6 +34,11 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
     private const float SurfaceTransitionMeters = 0.06f;
 
+    private const byte EstimatedFloodMaximumAlpha = 56;
+
+    private const float MaximumGroundCorrectionPerDepthFrameMeters =
+        0.08f;
+
     private static readonly SKColor FloodColor =
         new(0x00, 0xA6, 0xC8, 104);
 
@@ -76,6 +81,10 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
     private bool depthActiveLogged;
     private long lastLoggedFloodVersion = -1;
+
+    private bool hasDisplayedGroundWorldY;
+    private float displayedGroundWorldY;
+    private bool? lastLoggedGroundWasProvisional;
 
     public FloodDepthOcclusionView()
     {
@@ -157,6 +166,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         {
             renderedFloodVersion = -1;
             renderedDepthVersion = -1;
+            hasDisplayedGroundWorldY = false;
             return;
         }
 
@@ -170,6 +180,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         {
             // Never show an unoccluded fallback. Until a trustworthy ARCore
             // depth snapshot exists, transparent is safer than a false level.
+            hasDisplayedGroundWorldY = false;
             return;
         }
 
@@ -243,8 +254,17 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             return;
         }
 
+        float renderedGroundWorldY =
+            GetSmoothedGroundWorldY(
+                depth.GroundWorldY);
+
         float waterSurfaceWorldY =
-            depth.GroundWorldY + floodDepthMeters;
+            renderedGroundWorldY + floodDepthMeters;
+
+        byte maximumFloodAlpha =
+            depth.GroundIsProvisional
+                ? EstimatedFloodMaximumAlpha
+                : FloodColor.Alpha;
 
         Quaternion cameraRotation =
             Quaternion.Normalize(
@@ -318,9 +338,9 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
             int alpha =
                 Math.Clamp(
-                    (int)MathF.Round(FloodColor.Alpha * visibility),
+                    (int)MathF.Round(maximumFloodAlpha * visibility),
                     0,
-                    FloodColor.Alpha);
+                    maximumFloodAlpha);
 
             maskPixels[i] = FloodColorsByAlpha[alpha];
 
@@ -333,10 +353,14 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         maskBitmap.Pixels = maskPixels;
 
         if (!depthActiveLogged ||
-            lastLoggedFloodVersion != floodVersion)
+            lastLoggedFloodVersion != floodVersion ||
+            lastLoggedGroundWasProvisional !=
+                depth.GroundIsProvisional)
         {
             depthActiveLogged = true;
             lastLoggedFloodVersion = floodVersion;
+            lastLoggedGroundWasProvisional =
+                depth.GroundIsProvisional;
 
             float tintedPercent =
                 pixelCount > 0
@@ -349,14 +373,46 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
                 $"floodVersion={floodVersion}, " +
                 $"depthFrameVersion={depth.Version}, " +
                 $"depth={floodDepthMeters:F2} m, " +
-                $"groundWorldY={depth.GroundWorldY:F3} m, " +
+                $"groundMode={(depth.GroundIsProvisional ? "PROVISIONAL_ESTIMATE" : "VERIFIED")}, " +
+                $"targetGroundWorldY={depth.GroundWorldY:F3} m, " +
+                $"renderedGroundWorldY={renderedGroundWorldY:F3} m, " +
                 $"surfaceWorldY={waterSurfaceWorldY:F3} m, " +
                 $"cameraWorldY={cameraWorldY:F3} m, " +
                 $"mask={maskWidth}x{maskHeight}, " +
                 $"tinted={tintedPercent:F1}%, " +
                 $"cameraBelowSimulatedSurface={cameraBelowSimulatedSurface}, " +
+                $"maximumAlpha={maximumFloodAlpha}, " +
                 "refreshCap=10Hz, mode=OBSERVER_DEPTH_CLASSIFICATION_PERFORMANCE.");
         }
+    }
+
+    private float GetSmoothedGroundWorldY(
+        float targetGroundWorldY)
+    {
+        if (!hasDisplayedGroundWorldY ||
+            !float.IsFinite(
+                displayedGroundWorldY))
+        {
+            displayedGroundWorldY =
+                targetGroundWorldY;
+
+            hasDisplayedGroundWorldY =
+                true;
+
+            return displayedGroundWorldY;
+        }
+
+        float correction =
+            targetGroundWorldY -
+            displayedGroundWorldY;
+
+        displayedGroundWorldY +=
+            Math.Clamp(
+                correction,
+                -MaximumGroundCorrectionPerDepthFrameMeters,
+                MaximumGroundCorrectionPerDepthFrameMeters);
+
+        return displayedGroundWorldY;
     }
 
     private void EnsureSampleMapping(
@@ -621,6 +677,9 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         requestedFloodVersion = long.MinValue;
         depthActiveLogged = false;
         lastLoggedFloodVersion = -1;
+        hasDisplayedGroundWorldY = false;
+        displayedGroundWorldY = 0.0f;
+        lastLoggedGroundWasProvisional = null;
     }
 
     private void DisposeBitmapOnly()

@@ -193,7 +193,7 @@ public sealed partial class ArCoreService : IArCoreService
      *
      * When several sweeps contain no DepthPoint, intermediate sweeps retain
      * only the lower-center probe. A complete nine-ray Plane/Depth sweep still
-     * runs every fourth interval. This limits ARCore's repeated
+     * runs every sixth interval. This limits ARCore's repeated
      * depth-not-yet-available work without stopping floor verification.
      */
     private static readonly (float XOffset, float ZOffset)[]
@@ -249,7 +249,7 @@ public sealed partial class ArCoreService : IArCoreService
         3;
 
     private const int GroundReducedProbeFullSweepCadence =
-        4;
+        6;
 
     private const float GroundDepthMinimumNormalY =
         0.70f;
@@ -755,6 +755,19 @@ public sealed partial class ArCoreService : IArCoreService
 
         try
         {
+            bool cameraProcessorIdle =
+                ARCameraTextureBridge.SuspendProcessing(
+                    TimeSpan.FromSeconds(
+                        2));
+
+            if (!cameraProcessorIdle)
+            {
+                Log.Warn(
+                    Tag,
+                    "Timed out waiting for the Vulkan camera converter during async pause. " +
+                    "Processing remains suspended for surface teardown.");
+            }
+
             Session? currentSession =
                 session;
 
@@ -888,6 +901,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (!sessionPaused)
             {
+                ARCameraTextureBridge.ResumeProcessing();
+
                 StartFrameLoop();
 
                 Log.Debug(
@@ -919,6 +934,8 @@ public sealed partial class ArCoreService : IArCoreService
 
                 sessionPaused =
                     false;
+
+                ARCameraTextureBridge.ResumeProcessing();
 
                 /*
                  * Retain the current AR anchor across Session.Resume(). The
@@ -1102,6 +1119,8 @@ public sealed partial class ArCoreService : IArCoreService
 
         ARCameraTextureBridge.SetDrawThreadProcessor(
             ProcessPendingCameraFrameOnDrawThread);
+
+        ARCameraTextureBridge.ResumeProcessing();
 
         Log.Debug(
             Tag,
@@ -3312,8 +3331,11 @@ public sealed partial class ArCoreService : IArCoreService
 
             bool groundAvailable =
                 spatial.FrameTimestamp == timestamp &&
-                spatial.Anchor.IsAvailable &&
-                !spatial.Anchor.IsProvisional;
+                spatial.Anchor.IsAvailable;
+
+            bool groundIsProvisional =
+                groundAvailable &&
+                spatial.Anchor.IsProvisional;
 
             float groundWorldY =
                 groundAvailable
@@ -3340,6 +3362,7 @@ public sealed partial class ArCoreService : IArCoreService
                 dimensions[0],
                 dimensions[1],
                 groundAvailable,
+                groundIsProvisional,
                 groundWorldY);
 
             lastDepthOcclusionPublishTimestamp =

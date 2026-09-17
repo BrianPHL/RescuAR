@@ -19,9 +19,18 @@ namespace RescuAR.AR;
 /// </summary>
 public static class ARCameraTextureBridge
 {
+    private static readonly object processingSync =
+        new();
+
+    private static readonly ManualResetEventSlim processorIdle =
+        new(initialState: true);
+
     private static Texture? currentTexture;
     private static long version;
     private static Action? drawThreadProcessor;
+
+    private static bool processingSuspended;
+    private static int activeProcessorCalls;
 
     public static Texture? CurrentTexture =>
         Volatile.Read(ref currentTexture);
@@ -43,17 +52,89 @@ public static class ARCameraTextureBridge
     }
 
     /// <summary>
+    /// Prevents new platform camera conversions and waits for a conversion
+    /// already running on the Evergine draw thread to finish. Camera-tab
+    /// teardown uses this barrier before Android can detach the Vulkan surface.
+    /// </summary>
+    public static bool SuspendProcessing(
+        TimeSpan timeout)
+    {
+        lock (processingSync)
+        {
+            processingSuspended =
+                true;
+
+            if (activeProcessorCalls ==
+                0)
+            {
+                processorIdle.Set();
+            }
+        }
+
+        return processorIdle.Wait(
+            timeout);
+    }
+
+    /// <summary>
+    /// Re-enables draw-thread camera conversion after the retained Camera
+    /// surface and ARCore Session are ready to resume.
+    /// </summary>
+    public static void ResumeProcessing()
+    {
+        lock (processingSync)
+        {
+            processingSuspended =
+                false;
+        }
+    }
+
+    /// <summary>
     /// Called from MyApplication.DrawFrame(). If Android has registered a
     /// processor, it is executed on the same application draw thread that
     /// invoked this method.
     /// </summary>
     public static void ProcessDrawThreadWork()
     {
-        Action? processor =
-            Volatile.Read(
-                ref drawThreadProcessor);
+        Action? processor;
 
-        processor?.Invoke();
+        lock (processingSync)
+        {
+            if (processingSuspended)
+            {
+                return;
+            }
+
+            processor =
+                Volatile.Read(
+                    ref drawThreadProcessor);
+
+            if (processor is null)
+            {
+                return;
+            }
+
+            activeProcessorCalls++;
+
+            processorIdle.Reset();
+        }
+
+        try
+        {
+            processor();
+        }
+        finally
+        {
+            lock (processingSync)
+            {
+                activeProcessorCalls--;
+
+                if (activeProcessorCalls ==
+                    0)
+                {
+                    processorIdle.Set();
+                }
+            }
+        }
     }
 
     public static void Publish(

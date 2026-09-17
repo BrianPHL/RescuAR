@@ -63,6 +63,12 @@ public static class ARRouteRenderer
     private const int ArrowWingCount =
         2;
 
+    private const int OccludedDepthSamplesRequiredToHide =
+        3;
+
+    private const int ClearDepthSamplesRequiredToShow =
+        2;
+
     /*
      * The route visual has two bounded local horizons: a 40 m road-following
      * window during normal navigation and a short recovery window after
@@ -464,20 +470,23 @@ public static class ARRouteRenderer
             slots,
             routeRootWorldPosition,
             frame,
-            depth);
+            depth,
+            protectNearCameraSegments: true);
 
         ApplyCameraVisualPolicy(
             arrows,
             routeRootWorldPosition,
             frame,
-            depth);
+            depth,
+            protectNearCameraSegments: false);
     }
 
     private static void ApplyCameraVisualPolicy(
         SegmentSlot[] slots,
         Vector3 routeRootWorldPosition,
         ARCameraPoseBridge.SpatialSnapshot frame,
-        ARDepthOcclusionBridge.DepthSnapshot depth)
+        ARDepthOcclusionBridge.DepthSnapshot depth,
+        bool protectNearCameraSegments)
     {
         float cameraX =
             frame.Pose.PositionX;
@@ -512,6 +521,12 @@ public static class ARRouteRenderer
                 routeRootWorldPosition.Z +
                 slot.LocalMidpoint.Z;
 
+            NumericsVector3 worldMidpoint =
+                new(
+                    worldX,
+                    worldY,
+                    worldZ);
+
             float deltaX =
                 worldX -
                 cameraX;
@@ -542,20 +557,148 @@ public static class ARRouteRenderer
                     slot.Transform.LocalScale.Y,
                     slot.Transform.LocalScale.Z);
 
+            bool nearCameraExempt =
+                protectNearCameraSegments &&
+                (slot.Index ==
+                    0 ||
+                 horizontalDistance <=
+                    ARRouteVisualPolicy.NearCameraOcclusionExemptionMeters);
+
+            if (nearCameraExempt ||
+                !ARRouteVisualPolicy.IsDepthSnapshotUsable(
+                    depth,
+                    frame.FrameTimestamp))
+            {
+                ResetOcclusionState(
+                    slot,
+                    visible: true);
+
+                continue;
+            }
+
+            if (slot.LastOcclusionDepthVersion ==
+                depth.Version)
+            {
+                slot.Entity.IsEnabled =
+                    !slot.DepthOccluded;
+
+                continue;
+            }
+
+            slot.LastOcclusionDepthVersion =
+                depth.Version;
+
+            NumericsVector3 worldStart =
+                new(
+                    routeRootWorldPosition.X +
+                        slot.LocalStart.X,
+                    routeRootWorldPosition.Y +
+                        slot.LocalStart.Y,
+                    routeRootWorldPosition.Z +
+                        slot.LocalStart.Z);
+
+            NumericsVector3 worldEnd =
+                new(
+                    routeRootWorldPosition.X +
+                        slot.LocalEnd.X,
+                    routeRootWorldPosition.Y +
+                        slot.LocalEnd.Y,
+                    routeRootWorldPosition.Z +
+                        slot.LocalEnd.Z);
+
             bool occluded =
                 horizontalDistance <=
                     ARRouteVisualPolicy.MaximumOcclusionDistanceMeters &&
-                ARRouteVisualPolicy.IsWorldPointOccluded(
+                ARRouteVisualPolicy.IsWorldSegmentOccluded(
                     depth,
                     frame.FrameTimestamp,
-                    new NumericsVector3(
-                        worldX,
-                        worldY,
-                        worldZ));
+                    worldStart,
+                    worldMidpoint,
+                    worldEnd);
 
-            slot.Entity.IsEnabled =
-                !occluded;
+            UpdateOcclusionState(
+                slot,
+                occluded,
+                horizontalDistance,
+                depth.Version);
         }
+    }
+
+    private static void UpdateOcclusionState(
+        SegmentSlot slot,
+        bool occluded,
+        float horizontalDistance,
+        long depthVersion)
+    {
+        bool previousState =
+            slot.DepthOccluded;
+
+        if (occluded)
+        {
+            slot.ConsecutiveOccludedSamples++;
+            slot.ConsecutiveClearSamples =
+                0;
+
+            if (!slot.DepthOccluded &&
+                slot.ConsecutiveOccludedSamples >=
+                    OccludedDepthSamplesRequiredToHide)
+            {
+                slot.DepthOccluded =
+                    true;
+            }
+        }
+        else
+        {
+            slot.ConsecutiveClearSamples++;
+            slot.ConsecutiveOccludedSamples =
+                0;
+
+            if (slot.DepthOccluded &&
+                slot.ConsecutiveClearSamples >=
+                    ClearDepthSamplesRequiredToShow)
+            {
+                slot.DepthOccluded =
+                    false;
+            }
+        }
+
+        slot.Entity.IsEnabled =
+            !slot.DepthOccluded;
+
+        if (previousState !=
+            slot.DepthOccluded)
+        {
+            AndroidLog.Debug(
+                LogTag,
+                "ROUTE SEGMENT OCCLUSION CHANGED: " +
+                $"segment={slot.Index}, " +
+                $"hidden={slot.DepthOccluded}, " +
+                $"distance={horizontalDistance:F2}m, " +
+                $"depthVersion={depthVersion}, " +
+                $"occludedSamples={slot.ConsecutiveOccludedSamples}, " +
+                $"clearSamples={slot.ConsecutiveClearSamples}.");
+        }
+    }
+
+    private static void ResetOcclusionState(
+        SegmentSlot slot,
+        bool visible)
+    {
+        slot.DepthOccluded =
+            !visible;
+
+        slot.ConsecutiveOccludedSamples =
+            0;
+
+        slot.ConsecutiveClearSamples =
+            0;
+
+        slot.LastOcclusionDepthVersion =
+            long.MinValue;
+
+        slot.Entity.IsEnabled =
+            visible &&
+            slot.GeometryAvailable;
     }
 
     private static bool TryApplySegment(
@@ -672,14 +815,21 @@ public static class ARRouteRenderer
         slot.LocalMidpoint =
             midpoint;
 
+        slot.LocalStart =
+            startPoint;
+
+        slot.LocalEnd =
+            endPoint;
+
         slot.BaseWidthMeters =
             widthMeters;
 
         slot.GeometryAvailable =
             true;
 
-        slot.Entity.IsEnabled =
-            true;
+        ResetOcclusionState(
+            slot,
+            visible: true);
 
         return true;
     }
@@ -1020,8 +1170,9 @@ public static class ARRouteRenderer
             slots[i].GeometryAvailable =
                 false;
 
-            slots[i].Entity.IsEnabled =
-                false;
+            ResetOcclusionState(
+                slots[i],
+                visible: false);
         }
     }
 
@@ -1036,7 +1187,25 @@ public static class ARRouteRenderer
 
             Transform =
                 transform;
+
+            string name =
+                entity.Name ??
+                string.Empty;
+
+            int separatorIndex =
+                name.LastIndexOf(
+                    '_');
+
+            Index =
+                separatorIndex >= 0 &&
+                int.TryParse(
+                    name[(separatorIndex + 1)..],
+                    out int parsedIndex)
+                    ? parsedIndex
+                    : -1;
         }
+
+        public int Index { get; }
 
         public Entity Entity { get; }
 
@@ -1044,9 +1213,22 @@ public static class ARRouteRenderer
 
         public Vector3 LocalMidpoint { get; set; }
 
+        public Vector3 LocalStart { get; set; }
+
+        public Vector3 LocalEnd { get; set; }
+
         public float BaseWidthMeters { get; set; } =
             RouteWidthMeters;
 
         public bool GeometryAvailable { get; set; }
+
+        public bool DepthOccluded { get; set; }
+
+        public int ConsecutiveOccludedSamples { get; set; }
+
+        public int ConsecutiveClearSamples { get; set; }
+
+        public long LastOcclusionDepthVersion { get; set; } =
+            long.MinValue;
     }
 }

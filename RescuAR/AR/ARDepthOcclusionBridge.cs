@@ -8,8 +8,10 @@ namespace RescuAR.AR;
 ///
 /// The Android ARCore worker copies the current depth image together with the
 /// physical camera pose, texture intrinsics, display-geometry UV transform,
-/// and ground Y from the SAME ARCore frame. The MAUI flood visualization reads
-/// one immutable snapshot and never touches Android/ARCore objects directly.
+/// and ground Y from the SAME ARCore frame. Ground metadata identifies whether
+/// the current baseline is provisional or verified. The MAUI flood
+/// visualization reads one immutable snapshot and never touches Android/ARCore
+/// objects directly.
 /// </summary>
 public static class ARDepthOcclusionBridge
 {
@@ -50,6 +52,7 @@ public static class ARDepthOcclusionBridge
         int textureWidth,
         int textureHeight,
         bool groundAvailable,
+        bool groundIsProvisional,
         float groundWorldY)
     {
         ArgumentNullException.ThrowIfNull(depthMillimeters);
@@ -93,6 +96,7 @@ public static class ARDepthOcclusionBridge
             textureWidth,
             textureHeight,
             groundAvailable,
+            groundIsProvisional,
             groundWorldY);
 
         lock (sync)
@@ -130,6 +134,7 @@ public static class ARDepthOcclusionBridge
                 0, 0,
                 0, 0,
                 false,
+                false,
                 0);
 
         public DepthSnapshot(
@@ -154,6 +159,7 @@ public static class ARDepthOcclusionBridge
             int textureWidth,
             int textureHeight,
             bool groundAvailable,
+            bool groundIsProvisional,
             float groundWorldY)
         {
             Version = version;
@@ -177,6 +183,7 @@ public static class ARDepthOcclusionBridge
             TextureWidth = textureWidth;
             TextureHeight = textureHeight;
             GroundAvailable = groundAvailable;
+            GroundIsProvisional = groundIsProvisional;
             GroundWorldY = groundWorldY;
         }
 
@@ -207,6 +214,7 @@ public static class ARDepthOcclusionBridge
         public int TextureHeight { get; }
 
         public bool GroundAvailable { get; }
+        public bool GroundIsProvisional { get; }
         public float GroundWorldY { get; }
     }
 }

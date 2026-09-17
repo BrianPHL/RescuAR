@@ -189,6 +189,27 @@ public static class ARCameraSpatialController
     private static bool? lastLoggedRouteVisible;
     private static bool? lastLoggedRouteGroundHeightPlausible;
 
+    private const float MinimumContinuityCameraHeightMeters =
+        0.50f;
+
+    private const float MaximumContinuityCameraHeightMeters =
+        2.55f;
+
+    private const long GroundHeightFailureConfirmationMilliseconds =
+        1000;
+
+    private const long GroundHeightRecoveryConfirmationMilliseconds =
+        250;
+
+    private static bool routeGroundHeightTrustInitialized;
+    private static bool routeGroundHeightTrusted;
+
+    private static long routeGroundHeightFailureStartedTimestamp =
+        long.MinValue;
+
+    private static long routeGroundHeightRecoveryStartedTimestamp =
+        long.MinValue;
+
     private static bool? lastLoggedFloodGeometry;
     private static bool? lastLoggedFloodVisible;
 
@@ -412,6 +433,8 @@ public static class ARCameraSpatialController
             lastLoggedRouteGroundHeightPlausible =
                 null;
 
+            ResetRouteGroundHeightTrust();
+
             lastLoggedFloodGeometry =
                 null;
 
@@ -568,6 +591,8 @@ public static class ARCameraSpatialController
 
             lastLoggedRouteGroundHeightPlausible =
                 null;
+
+            ResetRouteGroundHeightTrust();
         }
 
         AndroidLog.Debug(
@@ -671,7 +696,7 @@ public static class ARCameraSpatialController
         float cameraHeightAboveGroundMeters =
             float.NaN;
 
-        bool routeGroundHeightPlausible =
+        bool rawRouteGroundHeightPlausible =
             trackingValid &&
             anchor.IsAvailable &&
             LocalArNavigationPolicy
@@ -680,10 +705,18 @@ public static class ARCameraSpatialController
                     anchor.PositionY,
                     out cameraHeightAboveGroundMeters);
 
+        bool routeGroundHeightPlausible =
+            UpdateRouteGroundHeightTrust(
+                trackingValid,
+                anchor.IsAvailable,
+                rawRouteGroundHeightPlausible,
+                cameraHeightAboveGroundMeters);
+
         LogRouteGroundHeightStateIfChanged(
             trackingValid,
             anchor,
             routeGroundHeightPlausible,
+            rawRouteGroundHeightPlausible,
             frame.Pose.PositionY,
             cameraHeightAboveGroundMeters,
             frame.Version);
@@ -774,7 +807,6 @@ public static class ARCameraSpatialController
         if (hasFloodDepthGeometry &&
             trackingValid &&
             anchor.IsAvailable &&
-            !anchor.IsProvisional &&
             routeGroundHeightPlausible)
         {
             Vector3 markerPosition =
@@ -799,20 +831,6 @@ public static class ARCameraSpatialController
              * Explicit bridge clear / Flood Depth mode exit wins over visual
              * continuity. Do not resurrect geometry the feature no longer
              * considers active.
-             */
-            floodDepthRoot.IsEnabled =
-                false;
-
-            hasValidFloodDepthSpatialPlacement =
-                false;
-        }
-        else if (anchor.IsProvisional)
-        {
-            /*
-             * Flood height is a metric measurement and must never inherit the
-             * consultation-only estimated floor. Wait for a verified ARCore
-             * Plane/Depth anchor even if an older frozen flood placement was
-             * previously available.
              */
             floodDepthRoot.IsEnabled =
                 false;
@@ -1936,6 +1954,7 @@ public static class ARCameraSpatialController
         bool trackingValid,
         ARCameraPoseBridge.AnchorSnapshot anchor,
         bool heightPlausible,
+        bool rawHeightPlausible,
         float cameraWorldY,
         float cameraHeightAboveGroundMeters,
         long spatialVersion)
@@ -1962,6 +1981,7 @@ public static class ARCameraSpatialController
             "AR route ground-height validation changed: " +
             $"spatialVersion={spatialVersion}, " +
             $"plausible={heightPlausible}, " +
+            $"rawPlausible={rawHeightPlausible}, " +
             $"cameraY={cameraWorldY:F2} m, " +
             $"groundY={anchor.PositionY:F2} m, " +
             $"cameraHeight={cameraHeightAboveGroundMeters:F2} m, " +
@@ -1981,6 +2001,136 @@ public static class ARCameraSpatialController
                 message +
                 " Cyan route rendering is suppressed until a valid floor anchor is available.");
         }
+    }
+
+    private static bool UpdateRouteGroundHeightTrust(
+        bool trackingValid,
+        bool anchorAvailable,
+        bool rawHeightPlausible,
+        float cameraHeightAboveGroundMeters)
+    {
+        if (!trackingValid ||
+            !anchorAvailable)
+        {
+            routeGroundHeightFailureStartedTimestamp =
+                long.MinValue;
+
+            routeGroundHeightRecoveryStartedTimestamp =
+                long.MinValue;
+
+            return false;
+        }
+
+        long now =
+            Environment.TickCount64;
+
+        if (!routeGroundHeightTrustInitialized)
+        {
+            routeGroundHeightTrustInitialized =
+                true;
+
+            routeGroundHeightTrusted =
+                rawHeightPlausible;
+
+            return routeGroundHeightTrusted;
+        }
+
+        bool withinContinuityRange =
+            float.IsFinite(
+                cameraHeightAboveGroundMeters) &&
+            cameraHeightAboveGroundMeters >=
+                MinimumContinuityCameraHeightMeters &&
+            cameraHeightAboveGroundMeters <=
+                MaximumContinuityCameraHeightMeters;
+
+        if (routeGroundHeightTrusted)
+        {
+            routeGroundHeightRecoveryStartedTimestamp =
+                long.MinValue;
+
+            if (rawHeightPlausible ||
+                withinContinuityRange)
+            {
+                routeGroundHeightFailureStartedTimestamp =
+                    long.MinValue;
+
+                return true;
+            }
+
+            if (routeGroundHeightFailureStartedTimestamp ==
+                long.MinValue)
+            {
+                routeGroundHeightFailureStartedTimestamp =
+                    now;
+
+                return true;
+            }
+
+            if (now -
+                    routeGroundHeightFailureStartedTimestamp <
+                GroundHeightFailureConfirmationMilliseconds)
+            {
+                return true;
+            }
+
+            routeGroundHeightTrusted =
+                false;
+
+            routeGroundHeightFailureStartedTimestamp =
+                long.MinValue;
+
+            return false;
+        }
+
+        routeGroundHeightFailureStartedTimestamp =
+            long.MinValue;
+
+        if (!rawHeightPlausible)
+        {
+            routeGroundHeightRecoveryStartedTimestamp =
+                long.MinValue;
+
+            return false;
+        }
+
+        if (routeGroundHeightRecoveryStartedTimestamp ==
+            long.MinValue)
+        {
+            routeGroundHeightRecoveryStartedTimestamp =
+                now;
+
+            return false;
+        }
+
+        if (now -
+                routeGroundHeightRecoveryStartedTimestamp <
+            GroundHeightRecoveryConfirmationMilliseconds)
+        {
+            return false;
+        }
+
+        routeGroundHeightTrusted =
+            true;
+
+        routeGroundHeightRecoveryStartedTimestamp =
+            long.MinValue;
+
+        return true;
+    }
+
+    private static void ResetRouteGroundHeightTrust()
+    {
+        routeGroundHeightTrustInitialized =
+            false;
+
+        routeGroundHeightTrusted =
+            false;
+
+        routeGroundHeightFailureStartedTimestamp =
+            long.MinValue;
+
+        routeGroundHeightRecoveryStartedTimestamp =
+            long.MinValue;
     }
 
     private static void PublishTelemetry(

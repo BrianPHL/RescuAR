@@ -7,13 +7,16 @@ namespace RescuAR.AR;
 
 /// <summary>
 /// Bounded visual policy for camera-relative route width and lightweight
-/// nearby depth occlusion. It deliberately samples only segment midpoints;
-/// the route sanitizer already limits rendered spans to four metres.
+/// nearby depth occlusion. Nearby segments use start/mid/end agreement so one
+/// noisy depth pixel cannot hide a complete guidance segment.
 /// </summary>
 public static class ARRouteVisualPolicy
 {
     public const float MaximumOcclusionDistanceMeters =
         10.0f;
+
+    public const float NearCameraOcclusionExemptionMeters =
+        1.5f;
 
     private const float MinimumRouteWidthMeters =
         0.30f;
@@ -105,19 +108,9 @@ public static class ARRouteVisualPolicy
         long currentFrameTimestamp,
         Vector3 worldPoint)
     {
-        if (!depth.IsAvailable ||
-            currentFrameTimestamp <= 0 ||
-            depth.FrameTimestamp <= 0 ||
-            Math.Abs(
-                currentFrameTimestamp -
-                depth.FrameTimestamp) >
-                    MaximumDepthAgeNanoseconds ||
-            depth.Width <= 0 ||
-            depth.Height <= 0 ||
-            depth.TextureWidth <= 0 ||
-            depth.TextureHeight <= 0 ||
-            depth.DepthMillimeters.Length <
-                depth.Width * depth.Height)
+        if (!IsDepthSnapshotUsable(
+                depth,
+                currentFrameTimestamp))
         {
             return false;
         }
@@ -213,6 +206,63 @@ public static class ARRouteVisualPolicy
         return environmentDepthMeters +
                 OcclusionClearanceMeters <
             routeDepthMeters;
+    }
+
+    public static bool IsDepthSnapshotUsable(
+        ARDepthOcclusionBridge.DepthSnapshot depth,
+        long currentFrameTimestamp)
+    {
+        return depth.IsAvailable &&
+            currentFrameTimestamp > 0 &&
+            depth.FrameTimestamp > 0 &&
+            Math.Abs(
+                currentFrameTimestamp -
+                depth.FrameTimestamp) <=
+                    MaximumDepthAgeNanoseconds &&
+            depth.Width > 0 &&
+            depth.Height > 0 &&
+            depth.TextureWidth > 0 &&
+            depth.TextureHeight > 0 &&
+            depth.DepthMillimeters.Length >=
+                depth.Width * depth.Height;
+    }
+
+    public static bool IsWorldSegmentOccluded(
+        ARDepthOcclusionBridge.DepthSnapshot depth,
+        long currentFrameTimestamp,
+        Vector3 worldStart,
+        Vector3 worldMidpoint,
+        Vector3 worldEnd)
+    {
+        int occludedSampleCount =
+            0;
+
+        if (IsWorldPointOccluded(
+                depth,
+                currentFrameTimestamp,
+                worldStart))
+        {
+            occludedSampleCount++;
+        }
+
+        if (IsWorldPointOccluded(
+                depth,
+                currentFrameTimestamp,
+                worldMidpoint))
+        {
+            occludedSampleCount++;
+        }
+
+        if (IsWorldPointOccluded(
+                depth,
+                currentFrameTimestamp,
+                worldEnd))
+        {
+            occludedSampleCount++;
+        }
+
+        return occludedSampleCount >=
+            2;
     }
 
     private static bool TryGetMedianDepthMeters(

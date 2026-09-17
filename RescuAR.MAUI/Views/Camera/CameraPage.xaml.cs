@@ -207,6 +207,7 @@ namespace RescuAR.App.Views.Camera
                 FloodDepthVisualizationService.FloodVisualizationSnapshot.Unavailable;
 
         private bool? lastFloodGroundVerified;
+        private bool? lastFloodGroundProvisional;
 
         private int developerFloodDepthSequenceIndex;
 
@@ -1068,6 +1069,11 @@ namespace RescuAR.App.Views.Camera
                 anchor.IsProvisional;
         }
 
+        private static bool HasUsableArGround()
+        {
+            return ARCameraPoseBridge.CurrentFrame.Anchor.IsAvailable;
+        }
+
         private string GetFloodWaitingMessage()
         {
             if (lowLightFallbackActive)
@@ -1078,7 +1084,7 @@ namespace RescuAR.App.Views.Camera
             if (HasLocalFloodDepth() &&
                 HasProvisionalArGround())
             {
-                return "Estimated ground only — scanning for verified floor...";
+                return "Estimated flood level — calibrating floor...";
             }
 
             if (HasLocalFloodDepth() &&
@@ -1107,15 +1113,28 @@ namespace RescuAR.App.Views.Camera
             bool verifiedGround =
                 HasVerifiedArGround();
 
+            bool provisionalGround =
+                HasProvisionalArGround();
+
+            bool groundAvailable =
+                verifiedGround ||
+                provisionalGround;
+
             if (lastFloodGroundVerified.HasValue &&
                 lastFloodGroundVerified.Value ==
-                    verifiedGround)
+                    verifiedGround &&
+                lastFloodGroundProvisional.HasValue &&
+                lastFloodGroundProvisional.Value ==
+                    provisionalGround)
             {
                 return;
             }
 
             lastFloodGroundVerified =
                 verifiedGround;
+
+            lastFloodGroundProvisional =
+                provisionalGround;
 
             bool localFloodActive =
                 pageIsVisible &&
@@ -1128,7 +1147,7 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            if (verifiedGround &&
+            if (groundAvailable &&
                 !lowLightFallbackActive)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
@@ -1140,7 +1159,7 @@ namespace RescuAR.App.Views.Camera
                 ARFloodDepthBridge.Clear(
                     lowLightFallbackActive
                         ? "sustained insufficient light"
-                        : "provisional ground cannot support metric flood depth");
+                        : "no AR ground reference is available");
             }
 
 #if ANDROID
@@ -1148,12 +1167,15 @@ namespace RescuAR.App.Views.Camera
                 FloodDepthLogTag,
                 "FLOOD GROUND TRUST CHANGED: " +
                 $"verified={verifiedGround}, " +
-                $"arSpaceWater={(verifiedGround && !lowLightFallbackActive)}. " +
+                $"provisional={provisionalGround}, " +
+                $"arSpaceWater={(groundAvailable && !lowLightFallbackActive)}. " +
                 (verifiedGround && !lowLightFallbackActive
-                    ? "Verified ARCore ground now authorizes flood placement."
+                    ? "Verified ARCore ground authorizes exact flood placement."
+                    : provisionalGround && !lowLightFallbackActive
+                        ? "Provisional ground authorizes a reduced-opacity estimated flood preview."
                     : lowLightFallbackActive
                         ? "Flood placement is held while insufficient light prevents reliable tracking."
-                        : "Flood placement is held until verified ARCore ground is available."));
+                        : "Flood placement is held until an AR ground reference is available."));
 #endif
         }
 
@@ -6819,7 +6841,7 @@ namespace RescuAR.App.Views.Camera
 
             bool renderLocalDepthInAr =
                 hasLocalArDepth &&
-                HasVerifiedArGround() &&
+                HasUsableArGround() &&
                 !lowLightFallbackActive &&
                 currentCameraModuleView ==
                     CameraModuleViewMode.FloodDepth &&
@@ -6924,6 +6946,13 @@ namespace RescuAR.App.Views.Camera
             bool verifiedGround =
                 HasVerifiedArGround();
 
+            bool provisionalGround =
+                HasProvisionalArGround();
+
+            bool usableGround =
+                verifiedGround ||
+                provisionalGround;
+
             bool shouldShow =
                 visible &&
                 floodModeActive &&
@@ -6935,7 +6964,7 @@ namespace RescuAR.App.Views.Camera
                     reason);
             }
             else if (hasLocalArDepth &&
-                     verifiedGround)
+                     usableGround)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
@@ -6945,7 +6974,7 @@ namespace RescuAR.App.Views.Camera
             {
                 ARFloodDepthBridge.Clear(
                     hasLocalArDepth
-                        ? "Flood Depth is waiting for verified ARCore ground"
+                        ? "Flood Depth is waiting for an AR ground reference"
                         : "Flood Depth sub-tab has context but no trusted local depth");
             }
 
@@ -6976,8 +7005,9 @@ namespace RescuAR.App.Views.Camera
                 FloodDepthLogTag,
                 $"Flood visualization visibility={shouldShow}; " +
                 $"verifiedGround={verifiedGround}; " +
+                $"provisionalGround={provisionalGround}; " +
                 $"lowLight={lowLightFallbackActive}; " +
-                $"arSpaceWater={(shouldShow && hasLocalArDepth && verifiedGround && !lowLightFallbackActive)}; " +
+                $"arSpaceWater={(shouldShow && hasLocalArDepth && usableGround && !lowLightFallbackActive)}; " +
                 $"reason='{reason}'.");
 #endif
         }

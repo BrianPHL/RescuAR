@@ -1,5 +1,6 @@
 using Android.Util;
 using Google.AR.Core;
+using RescuAR.AR;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
@@ -20,6 +21,19 @@ public sealed partial class ArCoreService
     /// <inheritdoc />
     public void PauseCameraSession()
     {
+        bool cameraProcessorIdle =
+            ARCameraTextureBridge.SuspendProcessing(
+                TimeSpan.FromSeconds(
+                    2));
+
+        if (!cameraProcessorIdle)
+        {
+            Log.Warn(
+                Tag,
+                "Timed out waiting for the Vulkan camera converter to " +
+                "become idle. Processing remains suspended for surface teardown.");
+        }
+
         Session? currentSession =
             session;
 
@@ -179,6 +193,8 @@ public sealed partial class ArCoreService
                 Tag,
                 "ARCore Session is already active. Ensuring frame loop is running.");
 
+            ARCameraTextureBridge.ResumeProcessing();
+
             StartFrameLoop();
 
             return true;
@@ -224,6 +240,8 @@ public sealed partial class ArCoreService
 
             lastLoggedTrackingFailureReason =
                 null;
+
+            ARCameraTextureBridge.ResumeProcessing();
         }
         catch (Exception exception)
         {
