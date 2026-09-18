@@ -26,6 +26,7 @@ namespace RescuAR.MAUI.Evergine
         private AndroidSurface? androidSurface;
         private AndroidWindowsSystem? windowsSystem;
         private SwapChain? swapChain;
+        private VKGraphicsContext? graphicsContext;
         private volatile bool renderingEnabled =
             true;
 
@@ -216,7 +217,23 @@ namespace RescuAR.MAUI.Evergine
                     AndroidSurface_OnClosing;
             }
 
+            ArCoreService? currentArCoreService =
+                arCoreService;
+
+            VKGraphicsContext? currentGraphicsContext =
+                graphicsContext;
+
+            if (currentArCoreService is not null &&
+                currentGraphicsContext is not null)
+            {
+                currentArCoreService.NotifyGraphicsContextUnavailable(
+                    currentGraphicsContext);
+            }
+
             arCoreService =
+                null;
+
+            graphicsContext =
                 null;
 
             lastArCoreRotation =
@@ -314,10 +331,13 @@ namespace RescuAR.MAUI.Evergine
             string[] instanceExtensions =
                 [];
 
-            var graphicsContext =
+            var createdGraphicsContext =
                 new VKGraphicsContext(
                     deviceExtensions,
                     instanceExtensions);
+
+            graphicsContext =
+                createdGraphicsContext;
 
             arCoreService =
                 MauiProgram.Services
@@ -331,7 +351,7 @@ namespace RescuAR.MAUI.Evergine
                     $"{nameof(ArCoreService)} instance.");
             }
 
-            graphicsContext.CreateDevice();
+            createdGraphicsContext.CreateDevice();
 
             Log.Debug(
                 VulkanTag,
@@ -347,7 +367,7 @@ namespace RescuAR.MAUI.Evergine
             Log.Debug(
                 VulkanTag,
                 $"Factory = " +
-                $"{graphicsContext.Factory.GetType().FullName}");
+                $"{createdGraphicsContext.Factory.GetType().FullName}");
 
             Log.Debug(
                 ArCoreTag,
@@ -356,25 +376,25 @@ namespace RescuAR.MAUI.Evergine
             Log.Debug(
                 ArCoreTag,
                 $"VkInstance = " +
-                $"0x{graphicsContext.VkInstance.Handle:X}");
+                $"0x{createdGraphicsContext.VkInstance.Handle:X}");
 
             Log.Debug(
                 ArCoreTag,
                 $"VkPhysicalDevice = " +
-                $"0x{graphicsContext.VkPhysicalDevice.Handle:X}");
+                $"0x{createdGraphicsContext.VkPhysicalDevice.Handle:X}");
 
             Log.Debug(
                 ArCoreTag,
                 $"VkDevice = " +
-                $"0x{graphicsContext.VkDevice.Handle:X}");
+                $"0x{createdGraphicsContext.VkDevice.Handle:X}");
 
             Log.Debug(
                 ArCoreTag,
-                graphicsContext.GetType().FullName
-                ?? graphicsContext.GetType().Name);
+                createdGraphicsContext.GetType().FullName
+                ?? createdGraphicsContext.GetType().Name);
 
             arCoreService.SetGraphicsContext(
-                graphicsContext);
+                createdGraphicsContext);
 
             /*
              * At this point Evergine has supplied its actual Android surface.
@@ -423,7 +443,7 @@ namespace RescuAR.MAUI.Evergine
                 };
 
             swapChain =
-                graphicsContext.CreateSwapChain(
+                createdGraphicsContext.CreateSwapChain(
                     swapChainDescription);
 
             swapChain.VerticalSync =
@@ -443,7 +463,7 @@ namespace RescuAR.MAUI.Evergine
                 firstDisplay);
 
             application.Container.RegisterInstance(
-                graphicsContext);
+                createdGraphicsContext);
         }
 
         /// <summary>

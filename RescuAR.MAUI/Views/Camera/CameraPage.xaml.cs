@@ -643,6 +643,7 @@ namespace RescuAR.App.Views.Camera
                 1);
 
         private CancellationTokenSource? arCoreAutoStartCancellation;
+        private Task? arCoreActivationTask;
 
         private const int ArCoreSurfaceReadyTimeoutMilliseconds =
             3000;
@@ -652,6 +653,9 @@ namespace RescuAR.App.Views.Camera
 
         private const int ArCoreSurfaceSettleMilliseconds =
             250;
+
+        private static readonly TimeSpan ArCoreActivationTimeout =
+            TimeSpan.FromSeconds(8);
 
         public CameraPage(
             IArCoreService arCoreService)
@@ -908,11 +912,8 @@ namespace RescuAR.App.Views.Camera
                 arCoreAutoStartCancellation =
                     null;
 
-                if (_arCoreService.IsInitialized &&
-                    !_arCoreService.IsSessionPaused)
-                {
-                    _arCoreService.PauseCameraSession();
-                }
+                _arCoreService.RequestPause(
+                    $"2D Map selected: {reason}");
 
 #if ANDROID
                 Log.Info(
@@ -935,7 +936,7 @@ namespace RescuAR.App.Views.Camera
             arCoreAutoStartCancellation =
                 new CancellationTokenSource();
 
-            _ =
+            arCoreActivationTask =
                 EnsureArCoreActiveAsync(
                     arCoreAutoStartCancellation.Token);
         }
@@ -2541,6 +2542,10 @@ namespace RescuAR.App.Views.Camera
             SubscribeDestinationChanged();
             SubscribeEmergencyAdvisories();
             SubscribeConnectivityChanges();
+            _arCoreService.LifecycleChanged -=
+                OnArCoreLifecycleChanged;
+            _arCoreService.LifecycleChanged +=
+                OnArCoreLifecycleChanged;
 
             ScheduleNetworkLossFailoverIfNeeded(
                 "Camera tab entered");
@@ -2581,6 +2586,8 @@ namespace RescuAR.App.Views.Camera
             UnsubscribeDestinationChanged();
             UnsubscribeEmergencyAdvisories();
             UnsubscribeConnectivityChanges();
+            _arCoreService.LifecycleChanged -=
+                OnArCoreLifecycleChanged;
             CancelConnectivityFailover(
                 "Camera tab exited");
             HideEmergencyAdvisoryOverlay(
@@ -2626,11 +2633,8 @@ namespace RescuAR.App.Views.Camera
              * camera/ARCore policy from remaining active on Home/Map/etc.
              * The Session and guidance state are retained for Camera re-entry.
              */
-            if (_arCoreService.IsInitialized &&
-                !_arCoreService.IsSessionPaused)
-            {
-                _arCoreService.PauseCameraSession();
-            }
+            _arCoreService.RequestPause(
+                "Camera tab exited");
 
 #if ANDROID
             Log.Debug(
@@ -2640,6 +2644,40 @@ namespace RescuAR.App.Views.Camera
 
             base.OnDisappearing();
         }
+
+        private void OnArCoreLifecycleChanged(
+            ArCoreLifecycleSnapshot snapshot)
+        {
+            if (snapshot.State !=
+                    ArCoreLifecycleState.Running ||
+                !pageIsVisible ||
+                currentCameraModuleView ==
+                    CameraModuleViewMode.Map2D)
+            {
+                return;
+            }
+
+            Dispatcher.Dispatch(
+                () =>
+                {
+                    if (pageIsVisible &&
+                        currentCameraModuleView !=
+                            CameraModuleViewMode.Map2D)
+                    {
+                        StartRouteRequestIfPossible();
+                    }
+                });
+        }
+
+        private static bool ShouldSuppressArCoreFailureAlert(
+            ArCoreFailureCode code) =>
+            code is
+                ArCoreFailureCode.InstallationRequired or
+                ArCoreFailureCode.Superseded or
+                ArCoreFailureCode.Cancelled or
+                ArCoreFailureCode.GraphicsUnavailable or
+                ArCoreFailureCode.AvailabilityPending or
+                ArCoreFailureCode.ActivityUnavailable;
 
         /// <summary>
         /// Ensures ARCore is active whenever the Camera tab is visible.
@@ -2664,11 +2702,19 @@ namespace RescuAR.App.Views.Camera
 
             try
             {
-                await arCoreActivationGate.WaitAsync(
-                    cancellationToken);
-
                 gateEntered =
-                    true;
+                    await arCoreActivationGate.WaitAsync(
+                        ArCoreActivationTimeout,
+                        cancellationToken);
+
+                if (!gateEntered)
+                {
+                    Log.Error(
+                        ArCoreLogTag,
+                        "Camera-tab ARCore activation timed out waiting for a previous request.");
+
+                    return false;
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -2690,8 +2736,12 @@ namespace RescuAR.App.Views.Camera
                         ArCoreLogTag,
                         "Camera tab auto-start: resuming retained ARCore Session.");
 
+                    ArCoreLifecycleResult resumeResult =
+                        await _arCoreService.EnsureRunningAsync(
+                            cancellationToken);
+
                     bool resumed =
-                        _arCoreService.ResumeCameraSession();
+                        resumeResult.Success;
 
                     Log.Debug(
                         ArCoreLogTag,
@@ -2704,7 +2754,8 @@ namespace RescuAR.App.Views.Camera
                         currentCameraModuleView ==
                             CameraModuleViewMode.Map2D)
                     {
-                        _arCoreService.PauseCameraSession();
+                        _arCoreService.RequestPause(
+                            "2D Map selected while ARCore resume completed");
 
                         return false;
                     }
@@ -2732,15 +2783,20 @@ namespace RescuAR.App.Views.Camera
                         }
                     }
                     else if (!resumed &&
-                             pageIsVisible)
+                             pageIsVisible &&
+                             !ShouldSuppressArCoreFailureAlert(
+                                 resumeResult.Failure.Code))
                     {
                         Log.Error(
                             ArCoreLogTag,
-                            "Retained ARCore Session could not be resumed.");
+                            "Retained ARCore Session could not be resumed: " +
+                            $"code={resumeResult.Failure.Code}, " +
+                            $"classification={resumeResult.Failure.Classification}, " +
+                            $"message='{resumeResult.Failure.Message}'.");
 
                         await DisplayAlert(
                             "AR Camera",
-                            "The AR camera could not be resumed. Leave the Camera tab and try again.",
+                            resumeResult.Failure.Message,
                             "OK");
                     }
 
@@ -2850,8 +2906,12 @@ namespace RescuAR.App.Views.Camera
                     ArCoreLogTag,
                     "Camera tab auto-start: initializing new ARCore Session.");
 
+                ArCoreLifecycleResult initializationResult =
+                    await _arCoreService.EnsureRunningAsync(
+                        cancellationToken);
+
                 bool initialized =
-                    _arCoreService.Initialize();
+                    initializationResult.Success;
 
                 Log.Debug(
                     ArCoreLogTag,
@@ -2864,13 +2924,18 @@ namespace RescuAR.App.Views.Camera
                 {
                     Log.Error(
                         ArCoreLogTag,
-                        "Automatic ARCore initialization failed.");
+                        "Automatic ARCore initialization failed: " +
+                        $"code={initializationResult.Failure.Code}, " +
+                        $"classification={initializationResult.Failure.Classification}, " +
+                        $"message='{initializationResult.Failure.Message}'.");
 
-                    if (pageIsVisible)
+                    if (pageIsVisible &&
+                        !ShouldSuppressArCoreFailureAlert(
+                            initializationResult.Failure.Code))
                     {
                         await DisplayAlert(
                             "AR Camera",
-                            "ARCore could not be initialized. Check Logcat for RescuAR-ARCore.",
+                            initializationResult.Failure.Message,
                             "OK");
                     }
 
@@ -2881,7 +2946,8 @@ namespace RescuAR.App.Views.Camera
                     currentCameraModuleView ==
                         CameraModuleViewMode.Map2D)
                 {
-                    _arCoreService.PauseCameraSession();
+                    _arCoreService.RequestPause(
+                        "Camera view became inactive after ARCore initialization");
 
                     return false;
                 }
@@ -10522,13 +10588,6 @@ namespace RescuAR.App.Views.Camera
                         activeGroundAnchorReplacementGeneration =
                             -1;
 
-                        /*
-                         * The service can now clear its replacement-search
-                         * state. The route was republished only once for the
-                         * actual replacement; there was no bridge Clear().
-                         */
-                        _arCoreService.TryRecoverGroundAnchorIfNeeded();
-
                         Log.Debug(
                             "RescuAR-AnchorRecovery",
                             "Moving local-frame anchor replacement COMPLETE. " +
@@ -10554,26 +10613,6 @@ namespace RescuAR.App.Views.Camera
                  * natural relocalization without CameraPage disturbing it.
                  */
             }
-            else if (hasObservedGroundAnchor)
-            {
-                /*
-                 * This is either:
-                 *
-                 *  A) temporary retained-anchor PAUSED state during the
-                 *     proactive/final recovery window; or
-                 *
-                 *  B) an actual replacement floor search after the service has
-                 *     released the stale Anchor.
-                 *
-                 * The service owns that distinction. CameraPage does NOT clear
-                 * or republish ARRouteBridge here.
-                 *
-                 * The renderer owns the short visual-continuity behavior while
-                 * retaining the same route-root X/Z lock.
-                 */
-                _arCoreService.TryRecoverGroundAnchorIfNeeded();
-            }
-
             /*
              * LARGE IN-SESSION ARCORE WORLD CORRECTION
              * ----------------------------------------

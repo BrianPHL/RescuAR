@@ -1,4 +1,3 @@
-using Android.App;
 using Android.Content;
 using Android.Hardware;
 using Android.Util;
@@ -19,17 +18,25 @@ public sealed partial class ArCoreService : IArCoreService
         "RescuAR-ARCore";
 
     private readonly Context context;
-    private readonly Activity activity;
-
     /*
-     * Prevents the automatic frame loop and the existing manual Update()
-     * button path from calling Session.Update() at the same time.
+     * Serializes the automatic frame loop with lifecycle, camera-control,
+     * recovery, and display-geometry session calls.
      *
      * Display-geometry changes are also applied while this gate is held so
      * Session.SetDisplayGeometry() and Session.Update() do not race.
      */
     private readonly SemaphoreSlim updateGate =
         new(1, 1);
+
+    private const int FrameUpdateGateTimeoutMilliseconds =
+        500;
+
+    private const long FrameDropLogIntervalMilliseconds =
+        5_000;
+
+    private long droppedSerializedFrameCount;
+    private long lastFrameDropLogTimestamp =
+        long.MinValue;
 
     /*
      * Serializes Camera-tab pause/resume transitions.
@@ -50,9 +57,10 @@ public sealed partial class ArCoreService : IArCoreService
     private readonly object displayGeometryLock =
         new();
 
-    private Session? session;
-    private VKGraphicsContext? graphicsContext;
+    private volatile Session? session;
+    private volatile VKGraphicsContext? graphicsContext;
     private ARCoreVulkanImporter? importer;
+    private Exception? lastSessionOperationException;
 
     /*
      * Latest-frame handoff between the ARCore worker and Evergine's draw
@@ -68,7 +76,7 @@ public sealed partial class ArCoreService : IArCoreService
     private PendingCameraFrame? pendingCameraFrame;
 
     private CancellationTokenSource? frameLoopCancellation;
-    private Task? frameLoopTask;
+    private volatile Task? frameLoopTask;
 
     private bool hasInspectedHardwareBuffer;
 
@@ -382,9 +390,6 @@ public sealed partial class ArCoreService : IArCoreService
     public bool IsSessionPaused =>
         sessionPaused;
 
-    public Session? Session =>
-        session;
-
     public bool IsInitialized =>
         session is not null;
 
@@ -397,17 +402,12 @@ public sealed partial class ArCoreService : IArCoreService
         context =
             global::Android.App.Application.Context;
 
-        activity =
-            Platform.CurrentActivity
-            ?? throw new InvalidOperationException(
-                "Current Android Activity is unavailable.");
-
         Log.Debug(
             Tag,
             "ArCoreService constructed.");
     }
 
-    public ArCoreApk.Availability CheckAvailability()
+    private ArCoreApk.Availability CheckAvailabilityCore()
     {
         Log.Debug(
             Tag,
@@ -441,27 +441,12 @@ public sealed partial class ArCoreService : IArCoreService
         return availability;
     }
 
-    public ArCoreApk.InstallStatus RequestInstall()
+    private bool InitializeSessionCore(
+        ArCoreApk.Availability availability)
     {
-        Log.Debug(
-            Tag,
-            "Requesting ARCore installation...");
+        lastSessionOperationException =
+            null;
 
-        ArCoreApk.InstallStatus installStatus =
-            ArCoreApk.Instance
-                .RequestInstall(
-                    activity,
-                    true);
-
-        Log.Debug(
-            Tag,
-            $"ARCore Install Status: {installStatus}");
-
-        return installStatus;
-    }
-
-    public bool Initialize()
-    {
         Log.Debug(
             Tag,
             "========================================");
@@ -474,73 +459,11 @@ public sealed partial class ArCoreService : IArCoreService
             Tag,
             "========================================");
 
-        if (session is not null)
-        {
-            Log.Debug(
-                Tag,
-                "ARCore Session already exists.");
-
-            return true;
-        }
-
         try
         {
             Log.Debug(
                 Tag,
-                "STEP 1: Checking ARCore availability.");
-
-            ArCoreApk.Availability availability =
-                CheckAvailability();
-
-            if (availability.IsUnsupported)
-            {
-                Log.Error(
-                    Tag,
-                    "ARCore is unsupported on this device.");
-
-                return false;
-            }
-
-            Log.Debug(
-                Tag,
-                "STEP 2: Requesting ARCore installation.");
-
-            ArCoreApk.InstallStatus installStatus =
-                RequestInstall();
-
-            if (installStatus ==
-                ArCoreApk.InstallStatus.InstallRequested)
-            {
-                Log.Warn(
-                    Tag,
-                    "ARCore installation was requested.");
-
-                Log.Warn(
-                    Tag,
-                    "Initialization must be attempted again " +
-                    "after installation.");
-
-                return false;
-            }
-
-            if (installStatus !=
-                ArCoreApk.InstallStatus.Installed)
-            {
-                Log.Error(
-                    Tag,
-                    $"Unexpected ARCore install status: " +
-                    $"{installStatus}");
-
-                return false;
-            }
-
-            Log.Debug(
-                Tag,
-                "ARCore installation status: INSTALLED.");
-
-            Log.Debug(
-                Tag,
-                "STEP 3: Creating ARCore Session.");
+                "Creating ARCore Session on the serialized session worker.");
 
             session =
                 new Session(
@@ -647,8 +570,6 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 10: Applying initial display geometry.");
 
-            TryCaptureInitialDisplayGeometry();
-
             ApplyDisplayGeometryIfNeeded(
                 session);
 
@@ -710,12 +631,6 @@ public sealed partial class ArCoreService : IArCoreService
 
             Log.Debug(
                 Tag,
-                "STEP 11: Starting automatic ARCore frame loop.");
-
-            StartFrameLoop();
-
-            Log.Debug(
-                Tag,
                 "========================================");
 
             Log.Debug(
@@ -730,276 +645,16 @@ public sealed partial class ArCoreService : IArCoreService
         }
         catch (Exception exception)
         {
+            lastSessionOperationException =
+                exception;
+
             Log.Error(
                 Tag,
                 $"ARCore initialization FAILED: {exception}");
 
-            StopFrameLoop();
-
             CloseSessionAfterFailure();
 
             return false;
-        }
-    }
-
-    /// <summary>
-    /// Temporarily releases the physical ARCore camera when the Camera tab is
-    /// hidden while preserving the ARCore Session, current spatial anchor,
-    /// Vulkan importer, and navigation/guidance state.
-    /// </summary>
-    public async Task PauseCameraSessionAsync()
-    {
-        await lifecycleGate
-            .WaitAsync()
-            .ConfigureAwait(false);
-
-        try
-        {
-            bool cameraProcessorIdle =
-                ARCameraTextureBridge.SuspendProcessing(
-                    TimeSpan.FromSeconds(
-                        2));
-
-            if (!cameraProcessorIdle)
-            {
-                Log.Warn(
-                    Tag,
-                    "Timed out waiting for the Vulkan camera converter during async pause. " +
-                    "Processing remains suspended for surface teardown.");
-            }
-
-            Session? currentSession =
-                session;
-
-            if (currentSession is null)
-            {
-                return;
-            }
-
-            if (sessionPaused)
-            {
-                Log.Debug(
-                    Tag,
-                    "ARCore camera session is already paused.");
-
-                return;
-            }
-
-            Log.Debug(
-                Tag,
-                "Pausing ARCore camera session...");
-
-            /*
-             * Cancel new automatic updates first. Session.Update() itself is
-             * blocking, so wait for the worker to finish its current update
-             * before calling Session.Pause().
-             */
-            CancellationTokenSource? cancellation =
-                frameLoopCancellation;
-
-            Task? runningTask =
-                frameLoopTask;
-
-            if (cancellation is not null)
-            {
-                try
-                {
-                    cancellation.Cancel();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Already being cleaned up.
-                }
-            }
-
-            if (runningTask is not null)
-            {
-                try
-                {
-                    await runningTask
-                        .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected during normal Camera-tab shutdown.
-                }
-            }
-
-            frameLoopTask =
-                null;
-
-            frameLoopCancellation =
-                null;
-
-            cancellation?.Dispose();
-
-            /*
-             * Final barrier against the manual Update() path. The spatial
-             * anchor is intentionally retained; only the pending camera frame
-             * is released.
-             */
-            await updateGate
-                .WaitAsync()
-                .ConfigureAwait(false);
-
-            try
-            {
-                ReleasePendingCameraFrame();
-
-                ARCameraTextureBridge.Clear();
-
-                currentSession.Pause();
-
-                sessionPaused =
-                    true;
-
-                /*
-                 * The anchor is intentionally retained across the pause.
-                 * A recovery grace period is started only after Session.Resume().
-                 */
-            }
-            finally
-            {
-                updateGate.Release();
-            }
-
-            Log.Debug(
-                Tag,
-                "ARCore camera session paused. Physical camera released; " +
-                "ARCore Session and guidance state retained.");
-        }
-        finally
-        {
-            lifecycleGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// Reopens the physical camera and restarts ARCore frame production when
-    /// the Camera tab becomes visible again. The existing Session and spatial
-    /// anchor are reused so ongoing guidance is not cancelled.
-    /// </summary>
-    public async Task<bool> ResumeCameraSessionAsync()
-    {
-        await lifecycleGate
-            .WaitAsync()
-            .ConfigureAwait(false);
-
-        try
-        {
-            Session? currentSession =
-                session;
-
-            if (currentSession is null)
-            {
-                Log.Warn(
-                    Tag,
-                    "Cannot resume ARCore camera because Session is null.");
-
-                return false;
-            }
-
-            if (!sessionPaused)
-            {
-                ARCameraTextureBridge.ResumeProcessing();
-
-                StartFrameLoop();
-
-                Log.Debug(
-                    Tag,
-                    "ARCore camera session is already resumed.");
-
-                return true;
-            }
-
-            Log.Debug(
-                Tag,
-                "Resuming ARCore camera session...");
-
-            await updateGate
-                .WaitAsync()
-                .ConfigureAwait(false);
-
-            try
-            {
-                /*
-                 * The Evergine viewport may have changed while Camera was
-                 * hidden. Apply any pending geometry before reopening camera
-                 * frame production.
-                 */
-                ApplyDisplayGeometryIfNeeded(
-                    currentSession);
-
-                currentSession.Resume();
-
-                sessionPaused =
-                    false;
-
-                ARCameraTextureBridge.ResumeProcessing();
-
-                /*
-                 * Retain the current AR anchor across Session.Resume(). The
-                 * queued recovery component gives PAUSED anchors a generous
-                 * relocalization grace period and only replaces a truly stale
-                 * anchor.
-                 */
-                InvalidatePendingRecoveryCountdown();
-
-                hasLoggedGroundPlaneSearch =
-                    false;
-
-                /*
-                 * Treat the next frame as the start of a fresh camera stream.
-                 */
-                lastProcessedTimestamp =
-                    long.MinValue;
-
-                processedFrameCount =
-                    0;
-
-                fpsWindowStartTimestamp =
-                    Environment.TickCount64;
-
-                hasLoggedTransformedUv =
-                    false;
-
-                lastSpatialPoseTelemetryLogTimestamp =
-                    long.MinValue;
-
-                lastLoggedTrackingState =
-                    null;
-
-                lastLoggedTrackingFailureReason =
-                    null;
-            }
-            catch (Exception exception)
-            {
-                sessionPaused =
-                    true;
-
-                Log.Error(
-                    Tag,
-                    $"Unable to resume ARCore camera session: {exception}");
-
-                return false;
-            }
-            finally
-            {
-                updateGate.Release();
-            }
-
-            StartFrameLoop();
-
-            Log.Debug(
-                Tag,
-                "ARCore camera session resumed. Existing AR guidance state " +
-                "was retained.");
-
-            return true;
-        }
-        finally
-        {
-            lifecycleGate.Release();
         }
     }
 
@@ -1082,32 +737,6 @@ public sealed partial class ArCoreService : IArCoreService
             $"height={height}");
     }
 
-    public Frame? Update()
-    {
-        if (sessionPaused)
-        {
-            Log.Debug(
-                Tag,
-                "Manual Update() ignored because the ARCore Session is paused.");
-
-            return null;
-        }
-
-        if (IsFrameLoopRunning)
-        {
-            Log.Debug(
-                Tag,
-                "Manual Update() ignored because the automatic " +
-                "ARCore frame loop is running.");
-
-            return null;
-        }
-
-        return UpdateFrameSerialized(
-            fromAutomaticLoop: false,
-            CancellationToken.None);
-    }
-
     public void SetGraphicsContext(
         VKGraphicsContext graphicsContext)
     {
@@ -1117,10 +746,25 @@ public sealed partial class ArCoreService : IArCoreService
         this.graphicsContext =
             graphicsContext;
 
+        RegisterGraphicsContextGeneration();
+
         ARCameraTextureBridge.SetDrawThreadProcessor(
             ProcessPendingCameraFrameOnDrawThread);
 
         ARCameraTextureBridge.ResumeProcessing();
+
+        bool shouldResume;
+        lock (lifecycleStateLock)
+        {
+            shouldResume =
+                activityIsResumed &&
+                (resumeAfterGraphicsRecreation ||
+                 desiredLifecycleState == ArCoreLifecycleTarget.Running);
+            if (shouldResume)
+            {
+                resumeAfterGraphicsRecreation = false;
+            }
+        }
 
         Log.Debug(
             Tag,
@@ -1137,9 +781,46 @@ public sealed partial class ArCoreService : IArCoreService
         Log.Debug(
             Tag,
             $"VkDevice = 0x{graphicsContext.VkDevice.Handle:X}");
+
+        if (shouldResume)
+        {
+            TrackTransition(
+                EnsureRunningAsync(),
+                "Evergine graphics context became available");
+        }
     }
 
-    private void StartFrameLoop()
+    public void NotifyGraphicsContextUnavailable(
+        VKGraphicsContext unavailableContext)
+    {
+        if (!ReferenceEquals(
+                graphicsContext,
+                unavailableContext))
+        {
+            return;
+        }
+
+        graphicsContext =
+            null;
+
+        lock (lifecycleStateLock)
+        {
+            resumeAfterGraphicsRecreation =
+                desiredLifecycleState == ArCoreLifecycleTarget.Running;
+        }
+
+        RegisterGraphicsContextGeneration();
+
+        ReleasePendingCameraFrame();
+        InvalidatePublishedFrameState();
+
+        TrackTransition(
+            PauseAsync(),
+            "Evergine graphics context became unavailable");
+    }
+
+    private void StartFrameLoop(
+        long sessionGeneration)
     {
         if (session is null)
         {
@@ -1155,6 +836,20 @@ public sealed partial class ArCoreService : IArCoreService
             Log.Debug(
                 Tag,
                 "Automatic ARCore frame loop not started because Session is paused.");
+
+            return;
+        }
+
+        if (sessionGeneration <= 0 ||
+            sessionGeneration !=
+                Interlocked.Read(
+                    ref currentSessionGeneration))
+        {
+            Log.Debug(
+                Tag,
+                "Discarded stale frame-loop start request: " +
+                $"requestedGeneration={sessionGeneration}, " +
+                $"currentGeneration={Interlocked.Read(ref currentSessionGeneration)}.");
 
             return;
         }
@@ -1180,6 +875,7 @@ public sealed partial class ArCoreService : IArCoreService
         frameLoopTask =
             Task.Run(
                 () => RunFrameLoop(
+                    sessionGeneration,
                     cancellationToken),
                 cancellationToken);
 
@@ -1189,6 +885,7 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     private void RunFrameLoop(
+        long sessionGeneration,
         CancellationToken cancellationToken)
     {
         Log.Debug(
@@ -1200,13 +897,16 @@ public sealed partial class ArCoreService : IArCoreService
             RefreshPowerThermalDecisionIfNeeded(
                 force: true);
 
-            while (!cancellationToken.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested &&
+                   sessionGeneration ==
+                       Interlocked.Read(
+                           ref currentSessionGeneration))
             {
                 long iterationStartedTimestamp =
                     Environment.TickCount64;
 
                 UpdateFrameSerialized(
-                    fromAutomaticLoop: true,
+                    sessionGeneration,
                     cancellationToken);
 
                 RefreshPowerThermalDecisionIfNeeded(
@@ -1236,18 +936,18 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     private Frame? UpdateFrameSerialized(
-        bool fromAutomaticLoop,
+        long sessionGeneration,
         CancellationToken cancellationToken)
     {
+        if (sessionGeneration !=
+            Interlocked.Read(
+                ref currentSessionGeneration))
+        {
+            return null;
+        }
+
         if (session is null)
         {
-            if (!fromAutomaticLoop)
-            {
-                Log.Warn(
-                    Tag,
-                    "Update() called but ARCore Session is null.");
-            }
-
             return null;
         }
 
@@ -1261,31 +961,36 @@ public sealed partial class ArCoreService : IArCoreService
 
         try
         {
-            if (fromAutomaticLoop)
-            {
+            bool entered =
                 updateGate.Wait(
+                    FrameUpdateGateTimeoutMilliseconds,
                     cancellationToken);
-            }
-            else
+
+            if (!entered)
             {
-                updateGate.Wait();
+                RecordSerializedFrameDrop(
+                    sessionGeneration);
+
+                return null;
             }
 
             gateEntered =
                 true;
 
             /*
-             * Re-check after entering the gate. A manual Update() may have
-             * started immediately before PauseCameraSessionAsync() changed
-             * sessionPaused and then waited for this gate.
+             * Re-check after entering the gate. A newer pause, shutdown, or
+             * session generation may have superseded this queued frame.
              */
-            if (sessionPaused)
+            if (sessionPaused ||
+                sessionGeneration !=
+                    Interlocked.Read(
+                        ref currentSessionGeneration))
             {
                 return null;
             }
 
             return UpdateFrameInternal(
-                fromAutomaticLoop);
+                sessionGeneration);
         }
         catch (OperationCanceledException)
         {
@@ -1300,8 +1005,37 @@ public sealed partial class ArCoreService : IArCoreService
         }
     }
 
+    private void RecordSerializedFrameDrop(
+        long sessionGeneration)
+    {
+        droppedSerializedFrameCount++;
+
+        long now =
+            Environment.TickCount64;
+
+        if (lastFrameDropLogTimestamp !=
+                long.MinValue &&
+            now -
+                lastFrameDropLogTimestamp <
+                    FrameDropLogIntervalMilliseconds)
+        {
+            return;
+        }
+
+        lastFrameDropLogTimestamp =
+            now;
+
+        Log.Warn(
+            Tag,
+            "Dropped stale/bounded ARCore frame work while waiting for the " +
+            "serialized session gate: " +
+            $"sessionGeneration={sessionGeneration}, " +
+            $"droppedFrames={droppedSerializedFrameCount}, " +
+            $"waitLimitMs={FrameUpdateGateTimeoutMilliseconds}.");
+    }
+
     private Frame? UpdateFrameInternal(
-        bool fromAutomaticLoop)
+        long sessionGeneration)
     {
         Session? currentSession =
             session;
@@ -1315,13 +1049,6 @@ public sealed partial class ArCoreService : IArCoreService
         {
             ApplyDisplayGeometryIfNeeded(
                 currentSession);
-
-            if (!fromAutomaticLoop)
-            {
-                Log.Debug(
-                    Tag,
-                    "Calling ARCore Session.Update()...");
-            }
 
             Frame? frame =
                 currentSession.Update();
@@ -1391,25 +1118,6 @@ public sealed partial class ArCoreService : IArCoreService
                 }
             }
 
-            if (!fromAutomaticLoop)
-            {
-                Log.Debug(
-                    Tag,
-                    $"Frame Timestamp: {timestamp}");
-
-                Log.Debug(
-                    Tag,
-                    $"Camera Tracking State: {camera.TrackingState}");
-
-                Log.Debug(
-                    Tag,
-                    $"Tracking Failure Reason: {camera.TrackingFailureReason}");
-
-                Log.Debug(
-                    Tag,
-                    $"Camera Texture Name: {frame.CameraTextureName}");
-            }
-
             HardwareBuffer? hardwareBuffer =
                 frame.HardwareBuffer;
 
@@ -1427,13 +1135,6 @@ public sealed partial class ArCoreService : IArCoreService
 
             try
             {
-                if (!fromAutomaticLoop)
-                {
-                    Log.Debug(
-                        Tag,
-                        $"Hardware Buffer: {hardwareBuffer}");
-                }
-
                 if (!hasInspectedHardwareBuffer)
                 {
                     hasInspectedHardwareBuffer =
@@ -1445,14 +1146,6 @@ public sealed partial class ArCoreService : IArCoreService
 
                 if (graphicsContext is null)
                 {
-                    if (!fromAutomaticLoop)
-                    {
-                        Log.Warn(
-                            Tag,
-                            "HardwareBuffer is available, but " +
-                            "VKGraphicsContext is unavailable.");
-                    }
-
                     return frame;
                 }
 
@@ -1466,6 +1159,7 @@ public sealed partial class ArCoreService : IArCoreService
                     out uint outputHeight);
 
                 QueuePendingCameraFrame(
+                    sessionGeneration,
                     hardwareBuffer,
                     cameraUv,
                     outputWidth,
@@ -1497,6 +1191,7 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     private void QueuePendingCameraFrame(
+        long sessionGeneration,
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
@@ -1505,6 +1200,7 @@ public sealed partial class ArCoreService : IArCoreService
     {
         PendingCameraFrame replacement =
             new(
+                sessionGeneration,
                 hardwareBuffer,
                 cameraUv,
                 outputWidth,
@@ -1544,6 +1240,14 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (pendingFrame is null)
         {
+            return;
+        }
+
+        if (pendingFrame.SessionGeneration !=
+            Interlocked.Read(
+                ref currentSessionGeneration))
+        {
+            pendingFrame.Dispose();
             return;
         }
 
@@ -1634,12 +1338,16 @@ public sealed partial class ArCoreService : IArCoreService
         private HardwareBuffer? hardwareBuffer;
 
         public PendingCameraFrame(
+            long sessionGeneration,
             HardwareBuffer hardwareBuffer,
             float[] cameraUv,
             uint outputWidth,
             uint outputHeight,
             long timestamp)
         {
+            SessionGeneration =
+                sessionGeneration;
+
             this.hardwareBuffer =
                 hardwareBuffer
                 ?? throw new ArgumentNullException(
@@ -1664,6 +1372,8 @@ public sealed partial class ArCoreService : IArCoreService
             hardwareBuffer
             ?? throw new ObjectDisposedException(
                 nameof(PendingCameraFrame));
+
+        public long SessionGeneration { get; }
 
         public float[] CameraUv { get; }
 
@@ -3613,117 +3323,6 @@ public sealed partial class ArCoreService : IArCoreService
             $"height={height}");
     }
 
-    private void TryCaptureInitialDisplayGeometry()
-    {
-        lock (displayGeometryLock)
-        {
-            if (displayGeometryAvailable)
-            {
-                Log.Debug(
-                    Tag,
-                    "Skipping DecorView display geometry fallback because " +
-                    "Evergine viewport geometry is already available.");
-
-                return;
-            }
-        }
-
-        Activity? currentActivity =
-            Platform.CurrentActivity;
-
-        if (currentActivity is null)
-        {
-            Log.Warn(
-                Tag,
-                "Unable to capture initial display geometry because " +
-                "Platform.CurrentActivity is null.");
-
-            return;
-        }
-
-        var display =
-            currentActivity.WindowManager?.DefaultDisplay;
-
-        var decorView =
-            currentActivity.Window?.DecorView;
-
-        if (display is null ||
-            decorView is null)
-        {
-            Log.Warn(
-                Tag,
-                "Unable to capture initial ARCore display geometry.");
-
-            return;
-        }
-
-        int width =
-            decorView.Width;
-
-        int height =
-            decorView.Height;
-
-        if (width <= 0 ||
-            height <= 0)
-        {
-            Log.Warn(
-                Tag,
-                $"Invalid DecorView size: {width}x{height}");
-
-            return;
-        }
-
-        SetDisplayGeometry(
-            (int)display.Rotation,
-            width,
-            height);
-
-        Log.Debug(
-            Tag,
-            "Initial ARCore display geometry captured from Android DecorView.");
-    }
-
-    /*
-     * Full shutdown helper retained for initialization failure/application
-     * destruction paths. Do not use this method for normal Camera-tab exit,
-     * because it intentionally releases the spatial anchor.
-     */
-    private void StopFrameLoop()
-    {
-        CancellationTokenSource? cancellation =
-            frameLoopCancellation;
-
-        frameLoopCancellation =
-            null;
-
-        if (cancellation is null)
-        {
-            return;
-        }
-
-        try
-        {
-            cancellation.Cancel();
-        }
-        catch
-        {
-            // Best-effort shutdown.
-        }
-
-        cancellation.Dispose();
-
-        ReleasePendingCameraFrame();
-
-        ReleaseSpatialGroundAnchor();
-
-        frameLoopTask =
-            null;
-
-        Log.Debug(
-            Tag,
-            "Automatic ARCore frame loop stop requested.");
-    }
-
     private static ARCoreVulkanImporter CreateImporter(
         VKGraphicsContext graphicsContext)
     {
@@ -3775,9 +3374,21 @@ public sealed partial class ArCoreService : IArCoreService
     {
         ReleaseSpatialGroundAnchor();
 
+        InvalidatePublishedSessionState();
+
         try
         {
-            session?.Close();
+            Session? failedSession =
+                session;
+
+            try
+            {
+                failedSession?.Close();
+            }
+            finally
+            {
+                failedSession?.Dispose();
+            }
         }
         catch (Exception exception)
         {

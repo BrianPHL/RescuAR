@@ -104,12 +104,31 @@ public sealed partial class ArCoreService
             return false;
         }
 
-        await updateGate
-            .WaitAsync()
-            .ConfigureAwait(false);
+        bool gateEntered =
+            await updateGate
+                .WaitAsync(
+                    TimeSpan.FromSeconds(3))
+                .ConfigureAwait(false);
+
+        if (!gateEntered)
+        {
+            Log.Warn(
+                Tag,
+                "Flashlight request timed out waiting for active ARCore work.");
+
+            return false;
+        }
 
         try
         {
+            if (!ReferenceEquals(
+                    currentSession,
+                    session) ||
+                sessionPaused)
+            {
+                return false;
+            }
+
             /*
              * session.Config is a copy of the CURRENT configuration. Starting
              * from it preserves TextureUpdateMode, UpdateMode, PlaneFinding,

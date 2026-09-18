@@ -1,32 +1,39 @@
-using Google.AR.Core;
-using Frame = Google.AR.Core.Frame;
-
 namespace RescuAR.MAUI.Services;
 
-public interface IArCoreService
+public interface IArCoreService : IAsyncDisposable
 {
-    ArCoreApk.Availability CheckAvailability();
-
-    ArCoreApk.InstallStatus RequestInstall();
-
-    bool Initialize();
-
-    Frame? Update();
+    event Action<ArCoreLifecycleSnapshot>? LifecycleChanged;
 
     /// <summary>
-    /// Pauses the retained ARCore Session and releases the physical camera
-    /// when the Camera tab is no longer active.
-    ///
-    /// The Session and navigation/guidance state remain retained.
+    /// The latest immutable lifecycle/capability result. ARCore session
+    /// objects are intentionally not exposed outside this owner.
     /// </summary>
-    void PauseCameraSession();
+    ArCoreLifecycleSnapshot LifecycleSnapshot { get; }
+
+    ArCoreCapabilitySnapshot CapabilitySnapshot { get; }
+
+    Task<ArCoreLifecycleResult> EnsureRunningAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<ArCoreLifecycleResult> PauseAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<ArCoreLifecycleResult> ShutdownAsync(
+        CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resumes an already-created ARCore Session and restarts its frame loop.
-    ///
-    /// Returns false when there is no retained Session or resume fails.
+    /// Lifecycle callbacks that cannot be awaited use these request methods.
+    /// The service retains and observes the resulting transition task.
     /// </summary>
-    bool ResumeCameraSession();
+    void RequestPause(
+        string reason);
+
+    void RequestShutdown(
+        string reason);
+
+    void NotifyActivityResumed();
+
+    void NotifyActivityPaused();
 
     /// <summary>
     /// Current synchronized presentation zoom applied to both the ARCore
@@ -55,18 +62,6 @@ public interface IArCoreService
     Task<bool> SetFlashlightAsync(bool enabled);
 
     /// <summary>
-    /// Performs a non-destructive health check of the retained ground anchor.
-    ///
-    /// When ARCore camera tracking has recovered but the existing anchor
-    /// remains non-tracking beyond a short grace period, the stale anchor is
-    /// released. The existing ARCore frame loop will then automatically resume
-    /// its normal horizontal-floor hit-test acquisition.
-    ///
-    /// Returns true when ground-anchor reacquisition is/was armed.
-    /// </summary>
-    bool TryRecoverGroundAnchorIfNeeded();
-
-    /// <summary>
     /// Monotonically increasing generation that changes after the service has
     /// released either a stale anchor or a valid anchor that has moved beyond
     /// the local AR navigation radius, then armed replacement acquisition.
@@ -93,8 +88,6 @@ public interface IArCoreService
     bool IsGroundAnchorProvisional { get; }
 
     bool IsInitialized { get; }
-
-    Session? Session { get; }
 
     bool IsFrameLoopRunning { get; }
 

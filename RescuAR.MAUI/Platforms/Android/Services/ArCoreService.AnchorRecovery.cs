@@ -426,8 +426,7 @@ public sealed partial class ArCoreService
         }
     }
 
-    /// <inheritdoc />
-    public bool TryRecoverGroundAnchorIfNeeded()
+    private bool TryRecoverGroundAnchorIfNeeded()
     {
         if (session is null ||
             sessionPaused)
@@ -628,12 +627,26 @@ public sealed partial class ArCoreService
             cancellationToken.ThrowIfCancellationRequested();
 
             /*
-             * Queue behind the current ARCore frame instead of repeatedly
-             * timing out from the UI diagnostic thread. SemaphoreSlim will
-             * hand the gate to this waiting operation between frame updates.
+             * Queue behind the current ARCore frame, but never indefinitely.
+             * A timed-out recovery generation is discarded and a later
+             * tracked frame can schedule a fresh attempt.
              */
-            await updateGate.WaitAsync(
-                cancellationToken);
+            bool updateGateEntered =
+                await EnterGateAsync(
+                        updateGate,
+                        UpdateGateTimeout,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+            if (!updateGateEntered)
+            {
+                Log.Warn(
+                    AnchorRecoveryLogTag,
+                    "Discarded stale-anchor recovery after the bounded " +
+                    "ARCore session-gate wait expired.");
+
+                return;
+            }
 
             try
             {
@@ -923,6 +936,75 @@ public sealed partial class ArCoreService
         catch (ObjectDisposedException)
         {
             // Worker completed concurrently.
+        }
+    }
+
+    private async Task CancelGroundAnchorRecoveryAsync(
+        CancellationToken cancellationToken)
+    {
+        CancellationTokenSource? cancellationToCancel;
+        Task? recoveryTask;
+
+        ResetProactiveGroundAnchorSearchObservation();
+
+        lock (groundAnchorRecoveryLock)
+        {
+            groundAnchorRecoveryGeneration++;
+
+            cancellationToCancel =
+                groundAnchorRecoveryCancellation;
+
+            recoveryTask =
+                groundAnchorRecoveryTask;
+        }
+
+        try
+        {
+            cancellationToCancel?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The worker completed concurrently.
+        }
+
+        if (recoveryTask is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await recoveryTask
+                .WaitAsync(
+                    FrameLoopDrainTimeout,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            // Expected when this method cancelled the recovery worker.
+        }
+        finally
+        {
+            lock (groundAnchorRecoveryLock)
+            {
+                if (ReferenceEquals(
+                        groundAnchorRecoveryCancellation,
+                        cancellationToCancel))
+                {
+                    groundAnchorRecoveryCancellation =
+                        null;
+                }
+
+                if (ReferenceEquals(
+                        groundAnchorRecoveryTask,
+                        recoveryTask))
+                {
+                    groundAnchorRecoveryTask =
+                        null;
+                }
+            }
         }
     }
 }
