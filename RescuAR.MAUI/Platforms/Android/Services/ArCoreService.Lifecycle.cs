@@ -1215,12 +1215,16 @@ public sealed partial class ArCoreService
     private static void InvalidatePublishedPausedState(
         string reason)
     {
+        ARGroundStateBridge.Suspend(
+            ARRenderGenerationBridge.Current,
+            reason);
         InvalidatePublishedFrameState();
         ARFloodDepthBridge.Clear(reason);
     }
 
     private static void InvalidatePublishedSessionState()
     {
+        ARGroundStateBridge.Clear("ARCore session shutdown");
         InvalidatePublishedFrameState();
         ARFloodDepthBridge.Clear("ARCore session shutdown");
         ARRouteBridge.Clear();

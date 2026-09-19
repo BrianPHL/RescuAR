@@ -24,8 +24,6 @@ namespace RescuAR.App.Views.Camera;
 /// </summary>
 public sealed class FloodDepthOcclusionView : SKCanvasView
 {
-    private const int TargetMaskWidthPixels = 120;
-    private const int TargetRefreshMilliseconds = 100;
 
     private const string LogTag = "RescuAR-FloodDepth";
 
@@ -86,6 +84,10 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
     private float displayedGroundWorldY;
     private bool? lastLoggedGroundWasProvisional;
 
+    private long maskStorageAllocationCount;
+    private long mappingAllocationCount;
+    private long lastAllocationMetricsLogTimestamp = long.MinValue;
+
     public FloodDepthOcclusionView()
     {
         InputTransparent = true;
@@ -107,7 +109,8 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         requestedFloodVersion = long.MinValue;
 
         redrawTimer = Dispatcher.CreateTimer();
-        redrawTimer.Interval = TimeSpan.FromMilliseconds(TargetRefreshMilliseconds);
+        redrawTimer.Interval = TimeSpan.FromMilliseconds(
+            ARPowerThermalPolicy.CurrentDecision.FloodRefreshMilliseconds);
         redrawTimer.IsRepeating = true;
         redrawTimer.Tick += OnRedrawTimerTick;
         redrawTimer.Start();
@@ -130,6 +133,20 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
     private void OnRedrawTimerTick(object? sender, EventArgs e)
     {
+        ARPowerThermalPolicy.WorkloadDecision workload =
+            ARPowerThermalPolicy.CurrentDecision;
+
+        if (redrawTimer is not null)
+        {
+            TimeSpan desiredInterval = TimeSpan.FromMilliseconds(
+                workload.FloodRefreshMilliseconds);
+
+            if (redrawTimer.Interval != desiredInterval)
+            {
+                redrawTimer.Interval = desiredInterval;
+            }
+        }
+
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
@@ -183,6 +200,10 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
         if (!depth.IsAvailable ||
             !depth.GroundAvailable ||
+            flood.GroundTrust == ARGroundTrust.None ||
+            flood.GroundReferenceGeneration !=
+                depth.GroundReferenceGeneration ||
+            flood.GroundTrust != depth.GroundTrust ||
             depth.DepthMillimeters.Length < depth.Width * depth.Height ||
             depth.ViewToTextureUv.Length < 8)
         {
@@ -238,7 +259,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         // previous 160 px mask on the Galaxy A54 field device.
         int maskWidth =
             Math.Min(
-                TargetMaskWidthPixels,
+                ARPowerThermalPolicy.CurrentDecision.FloodMaskWidthPixels,
                 Math.Max(1, canvasWidth));
 
         int maskHeight =
@@ -390,7 +411,8 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
                 $"tinted={tintedPercent:F1}%, " +
                 $"cameraBelowSimulatedSurface={cameraBelowSimulatedSurface}, " +
                 $"maximumAlpha={maximumFloodAlpha}, " +
-                "refreshCap=10Hz, mode=OBSERVER_DEPTH_CLASSIFICATION_PERFORMANCE.");
+                $"refreshMilliseconds={ARPowerThermalPolicy.CurrentDecision.FloodRefreshMilliseconds}, " +
+                "mode=OBSERVER_DEPTH_CLASSIFICATION_PERFORMANCE.");
         }
     }
 
@@ -459,6 +481,8 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         cachedRayX = new float[pixelCount];
         cachedRayY = new float[pixelCount];
         cachedSampleValid = new bool[pixelCount];
+        mappingAllocationCount++;
+        LogAllocationMetricsIfNeeded();
 
         float[] uv = depth.ViewToTextureUv;
 
@@ -656,6 +680,28 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
                 SKAlphaType.Premul);
 
         maskPixels = new SKColor[width * height];
+        maskStorageAllocationCount++;
+        LogAllocationMetricsIfNeeded();
+    }
+
+    private void LogAllocationMetricsIfNeeded()
+    {
+        long now = Environment.TickCount64;
+
+        if (lastAllocationMetricsLogTimestamp != long.MinValue &&
+            now - lastAllocationMetricsLogTimestamp < 30_000)
+        {
+            return;
+        }
+
+        lastAllocationMetricsLogTimestamp = now;
+
+        AndroidLog.Info(
+            LogTag,
+            "ARCORE_FLOOD_MASK_ALLOCATION_METRICS " +
+            $"maskStorageAllocations={maskStorageAllocationCount}; " +
+            $"mappingAllocations={mappingAllocationCount}; " +
+            $"workloadMode={ARPowerThermalPolicy.CurrentDecision.Mode}.");
     }
 
     private void DisposeMask()

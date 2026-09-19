@@ -86,6 +86,9 @@ public static class ARCameraSpatialController
     private static long lockedRouteVersion =
         -1;
 
+    private static long appliedGroundReferenceGeneration =
+        -1;
+
     private static int lastLoggedAnchorDriftBucket =
         -1;
 
@@ -398,6 +401,9 @@ public static class ARCameraSpatialController
             lockedRouteVersion =
                 -1;
 
+            appliedGroundReferenceGeneration =
+                -1;
+
             lastLoggedAnchorDriftBucket =
                 -1;
 
@@ -517,6 +523,8 @@ public static class ARCameraSpatialController
             floodDepthEntity = null;
             floodDepthTransform = null;
             appliedVersion = -1;
+            appliedGroundReferenceGeneration = -1;
+            routeRootHorizontalLocked = false;
             hasValidRouteSpatialPlacement = false;
             pendingWorldCorrectionRequest =
                 RouteWorldCorrectionRequest.Unavailable;
@@ -595,6 +603,9 @@ public static class ARCameraSpatialController
                 0.0f;
 
             lockedRouteVersion =
+                -1;
+
+            appliedGroundReferenceGeneration =
                 -1;
 
             lastLoggedAnchorDriftBucket =
@@ -758,6 +769,26 @@ public static class ARCameraSpatialController
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
+
+        if (anchor.IsAvailable &&
+            anchor.ReferenceGeneration != appliedGroundReferenceGeneration)
+        {
+            long previousGroundReferenceGeneration =
+                appliedGroundReferenceGeneration;
+
+            appliedGroundReferenceGeneration =
+                anchor.ReferenceGeneration;
+
+            routeRootHorizontalLocked = false;
+            hasValidRouteSpatialPlacement = false;
+
+            AndroidLog.Info(
+                RouteLogTag,
+                "AR GROUND REFERENCE GENERATION APPLIED: " +
+                $"previous={previousGroundReferenceGeneration}, " +
+                $"current={anchor.ReferenceGeneration}, " +
+                $"trust={anchor.Trust}. Route root requires a fresh lock.");
+        }
 
         float cameraHeightAboveGroundMeters =
             float.NaN;

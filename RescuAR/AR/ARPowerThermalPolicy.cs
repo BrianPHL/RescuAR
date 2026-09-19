@@ -9,6 +9,11 @@ namespace RescuAR.AR;
 /// </summary>
 public static class ARPowerThermalPolicy
 {
+    private static readonly object sync = new();
+
+    private static WorkloadDecision currentDecision =
+        WorkloadDecision.Normal;
+
     private const float WarmEntryCelsius =
         39.0f;
 
@@ -30,12 +35,14 @@ public static class ARPowerThermalPolicy
     public static WorkloadDecision Evaluate(
         float batteryTemperatureCelsius,
         bool powerSaveMode,
+        AndroidThermalSeverity androidThermalSeverity,
         WorkloadMode currentMode)
     {
         WorkloadMode nextMode =
             SelectMode(
                 batteryTemperatureCelsius,
                 powerSaveMode,
+                androidThermalSeverity,
                 currentMode);
 
         return nextMode switch
@@ -47,8 +54,13 @@ public static class ARPowerThermalPolicy
                     6,
                     false,
                     60_000,
+                    8,
+                    1,
+                    48,
+                    500,
                     batteryTemperatureCelsius,
-                    powerSaveMode),
+                    powerSaveMode,
+                    androidThermalSeverity),
 
             WorkloadMode.Hot =>
                 new WorkloadDecision(
@@ -57,8 +69,13 @@ public static class ARPowerThermalPolicy
                     4,
                     false,
                     30_000,
+                    4,
+                    3,
+                    72,
+                    250,
                     batteryTemperatureCelsius,
-                    powerSaveMode),
+                    powerSaveMode,
+                    androidThermalSeverity),
 
             WorkloadMode.Warm =>
                 new WorkloadDecision(
@@ -67,8 +84,13 @@ public static class ARPowerThermalPolicy
                     2,
                     true,
                     30_000,
+                    2,
+                    6,
+                    96,
+                    150,
                     batteryTemperatureCelsius,
-                    powerSaveMode),
+                    powerSaveMode,
+                    androidThermalSeverity),
 
             WorkloadMode.Conserve =>
                 new WorkloadDecision(
@@ -77,8 +99,13 @@ public static class ARPowerThermalPolicy
                     2,
                     true,
                     30_000,
+                    2,
+                    6,
+                    96,
+                    150,
                     batteryTemperatureCelsius,
-                    powerSaveMode),
+                    powerSaveMode,
+                    androidThermalSeverity),
 
             _ =>
                 new WorkloadDecision(
@@ -87,9 +114,33 @@ public static class ARPowerThermalPolicy
                     1,
                     true,
                     30_000,
+                    1,
+                    10,
+                    120,
+                    100,
                     batteryTemperatureCelsius,
-                    powerSaveMode)
+                    powerSaveMode,
+                    androidThermalSeverity)
         };
+    }
+
+    public static WorkloadDecision CurrentDecision
+    {
+        get
+        {
+            lock (sync)
+            {
+                return currentDecision;
+            }
+        }
+    }
+
+    public static void PublishCurrentDecision(WorkloadDecision decision)
+    {
+        lock (sync)
+        {
+            currentDecision = decision;
+        }
     }
 
     public static long AdjustDepthIntervalNanoseconds(
@@ -112,8 +163,24 @@ public static class ARPowerThermalPolicy
     private static WorkloadMode SelectMode(
         float temperatureCelsius,
         bool powerSaveMode,
+        AndroidThermalSeverity androidThermalSeverity,
         WorkloadMode currentMode)
     {
+        if (androidThermalSeverity >= AndroidThermalSeverity.Critical)
+        {
+            return WorkloadMode.Critical;
+        }
+
+        if (androidThermalSeverity >= AndroidThermalSeverity.Severe)
+        {
+            return WorkloadMode.Hot;
+        }
+
+        if (androidThermalSeverity >= AndroidThermalSeverity.Moderate)
+        {
+            return WorkloadMode.Warm;
+        }
+
         bool temperatureAvailable =
             float.IsFinite(
                 temperatureCelsius);
@@ -169,9 +236,22 @@ public static class ARPowerThermalPolicy
             }
         }
 
-        return powerSaveMode
+        return powerSaveMode ||
+               androidThermalSeverity == AndroidThermalSeverity.Light
             ? WorkloadMode.Conserve
             : WorkloadMode.Normal;
+    }
+
+    public enum AndroidThermalSeverity
+    {
+        Unknown = -1,
+        None = 0,
+        Light = 1,
+        Moderate = 2,
+        Severe = 3,
+        Critical = 4,
+        Emergency = 5,
+        Shutdown = 6
     }
 
     public enum WorkloadMode
@@ -189,13 +269,19 @@ public static class ARPowerThermalPolicy
         int DepthIntervalMultiplier,
         bool RouteDepthAllowed,
         int DiagnosticLogIntervalMilliseconds,
+        int GroundProbeIntervalMultiplier,
+        int MaximumGroundProbesPerSweep,
+        int FloodMaskWidthPixels,
+        int FloodRefreshMilliseconds,
         float BatteryTemperatureCelsius,
-        bool PowerSaveMode)
+        bool PowerSaveMode,
+        AndroidThermalSeverity ThermalSeverity)
     {
         public static WorkloadDecision Normal =>
             Evaluate(
                 float.NaN,
                 false,
+                AndroidThermalSeverity.Unknown,
                 WorkloadMode.Normal);
 
         public int TargetMaximumFramesPerSecond =>

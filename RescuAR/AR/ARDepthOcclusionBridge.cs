@@ -1,25 +1,34 @@
+using RescuAR.Diagnostics;
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace RescuAR.AR;
 
 /// <summary>
 /// Thread-safe handoff for ARCore's smoothed 16-bit depth image.
-///
-/// The Android ARCore worker copies the current depth image together with the
-/// physical camera pose, texture intrinsics, display-geometry UV transform,
-/// and ground Y from the SAME ARCore frame. Ground metadata identifies whether
-/// the current baseline is provisional or verified. The MAUI flood
-/// visualization reads one immutable snapshot and never touches Android/ARCore
-/// objects directly.
+/// The publisher transfers ownership of a rented depth buffer to this bridge.
+/// Superseded buffers stay retired beyond the maximum reader age before they
+/// return to the pool, preventing consumers from observing recycled memory.
 /// </summary>
 public static class ARDepthOcclusionBridge
 {
     public const long MaximumDepthAgeMilliseconds = 750;
 
+    private const long RetiredBufferSafetyMilliseconds =
+        MaximumDepthAgeMilliseconds * 3;
+
+    private const string LogTag = "RescuAR-DepthBuffers";
+
     private static readonly object sync = new();
+    private static readonly Queue<RetiredBuffer> retiredBuffers = new();
 
     private static long version;
+    private static long rentedBufferCount;
+    private static long returnedBufferCount;
+    private static long peakRetiredBufferCount;
+    private static long lastMetricsLogTimestamp = long.MinValue;
 
     private static DepthSnapshot current = DepthSnapshot.Unavailable;
 
@@ -31,26 +40,39 @@ public static class ARDepthOcclusionBridge
 
             lock (sync)
             {
+                ReclaimRetiredBuffersLocked(Environment.TickCount64);
                 snapshot = current;
             }
 
-            if (!ARRenderGenerationBridge.IsCurrent(
-                    snapshot.Generation) ||
+            if (!snapshot.IsAvailable)
+            {
+                return snapshot;
+            }
+
+            if (!ARRenderGenerationBridge.IsCurrent(snapshot.Generation) ||
                 !snapshot.IsFresh)
             {
-                return DepthSnapshot.UnavailableWithVersion(
-                    snapshot.Version);
+                Clear();
+
+                lock (sync)
+                {
+                    return current;
+                }
             }
 
             return snapshot;
         }
     }
 
-    public static void Publish(
+    /// <summary>
+    /// Publishes a rented depth array. Returns true only when ownership was
+    /// accepted; on false the caller remains responsible for returning it.
+    /// </summary>
+    public static bool Publish(
         ARFrameMetadata metadata,
         int width,
         int height,
-        ushort[] depthMillimeters,
+        ushort[] rentedDepthMillimeters,
         float[] viewToTextureUv,
         float cameraX,
         float cameraY,
@@ -65,20 +87,19 @@ public static class ARDepthOcclusionBridge
         float principalPointY,
         int textureWidth,
         int textureHeight,
-        bool groundAvailable,
-        bool groundIsProvisional,
+        ARGroundStateBridge.GroundStateSnapshot groundState,
         float groundWorldY)
     {
-        ArgumentNullException.ThrowIfNull(depthMillimeters);
+        ArgumentNullException.ThrowIfNull(rentedDepthMillimeters);
         ArgumentNullException.ThrowIfNull(viewToTextureUv);
 
-        if (!ARRenderGenerationBridge.TryAcceptCallback(
+        if (!metadata.IsValid ||
+            !ARRenderGenerationBridge.TryAcceptCallback(
                 metadata.Generation,
                 "depth-publish") ||
-            !metadata.IsValid ||
             width <= 0 ||
             height <= 0 ||
-            depthMillimeters.Length < width * height ||
+            rentedDepthMillimeters.Length < width * height ||
             viewToTextureUv.Length < 8 ||
             !float.IsFinite(focalLengthX) ||
             !float.IsFinite(focalLengthY) ||
@@ -87,19 +108,20 @@ public static class ARDepthOcclusionBridge
             textureWidth <= 0 ||
             textureHeight <= 0)
         {
-            return;
+            return false;
         }
 
         long nextVersion = Interlocked.Increment(ref version);
+        long now = Environment.TickCount64;
 
         DepthSnapshot next = new(
             nextVersion,
             metadata,
-            Environment.TickCount64,
+            now,
             true,
             width,
             height,
-            depthMillimeters,
+            rentedDepthMillimeters,
             viewToTextureUv,
             cameraX,
             cameraY,
@@ -114,25 +136,85 @@ public static class ARDepthOcclusionBridge
             principalPointY,
             textureWidth,
             textureHeight,
-            groundAvailable,
-            groundIsProvisional,
+            groundState,
             groundWorldY);
 
         lock (sync)
         {
+            RetireCurrentBufferLocked(now);
             current = next;
+            rentedBufferCount++;
+            ReclaimRetiredBuffersLocked(now);
+            LogBufferMetricsIfNeededLocked(now);
         }
+
+        return true;
     }
 
     public static void Clear()
     {
         long nextVersion = Interlocked.Increment(ref version);
+        long now = Environment.TickCount64;
 
         lock (sync)
         {
+            RetireCurrentBufferLocked(now);
             current = DepthSnapshot.UnavailableWithVersion(nextVersion);
+            ReclaimRetiredBuffersLocked(now);
+            LogBufferMetricsIfNeededLocked(now);
         }
     }
+
+    private static void RetireCurrentBufferLocked(long now)
+    {
+        if (!current.OwnsPooledDepthBuffer ||
+            current.DepthMillimeters.Length == 0)
+        {
+            return;
+        }
+
+        retiredBuffers.Enqueue(
+            new RetiredBuffer(
+                current.DepthMillimeters,
+                now + RetiredBufferSafetyMilliseconds));
+
+        peakRetiredBufferCount = Math.Max(
+            peakRetiredBufferCount,
+            retiredBuffers.Count);
+    }
+
+    private static void ReclaimRetiredBuffersLocked(long now)
+    {
+        while (retiredBuffers.Count > 0 &&
+               retiredBuffers.Peek().ReturnAfterMonotonicMilliseconds <= now)
+        {
+            RetiredBuffer retired = retiredBuffers.Dequeue();
+            ArrayPool<ushort>.Shared.Return(retired.Buffer, clearArray: false);
+            returnedBufferCount++;
+        }
+    }
+
+    private static void LogBufferMetricsIfNeededLocked(long now)
+    {
+        if (lastMetricsLogTimestamp != long.MinValue &&
+            now - lastMetricsLogTimestamp < 30_000)
+        {
+            return;
+        }
+
+        lastMetricsLogTimestamp = now;
+
+        AndroidLog.Info(
+            LogTag,
+            "ARCORE_DEPTH_BUFFER_METRICS " +
+            $"rented={rentedBufferCount}; returned={returnedBufferCount}; " +
+            $"retired={retiredBuffers.Count}; peakRetired={peakRetiredBufferCount}; " +
+            $"active={(current.OwnsPooledDepthBuffer ? 1 : 0)}.");
+    }
+
+    private readonly record struct RetiredBuffer(
+        ushort[] Buffer,
+        long ReturnAfterMonotonicMilliseconds);
 
     public readonly struct DepthSnapshot
     {
@@ -153,8 +235,7 @@ public static class ARDepthOcclusionBridge
                 0, 0,
                 0, 0,
                 0, 0,
-                false,
-                false,
+                ARGroundStateBridge.GroundStateSnapshot.Unavailable,
                 0);
 
         public DepthSnapshot(
@@ -179,14 +260,12 @@ public static class ARDepthOcclusionBridge
             float principalPointY,
             int textureWidth,
             int textureHeight,
-            bool groundAvailable,
-            bool groundIsProvisional,
+            ARGroundStateBridge.GroundStateSnapshot groundState,
             float groundWorldY)
         {
             Version = version;
             Metadata = metadata;
-            PublishedAtMonotonicMilliseconds =
-                publishedAtMonotonicMilliseconds;
+            PublishedAtMonotonicMilliseconds = publishedAtMonotonicMilliseconds;
             IsAvailable = isAvailable;
             Width = width;
             Height = height;
@@ -205,27 +284,22 @@ public static class ARDepthOcclusionBridge
             PrincipalPointY = principalPointY;
             TextureWidth = textureWidth;
             TextureHeight = textureHeight;
-            GroundAvailable = groundAvailable;
-            GroundIsProvisional = groundIsProvisional;
+            GroundState = groundState;
             GroundWorldY = groundWorldY;
+            OwnsPooledDepthBuffer = isAvailable;
         }
 
         public long Version { get; }
         public ARFrameMetadata Metadata { get; }
         public ARRenderGenerationToken Generation => Metadata.Generation;
         public long FrameTimestamp => Metadata.FrameTimestamp;
-        public ARDisplayGeometrySnapshot DisplayGeometry =>
-            Metadata.DisplayGeometry;
+        public ARDisplayGeometrySnapshot DisplayGeometry => Metadata.DisplayGeometry;
         public long PublishedAtMonotonicMilliseconds { get; }
         public bool IsAvailable { get; }
         public int Width { get; }
         public int Height { get; }
         public ushort[] DepthMillimeters { get; }
         public float[] ViewToTextureUv { get; }
-
-        // Physical ARCore camera pose. This intentionally uses Camera.Pose,
-        // not DisplayOrientedPose, because the depth/texture intrinsics are in
-        // the unrotated camera texture coordinate system.
         public float CameraX { get; }
         public float CameraY { get; }
         public float CameraZ { get; }
@@ -233,17 +307,20 @@ public static class ARDepthOcclusionBridge
         public float RotationY { get; }
         public float RotationZ { get; }
         public float RotationW { get; }
-
         public float FocalLengthX { get; }
         public float FocalLengthY { get; }
         public float PrincipalPointX { get; }
         public float PrincipalPointY { get; }
         public int TextureWidth { get; }
         public int TextureHeight { get; }
-
-        public bool GroundAvailable { get; }
-        public bool GroundIsProvisional { get; }
+        public ARGroundStateBridge.GroundStateSnapshot GroundState { get; }
+        public ARGroundTrust GroundTrust => GroundState.Trust;
+        public bool GroundAvailable => GroundState.HasGroundReference;
+        public bool GroundIsProvisional => GroundTrust == ARGroundTrust.Provisional;
+        public bool GroundIsVerified => GroundTrust == ARGroundTrust.Verified;
+        public long GroundReferenceGeneration => GroundState.ReferenceGeneration;
         public float GroundWorldY { get; }
+        internal bool OwnsPooledDepthBuffer { get; }
 
         public bool IsFresh =>
             PublishedAtMonotonicMilliseconds != long.MinValue &&

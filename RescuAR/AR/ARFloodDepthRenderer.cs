@@ -135,8 +135,11 @@ public static class ARFloodDepthRenderer
         ARFloodDepthBridge.FloodDepthSnapshot snapshot =
             ARFloodDepthBridge.Current;
 
-        if (!ARRenderGenerationBridge.IsCurrentSession(
-                snapshot.Generation))
+        if (!ARRenderGenerationBridge.IsCurrent(
+                snapshot.Generation) ||
+            !snapshot.ModeActive ||
+            snapshot.GroundTrust == ARGroundTrust.None ||
+            snapshot.GroundReferenceGeneration <= 0)
         {
             floodRoot.IsEnabled = false;
             appliedDepthMeters = 0.0f;
@@ -156,6 +159,7 @@ public static class ARFloodDepthRenderer
             snapshot.Version;
 
         if (!snapshot.IsAvailable ||
+            !snapshot.Metadata.IsValid ||
             !float.IsFinite(snapshot.LocalDepthMeters) ||
             snapshot.LocalDepthMeters <
                 MinimumRenderableDepthMeters)
@@ -186,6 +190,8 @@ public static class ARFloodDepthRenderer
             "AR FLOOD DEPTH V7 STATE APPLIED: " +
             $"version={snapshot.Version}, " +
             $"depth={appliedDepthMeters:F2} m, " +
+            $"groundTrust={snapshot.GroundTrust}, " +
+            $"groundReferenceGeneration={snapshot.GroundReferenceGeneration}, " +
             "mode=ARCORE_DEPTH_OCCLUSION, " +
             "evergineFloodMesh=False, " +
             $"source='{snapshot.Source}'.");

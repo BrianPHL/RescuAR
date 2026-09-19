@@ -51,6 +51,9 @@ public sealed partial class ArCoreService
         bool powerSaveMode =
             TryReadPowerSaveMode();
 
+        ARPowerThermalPolicy.AndroidThermalSeverity thermalSeverity =
+            TryReadAndroidThermalSeverity();
+
         ARPowerThermalPolicy.WorkloadDecision previous =
             powerThermalDecision;
 
@@ -58,10 +61,13 @@ public sealed partial class ArCoreService
             ARPowerThermalPolicy.Evaluate(
                 temperatureCelsius,
                 powerSaveMode,
+                thermalSeverity,
                 previous.Mode);
 
         powerThermalDecision =
             next;
+
+        ARPowerThermalPolicy.PublishCurrentDecision(next);
 
         bool modeChanged =
             previous.Mode !=
@@ -86,9 +92,13 @@ public sealed partial class ArCoreService
                 $"mode={next.Mode}, " +
                 $"previous={previous.Mode}, " +
                 $"batteryTemperature={temperatureText}, " +
+                $"androidThermalSeverity={thermalSeverity}, " +
                 $"powerSaver={powerSaveMode}, " +
                 $"maxPipelineFps={next.TargetMaximumFramesPerSecond}, " +
                 $"depthIntervalMultiplier={next.DepthIntervalMultiplier}, " +
+                $"groundProbeIntervalMultiplier={next.GroundProbeIntervalMultiplier}, " +
+                $"maximumGroundProbesPerSweep={next.MaximumGroundProbesPerSweep}, " +
+                $"floodMaskWidth={next.FloodMaskWidthPixels}, " +
                 $"routeDepthAllowed={next.RouteDepthAllowed}.");
         }
 
@@ -151,6 +161,45 @@ public sealed partial class ArCoreService
         catch
         {
             return false;
+        }
+    }
+
+    private ARPowerThermalPolicy.AndroidThermalSeverity
+        TryReadAndroidThermalSeverity()
+    {
+        try
+        {
+            PowerManager? powerManager =
+                context.GetSystemService(Context.PowerService) as PowerManager;
+
+            if (powerManager is null ||
+                global::Android.OS.Build.VERSION.SdkInt <
+                    global::Android.OS.BuildVersionCodes.Q)
+            {
+                return ARPowerThermalPolicy.AndroidThermalSeverity.Unknown;
+            }
+
+            object? rawStatus =
+                powerManager.GetType()
+                    .GetProperty("CurrentThermalStatus")?
+                    .GetValue(powerManager);
+
+            if (rawStatus is null)
+            {
+                return ARPowerThermalPolicy.AndroidThermalSeverity.Unknown;
+            }
+
+            int status = Convert.ToInt32(rawStatus);
+
+            return Enum.IsDefined(
+                    typeof(ARPowerThermalPolicy.AndroidThermalSeverity),
+                    status)
+                ? (ARPowerThermalPolicy.AndroidThermalSeverity)status
+                : ARPowerThermalPolicy.AndroidThermalSeverity.Unknown;
+        }
+        catch
+        {
+            return ARPowerThermalPolicy.AndroidThermalSeverity.Unknown;
         }
     }
 

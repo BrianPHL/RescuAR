@@ -1077,6 +1077,7 @@ namespace RescuAR.App.Views.Camera
                 {
                     ARFloodDepthBridge.PublishLocalDepth(
                         currentFloodVisualization.LocalDepthMeters!.Value,
+                        IsFloodDepthArModeActive(),
                         currentFloodVisualization.SourceText);
                 }
             }
@@ -1181,6 +1182,13 @@ namespace RescuAR.App.Views.Camera
                     0.0;
         }
 
+        private bool IsFloodDepthArModeActive() =>
+            pageIsVisible &&
+            currentCameraModuleView == CameraModuleViewMode.FloodDepth &&
+            !lowLightFallbackActive &&
+            !cameraPipelineTerminalFailureVisible &&
+            !safeZoneConfirmed;
+
         private void RefreshFloodGroundTrustState()
         {
             if (cameraPipelineTerminalFailureVisible)
@@ -1198,47 +1206,39 @@ namespace RescuAR.App.Views.Camera
                 verifiedGround ||
                 provisionalGround;
 
-            if (lastFloodGroundVerified.HasValue &&
-                lastFloodGroundVerified.Value ==
-                    verifiedGround &&
-                lastFloodGroundProvisional.HasValue &&
-                lastFloodGroundProvisional.Value ==
-                    provisionalGround)
-            {
-                return;
-            }
-
-            lastFloodGroundVerified =
-                verifiedGround;
-
-            lastFloodGroundProvisional =
-                provisionalGround;
+            bool groundTrustChanged =
+                !lastFloodGroundVerified.HasValue ||
+                lastFloodGroundVerified.Value != verifiedGround ||
+                !lastFloodGroundProvisional.HasValue ||
+                lastFloodGroundProvisional.Value != provisionalGround;
 
             bool localFloodActive =
-                pageIsVisible &&
-                currentCameraModuleView ==
-                    CameraModuleViewMode.FloodDepth &&
+                IsFloodDepthArModeActive() &&
                 HasLocalFloodDepth();
 
-            if (!localFloodActive)
-            {
-                return;
-            }
-
-            if (groundAvailable &&
-                !lowLightFallbackActive)
+            if (localFloodActive && groundAvailable)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
+                    true,
                     currentFloodVisualization.SourceText);
             }
-            else
+            else if (pageIsVisible &&
+                     currentCameraModuleView == CameraModuleViewMode.FloodDepth)
             {
                 ARFloodDepthBridge.Clear(
                     lowLightFallbackActive
                         ? "sustained insufficient light"
-                        : "no AR ground reference is available");
+                        : "no active Flood Depth mode with an AR ground reference");
             }
+
+            if (!groundTrustChanged)
+            {
+                return;
+            }
+
+            lastFloodGroundVerified = verifiedGround;
+            lastFloodGroundProvisional = provisionalGround;
 
 #if ANDROID
             Log.Info(
@@ -2727,6 +2727,9 @@ namespace RescuAR.App.Views.Camera
         {
             cameraPipelineTerminalFailureVisible =
                 true;
+
+            ARFloodDepthBridge.Clear(
+                $"terminal camera pipeline failure: {failure.Code}");
 
             ARCameraSpatialController.SetRouteRenderingEnabled(
                 false,
@@ -7757,6 +7760,7 @@ namespace RescuAR.App.Views.Camera
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     snapshot.LocalDepthMeters!.Value,
+                    IsFloodDepthArModeActive(),
                     snapshot.SourceText);
             }
             else
@@ -7874,6 +7878,7 @@ namespace RescuAR.App.Views.Camera
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
+                    IsFloodDepthArModeActive(),
                     currentFloodVisualization.SourceText);
             }
             else

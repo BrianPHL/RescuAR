@@ -123,8 +123,7 @@ public static class ARCameraPoseBridge
         float[]? columnMajorProjection,
         float nearPlane,
         float farPlane,
-        bool anchorAvailable,
-        bool anchorIsProvisional,
+        ARGroundStateBridge.GroundStateSnapshot groundState,
         float anchorX,
         float anchorY,
         float anchorZ,
@@ -136,6 +135,15 @@ public static class ARCameraPoseBridge
                 "camera-pose-publish"))
         {
             return;
+        }
+
+        if (groundState.HasGroundReference &&
+            groundState.RenderGeneration != metadata.Generation)
+        {
+            groundState = groundState with
+            {
+                Trust = ARGroundTrust.None
+            };
         }
 
         ProjectionSnapshot projection =
@@ -157,14 +165,11 @@ public static class ARCameraPoseBridge
                 metadata.FrameTimestamp);
 
         AnchorSnapshot anchor =
-            anchorAvailable
-                ? new AnchorSnapshot(
-                    true,
-                    anchorIsProvisional,
-                    anchorX,
-                    anchorY,
-                    anchorZ)
-                : AnchorSnapshot.Unavailable;
+            new(
+                groundState,
+                anchorX,
+                anchorY,
+                anchorZ);
 
         long nextVersion =
             Interlocked.Increment(
@@ -568,28 +573,29 @@ public static class ARCameraPoseBridge
     {
         public static AnchorSnapshot Unavailable =>
             new(
-                false,
-                false,
+                ARGroundStateBridge.GroundStateSnapshot.Unavailable,
                 0,
                 0,
                 0);
 
         public AnchorSnapshot(
-            bool isAvailable,
-            bool isProvisional,
+            ARGroundStateBridge.GroundStateSnapshot groundState,
             float positionX,
             float positionY,
             float positionZ)
         {
-            IsAvailable = isAvailable;
-            IsProvisional = isProvisional;
+            GroundState = groundState;
             PositionX = positionX;
             PositionY = positionY;
             PositionZ = positionZ;
         }
 
-        public bool IsAvailable { get; }
-        public bool IsProvisional { get; }
+        public ARGroundStateBridge.GroundStateSnapshot GroundState { get; }
+        public bool IsAvailable => GroundState.HasGroundReference;
+        public ARGroundTrust Trust => GroundState.Trust;
+        public bool IsProvisional => Trust == ARGroundTrust.Provisional;
+        public bool IsVerified => Trust == ARGroundTrust.Verified;
+        public long ReferenceGeneration => GroundState.ReferenceGeneration;
         public float PositionX { get; }
         public float PositionY { get; }
         public float PositionZ { get; }

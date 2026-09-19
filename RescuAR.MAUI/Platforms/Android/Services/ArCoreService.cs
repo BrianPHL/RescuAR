@@ -181,11 +181,6 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool depthOcclusionAvailabilityLogged;
 
-#if DEBUG
-    private long lastDepthOcclusionWaitingLogTimestamp =
-        long.MinValue;
-#endif
-
     private long processedFrameCount;
     private long fpsWindowStartTimestamp =
         Environment.TickCount64;
@@ -244,8 +239,8 @@ public sealed partial class ArCoreService : IArCoreService
         (0.50f, 0.76f)
     };
 
-    private const int GroundDepthCandidateSampleIndex =
-        0;
+    private const int GroundDepthCandidateSampleCount = 3;
+    private const int GroundDepthRequiredSpatialSamples = 2;
 
     private const long GroundPlaneSearchIntervalMilliseconds =
         250;
@@ -340,6 +335,12 @@ public sealed partial class ArCoreService : IArCoreService
     private int groundDepthConfidenceWindowIndex;
     private int groundDepthConfidenceValidSweepCount;
     private int groundDepthUnavailableSweepCount;
+
+    private bool groundDepthConfidenceRecordedThisSweep;
+    private int groundDepthSweepSupportCount;
+    private float groundDepthSweepCandidateX;
+    private float groundDepthSweepCandidateY;
+    private float groundDepthSweepCandidateZ;
 
     private bool hasGroundPlaneSweepCandidate;
     private float groundPlaneSweepCandidateX;
@@ -610,6 +611,10 @@ public sealed partial class ArCoreService : IArCoreService
 
             hasLoggedGroundPlaneSearch =
                 false;
+
+            ResetGroundProbeSessionBudget();
+
+            ResetDepthRetryPolicy();
 
             ResetGroundPlaneSearchState();
 
@@ -1055,6 +1060,8 @@ public sealed partial class ArCoreService : IArCoreService
         ARCameraTextureBridge.Clear();
         ARCameraPoseBridge.Clear();
         ARDepthOcclusionBridge.Clear();
+        ARGroundStateBridge.Clear(
+            "Vulkan graphics generation teardown");
         long clearedFloodVersion =
             ARFloodDepthBridge.Clear(
                 "Vulkan graphics generation teardown");
@@ -1726,6 +1733,10 @@ public sealed partial class ArCoreService : IArCoreService
             ARFloodDepthBridge.Clear(
                 "ARCore camera tracking unavailable");
 
+            ARGroundStateBridge.Suspend(
+                frameMetadata.Generation,
+                "ARCore camera tracking unavailable");
+
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
                 frameMetadata);
@@ -1750,6 +1761,10 @@ public sealed partial class ArCoreService : IArCoreService
             InvalidatePendingRecoveryCountdown();
 
             ARFloodDepthBridge.Clear(
+                "ARCore display-oriented pose unavailable");
+
+            ARGroundStateBridge.Suspend(
+                frameMetadata.Generation,
                 "ARCore display-oriented pose unavailable");
 
             ARCameraPoseBridge.PublishTrackingUnavailable(
@@ -1820,6 +1835,23 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (shouldSearchForGroundAnchor)
         {
+            ARGroundStateBridge.GroundStateSnapshot groundState =
+                ARGroundStateBridge.Current;
+
+            if (groundState.Trust == ARGroundTrust.None &&
+                (groundState.RenderGeneration.SessionGeneration !=
+                    frameMetadata.Generation.SessionGeneration ||
+                 (groundState.State != ARGroundLifecycleState.Searching &&
+                  groundState.State != ARGroundLifecycleState.Recovering)))
+            {
+                ARGroundStateBridge.BeginSearch(
+                    frameMetadata.Generation,
+                    spatialGroundAnchor is not null,
+                    spatialGroundAnchor is null
+                        ? "initial floor acquisition"
+                        : "validated replacement floor acquisition");
+            }
+
             TryCreateSpatialGroundAnchor(
                 frame,
                 translation,
@@ -1834,6 +1866,20 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (anchorAvailable)
         {
+            if (IsGroundAnchorProvisional)
+            {
+                ARGroundStateBridge.PublishProvisional(
+                    frameMetadata.Generation,
+                    "camera-relative provisional consultation ground");
+            }
+            else if (ARGroundStateBridge.Current.Trust !=
+                     ARGroundTrust.Verified)
+            {
+                ARGroundStateBridge.PublishVerified(
+                    frameMetadata.Generation,
+                    "tracked ARCore ground anchor resumed");
+            }
+
             if (hasProvisionalGroundReference)
             {
                 RegisterProvisionalGroundVerification();
@@ -1852,6 +1898,15 @@ public sealed partial class ArCoreService : IArCoreService
                     out anchorZ);
         }
 
+        if (anchorAvailable &&
+            ARGroundStateBridge.Current.RenderGeneration !=
+                frameMetadata.Generation)
+        {
+            ARGroundStateBridge.RefreshRenderGeneration(
+                frameMetadata.Generation,
+                "ground reference carried into current display geometry");
+        }
+
         if (!anchorAvailable)
         {
             ARFloodDepthBridge.Clear(
@@ -1862,6 +1917,18 @@ public sealed partial class ArCoreService : IArCoreService
          * Publish camera, projection, anchor, tracking, and timestamp as one
          * coherent snapshot.
          */
+        ARGroundStateBridge.GroundStateSnapshot frameGroundState =
+            ARGroundStateBridge.Current;
+
+        if (!anchorAvailable)
+        {
+            frameGroundState =
+                frameGroundState with
+                {
+                    Trust = ARGroundTrust.None
+                };
+        }
+
         ARCameraPoseBridge.PublishFrame(
             true,
             trackingFailureReason,
@@ -1875,8 +1942,7 @@ public sealed partial class ArCoreService : IArCoreService
             projection,
             SpatialProjectionNearPlane,
             SpatialProjectionFarPlane,
-            anchorAvailable,
-            IsGroundAnchorProvisional,
+            frameGroundState,
             anchorX,
             anchorY,
             anchorZ,
@@ -1915,8 +1981,7 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         nextGroundPlaneSearchTimestamp =
-            now +
-            GroundPlaneSearchIntervalMilliseconds;
+            now + GetGroundProbeIntervalMilliseconds();
 
         if (groundPlaneSearchStartedTimestamp ==
             long.MinValue)
@@ -1945,6 +2010,11 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        if (!TryBeginGroundProbeSweep(now))
+        {
+            return;
+        }
+
         groundPlaneSearchSweepCount++;
 
         bool reducedProbeSweep =
@@ -1956,6 +2026,14 @@ public sealed partial class ArCoreService : IArCoreService
                     0;
 
         ResetGroundPlaneSweepCandidate();
+
+        bool usableEvidenceObserved = false;
+
+        groundDepthConfidenceRecordedThisSweep = false;
+        groundDepthSweepSupportCount = 0;
+        groundDepthSweepCandidateX = 0.0f;
+        groundDepthSweepCandidateY = 0.0f;
+        groundDepthSweepCandidateZ = 0.0f;
 
         if (!hasLoggedGroundPlaneSearch)
         {
@@ -1988,12 +2066,24 @@ public sealed partial class ArCoreService : IArCoreService
         float[] worldRayOrigin =
             new float[3];
 
+        int worldProbeLimit = Math.Min(
+            3,
+            Math.Max(
+                1,
+                powerThermalDecision.MaximumGroundProbesPerSweep -
+                    GroundDepthRequiredSpatialSamples));
+
         for (int sampleIndex = 0;
              !reducedProbeSweep &&
              sampleIndex <
-                GroundPlaneWorldDownSearchPattern.Length;
+                worldProbeLimit;
              sampleIndex++)
         {
+            if (!TryConsumeGroundProbeBudget(now))
+            {
+                break;
+            }
+
             (float xOffset,
              float zOffset) =
                 GroundPlaneWorldDownSearchPattern[
@@ -2045,10 +2135,22 @@ public sealed partial class ArCoreService : IArCoreService
                     : GroundPlaneSearchPattern.Length);
              sampleIndex++)
         {
+            if (!TryConsumeGroundProbeBudget(now))
+            {
+                break;
+            }
+
             (float normalizedX,
              float normalizedY) =
                 GroundPlaneSearchPattern[
                     sampleIndex];
+
+            if (normalizedX is < 0.08f or > 0.92f ||
+                normalizedY is < 0.08f or > 0.92f)
+            {
+                RecordGroundProbeRejection(GroundProbeRejection.Edge);
+                continue;
+            }
 
             float arCoreNormalizedX =
                 MapZoomedViewCoordinateToArCoreView(
@@ -2093,8 +2195,7 @@ public sealed partial class ArCoreService : IArCoreService
             }
 
             if (depthModeEnabled &&
-                sampleIndex ==
-                    GroundDepthCandidateSampleIndex)
+                sampleIndex < GroundDepthCandidateSampleCount)
             {
                 bool depthAnchorCreated =
                     TryCreateDepthGroundAnchorFromHits(
@@ -2106,11 +2207,8 @@ public sealed partial class ArCoreService : IArCoreService
                         sampleDescription,
                         out bool acceptableDepthCandidateObserved);
 
-                groundDepthUnavailableSweepCount =
-                    acceptableDepthCandidateObserved
-                        ? 0
-                        : groundDepthUnavailableSweepCount +
-                            1;
+                usableEvidenceObserved |=
+                    acceptableDepthCandidateObserved;
 
                 if (depthAnchorCreated)
                 {
@@ -2118,6 +2216,24 @@ public sealed partial class ArCoreService : IArCoreService
                 }
             }
         }
+
+        if (depthModeEnabled &&
+            !groundDepthConfidenceRecordedThisSweep)
+        {
+            RecordGroundDepthConfidenceSample(valid: false);
+            groundDepthUnavailableSweepCount++;
+        }
+        else if (groundDepthConfidenceRecordedThisSweep)
+        {
+            groundDepthUnavailableSweepCount = 0;
+        }
+
+        usableEvidenceObserved |=
+            groundPlaneSweepCandidateSupportCount > 0;
+
+        CompleteGroundProbeSweep(
+            now,
+            usableEvidenceObserved);
 
         if (lastGroundPlaneSearchProgressLogTimestamp ==
                 long.MinValue ||
@@ -2161,12 +2277,16 @@ public sealed partial class ArCoreService : IArCoreService
         int sampleCount,
         string sampleDescription)
     {
+        bool planeObserved = false;
+
         foreach (Google.AR.Core.HitResult hit in hitResults)
         {
             if (hit.Trackable is not ArCorePlane plane)
             {
                 continue;
             }
+
+            planeObserved = true;
 
             using Google.AR.Core.Pose? hitPose =
                 hit.HitPose;
@@ -2195,6 +2315,7 @@ public sealed partial class ArCoreService : IArCoreService
                 planeNormal.Length < 3 ||
                 planeNormal[1] < 0.75f)
             {
+                RecordGroundProbeRejection(GroundProbeRejection.Normal);
                 continue;
             }
 
@@ -2211,6 +2332,7 @@ public sealed partial class ArCoreService : IArCoreService
                         hitTranslation[1],
                         out float cameraHeightAboveGroundMeters))
             {
+                RecordGroundProbeRejection(GroundProbeRejection.Height);
                 continue;
             }
 
@@ -2256,6 +2378,11 @@ public sealed partial class ArCoreService : IArCoreService
             ResetGroundPlaneSearchState();
 
             return true;
+        }
+
+        if (!planeObserved)
+        {
+            RecordGroundProbeRejection(GroundProbeRejection.NoTrackable);
         }
 
         return false;
@@ -2346,8 +2473,8 @@ public sealed partial class ArCoreService : IArCoreService
         string sampleDescription,
         out bool acceptableDepthCandidateObserved)
     {
-        acceptableDepthCandidateObserved =
-            false;
+        acceptableDepthCandidateObserved = false;
+        bool depthPointObserved = false;
 
         foreach (Google.AR.Core.HitResult hit in hitResults)
         {
@@ -2356,105 +2483,93 @@ public sealed partial class ArCoreService : IArCoreService
                 continue;
             }
 
-            using Google.AR.Core.Pose? hitPose =
-                hit.HitPose;
+            depthPointObserved = true;
+
+            using Google.AR.Core.Pose? hitPose = hit.HitPose;
 
             if (hitPose is null)
             {
+                RecordGroundProbeRejection(GroundProbeRejection.NoTrackable);
                 continue;
             }
 
-            float[]? surfaceNormal =
-                hitPose.GetTransformedAxis(
-                    1,
-                    1.0f);
+            float[]? surfaceNormal = hitPose.GetTransformedAxis(1, 1.0f);
 
             if (surfaceNormal is null ||
                 surfaceNormal.Length < 3 ||
-                surfaceNormal[1] <
-                    GroundDepthMinimumNormalY)
+                surfaceNormal[1] < GroundDepthMinimumNormalY)
             {
+                RecordGroundProbeRejection(GroundProbeRejection.Normal);
                 continue;
             }
 
-            float[] hitTranslation =
-                new float[3];
+            float[] hitTranslation = new float[3];
+            hitPose.GetTranslation(hitTranslation, 0);
 
-            hitPose.GetTranslation(
-                hitTranslation,
-                0);
-
-            if (!LocalArNavigationPolicy
-                    .IsPreferredGroundCandidateHeight(
-                        cameraY,
-                        hitTranslation[1],
-                        out float cameraHeight))
+            if (!LocalArNavigationPolicy.IsPreferredGroundCandidateHeight(
+                    cameraY,
+                    hitTranslation[1],
+                    out float cameraHeight))
             {
+                RecordGroundProbeRejection(GroundProbeRejection.Height);
                 continue;
-            }
-
-            bool stableWithPrevious =
-                false;
-
-            if (hasGroundDepthCandidate)
-            {
-                float deltaY =
-                    MathF.Abs(
-                        hitTranslation[1] -
-                        groundDepthCandidateY);
-
-                float deltaX =
-                    hitTranslation[0] -
-                    groundDepthCandidateX;
-
-                float deltaZ =
-                    hitTranslation[2] -
-                    groundDepthCandidateZ;
-
-                float horizontalDelta =
-                    MathF.Sqrt(
-                        deltaX * deltaX +
-                        deltaZ * deltaZ);
-
-                stableWithPrevious =
-                    deltaY <=
-                        GroundDepthMaximumYDeltaMeters &&
-                    horizontalDelta <=
-                        GroundDepthMaximumHorizontalDeltaMeters;
             }
 
             if (hasGroundDepthCandidate &&
-                !stableWithPrevious)
+                !IsGroundDepthCandidateConsistent(
+                    hitTranslation,
+                    groundDepthCandidateX,
+                    groundDepthCandidateY,
+                    groundDepthCandidateZ))
             {
+                RecordGroundProbeRejection(GroundProbeRejection.Consistency);
                 continue;
             }
 
-            if (!hasGroundDepthCandidate)
+            if (groundDepthSweepSupportCount > 0 &&
+                !IsGroundDepthCandidateConsistent(
+                    hitTranslation,
+                    groundDepthSweepCandidateX,
+                    groundDepthSweepCandidateY,
+                    groundDepthSweepCandidateZ))
             {
-                hasGroundDepthCandidate =
-                    true;
+                RecordGroundProbeRejection(GroundProbeRejection.Consistency);
+                continue;
             }
 
-            groundDepthCandidateX =
-                hitTranslation[0];
+            if (groundDepthSweepSupportCount == 0)
+            {
+                groundDepthSweepCandidateX = hitTranslation[0];
+                groundDepthSweepCandidateY = hitTranslation[1];
+                groundDepthSweepCandidateZ = hitTranslation[2];
+            }
+            else
+            {
+                int nextSupport = groundDepthSweepSupportCount + 1;
+                groundDepthSweepCandidateX +=
+                    (hitTranslation[0] - groundDepthSweepCandidateX) / nextSupport;
+                groundDepthSweepCandidateY +=
+                    (hitTranslation[1] - groundDepthSweepCandidateY) / nextSupport;
+                groundDepthSweepCandidateZ +=
+                    (hitTranslation[2] - groundDepthSweepCandidateZ) / nextSupport;
+            }
 
-            groundDepthCandidateY =
-                hitTranslation[1];
+            groundDepthSweepSupportCount++;
 
-            groundDepthCandidateZ =
-                hitTranslation[2];
+            if (groundDepthSweepSupportCount <
+                    GroundDepthRequiredSpatialSamples ||
+                groundDepthConfidenceRecordedThisSweep)
+            {
+                return false;
+            }
 
-            /*
-             * Only a height-, normal-, and stability-validated DepthPoint
-             * resets adaptive backoff. A raw rejected point is still a miss;
-             * otherwise one noisy edge hit can keep the expensive full sweep
-             * running indefinitely.
-             */
-            acceptableDepthCandidateObserved =
-                true;
-
-            RecordGroundDepthConfidenceSample(
-                valid: true);
+            hasGroundDepthCandidate = true;
+            groundDepthCandidateX = groundDepthSweepCandidateX;
+            groundDepthCandidateY = groundDepthSweepCandidateY;
+            groundDepthCandidateZ = groundDepthSweepCandidateZ;
+            groundDepthConfidenceRecordedThisSweep = true;
+            acceptableDepthCandidateObserved = true;
+            RecordGroundDepthConfidenceSample(valid: true);
 
             if (groundDepthConfidenceValidSweepCount <
                 GroundDepthValidSweepsRequired)
@@ -2462,55 +2577,56 @@ public sealed partial class ArCoreService : IArCoreService
                 return false;
             }
 
-            if (!TryAssignGroundAnchorFromHit(
-                    hit,
-                    "DepthPoint"))
+            if (!TryAssignGroundAnchorFromHit(hit, "DepthPoint"))
             {
                 ResetGroundDepthCandidate();
                 return false;
             }
 
-            long elapsedMilliseconds =
-                Math.Max(
-                    0,
-                    acquisitionTimestamp -
-                    groundPlaneSearchStartedTimestamp);
+            long elapsedMilliseconds = Math.Max(
+                0,
+                acquisitionTimestamp - groundPlaneSearchStartedTimestamp);
 
             Log.Debug(
                 SpatialPoseTag,
-                "ARCore GROUND anchor created from rolling-confidence DepthPoint fallback.");
-
-            Log.Debug(
-                SpatialPoseTag,
-                "Ground acquisition = " +
-                "method=DEPTH_ROLLING, " +
-                $"depthEnabled={depthModeEnabled}, " +
-                $"sample={sampleIndex + 1}/{sampleCount}, " +
-                $"{sampleDescription}, " +
+                "Ground acquisition = method=DEPTH_MULTI_SAMPLE_ROLLING, " +
+                $"sample={sampleIndex + 1}/{sampleCount}, {sampleDescription}, " +
+                $"sameFrameSupport={groundDepthSweepSupportCount}/" +
+                $"{GroundDepthRequiredSpatialSamples}, " +
                 $"depthConfidence={groundDepthConfidenceValidSweepCount}/" +
                 $"{GroundDepthConfidenceWindowSweeps}, " +
-                $"depthSamples={groundDepthConfidenceWindowCount}, " +
                 $"sweeps={groundPlaneSearchSweepCount}, " +
                 $"hitTests={groundPlaneSearchHitTestCount}, " +
                 $"elapsed={elapsedMilliseconds}ms, " +
-                $"hit=({hitTranslation[0]:F2},{hitTranslation[1]:F2},{hitTranslation[2]:F2}), " +
                 $"normalY={surfaceNormal[1]:F2}, " +
                 $"cameraToGroundVertical={cameraHeight:F2}m.");
 
             ResetGroundPlaneSearchState();
-
             return true;
         }
 
-        /*
-         * The designated lower-center sample yielded no acceptable DepthPoint
-         * this sweep. Record one miss without discarding earlier consistent
-         * evidence; old evidence naturally expires from the rolling window.
-         */
-        RecordGroundDepthConfidenceSample(
-            valid: false);
+        if (!depthPointObserved)
+        {
+            RecordGroundProbeRejection(GroundProbeRejection.NoTrackable);
+        }
 
         return false;
+    }
+
+    private static bool IsGroundDepthCandidateConsistent(
+        float[] candidate,
+        float referenceX,
+        float referenceY,
+        float referenceZ)
+    {
+        float deltaY = MathF.Abs(candidate[1] - referenceY);
+        float deltaX = candidate[0] - referenceX;
+        float deltaZ = candidate[2] - referenceZ;
+        float horizontalDelta = MathF.Sqrt(
+            deltaX * deltaX + deltaZ * deltaZ);
+
+        return deltaY <= GroundDepthMaximumYDeltaMeters &&
+            horizontalDelta <= GroundDepthMaximumHorizontalDeltaMeters;
     }
 
     private void RecordGroundDepthConfidenceSample(
@@ -2592,6 +2708,13 @@ public sealed partial class ArCoreService : IArCoreService
                 ref spatialGroundAnchor,
                 newAnchor);
 
+        ARGroundStateBridge.PublishVerified(
+            ARRenderGenerationBridge.Current,
+            $"ARCore {source} ground anchor acquired");
+
+        RegisterGroundProbeSuccess(
+            Environment.TickCount64);
+
         if (previousAnchor is not null &&
             !ReferenceEquals(
                 previousAnchor,
@@ -2635,6 +2758,12 @@ public sealed partial class ArCoreService : IArCoreService
 
         groundDepthConfidenceValidSweepCount =
             0;
+
+        groundDepthConfidenceRecordedThisSweep = false;
+        groundDepthSweepSupportCount = 0;
+        groundDepthSweepCandidateX = 0.0f;
+        groundDepthSweepCandidateY = 0.0f;
+        groundDepthSweepCandidateZ = 0.0f;
     }
 
     private void ResetGroundPlaneSweepCandidate()
@@ -2785,6 +2914,10 @@ public sealed partial class ArCoreService : IArCoreService
                 ref isGroundAnchorProvisional,
                 1);
 
+            ARGroundStateBridge.PublishProvisional(
+                ARRenderGenerationBridge.Current,
+                "camera-relative provisional consultation ground");
+
             Log.Warn(
                 SpatialPoseTag,
                 "PROVISIONAL ground reference published for emergency-start " +
@@ -2879,6 +3012,11 @@ public sealed partial class ArCoreService : IArCoreService
     {
         groundDepthRequested =
             true;
+
+        ARGroundStateBridge.InvalidateAndSearch(
+            ARRenderGenerationBridge.Current,
+            recovering: true,
+            "ground reference released; replacement required");
 
         ClearProvisionalGroundReference(
             "ground-anchor state was released");
@@ -3153,6 +3291,8 @@ public sealed partial class ArCoreService : IArCoreService
         long timestamp =
             frameMetadata.FrameTimestamp;
 
+        long now = Environment.TickCount64;
+
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
@@ -3180,10 +3320,19 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        if (!CanAttemptDepthAcquisition(now))
+        {
+            return;
+        }
+
         if (!camera.TrackingState.ToString().Equals(
                 "Tracking",
                 StringComparison.OrdinalIgnoreCase))
         {
+            RegisterDepthAcquisitionFailure(
+                now,
+                DepthFailureKind.TimestampUnavailable,
+                "camera tracking is unavailable");
             return;
         }
 
@@ -3205,6 +3354,9 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        ushort[]? depthMillimeters = null;
+        bool depthBufferOwnershipTransferred = false;
+
         try
         {
             using global::Android.Media.Image depthImage =
@@ -3219,6 +3371,10 @@ public sealed partial class ArCoreService : IArCoreService
             if (width <= 0 ||
                 height <= 0)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    $"invalid depth dimensions {width}x{height}");
                 return;
             }
 
@@ -3228,6 +3384,10 @@ public sealed partial class ArCoreService : IArCoreService
             if (planes is null ||
                 planes.Length < 1)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    "depth image contains no planes");
                 return;
             }
 
@@ -3239,6 +3399,10 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (buffer is null)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    "depth plane buffer is null");
                 return;
             }
 
@@ -3251,11 +3415,19 @@ public sealed partial class ArCoreService : IArCoreService
             if (rowStride <= 0 ||
                 pixelStride <= 0)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    $"invalid depth strides row={rowStride}, pixel={pixelStride}");
                 return;
             }
 
-            ushort[] depthMillimeters =
-                new ushort[width * height];
+            int pixelCount = checked(width * height);
+
+            depthMillimeters =
+                System.Buffers.ArrayPool<ushort>.Shared.Rent(pixelCount);
+
+            int validDepthPixelCount = 0;
 
             for (int y = 0;
                  y < height;
@@ -3283,10 +3455,28 @@ public sealed partial class ArCoreService : IArCoreService
                     byte high =
                         unchecked((byte)buffer.Get(byteIndex + 1));
 
-                    depthMillimeters[
-                        destinationRow + x] =
+                    ushort depthValue =
                         (ushort)(low | (high << 8));
+
+                    depthMillimeters[destinationRow + x] = depthValue;
+
+                    if (depthValue is >= 180 and <= 8_000)
+                    {
+                        validDepthPixelCount++;
+                    }
                 }
+            }
+
+            int minimumValidDepthPixels = Math.Max(64, pixelCount / 100);
+
+            if (validDepthPixelCount < minimumValidDepthPixels)
+            {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    $"valid depth coverage {validDepthPixelCount}/{pixelCount} below " +
+                    $"minimum {minimumValidDepthPixels}");
+                return;
             }
 
             using CameraIntrinsics? intrinsics =
@@ -3294,6 +3484,10 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (intrinsics is null)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    "camera texture intrinsics unavailable");
                 return;
             }
 
@@ -3313,6 +3507,10 @@ public sealed partial class ArCoreService : IArCoreService
                 dimensions is null ||
                 dimensions.Length < 2)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    "camera texture intrinsics are incomplete");
                 return;
             }
 
@@ -3321,6 +3519,10 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (physicalPose is null)
             {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.InvalidFrame,
+                    "physical camera pose unavailable");
                 return;
             }
 
@@ -3350,20 +3552,19 @@ public sealed partial class ArCoreService : IArCoreService
                     out ARCameraPoseBridge.SpatialSnapshot spatial,
                     out _);
 
-            bool groundAvailable =
-                matchingSpatialFrame &&
-                spatial.Anchor.IsAvailable;
+            ARGroundStateBridge.GroundStateSnapshot groundState =
+                matchingSpatialFrame
+                    ? spatial.Anchor.GroundState
+                    : ARGroundStateBridge.GroundStateSnapshot.Unavailable;
 
-            bool groundIsProvisional =
-                groundAvailable &&
-                spatial.Anchor.IsProvisional;
+            bool groundAvailable = groundState.HasGroundReference;
 
             float groundWorldY =
                 groundAvailable
                     ? spatial.Anchor.PositionY
                     : 0.0f;
 
-            ARDepthOcclusionBridge.Publish(
+            bool published = ARDepthOcclusionBridge.Publish(
                 frameMetadata,
                 width,
                 height,
@@ -3382,9 +3583,20 @@ public sealed partial class ArCoreService : IArCoreService
                 principalPoint[1],
                 dimensions[0],
                 dimensions[1],
-                groundAvailable,
-                groundIsProvisional,
+                groundState,
                 groundWorldY);
+
+            if (!published)
+            {
+                RegisterDepthAcquisitionFailure(
+                    now,
+                    DepthFailureKind.PublishRejected,
+                    "depth bridge rejected frame metadata or dimensions");
+                return;
+            }
+
+            depthBufferOwnershipTransferred = true;
+            RegisterDepthAcquisitionSuccess(now);
 
             lastDepthOcclusionPublishTimestamp =
                 timestamp;
@@ -3411,35 +3623,27 @@ public sealed partial class ArCoreService : IArCoreService
         }
         catch (Exception exception)
         {
-            _ = exception;
+            bool timestampUnavailable =
+                exception.GetType().Name.Contains(
+                    "NotYetAvailable",
+                    StringComparison.OrdinalIgnoreCase);
 
-            /*
-             * NotYetAvailableException is expected while depth is warming up,
-             * and other ARCore depth exceptions can occur transiently during
-             * tracking loss. Keep the last good depth frame instead of
-             * tearing down active flood or route occlusion.
-             */
-#if DEBUG
-            long now =
-                Environment.TickCount64;
-
-            if (!depthOcclusionAvailabilityLogged &&
-                (lastDepthOcclusionWaitingLogTimestamp ==
-                    long.MinValue ||
-                 now -
-                    lastDepthOcclusionWaitingLogTimestamp >=
-                        powerThermalDecision
-                            .DiagnosticLogIntervalMilliseconds))
+            RegisterDepthAcquisitionFailure(
+                now,
+                timestampUnavailable
+                    ? DepthFailureKind.TimestampUnavailable
+                    : DepthFailureKind.InvalidFrame,
+                $"{exception.GetType().Name}: {exception.Message}");
+        }
+        finally
+        {
+            if (depthMillimeters is not null &&
+                !depthBufferOwnershipTransferred)
             {
-                lastDepthOcclusionWaitingLogTimestamp =
-                    now;
-
-                Log.Debug(
-                    "RescuAR-FloodDepth",
-                    "ARCore depth occlusion waiting for a usable depth frame: " +
-                    $"{exception.GetType().Name}: {exception.Message}");
+                System.Buffers.ArrayPool<ushort>.Shared.Return(
+                    depthMillimeters,
+                    clearArray: false);
             }
-#endif
         }
     }
 
