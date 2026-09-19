@@ -12,6 +12,8 @@ namespace RescuAR.AR;
 /// </summary>
 public static class ARCameraTextureBridge
 {
+    public const long MaximumTextureAgeMilliseconds = 750;
+
     private static readonly object processingSync = new();
 
     private static readonly ManualResetEventSlim processorIdle =
@@ -48,6 +50,7 @@ public static class ARCameraTextureBridge
              * resume deadlock.
              */
             if (snapshot.Texture is null ||
+                !snapshot.IsFresh ||
                 !ARRenderGenerationBridge.IsCurrent(snapshot.Generation))
             {
                 return TextureSnapshot.UnavailableWithVersion(
@@ -365,14 +368,14 @@ public static class ARCameraTextureBridge
     }
 
     public static bool Publish(
-        ARRenderGenerationToken generation,
-        long frameTimestamp,
+        ARFrameMetadata metadata,
         Texture texture)
     {
         ArgumentNullException.ThrowIfNull(texture);
 
-        if (!ARRenderGenerationBridge.TryAcceptCallback(
-                generation,
+        if (!metadata.IsValid ||
+            !ARRenderGenerationBridge.TryAcceptCallback(
+                metadata.Generation,
                 "camera-texture-publish"))
         {
             return false;
@@ -381,15 +384,14 @@ public static class ARCameraTextureBridge
         lock (processingSync)
         {
             if (processingSuspended ||
-                generation.GraphicsGeneration !=
+                metadata.Generation.GraphicsGeneration !=
                     processorGraphicsGeneration)
             {
                 return false;
             }
 
             if (ReferenceEquals(current.Texture, texture) &&
-                current.Generation == generation &&
-                current.FrameTimestamp == frameTimestamp)
+                current.Metadata == metadata)
             {
                 return true;
             }
@@ -397,8 +399,8 @@ public static class ARCameraTextureBridge
             long nextVersion = Interlocked.Increment(ref version);
             current = new TextureSnapshot(
                 nextVersion,
-                generation,
-                frameTimestamp,
+                metadata,
+                Environment.TickCount64,
                 texture);
 
             return true;
@@ -417,17 +419,28 @@ public static class ARCameraTextureBridge
 
     public readonly record struct TextureSnapshot(
         long Version,
-        ARRenderGenerationToken Generation,
-        long FrameTimestamp,
+        ARFrameMetadata Metadata,
+        long PublishedAtMonotonicMilliseconds,
         Texture? Texture)
     {
+        public ARRenderGenerationToken Generation => Metadata.Generation;
+        public long FrameTimestamp => Metadata.FrameTimestamp;
+        public ARDisplayGeometrySnapshot DisplayGeometry =>
+            Metadata.DisplayGeometry;
+
+        public bool IsFresh =>
+            PublishedAtMonotonicMilliseconds != long.MinValue &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds >= 0 &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds <=
+                MaximumTextureAgeMilliseconds;
+
         public static TextureSnapshot Unavailable =>
             UnavailableWithVersion(0);
 
         public static TextureSnapshot UnavailableWithVersion(long version) =>
             new(
                 version,
-                ARRenderGenerationToken.Invalid,
+                ARFrameMetadata.Invalid,
                 long.MinValue,
                 null);
     }

@@ -46,7 +46,7 @@ internal unsafe sealed class VulkanExternalFrameImporter
 
     private readonly VKGraphicsContext graphicsContext;
 
-    private bool hasLoggedFormatProperties;
+    private VulkanYcbcrConversionDescriptor? lastLoggedDescriptor;
 
     public VulkanExternalFrameImporter(
         VKGraphicsContext graphicsContext)
@@ -109,45 +109,29 @@ internal unsafe sealed class VulkanExternalFrameImporter
                 $"failed with {result}.");
         }
 
-        if (!hasLoggedFormatProperties)
-        { 
-            Log.Debug(
-                Tag,
-                $"Vulkan format = {formatProperties.format}");
+        VulkanYcbcrConversionDescriptor descriptor =
+            VulkanYcbcrConversionDescriptor.From(
+                ref formatProperties);
 
-            Log.Debug(
+        if (!lastLoggedDescriptor.HasValue ||
+            lastLoggedDescriptor.Value != descriptor)
+        {
+            Log.Info(
                 Tag,
-                $"External format = 0x{formatProperties.externalFormat:X}");
+                "ARCORE_HARDWARE_BUFFER_FORMAT " +
+                $"format={formatProperties.format}; " +
+                $"externalFormat=0x{formatProperties.externalFormat:X}; " +
+                $"features={formatProperties.formatFeatures}; " +
+                $"components=R:{formatProperties.samplerYcbcrConversionComponents.r}," +
+                $"G:{formatProperties.samplerYcbcrConversionComponents.g}," +
+                $"B:{formatProperties.samplerYcbcrConversionComponents.b}," +
+                $"A:{formatProperties.samplerYcbcrConversionComponents.a}; " +
+                $"model={formatProperties.suggestedYcbcrModel}; " +
+                $"range={formatProperties.suggestedYcbcrRange}; " +
+                $"xChromaOffset={formatProperties.suggestedXChromaOffset}; " +
+                $"yChromaOffset={formatProperties.suggestedYChromaOffset}.");
 
-            Log.Debug(
-                Tag,
-                $"Format features = {formatProperties.formatFeatures}");
-
-            Log.Debug(
-                Tag,
-                $"YCbCr components = " +
-                $"R:{formatProperties.samplerYcbcrConversionComponents.r}, " +
-                $"G:{formatProperties.samplerYcbcrConversionComponents.g}, " +
-                $"B:{formatProperties.samplerYcbcrConversionComponents.b}, " +
-                $"A:{formatProperties.samplerYcbcrConversionComponents.a}");
-
-            Log.Debug(
-                Tag,
-                $"YCbCr model = {formatProperties.suggestedYcbcrModel}");
-
-            Log.Debug(
-                Tag,
-                $"YCbCr range = {formatProperties.suggestedYcbcrRange}");
-
-            Log.Debug(
-                Tag,
-                $"X chroma offset = {formatProperties.suggestedXChromaOffset}");
-
-            Log.Debug(
-                Tag,
-                $"Y chroma offset = {formatProperties.suggestedYChromaOffset}");
-
-            hasLoggedFormatProperties = true;
+            lastLoggedDescriptor = descriptor;
         }
 
             /*
@@ -196,12 +180,16 @@ internal unsafe sealed class VulkanExternalFrameImporter
         ulong externalFormat =
             query.FormatProperties.externalFormat;
 
-        if (ycbcrResources.ExternalFormat != externalFormat)
+        VkAndroidHardwareBufferFormatPropertiesANDROID formatProperties =
+            query.FormatProperties;
+
+        if (!ycbcrResources.IsCompatible(
+                ref formatProperties))
         {
             throw new InvalidOperationException(
                 "The YCbCr resources are not compatible with this " +
-                "HardwareBuffer external format. " +
-                $"Expected 0x{ycbcrResources.ExternalFormat:X}, " +
+                "HardwareBuffer format/conversion description. " +
+                $"Expected external format 0x{ycbcrResources.ExternalFormat:X}, " +
                 $"received 0x{externalFormat:X}.");
         }
 

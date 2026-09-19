@@ -749,8 +749,8 @@ public static class ARCameraSpatialController
         long rendererRouteVersion =
             ARRouteRenderer.AppliedRouteVersion;
 
-        ARCameraPoseBridge.SpatialSnapshot frame =
-            ARCameraPoseBridge.CurrentFrame;
+        ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
+            out ARCameraPoseBridge.SpatialSnapshot frame);
 
         bool trackingValid =
             frame.IsTracking &&

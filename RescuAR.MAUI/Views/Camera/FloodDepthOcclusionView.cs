@@ -134,7 +134,11 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             ARFloodDepthBridge.Current;
 
         ARDepthOcclusionBridge.DepthSnapshot depth =
-            ARDepthOcclusionBridge.Current;
+            ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
+                out ARCameraPoseBridge.SpatialSnapshot spatialFrame)
+                ? ARFrameCoherencePolicy.GetDepthForSpatialFrame(
+                    spatialFrame)
+                : ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
 
         // Avoid a paint pass when nothing changed. With V7.3 the depth bridge
         // publishes at <=10 Hz, so the UI cannot accidentally spin at the
@@ -171,7 +175,11 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         }
 
         ARDepthOcclusionBridge.DepthSnapshot depth =
-            ARDepthOcclusionBridge.Current;
+            ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
+                out ARCameraPoseBridge.SpatialSnapshot spatialFrame)
+                ? ARFrameCoherencePolicy.GetDepthForSpatialFrame(
+                    spatialFrame)
+                : ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
 
         if (!depth.IsAvailable ||
             !depth.GroundAvailable ||

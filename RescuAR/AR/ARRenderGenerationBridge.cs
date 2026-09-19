@@ -23,6 +23,48 @@ public readonly record struct ARRenderGenerationToken(
 }
 
 /// <summary>
+/// Immutable display geometry that was active when one ARCore frame was
+/// acquired. Rotation uses Android Surface rotation values (0 through 3).
+/// </summary>
+public readonly record struct ARDisplayGeometrySnapshot(
+    long Generation,
+    int Rotation,
+    uint Width,
+    uint Height)
+{
+    public static ARDisplayGeometrySnapshot Invalid =>
+        new(0, -1, 0, 0);
+
+    public bool IsValid =>
+        Generation > 0 &&
+        Rotation is >= 0 and <= 3 &&
+        Width > 0 &&
+        Height > 0;
+}
+
+/// <summary>
+/// Identity shared by camera, pose, Depth, and renderer publications from one
+/// ARCore Session.Update result.
+/// </summary>
+public readonly record struct ARFrameMetadata(
+    ARRenderGenerationToken Generation,
+    long FrameTimestamp,
+    ARDisplayGeometrySnapshot DisplayGeometry)
+{
+    public static ARFrameMetadata Invalid =>
+        new(
+            ARRenderGenerationToken.Invalid,
+            long.MinValue,
+            ARDisplayGeometrySnapshot.Invalid);
+
+    public bool IsValid =>
+        Generation.IsValid &&
+        FrameTimestamp > 0 &&
+        DisplayGeometry.IsValid &&
+        DisplayGeometry.Generation == Generation.GeometryGeneration;
+}
+
+/// <summary>
 /// Process-wide generation authority for the static AR publication bridges.
 /// Android owns activation/suspension; consumers use it to reject snapshots
 /// from a previous session, graphics context, or display geometry.

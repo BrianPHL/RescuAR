@@ -7,10 +7,6 @@ namespace RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
 /// <summary>
 /// Owns the Vulkan YCbCr conversion and sampler used to sample ARCore's
 /// implementation-defined Android camera format.
-///
-/// The Samsung A54 camera stream used by this project is rendered with
-/// BT.601 narrow-range conversion. This was selected after direct visual
-/// comparison against the ARCore CPU image and the device camera preview.
 /// </summary>
 internal unsafe sealed class VulkanYcbcrResources : IDisposable
 {
@@ -23,19 +19,21 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
         VKGraphicsContext graphicsContext,
         VkSamplerYcbcrConversion conversion,
         VkSampler sampler,
-        ulong externalFormat)
+        VulkanYcbcrConversionDescriptor descriptor)
     {
         this.graphicsContext = graphicsContext;
         Conversion = conversion;
         Sampler = sampler;
-        ExternalFormat = externalFormat;
+        Descriptor = descriptor;
     }
 
     public VkSamplerYcbcrConversion Conversion { get; private set; }
 
     public VkSampler Sampler { get; private set; }
 
-    public ulong ExternalFormat { get; }
+    public VulkanYcbcrConversionDescriptor Descriptor { get; }
+
+    public ulong ExternalFormat => Descriptor.ExternalFormat;
 
     public static VulkanYcbcrResources Create(
         VKGraphicsContext graphicsContext,
@@ -49,6 +47,10 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
                 "Cannot create external YCbCr resources because " +
                 "externalFormat is zero.");
         }
+
+        VulkanYcbcrConversionDescriptor descriptor =
+            VulkanYcbcrConversionDescriptor.From(
+                ref formatProperties);
 
         VkSamplerYcbcrConversion conversion =
             CreateConversion(
@@ -66,7 +68,7 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
                 graphicsContext,
                 conversion,
                 sampler,
-                formatProperties.externalFormat);
+                descriptor);
         }
         catch
         {
@@ -97,27 +99,22 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
                 externalFormat = formatProperties.externalFormat
             };
 
-        /*
-         * Production camera color configuration.
-         *
-         * The driver reports BT.601 + ITU_FULL for this external format,
-         * but repeated visual comparison showed that BT.601 + ITU_NARROW
-         * provides substantially better black levels, contrast, and overall
-         * appearance in the RescuAR passthrough on the tested device.
-         *
-         * Component mapping and chroma locations remain driver-provided.
-         */
         VkSamplerYcbcrModelConversion selectedModel =
-            VkSamplerYcbcrModelConversion
-                .VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
+            formatProperties.suggestedYcbcrModel;
 
         VkSamplerYcbcrRange selectedRange =
-            VkSamplerYcbcrRange
-                .VK_SAMPLER_YCBCR_RANGE_ITU_NARROW;
+            formatProperties.suggestedYcbcrRange;
 
-        Log.Debug(
+        Log.Info(
             Tag,
-            "Camera YCbCr conversion: BT.601 / ITU_NARROW.");
+            "ARCORE_YCBCR_SELECTION " +
+            $"externalFormat=0x{formatProperties.externalFormat:X}; " +
+            $"format={formatProperties.format}; " +
+            $"model={selectedModel}; " +
+            $"range={selectedRange}; " +
+            $"xChromaOffset={formatProperties.suggestedXChromaOffset}; " +
+            $"yChromaOffset={formatProperties.suggestedYChromaOffset}; " +
+            "source=driver-suggested.");
 
         VkSamplerYcbcrConversionCreateInfo conversionCreateInfo =
             new()
@@ -163,6 +160,12 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
 
         return conversion;
     }
+
+    public bool IsCompatible(
+        ref VkAndroidHardwareBufferFormatPropertiesANDROID formatProperties) =>
+        Descriptor ==
+            VulkanYcbcrConversionDescriptor.From(
+                ref formatProperties);
 
     private static VkSampler CreateSampler(
         VKGraphicsContext graphicsContext,
@@ -272,4 +275,33 @@ internal unsafe sealed class VulkanYcbcrResources : IDisposable
 
         disposed = true;
     }
+}
+
+internal readonly record struct VulkanYcbcrConversionDescriptor(
+    ulong ExternalFormat,
+    VkFormat Format,
+    VkFormatFeatureFlags FormatFeatures,
+    VkSamplerYcbcrModelConversion Model,
+    VkSamplerYcbcrRange Range,
+    VkChromaLocation XChromaOffset,
+    VkChromaLocation YChromaOffset,
+    VkComponentSwizzle ComponentR,
+    VkComponentSwizzle ComponentG,
+    VkComponentSwizzle ComponentB,
+    VkComponentSwizzle ComponentA)
+{
+    public static VulkanYcbcrConversionDescriptor From(
+        ref VkAndroidHardwareBufferFormatPropertiesANDROID properties) =>
+        new(
+            properties.externalFormat,
+            properties.format,
+            properties.formatFeatures,
+            properties.suggestedYcbcrModel,
+            properties.suggestedYcbcrRange,
+            properties.suggestedXChromaOffset,
+            properties.suggestedYChromaOffset,
+            properties.samplerYcbcrConversionComponents.r,
+            properties.samplerYcbcrConversionComponents.g,
+            properties.samplerYcbcrConversionComponents.b,
+            properties.samplerYcbcrConversionComponents.a);
 }

@@ -47,7 +47,7 @@ public static class ARDepthOcclusionBridge
     }
 
     public static void Publish(
-        long frameTimestamp,
+        ARFrameMetadata metadata,
         int width,
         int height,
         ushort[] depthMillimeters,
@@ -67,15 +67,15 @@ public static class ARDepthOcclusionBridge
         int textureHeight,
         bool groundAvailable,
         bool groundIsProvisional,
-        float groundWorldY,
-        ARRenderGenerationToken generation)
+        float groundWorldY)
     {
         ArgumentNullException.ThrowIfNull(depthMillimeters);
         ArgumentNullException.ThrowIfNull(viewToTextureUv);
 
         if (!ARRenderGenerationBridge.TryAcceptCallback(
-                generation,
+                metadata.Generation,
                 "depth-publish") ||
+            !metadata.IsValid ||
             width <= 0 ||
             height <= 0 ||
             depthMillimeters.Length < width * height ||
@@ -94,8 +94,7 @@ public static class ARDepthOcclusionBridge
 
         DepthSnapshot next = new(
             nextVersion,
-            generation,
-            frameTimestamp,
+            metadata,
             Environment.TickCount64,
             true,
             width,
@@ -142,8 +141,7 @@ public static class ARDepthOcclusionBridge
         public static DepthSnapshot UnavailableWithVersion(long version) =>
             new(
                 version,
-                ARRenderGenerationToken.Invalid,
-                long.MinValue,
+                ARFrameMetadata.Invalid,
                 long.MinValue,
                 false,
                 0,
@@ -161,8 +159,7 @@ public static class ARDepthOcclusionBridge
 
         public DepthSnapshot(
             long version,
-            ARRenderGenerationToken generation,
-            long frameTimestamp,
+            ARFrameMetadata metadata,
             long publishedAtMonotonicMilliseconds,
             bool isAvailable,
             int width,
@@ -187,8 +184,7 @@ public static class ARDepthOcclusionBridge
             float groundWorldY)
         {
             Version = version;
-            Generation = generation;
-            FrameTimestamp = frameTimestamp;
+            Metadata = metadata;
             PublishedAtMonotonicMilliseconds =
                 publishedAtMonotonicMilliseconds;
             IsAvailable = isAvailable;
@@ -215,8 +211,11 @@ public static class ARDepthOcclusionBridge
         }
 
         public long Version { get; }
-        public ARRenderGenerationToken Generation { get; }
-        public long FrameTimestamp { get; }
+        public ARFrameMetadata Metadata { get; }
+        public ARRenderGenerationToken Generation => Metadata.Generation;
+        public long FrameTimestamp => Metadata.FrameTimestamp;
+        public ARDisplayGeometrySnapshot DisplayGeometry =>
+            Metadata.DisplayGeometry;
         public long PublishedAtMonotonicMilliseconds { get; }
         public bool IsAvailable { get; }
         public int Width { get; }

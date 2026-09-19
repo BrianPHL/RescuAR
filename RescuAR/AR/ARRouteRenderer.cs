@@ -508,7 +508,8 @@ public static class ARRouteRenderer
         }
 
         ARDepthOcclusionBridge.DepthSnapshot depth =
-            ARDepthOcclusionBridge.Current;
+            ARFrameCoherencePolicy.GetDepthForSpatialFrame(
+                frame);
 
         ApplyCameraVisualPolicy(
             slots,

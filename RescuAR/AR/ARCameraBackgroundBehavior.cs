@@ -66,17 +66,14 @@ public sealed class ARCameraBackgroundBehavior : Behavior
             return;
         }
 
-        long bridgeVersion =
-            ARCameraTextureBridge.Version;
+        ARCameraTextureBridge.TextureSnapshot snapshot =
+            ARCameraTextureBridge.Current;
 
-        if (bridgeVersion ==
-            appliedVersion)
-        {
-            return;
-        }
+        long bridgeVersion =
+            snapshot.Version;
 
         var texture =
-            ARCameraTextureBridge.CurrentTexture;
+            snapshot.Texture;
 
         if (texture is null)
         {
@@ -89,6 +86,12 @@ public sealed class ARCameraBackgroundBehavior : Behavior
             appliedVersion =
                 bridgeVersion;
 
+            return;
+        }
+
+        if (bridgeVersion ==
+            appliedVersion)
+        {
             return;
         }
 

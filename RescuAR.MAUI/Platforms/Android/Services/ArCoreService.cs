@@ -482,10 +482,7 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "ARCore Session created successfully.");
 
-            InspectSupportedCameraConfigurations(
-                session);
-
-            SelectThirtyFpsCameraConfig(
+            SelectProductionCameraConfiguration(
                 session);
 
             /*
@@ -1349,6 +1346,21 @@ public sealed partial class ArCoreService : IArCoreService
             lastProcessedTimestamp =
                 timestamp;
 
+            ARFrameMetadata frameMetadata =
+                CaptureFrameMetadata(
+                    renderGeneration,
+                    timestamp);
+
+            if (!frameMetadata.IsValid)
+            {
+                RecordFrameCoherenceDrop(
+                    "invalid display-geometry metadata",
+                    renderGeneration,
+                    timestamp);
+
+                return frame;
+            }
+
             RecordProcessedFrame();
 
             ArCoreCamera camera =
@@ -1365,9 +1377,8 @@ public sealed partial class ArCoreService : IArCoreService
             PublishSpatialPose(
                 frame,
                 camera,
-                timestamp,
                 frameZoomRatio,
-                renderGeneration);
+                frameMetadata);
 
             LogTextureIntrinsicsOnce(
                 camera);
@@ -1378,9 +1389,8 @@ public sealed partial class ArCoreService : IArCoreService
             TryPublishDepthOcclusionFrame(
                 frame,
                 camera,
-                timestamp,
                 frameZoomRatio,
-                renderGeneration);
+                frameMetadata);
 
             if (captureCpuDiagnosticRequested)
             {
@@ -1436,12 +1446,11 @@ public sealed partial class ArCoreService : IArCoreService
                     out uint outputHeight);
 
                 QueuePendingCameraFrame(
-                    renderGeneration,
+                    frameMetadata,
                     hardwareBuffer,
                     cameraUv,
                     outputWidth,
-                    outputHeight,
-                    timestamp);
+                    outputHeight);
 
                 ownershipTransferred =
                     true;
@@ -1468,15 +1477,14 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     private void QueuePendingCameraFrame(
-        ARRenderGenerationToken renderGeneration,
+        ARFrameMetadata metadata,
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
-        uint outputHeight,
-        long timestamp)
+        uint outputHeight)
     {
         if (!CanAttemptCameraImport(
-                renderGeneration.GraphicsGeneration))
+                metadata.Generation.GraphicsGeneration))
         {
             CloseHardwareBuffer(
                 hardwareBuffer);
@@ -1486,12 +1494,11 @@ public sealed partial class ArCoreService : IArCoreService
 
         PendingCameraFrame replacement =
             new(
-                renderGeneration,
+                metadata,
                 hardwareBuffer,
                 cameraUv,
                 outputWidth,
-                outputHeight,
-                timestamp);
+                outputHeight);
 
         PendingCameraFrame? replacedFrame;
 
@@ -1530,7 +1537,7 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         if (!ARRenderGenerationBridge.TryAcceptCallback(
-                pendingFrame.Generation,
+                pendingFrame.Metadata.Generation,
                 "pending-camera-import"))
         {
             pendingFrame.Dispose();
@@ -1538,7 +1545,7 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         if (!CanAttemptCameraImport(
-                pendingFrame.Generation.GraphicsGeneration))
+                pendingFrame.Metadata.Generation.GraphicsGeneration))
         {
             pendingFrame.Dispose();
             return;
@@ -1570,15 +1577,14 @@ public sealed partial class ArCoreService : IArCoreService
                 RecordCameraImportSuccess();
 
                 ARCameraTextureBridge.Publish(
-                    pendingFrame.Generation,
-                    pendingFrame.Timestamp,
+                    pendingFrame.Metadata,
                     texture);
             }
             catch (Exception exception)
             {
                 HandleCameraImportFailure(
                     exception,
-                    pendingFrame.Generation.GraphicsGeneration);
+                    pendingFrame.Metadata.Generation.GraphicsGeneration);
             }
         }
         finally
@@ -1627,15 +1633,14 @@ public sealed partial class ArCoreService : IArCoreService
         private HardwareBuffer? hardwareBuffer;
 
         public PendingCameraFrame(
-            ARRenderGenerationToken generation,
+            ARFrameMetadata metadata,
             HardwareBuffer hardwareBuffer,
             float[] cameraUv,
             uint outputWidth,
-            uint outputHeight,
-            long timestamp)
+            uint outputHeight)
         {
-            Generation =
-                generation;
+            Metadata =
+                metadata;
 
             this.hardwareBuffer =
                 hardwareBuffer
@@ -1652,9 +1657,6 @@ public sealed partial class ArCoreService : IArCoreService
 
             OutputHeight =
                 outputHeight;
-
-            Timestamp =
-                timestamp;
         }
 
         public HardwareBuffer HardwareBuffer =>
@@ -1662,15 +1664,13 @@ public sealed partial class ArCoreService : IArCoreService
             ?? throw new ObjectDisposedException(
                 nameof(PendingCameraFrame));
 
-        public ARRenderGenerationToken Generation { get; }
+        public ARFrameMetadata Metadata { get; }
 
         public float[] CameraUv { get; }
 
         public uint OutputWidth { get; }
 
         public uint OutputHeight { get; }
-
-        public long Timestamp { get; }
 
         public void Dispose()
         {
@@ -1695,10 +1695,12 @@ public sealed partial class ArCoreService : IArCoreService
     private void PublishSpatialPose(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp,
         float zoomRatio,
-        ARRenderGenerationToken renderGeneration)
+        ARFrameMetadata frameMetadata)
     {
+        long timestamp =
+            frameMetadata.FrameTimestamp;
+
         string trackingState =
             camera.TrackingState.ToString();
 
@@ -1726,8 +1728,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
-                timestamp,
-                renderGeneration);
+                frameMetadata);
 
             LogSpatialPoseTelemetryIfNeeded(
                 trackingState,
@@ -1753,8 +1754,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
-                timestamp,
-                renderGeneration);
+                frameMetadata);
 
             LogSpatialPoseTelemetryIfNeeded(
                 trackingState,
@@ -1880,8 +1880,7 @@ public sealed partial class ArCoreService : IArCoreService
             anchorX,
             anchorY,
             anchorZ,
-            timestamp,
-            renderGeneration);
+            frameMetadata);
 
         /*
          * Start/clear retained-anchor recovery from the ARCore frame cadence
@@ -3148,10 +3147,12 @@ public sealed partial class ArCoreService : IArCoreService
     private void TryPublishDepthOcclusionFrame(
         Frame frame,
         ArCoreCamera camera,
-        long timestamp,
         float zoomRatio,
-        ARRenderGenerationToken renderGeneration)
+        ARFrameMetadata frameMetadata)
     {
+        long timestamp =
+            frameMetadata.FrameTimestamp;
+
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
@@ -3342,11 +3343,15 @@ public sealed partial class ArCoreService : IArCoreService
                     frame,
                     zoomRatio);
 
-            ARCameraPoseBridge.SpatialSnapshot spatial =
-                ARCameraPoseBridge.CurrentFrame;
+            bool matchingSpatialFrame =
+                ARCameraPoseBridge.TryGetFrameForMetadata(
+                    frameMetadata,
+                    0,
+                    out ARCameraPoseBridge.SpatialSnapshot spatial,
+                    out _);
 
             bool groundAvailable =
-                spatial.FrameTimestamp == timestamp &&
+                matchingSpatialFrame &&
                 spatial.Anchor.IsAvailable;
 
             bool groundIsProvisional =
@@ -3359,7 +3364,7 @@ public sealed partial class ArCoreService : IArCoreService
                     : 0.0f;
 
             ARDepthOcclusionBridge.Publish(
-                timestamp,
+                frameMetadata,
                 width,
                 height,
                 depthMillimeters,
@@ -3379,8 +3384,7 @@ public sealed partial class ArCoreService : IArCoreService
                 dimensions[1],
                 groundAvailable,
                 groundIsProvisional,
-                groundWorldY,
-                renderGeneration);
+                groundWorldY);
 
             lastDepthOcclusionPublishTimestamp =
                 timestamp;
@@ -4566,124 +4570,4 @@ public sealed partial class ArCoreService : IArCoreService
         return filePath;
     }
 
-    private static void SelectThirtyFpsCameraConfig(
-        Session currentSession)
-    {
-        try
-        {
-            CameraConfig? currentConfig =
-                currentSession.CameraConfig;
-
-            if (currentConfig is null)
-            {
-                Log.Warn(
-                    Tag,
-                    "Current ARCore camera config unavailable.");
-
-                return;
-            }
-
-            global::Android.Util.Size currentGpuSize =
-                currentConfig.TextureSize;
-
-            using CameraConfigFilter cameraConfigFilter =
-                new(currentSession);
-
-            IList<CameraConfig> cameraConfigs =
-                currentSession.GetSupportedCameraConfigs(
-                    cameraConfigFilter);
-
-            CameraConfig? selectedConfig =
-                null;
-
-            foreach (CameraConfig candidate in cameraConfigs)
-            {
-                if (candidate.GetFacingDirection()
-                        .ToString() != "BACK")
-                {
-                    continue;
-                }
-
-                global::Android.Util.Size gpuSize =
-                    candidate.TextureSize;
-
-                /*
-                 * Preserve the GPU texture dimensions already proven to work
-                 * with the Vulkan camera pipeline.
-                 */
-                if (gpuSize.Width != currentGpuSize.Width ||
-                    gpuSize.Height != currentGpuSize.Height)
-                {
-                    continue;
-                }
-
-                global::Android.Util.Range fpsRange =
-                    candidate.FpsRange;
-
-                int minimumFps =
-                    Convert.ToInt32(
-                        fpsRange.Lower?.ToString());
-
-                int maximumFps =
-                    Convert.ToInt32(
-                        fpsRange.Upper?.ToString());
-
-                if (minimumFps == 30 &&
-                    maximumFps == 30)
-                {
-                    selectedConfig =
-                        candidate;
-
-                    break;
-                }
-            }
-
-            if (selectedConfig is null)
-            {
-                Log.Warn(
-                    Tag,
-                    "No matching 30 FPS ARCore camera config found. " +
-                    "Default configuration retained.");
-
-                return;
-            }
-
-            /*
-             * Camera configuration is selected once while the Session is
-             * initially paused. Pause/resume tab transitions reuse it.
-             */
-            currentSession.CameraConfig =
-                selectedConfig;
-
-            Log.Debug(
-                Tag,
-                "========================================");
-
-            Log.Debug(
-                Tag,
-                "ARCore camera capped at 30 FPS.");
-
-            Log.Debug(
-                Tag,
-                $"FPS = {selectedConfig.FpsRange}");
-
-            Log.Debug(
-                Tag,
-                $"GPU Texture = " +
-                $"{selectedConfig.TextureSize.Width}x" +
-                $"{selectedConfig.TextureSize.Height}");
-
-            Log.Debug(
-                Tag,
-                "========================================");
-        }
-        catch (Exception exception)
-        {
-            Log.Warn(
-                Tag,
-                "Unable to select 30 FPS ARCore camera config. " +
-                $"{exception.GetType().Name}: " +
-                $"{exception.Message}");
-        }
-    }
 }
