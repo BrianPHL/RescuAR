@@ -46,6 +46,7 @@ public enum ArCoreFailureCode
     SessionPauseFailed,
     SessionShutdownFailed,
     NativeBridgeUnavailable,
+    CameraPassthroughUnavailable,
     RendererUnavailable,
     TrackingLost,
     Unknown,

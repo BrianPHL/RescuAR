@@ -59,7 +59,7 @@ public sealed partial class ArCoreService : IArCoreService
 
     private volatile Session? session;
     private volatile VKGraphicsContext? graphicsContext;
-    private ARCoreVulkanImporter? importer;
+    private IArCameraFrameImporter? importer;
     private Exception? lastSessionOperationException;
     private readonly object graphicsTeardownLock = new();
     private Task? graphicsTeardownTask;
@@ -407,6 +407,9 @@ public sealed partial class ArCoreService : IArCoreService
     {
         context =
             global::Android.App.Application.Context;
+
+        AndroidBuildManifestReporter.LogOnce(
+            context);
 
         Log.Debug(
             Tag,
@@ -778,6 +781,9 @@ public sealed partial class ArCoreService : IArCoreService
             registeredGraphicsGeneration =
                 RegisterGraphicsContextGeneration();
 
+            ResetCameraPipelineForGraphicsGeneration(
+                registeredGraphicsGeneration);
+
             ARRenderGenerationBridge.RegisterGraphicsContext(
                 registeredGraphicsGeneration);
 
@@ -1035,7 +1041,7 @@ public sealed partial class ArCoreService : IArCoreService
          * MyApplication skips base.DrawFrame for this callback, so no new
          * submit/present can race the device-idle barrier below.
          */
-        ARCoreVulkanImporter.WaitForGraphicsDeviceIdle(
+        EvergineArCameraFrameImporter.WaitForGraphicsDeviceIdle(
             unavailableContext);
 
         Log.Info(
@@ -1060,7 +1066,7 @@ public sealed partial class ArCoreService : IArCoreService
             clearedFloodVersion);
         ARRouteBridge.Clear();
 
-        ARCoreVulkanImporter? currentImporter = importer;
+        IArCameraFrameImporter? currentImporter = importer;
         currentImporter?.Dispose();
 
         if (ReferenceEquals(importer, currentImporter))
@@ -1469,6 +1475,15 @@ public sealed partial class ArCoreService : IArCoreService
         uint outputHeight,
         long timestamp)
     {
+        if (!CanAttemptCameraImport(
+                renderGeneration.GraphicsGeneration))
+        {
+            CloseHardwareBuffer(
+                hardwareBuffer);
+
+            return;
+        }
+
         PendingCameraFrame replacement =
             new(
                 renderGeneration,
@@ -1522,6 +1537,13 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
+        if (!CanAttemptCameraImport(
+                pendingFrame.Generation.GraphicsGeneration))
+        {
+            pendingFrame.Dispose();
+            return;
+        }
+
         try
         {
             VKGraphicsContext? currentGraphicsContext =
@@ -1539,30 +1561,24 @@ public sealed partial class ArCoreService : IArCoreService
             try
             {
                 var texture =
-                    importer.ImportHardwareBuffer(
+                    importer.Import(
                         pendingFrame.HardwareBuffer,
                         pendingFrame.CameraUv,
                         pendingFrame.OutputWidth,
                         pendingFrame.OutputHeight);
+
+                RecordCameraImportSuccess();
 
                 ARCameraTextureBridge.Publish(
                     pendingFrame.Generation,
                     pendingFrame.Timestamp,
                     texture);
             }
-            catch (NotSupportedException exception)
-            {
-                Log.Error(
-                    Tag,
-                    $"Unsupported HardwareBuffer format: " +
-                    $"{exception.Message}");
-            }
             catch (Exception exception)
             {
-                Log.Error(
-                    Tag,
-                    $"HardwareBuffer import failed on Evergine " +
-                    $"draw thread: {exception}");
+                HandleCameraImportFailure(
+                    exception,
+                    pendingFrame.Generation.GraphicsGeneration);
             }
         }
         finally
@@ -3659,14 +3675,14 @@ public sealed partial class ArCoreService : IArCoreService
             token.GraphicsGeneration);
     }
 
-    private static ARCoreVulkanImporter CreateImporter(
+    private static IArCameraFrameImporter CreateImporter(
         VKGraphicsContext graphicsContext)
     {
         Log.Debug(
             Tag,
             "Creating ARCore Vulkan importer...");
 
-        return new ARCoreVulkanImporter(
+        return new EvergineArCameraFrameImporter(
             graphicsContext);
     }
 

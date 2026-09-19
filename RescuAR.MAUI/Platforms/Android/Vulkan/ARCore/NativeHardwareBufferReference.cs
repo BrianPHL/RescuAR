@@ -100,28 +100,5 @@ internal sealed class NativeHardwareBufferReference : IDisposable
 
         disposed =
             true;
-
-        GC.SuppressFinalize(this);
-    }
-
-    ~NativeHardwareBufferReference()
-    {
-        if (pointer != nint.Zero)
-        {
-            try
-            {
-                AHardwareBufferInterop.Release(
-                    pointer);
-            }
-            catch
-            {
-                /*
-                 * Finalizers must not allow cleanup exceptions to escape.
-                 */
-            }
-
-            pointer =
-                nint.Zero;
-        }
     }
 }
