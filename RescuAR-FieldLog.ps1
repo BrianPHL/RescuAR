@@ -25,6 +25,10 @@ param(
     [ValidateSet("V", "D", "I", "W", "E", "F")]
     [string]$MinimumPriority = "D",
 
+    [Parameter(Mandatory = $true, ParameterSetName = "Start")]
+    [ValidateSet("VisualStudio", "ADB", "PlayInternal", "Sideload", "Other")]
+    [string]$InstallMethod,
+
     [switch]$DeleteAfterPull
 )
 
@@ -38,6 +42,7 @@ $RemoteLogcatPidFile = "$RemoteRoot/logcat.pid"
 $RemoteStatusFile = "$RemoteRoot/logger.status"
 $RemoteLauncherLog = "$RemoteRoot/launcher.log"
 $RemoteWrapper = "$RemoteRoot/rescuar-fieldlog-wrapper.sh"
+$PackageName = "com.rescuar.app"
 
 function Get-DeviceSerial {
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
@@ -91,6 +96,175 @@ function Get-AndroidProperty {
     )
 
     return Invoke-AdbShellText -Serial $Serial -Command "getprop $Property"
+}
+
+function Get-InstalledPackageEvidence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial
+    )
+
+    $pathOutput = Invoke-AdbShellText `
+        -Serial $Serial `
+        -Command "pm path $PackageName"
+
+    $packagePaths = @(
+        $pathOutput -split "`n" |
+        ForEach-Object { $_.Trim() } |
+        ForEach-Object {
+            if ($_ -match '^package:(.+\.apk)$') {
+                $Matches[1]
+            }
+        }
+    )
+
+    $artifactHashes = @()
+    foreach ($packagePath in $packagePaths) {
+        $hashLine = Invoke-AdbShellText `
+            -Serial $Serial `
+            -Command "sha256sum '$packagePath' 2>/dev/null"
+
+        $hash = if ($hashLine -match '^([0-9a-fA-F]{64})\s') {
+            $Matches[1].ToLowerInvariant()
+        }
+        else {
+            "unavailable"
+        }
+
+        $artifactHashes += "$packagePath|$hash"
+    }
+
+    $packageDump = Invoke-AdbShellText `
+        -Serial $Serial `
+        -Command "dumpsys package $PackageName"
+
+    $versionName = if ($packageDump -match '(?m)^\s*versionName=([^\r\n]+)') {
+        $Matches[1].Trim()
+    }
+    else {
+        "unavailable"
+    }
+
+    $versionCode = if ($packageDump -match '(?m)^\s*versionCode=(\d+)') {
+        $Matches[1]
+    }
+    else {
+        "unavailable"
+    }
+
+    $installerOutput = Invoke-AdbShellText `
+        -Serial $Serial `
+        -Command "cmd package list packages -i $PackageName"
+
+    $installer = if ($installerOutput -match 'installer=([^\s]+)') {
+        $Matches[1]
+    }
+    else {
+        "unknown"
+    }
+
+    return [PSCustomObject]@{
+        PackageName = $PackageName
+        VersionName = $versionName
+        VersionCode = $versionCode
+        Installer = $installer
+        PackagePaths = $packagePaths
+        ArtifactHashes = $artifactHashes
+    }
+}
+
+function Export-InstalledArtifactManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Serial,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$StartEvidence
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $collectEvidence = Get-InstalledPackageEvidence -Serial $Serial
+    $artifacts = @()
+
+    for ($index = 0; $index -lt $collectEvidence.PackagePaths.Count; $index++) {
+        $remotePath = $collectEvidence.PackagePaths[$index]
+        $temporaryApk = Join-Path $DestinationDirectory "__installed_$index.apk"
+
+        try {
+            & adb -s $Serial pull $remotePath $temporaryApk | Out-Null
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $temporaryApk)) {
+                throw "Could not pull installed package split '$remotePath'."
+            }
+
+            $apkSha256 = (Get-FileHash -LiteralPath $temporaryApk -Algorithm SHA256).Hash.ToLowerInvariant()
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($temporaryApk)
+            try {
+                $nativeEntries = @(
+                    $archive.Entries |
+                    Where-Object { $_.FullName -eq 'lib/arm64-v8a/libnative_bridge.so' }
+                )
+
+                $nativeSha256 = "absent"
+                if ($nativeEntries.Count -eq 1) {
+                    $entryStream = $nativeEntries[0].Open()
+                    try {
+                        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                        try {
+                            $nativeHash = $sha256.ComputeHash($entryStream)
+                            $nativeSha256 = ([System.BitConverter]::ToString($nativeHash) -replace '-', '').ToLowerInvariant()
+                        }
+                        finally {
+                            $sha256.Dispose()
+                        }
+                    }
+                    finally {
+                        $entryStream.Dispose()
+                    }
+                }
+
+                $artifacts += [PSCustomObject]@{
+                    RemotePath = $remotePath
+                    ApkSha256 = $apkSha256
+                    NativeBridgeEntryCount = $nativeEntries.Count
+                    NativeBridgeSha256 = $nativeSha256
+                }
+            }
+            finally {
+                $archive.Dispose()
+            }
+        }
+        finally {
+            Remove-Item -LiteralPath $temporaryApk -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $manifest = [ordered]@{
+        CapturedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        PackageName = $collectEvidence.PackageName
+        VersionName = $collectEvidence.VersionName
+        VersionCode = $collectEvidence.VersionCode
+        Installer = $collectEvidence.Installer
+        StartArtifactHashes = @($StartEvidence)
+        CollectionArtifactHashes = @($collectEvidence.ArtifactHashes)
+        InstalledArtifacts = $artifacts
+        NativeBridgePresent = @($artifacts | Where-Object { $_.NativeBridgeEntryCount -eq 1 }).Count -eq 1
+    }
+
+    $manifestPath = Join-Path $DestinationDirectory "InstalledArtifactManifest.json"
+    $manifest |
+        ConvertTo-Json -Depth 8 |
+        Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+    if (-not $manifest.NativeBridgePresent) {
+        throw "Installed package verification did not find exactly one ARM64 libnative_bridge.so entry. The phone-side logs were preserved."
+    }
+
+    return $manifestPath
 }
 
 function Read-RemoteFile {
@@ -355,11 +529,24 @@ if ($Start) {
     $model = Get-AndroidProperty -Serial $serial -Property "ro.product.model"
     $androidVersion = Get-AndroidProperty -Serial $serial -Property "ro.build.version.release"
     $sdkVersion = Get-AndroidProperty -Serial $serial -Property "ro.build.version.sdk"
+    $supportedAbis = Get-AndroidProperty -Serial $serial -Property "ro.product.cpu.abilist"
+    $installedPackage = Get-InstalledPackageEvidence -Serial $serial
+
+    if ($installedPackage.PackagePaths.Count -eq 0) {
+        throw "$PackageName is not installed; field evidence cannot be tied to an application artifact."
+    }
 
     & adb -s $serial shell "echo 'Session=$session' > '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'Device=$model' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'Android=$androidVersion' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'API=$sdkVersion' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'PackageName=$($installedPackage.PackageName)' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'PackageVersionName=$($installedPackage.VersionName)' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'PackageVersionCode=$($installedPackage.VersionCode)' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'PackageInstaller=$($installedPackage.Installer)' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'InstallMethod=$InstallMethod' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'SupportedAbis=$supportedAbis' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'InstalledArtifactHashes=$($installedPackage.ArtifactHashes -join ';')' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'MinimumPriority=$MinimumPriority' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'SegmentCeilingMB=$RotateMB' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'RotationThresholdKB=$rotateKB' >> '$remoteMeta'" | Out-Null
@@ -641,6 +828,13 @@ if ($Collect) {
     $capturedRotationSafetyKB = $null
     $capturedRotateCount = $RotateCount
     $capturedPriority = $MinimumPriority
+    $capturedPackageName = $PackageName
+    $capturedPackageVersionName = "unavailable"
+    $capturedPackageVersionCode = "unavailable"
+    $capturedPackageInstaller = "unknown"
+    $capturedInstallMethod = "unavailable"
+    $capturedSupportedAbis = "unavailable"
+    $startArtifactHashes = @()
 
     if (Test-Path -LiteralPath $sessionMetaPath) {
         $metaLines = Get-Content -LiteralPath $sessionMetaPath -ErrorAction SilentlyContinue
@@ -660,8 +854,35 @@ if ($Collect) {
             elseif ($line -match '^MinimumPriority=([VDIWEF])$') {
                 $capturedPriority = $Matches[1]
             }
+            elseif ($line -match '^PackageName=(.+)$') {
+                $capturedPackageName = $Matches[1]
+            }
+            elseif ($line -match '^PackageVersionName=(.+)$') {
+                $capturedPackageVersionName = $Matches[1]
+            }
+            elseif ($line -match '^PackageVersionCode=(.+)$') {
+                $capturedPackageVersionCode = $Matches[1]
+            }
+            elseif ($line -match '^PackageInstaller=(.+)$') {
+                $capturedPackageInstaller = $Matches[1]
+            }
+            elseif ($line -match '^InstallMethod=(.+)$') {
+                $capturedInstallMethod = $Matches[1]
+            }
+            elseif ($line -match '^SupportedAbis=(.+)$') {
+                $capturedSupportedAbis = $Matches[1]
+            }
+            elseif ($line -match '^InstalledArtifactHashes=(.+)$') {
+                $startArtifactHashes = @($Matches[1] -split ';')
+            }
         }
     }
+
+    Write-Host "Verifying the installed APK split set and native bridge..."
+    $installedArtifactManifest = Export-InstalledArtifactManifest `
+        -Serial $serial `
+        -DestinationDirectory $localSessionDir `
+        -StartEvidence $startArtifactHashes
 
     $segmentCeilingBytes = [int64]$capturedRotateMB * 1MB
     $largestSegmentBytes = ($logFiles | Measure-Object -Property Length -Maximum).Maximum
@@ -695,6 +916,12 @@ Device Model     : $model
 Android Version  : $androidVersion
 Android API      : $sdkVersion
 Build ID         : $buildId
+Package Name     : $capturedPackageName
+Package Version  : $capturedPackageVersionName ($capturedPackageVersionCode)
+Package Installer: $capturedPackageInstaller
+Install Method   : $capturedInstallMethod
+Supported ABIs   : $capturedSupportedAbis
+Artifact Manifest: $([System.IO.Path]::GetFileName($installedArtifactManifest))
 Capture Mode     : Native Logcat file rotation
 Minimum Priority : $capturedPriority
 Segment Ceiling  : $capturedRotateMB MiB
