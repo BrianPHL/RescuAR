@@ -1,0 +1,116 @@
+name: ARCore native bridge
+
+on:
+  pull_request:
+    paths:
+      - "RescuAR.MAUI/**"
+      - "build/Verify-AndroidNativeBridge.ps1"
+      - ".github/workflows/arcore-native-bridge.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "RescuAR.MAUI/**"
+      - "build/Verify-AndroidNativeBridge.ps1"
+      - ".github/workflows/arcore-native-bridge.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-arm64-package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android native tools
+        shell: pwsh
+        run: |
+          sdkmanager "ndk;28.2.13676358" "cmake;3.22.1" "platform-tools"
+
+      - name: Install MAUI Android workload
+        shell: pwsh
+        run: dotnet workload install maui-android
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore RescuAR.MAUI.sln
+
+      - name: Publish ARM64 APK from native source
+        shell: pwsh
+        run: |
+          $sdkRoot = if ($env:ANDROID_SDK_ROOT) {
+            $env:ANDROID_SDK_ROOT
+          } else {
+            $env:ANDROID_HOME
+          }
+
+          if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
+            throw "The Android SDK root is unavailable."
+          }
+
+          dotnet publish RescuAR.MAUI/RescuAR.MAUI.csproj `
+            -c Release `
+            -f net9.0-android `
+            -p:RuntimeIdentifier=android-arm64 `
+            -p:AndroidPackageFormats=apk `
+            "-p:AndroidSdkDirectory=$sdkRoot" `
+            -p:BuildNativeBridgeOnBuild=true `
+            -p:ContinuousIntegrationBuild=true `
+            -p:RescuArSourceRevision=${{ github.sha }} `
+            -p:VerifyPackagedNativeBridge=false
+
+      - name: Verify packaged native bridge and provenance
+        id: verify
+        shell: pwsh
+        run: |
+          $artifact = Get-ChildItem `
+            -Path "RescuAR.MAUI/bin/Release/net9.0-android/android-arm64/publish" `
+            -Filter "*.apk" `
+            -File |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $artifact) {
+            throw "The publish step did not produce an APK."
+          }
+
+          $provenance = Join-Path $artifact.DirectoryName "native-bridge-provenance.json"
+
+          ./build/Verify-AndroidNativeBridge.ps1 `
+            -ArtifactPath $artifact.FullName `
+            -ExpectedAbi "arm64-v8a" `
+            -RequireStripped `
+            -NdkVersion "28.2.13676358" `
+            -CMakeVersion "3.22.1" `
+            -AndroidApi "26" `
+            -ProvenanceOutput $provenance
+
+          "artifact=$($artifact.FullName)" >> $env:GITHUB_OUTPUT
+          "provenance=$provenance" >> $env:GITHUB_OUTPUT
+
+      - name: Upload verified APK and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescuar-arm64-native-verified
+          if-no-files-found: error
+          path: |
+            ${{ steps.verify.outputs.artifact }}
+            ${{ steps.verify.outputs.provenance }}

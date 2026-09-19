@@ -48,28 +48,45 @@
 		version changes.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<NativeBridgeAbi>arm64-v8a</NativeBridgeAbi>
+		<NativeBridgeFileName>libnative_bridge.so</NativeBridgeFileName>
+		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
+		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
+		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
+		<RescuArCorrectiveBatch>ARCore-03</RescuArCorrectiveBatch>
+		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
+		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
+
 		<!--
 			A verified ARM64 bridge is checked into Platforms\Android\lib.
 			Keep native compilation opt-in so normal MAUI builds do not require
-			a machine-specific NDK/CMake installation. Set this property to true
-			when intentionally rebuilding libnative_bridge.so from source.
+			a machine-specific NDK/CMake installation. CI always rebuilds it from
+			the pinned source/toolchain before packaging.
 		-->
+		<BuildNativeBridgeOnBuild Condition="'$(BuildNativeBridgeOnBuild)' == '' and '$(ContinuousIntegrationBuild)' == 'true'">true</BuildNativeBridgeOnBuild>
 		<BuildNativeBridgeOnBuild Condition="'$(BuildNativeBridgeOnBuild)' == ''">false</BuildNativeBridgeOnBuild>
+		<VerifyPackagedNativeBridge Condition="'$(VerifyPackagedNativeBridge)' == '' and '$(ContinuousIntegrationBuild)' == 'true'">true</VerifyPackagedNativeBridge>
+		<VerifyPackagedNativeBridge Condition="'$(VerifyPackagedNativeBridge)' == ''">false</VerifyPackagedNativeBridge>
 
+		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_SDK_ROOT)' != ''">$(ANDROID_SDK_ROOT)</AndroidSdkDirectory>
+		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_HOME)' != ''">$(ANDROID_HOME)</AndroidSdkDirectory>
 		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
 
-		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == ''">$(AndroidSdkDirectory)\ndk\28.2.13676358</AndroidNdkDirectory>
-		<AndroidCMakeDirectory Condition="'$(AndroidCMakeDirectory)' == ''">$(AndroidSdkDirectory)\cmake\3.22.1</AndroidCMakeDirectory>
+		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == ''">$(AndroidSdkDirectory)\ndk\$(NativeBridgeNdkVersion)</AndroidNdkDirectory>
+		<AndroidCMakeDirectory Condition="'$(AndroidCMakeDirectory)' == ''">$(AndroidSdkDirectory)\cmake\$(NativeBridgeCMakeVersion)</AndroidCMakeDirectory>
 
 		<CMakeExecutable>$(AndroidCMakeDirectory)\bin\cmake.exe</CMakeExecutable>
 		<NinjaExecutable>$(AndroidCMakeDirectory)\bin\ninja.exe</NinjaExecutable>
 
 		<AndroidCMakeToolchain>$(AndroidNdkDirectory)\build\cmake\android.toolchain.cmake</AndroidCMakeToolchain>
+		<NativeBridgeReadElf>$(AndroidNdkDirectory)\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe</NativeBridgeReadElf>
 
 		<NativeFolder>$(MSBuildProjectDirectory)\Platforms\Android\Native</NativeFolder>
 		<NativeBuildFolder>$(NativeFolder)\build</NativeBuildFolder>
 
 		<NativeLibraryFolder>$(MSBuildProjectDirectory)\Platforms\Android\lib</NativeLibraryFolder>
+		<NativeBridgePath>$(NativeLibraryFolder)\$(NativeBridgeAbi)\$(NativeBridgeFileName)</NativeBridgePath>
+		<NativeBridgeVerifier>$(MSBuildProjectDirectory)\..\build\Verify-AndroidNativeBridge.ps1</NativeBridgeVerifier>
 	</PropertyGroup>
 
 	<!-- MAUI resources -->
@@ -116,7 +133,9 @@
 		rebuilt first only when BuildNativeBridgeOnBuild=true is supplied.
 	-->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
-		<AndroidNativeLibrary Include="Platforms\Android\lib\arm64-v8a\libnative_bridge.so" Abi="arm64-v8a" />
+		<AndroidNativeLibrary Include="$(NativeBridgePath)" Abi="$(NativeBridgeAbi)" />
+		<AssemblyMetadata Include="RescuAR.CorrectiveBatch" Value="$(RescuArCorrectiveBatch)" />
+		<AssemblyMetadata Include="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
 	</ItemGroup>
 	<ItemGroup>
 	  <Folder Include="Platforms\Android\Vulkan\Shaders\" />
@@ -142,6 +161,11 @@
 		This target runs before Android begins preparing build inputs.
 		It executes BuildNativeBridge first, followed by CopyNativeBridge.
 	-->
+	<Target Name="ValidateNativeBridgeInput" BeforeTargets="PrepareForBuild" Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<Error Condition="'$(RuntimeIdentifier)' != 'android-arm64'" Text="The current native camera bridge supports only RuntimeIdentifier=android-arm64." />
+		<Error Condition="!Exists('$(NativeBridgePath)') and '$(BuildNativeBridgeOnBuild)' != 'true'" Text="The required ARM64 native bridge is missing: $(NativeBridgePath). Rebuild with BuildNativeBridgeOnBuild=true." />
+	</Target>
+
 	<Target Name="PrepareNativeBridge" BeforeTargets="PrepareForBuild" DependsOnTargets="BuildNativeBridge;CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(BuildNativeBridgeOnBuild)' == 'true'" />
 
 	<!-- Build libnative_bridge.so for every supported ABI -->
@@ -161,23 +185,33 @@
 
 		<Message Text="Configuring native bridge for arm64-v8a..." Importance="high" />
 
-		<Exec Command="&quot;$(CMakeExecutable)&quot; -S &quot;$(NativeFolder)&quot; -B &quot;$(NativeBuildFolder)\arm64-v8a&quot; -G Ninja -DCMAKE_MAKE_PROGRAM=&quot;$(NinjaExecutable)&quot; -DCMAKE_TOOLCHAIN_FILE=&quot;$(AndroidCMakeToolchain)&quot; -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DCMAKE_BUILD_TYPE=Release" />
+		<Exec Command="&quot;$(CMakeExecutable)&quot; -S &quot;$(NativeFolder)&quot; -B &quot;$(NativeBuildFolder)\$(NativeBridgeAbi)&quot; -G Ninja -DCMAKE_MAKE_PROGRAM=&quot;$(NinjaExecutable)&quot; -DCMAKE_TOOLCHAIN_FILE=&quot;$(AndroidCMakeToolchain)&quot; -DANDROID_ABI=$(NativeBridgeAbi) -DANDROID_PLATFORM=android-$(NativeBridgeAndroidApi) -DCMAKE_BUILD_TYPE=Release" />
 
 		<Message Text="Building native bridge for arm64-v8a..." Importance="high" />
 
-		<Exec Command="&quot;$(CMakeExecutable)&quot; --build &quot;$(NativeBuildFolder)\arm64-v8a&quot;" />
+		<Exec Command="&quot;$(CMakeExecutable)&quot; --build &quot;$(NativeBuildFolder)\$(NativeBridgeAbi)&quot;" />
 	</Target>
 
 	<!-- Copy generated libraries into the Android native-library folders -->
 	<Target Name="CopyNativeBridge" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(BuildNativeBridgeOnBuild)' == 'true'">
 
-		<Error Condition="!Exists('$(NativeBuildFolder)\arm64-v8a\libnative_bridge.so')" Text="The ARM64 native bridge was not generated: $(NativeBuildFolder)\arm64-v8a\libnative_bridge.so" />
+		<Error Condition="!Exists('$(NativeBuildFolder)\$(NativeBridgeAbi)\$(NativeBridgeFileName)')" Text="The ARM64 native bridge was not generated: $(NativeBuildFolder)\$(NativeBridgeAbi)\$(NativeBridgeFileName)" />
 
-		<MakeDir Directories="$(NativeLibraryFolder)\arm64-v8a" />
+		<MakeDir Directories="$(NativeLibraryFolder)\$(NativeBridgeAbi)" />
 
-		<Copy SourceFiles="$(NativeBuildFolder)\arm64-v8a\libnative_bridge.so" DestinationFolder="$(NativeLibraryFolder)\arm64-v8a" SkipUnchangedFiles="true" />
+		<Copy SourceFiles="$(NativeBuildFolder)\$(NativeBridgeAbi)\$(NativeBridgeFileName)" DestinationFolder="$(NativeLibraryFolder)\$(NativeBridgeAbi)" SkipUnchangedFiles="true" />
 
 		<Message Text="ARM64 native bridge copied successfully." Importance="high" />
+	</Target>
+
+	<Target Name="VerifyPackagedNativeBridgeArtifact" AfterTargets="Publish" Condition="'$(TargetFramework)' == 'net9.0-android' and '$(VerifyPackagedNativeBridge)' == 'true' and '$(OS)' == 'Windows_NT'">
+		<ItemGroup>
+			<_RescuArAndroidArtifact Include="$(PublishDir)*.apk" />
+			<_RescuArAndroidArtifact Include="$(PublishDir)*.aab" />
+		</ItemGroup>
+		<Error Condition="!Exists('$(NativeBridgeVerifier)')" Text="Native bridge artifact verifier was not found: $(NativeBridgeVerifier)" />
+		<Error Condition="'@(_RescuArAndroidArtifact)' == ''" Text="No APK or AAB was produced under $(PublishDir); native bridge packaging cannot be verified." />
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(NativeBridgeVerifier)&quot; -ArtifactPath &quot;%(_RescuArAndroidArtifact.FullPath)&quot; -ExpectedAbi &quot;$(NativeBridgeAbi)&quot; -ReadElfPath &quot;$(NativeBridgeReadElf)&quot; -RequireStripped -ProvenanceOutput &quot;%(_RescuArAndroidArtifact.RootDir)%(_RescuArAndroidArtifact.Directory)%(_RescuArAndroidArtifact.Filename)-native-provenance.json&quot;" />
 	</Target>
 
 	<!-- Evergine Android configuration -->
