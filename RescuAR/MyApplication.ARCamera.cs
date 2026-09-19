@@ -1,5 +1,6 @@
 using RescuAR.AR;
 using System;
+using System.Threading;
 
 namespace RescuAR;
 
@@ -11,9 +12,28 @@ namespace RescuAR;
 /// </summary>
 public partial class MyApplication
 {
+    private long arGraphicsGeneration;
+
+    public void BindArGraphicsGeneration(
+        long graphicsGeneration)
+    {
+        if (graphicsGeneration <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(graphicsGeneration));
+        }
+
+        Interlocked.Exchange(
+            ref arGraphicsGeneration,
+            graphicsGeneration);
+    }
+
     public override void DrawFrame(
         TimeSpan gameTime)
     {
+        long drawGraphicsGeneration =
+            Interlocked.Read(ref arGraphicsGeneration);
+
         /*
          * Consume at most one pending ARCore camera frame immediately before
          * Evergine executes its normal draw/present cycle.
@@ -22,15 +42,31 @@ public partial class MyApplication
          * The Vulkan camera conversion itself now happens here rather than on
          * the Task.Run worker that calls Session.Update().
          */
-        ARCameraTextureBridge.ProcessDrawThreadWork();
+        bool skipEvergineDraw =
+            ARCameraTextureBridge.ProcessDrawThreadWork(
+                drawGraphicsGeneration);
 
         /*
          * Apply ARCore spatial state directly on the active Evergine draw
          * path. No Behavior lifecycle or intermediary callback is involved.
          */
-        ARCameraSpatialController.ProcessDrawThreadWork();
+        try
+        {
+            if (skipEvergineDraw)
+            {
+                return;
+            }
 
-        base.DrawFrame(
-            gameTime);
+            ARCameraSpatialController.ProcessDrawThreadWork(
+                drawGraphicsGeneration);
+
+            base.DrawFrame(
+                gameTime);
+        }
+        finally
+        {
+            ARCameraTextureBridge.CompleteDrawThreadFrame(
+                drawGraphicsGeneration);
+        }
     }
 }

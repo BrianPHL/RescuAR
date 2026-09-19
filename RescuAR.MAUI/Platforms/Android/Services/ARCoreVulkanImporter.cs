@@ -49,6 +49,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
     private readonly VKGraphicsContext graphicsContext;
     private readonly ResourceFactory resourceFactory;
     private readonly VulkanExternalFrameImporter externalFrameImporter;
+    private readonly int drawThreadId;
 
     private VulkanYcbcrResources? ycbcrResources;
     private VulkanExternalFrame? externalFrame;
@@ -77,6 +78,9 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
             graphicsContext
             ?? throw new ArgumentNullException(
                 nameof(graphicsContext));
+
+        drawThreadId =
+            Environment.CurrentManagedThreadId;
 
         resourceFactory =
             ResolveResourceFactory(
@@ -152,6 +156,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         uint outputWidth,
         uint outputHeight)
     {
+        ThrowIfNotDrawThread();
         ThrowIfDisposed();
 
         if (vulkanDeviceLost)
@@ -1079,8 +1084,58 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         }
     }
 
+    private void ThrowIfNotDrawThread()
+    {
+        if (Environment.CurrentManagedThreadId != drawThreadId)
+        {
+            throw new InvalidOperationException(
+                "ARCore Vulkan importer access must remain on its owning " +
+                "Evergine draw thread.");
+        }
+    }
+
+    public void QuiesceAndDisposeOnDrawThread()
+    {
+        ThrowIfNotDrawThread();
+
+        if (disposed)
+        {
+            return;
+        }
+
+        WaitForGraphicsDeviceIdle(graphicsContext);
+
+        Dispose();
+    }
+
+    public static void WaitForGraphicsDeviceIdle(
+        VKGraphicsContext graphicsContext)
+    {
+        ArgumentNullException.ThrowIfNull(graphicsContext);
+
+        VkDevice device =
+            graphicsContext.VkDevice;
+
+        if (device.Handle == 0)
+        {
+            return;
+        }
+
+        VkResult idleResult =
+            VulkanNative.vkDeviceWaitIdle(device);
+
+        if (idleResult != VkResult.VK_SUCCESS)
+        {
+            throw new InvalidOperationException(
+                $"vkDeviceWaitIdle failed with {idleResult} during " +
+                "ARCore graphics teardown.");
+        }
+    }
+
     public void Dispose()
     {
+        ThrowIfNotDrawThread();
+
         if (disposed)
         {
             return;
@@ -1094,31 +1149,5 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
 
         GC.SuppressFinalize(
             this);
-    }
-
-    ~ARCoreVulkanImporter()
-    {
-        if (disposed)
-        {
-            return;
-        }
-
-        /*
-         * Preserve the prior class behavior by attempting cleanup from the
-         * finalizer. Vulkan destruction is expected to occur during normal
-         * explicit disposal in application code.
-         */
-        try
-        {
-            CleanupExternalResources();
-            CleanupDirectResources();
-        }
-        catch
-        {
-            // Finalizers must not allow cleanup exceptions to escape.
-        }
-
-        disposed =
-            true;
     }
 }

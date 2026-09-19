@@ -30,6 +30,7 @@ public static class ARFloodDepthBridge
         new();
 
     private static long version;
+    private static long acknowledgedDrawThreadVersion = -1;
 
     private static FloodDepthSnapshot current =
         FloodDepthSnapshot.Unavailable;
@@ -83,6 +84,8 @@ public static class ARFloodDepthBridge
         lock (sync)
         {
             if (current.IsAvailable &&
+                current.Generation.SessionGeneration ==
+                    ARRenderGenerationBridge.Current.SessionGeneration &&
                 MathF.Abs(current.LocalDepthMeters - depth) < 0.0001f &&
                 MathF.Abs(current.HorizontalExtentMeters - extent) < 0.0001f &&
                 string.Equals(
@@ -99,6 +102,7 @@ public static class ARFloodDepthBridge
             next =
                 new FloodDepthSnapshot(
                     nextVersion,
+                    ARRenderGenerationBridge.Current,
                     true,
                     depth,
                     extent,
@@ -117,16 +121,18 @@ public static class ARFloodDepthBridge
             $"source='{next.Source}'.");
     }
 
-    public static void Clear(
+    public static long Clear(
         string reason = "cleared")
     {
         long nextVersion;
 
         lock (sync)
         {
-            if (!current.IsAvailable)
+            if (!current.IsAvailable &&
+                current.Generation.SessionGeneration ==
+                    ARRenderGenerationBridge.Current.SessionGeneration)
             {
-                return;
+                return current.Version;
             }
 
             nextVersion =
@@ -135,6 +141,7 @@ public static class ARFloodDepthBridge
             current =
                 new FloodDepthSnapshot(
                     nextVersion,
+                    ARRenderGenerationBridge.Current,
                     false,
                     0.0f,
                     DefaultHorizontalExtentMeters,
@@ -146,6 +153,28 @@ public static class ARFloodDepthBridge
             "AR flood-depth bridge cleared: " +
             $"version={nextVersion}, " +
             $"reason='{reason}'.");
+
+        return nextVersion;
+    }
+
+    public static void AcknowledgeDrawThreadVersion(
+        long acknowledgedVersion)
+    {
+        lock (sync)
+        {
+            if (current.Version != acknowledgedVersion ||
+                acknowledgedDrawThreadVersion == acknowledgedVersion)
+            {
+                return;
+            }
+
+            acknowledgedDrawThreadVersion = acknowledgedVersion;
+        }
+
+        AndroidLog.Info(
+            LogTag,
+            "AR flood-depth state acknowledged on the draw thread: " +
+            $"version={acknowledgedVersion}.");
     }
 
     public readonly struct FloodDepthSnapshot
@@ -153,6 +182,7 @@ public static class ARFloodDepthBridge
         public static FloodDepthSnapshot Unavailable =>
             new(
                 0,
+                ARRenderGenerationToken.Invalid,
                 false,
                 0.0f,
                 DefaultHorizontalExtentMeters,
@@ -160,6 +190,7 @@ public static class ARFloodDepthBridge
 
         public FloodDepthSnapshot(
             long version,
+            ARRenderGenerationToken generation,
             bool isAvailable,
             float localDepthMeters,
             float horizontalExtentMeters,
@@ -167,6 +198,9 @@ public static class ARFloodDepthBridge
         {
             Version =
                 version;
+
+            Generation =
+                generation;
 
             IsAvailable =
                 isAvailable;
@@ -182,6 +216,8 @@ public static class ARFloodDepthBridge
         }
 
         public long Version { get; }
+
+        public ARRenderGenerationToken Generation { get; }
 
         public bool IsAvailable { get; }
 

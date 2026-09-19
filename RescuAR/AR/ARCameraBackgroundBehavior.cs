@@ -19,6 +19,11 @@ public sealed class ARCameraBackgroundBehavior : Behavior
 
     private BackgroundImage? backgroundImage;
     private long appliedVersion = -1;
+    private bool hasAppliedTexture;
+    private long boundGraphicsGeneration;
+
+    private static readonly object activeSync = new();
+    private static ARCameraBackgroundBehavior? activeBehavior;
 
     protected override bool OnAttached()
     {
@@ -41,6 +46,14 @@ public sealed class ARCameraBackgroundBehavior : Behavior
 
         Debug.WriteLine(
             $"[{Tag}] AR camera BackgroundImage behavior attached.");
+
+        boundGraphicsGeneration =
+            ARRenderGenerationBridge.Current.GraphicsGeneration;
+
+        lock (activeSync)
+        {
+            activeBehavior = this;
+        }
 
         return true;
     }
@@ -67,10 +80,12 @@ public sealed class ARCameraBackgroundBehavior : Behavior
 
         if (texture is null)
         {
-            /*
-             * Do not force the component to null during startup unless it
-             * previously had an AR camera texture.
-             */
+            if (hasAppliedTexture)
+            {
+                backgroundImage.Texture = null;
+                hasAppliedTexture = false;
+            }
+
             appliedVersion =
                 bridgeVersion;
 
@@ -79,6 +94,8 @@ public sealed class ARCameraBackgroundBehavior : Behavior
 
         backgroundImage.Texture =
             texture;
+
+        hasAppliedTexture = true;
 
         appliedVersion =
             bridgeVersion;
@@ -90,9 +107,52 @@ public sealed class ARCameraBackgroundBehavior : Behavior
 
     protected override void OnDetached()
     {
+        lock (activeSync)
+        {
+            if (ReferenceEquals(activeBehavior, this))
+            {
+                activeBehavior = null;
+            }
+        }
+
+        if (backgroundImage is not null &&
+            hasAppliedTexture)
+        {
+            backgroundImage.Texture = null;
+        }
+
+        hasAppliedTexture = false;
         backgroundImage =
             null;
-
         base.OnDetached();
+    }
+
+    public static void TeardownGraphicsGeneration(
+        long graphicsGeneration)
+    {
+        ARCameraBackgroundBehavior? behavior;
+
+        lock (activeSync)
+        {
+            behavior = activeBehavior;
+
+            if (behavior is null ||
+                behavior.boundGraphicsGeneration != graphicsGeneration)
+            {
+                return;
+            }
+
+            activeBehavior = null;
+        }
+
+        if (behavior.backgroundImage is not null &&
+            behavior.hasAppliedTexture)
+        {
+            behavior.backgroundImage.Texture = null;
+        }
+
+        behavior.hasAppliedTexture = false;
+        behavior.appliedVersion = -1;
+        behavior.boundGraphicsGeneration = 0;
     }
 }

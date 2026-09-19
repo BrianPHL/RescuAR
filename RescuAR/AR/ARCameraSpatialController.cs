@@ -155,7 +155,6 @@ public static class ARCameraSpatialController
         90;
 
     private static bool hasValidRouteSpatialPlacement;
-    private static bool hasValidFloodDepthSpatialPlacement;
 
     private static long spatialLossStartedTimestamp =
         long.MinValue;
@@ -182,6 +181,8 @@ public static class ARCameraSpatialController
         -1;
 
     private static bool initialized;
+
+    private static long boundGraphicsGeneration;
 
     private static bool? lastLoggedTrackingValid;
     private static bool? lastLoggedAnchorAvailable;
@@ -447,9 +448,6 @@ public static class ARCameraSpatialController
             hasValidRouteSpatialPlacement =
                 false;
 
-            hasValidFloodDepthSpatialPlacement =
-                false;
-
             visualContinuityHoldActive =
                 false;
 
@@ -475,9 +473,76 @@ public static class ARCameraSpatialController
                     0,
                     "Spatial tracking is healthy.");
 
+            boundGraphicsGeneration =
+                ARRenderGenerationBridge.Current.GraphicsGeneration;
+
             initialized =
                 true;
         }
+    }
+
+    /// <summary>
+    /// Draw-thread-only reset performed before the owning Vulkan context and
+    /// Android surface are detached.
+    /// </summary>
+    public static void TeardownGraphicsGeneration(
+        long graphicsGeneration)
+    {
+        Camera3D? camera3D;
+        Entity? capsule;
+        Entity? route;
+        Entity? flood;
+
+        lock (sync)
+        {
+            if (!initialized ||
+                boundGraphicsGeneration != graphicsGeneration)
+            {
+                return;
+            }
+
+            camera3D = cameraComponent;
+            capsule = targetEntity;
+            route = routeEntity;
+            flood = floodDepthEntity;
+
+            initialized = false;
+            boundGraphicsGeneration = 0;
+            cameraTransform = null;
+            cameraComponent = null;
+            targetEntity = null;
+            targetTransform = null;
+            routeEntity = null;
+            routeTransform = null;
+            floodDepthEntity = null;
+            floodDepthTransform = null;
+            appliedVersion = -1;
+            hasValidRouteSpatialPlacement = false;
+            pendingWorldCorrectionRequest =
+                RouteWorldCorrectionRequest.Unavailable;
+        }
+
+        if (capsule is not null)
+        {
+            capsule.IsEnabled = false;
+        }
+
+        if (route is not null)
+        {
+            route.IsEnabled = false;
+        }
+
+        if (flood is not null)
+        {
+            flood.IsEnabled = false;
+        }
+
+        camera3D?.ResetCustomProjection();
+
+        ARRouteRenderer.TeardownGraphicsGeneration(
+            graphicsGeneration);
+        ARFloodDepthRenderer.TeardownGraphicsGeneration(
+            graphicsGeneration);
     }
 
     public static void SetRouteRenderingEnabled(
@@ -558,9 +623,6 @@ public static class ARCameraSpatialController
             hasValidRouteSpatialPlacement =
                 false;
 
-            hasValidFloodDepthSpatialPlacement =
-                false;
-
             visualContinuityHoldActive =
                 false;
 
@@ -603,7 +665,8 @@ public static class ARCameraSpatialController
                 : reason));
     }
 
-    public static void ProcessDrawThreadWork()
+    public static void ProcessDrawThreadWork(
+        long drawGraphicsGeneration)
     {
         Transform3D? camera;
         Camera3D? camera3D;
@@ -618,7 +681,10 @@ public static class ARCameraSpatialController
 
         lock (sync)
         {
-            if (!initialized)
+            if (!initialized ||
+                boundGraphicsGeneration != drawGraphicsGeneration ||
+                !ARRenderGenerationBridge.IsCurrentGraphics(
+                    drawGraphicsGeneration))
             {
                 return;
             }
@@ -822,8 +888,6 @@ public static class ARCameraSpatialController
             floodDepthRoot.IsEnabled =
                 true;
 
-            hasValidFloodDepthSpatialPlacement =
-                true;
         }
         else if (!hasFloodDepthGeometry)
         {
@@ -835,31 +899,17 @@ public static class ARCameraSpatialController
             floodDepthRoot.IsEnabled =
                 false;
 
-            hasValidFloodDepthSpatialPlacement =
-                false;
-        }
-        else if (hasValidFloodDepthSpatialPlacement &&
-                 continuity.AllowsFrozenPlacement)
-        {
-            /*
-             * Freeze the last valid AR-space water placement. The camera is
-             * frozen to its own last valid ARCore pose by the existing early
-             * return below, so the scene does not blink out during brief
-             * relocalization.
-             */
-            floodDepthRoot.IsEnabled =
-                true;
-
-            floodDepthHeldFromLastValidPlacement =
-                true;
         }
         else
         {
+            /*
+             * A non-tracking pose or unavailable anchor invalidates the last
+             * world placement immediately. Rendering a frozen placement here
+             * would turn a stale pose into apparently current guidance.
+             */
             floodDepthRoot.IsEnabled =
                 false;
 
-            hasValidFloodDepthSpatialPlacement =
-                false;
         }
 
         LogFloodDepthStateIfChanged(
@@ -1045,19 +1095,13 @@ public static class ARCameraSpatialController
                 hasValidRouteSpatialPlacement =
                     false;
             }
-            else if (hasValidRouteSpatialPlacement &&
-                     continuity.AllowsFrozenPlacement)
-            {
-                /*
-                 * Temporary camera/anchor loss: keep the route at its last
-                 * valid root transform instead of making it disappear. No
-                 * stale ARCore pose is applied.
-                 */
-                route.IsEnabled =
-                    true;
-            }
             else
             {
+                /*
+                 * Fail closed on every pose/anchor trust loss. Keeping the
+                 * previous transform visible would present stale world-locked
+                 * guidance as though it still belonged to the current frame.
+                 */
                 route.IsEnabled =
                     false;
 

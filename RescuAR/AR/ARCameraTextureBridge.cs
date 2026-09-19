@@ -1,126 +1,302 @@
 using Evergine.Common.Graphics;
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RescuAR.AR;
 
 /// <summary>
-/// Thread-safe handoff used by the AR camera pipeline.
-///
-/// The Android ARCore worker publishes only a pending-frame callback target;
-/// it does not submit Vulkan work itself. MyApplication.DrawFrame() invokes
-/// <see cref="ProcessDrawThreadWork"/> immediately before Evergine performs
-/// its own draw cycle. The Android callback can then convert the newest
-/// pending ARCore HardwareBuffer on Evergine's draw thread and publish the
-/// resulting persistent Evergine Texture here.
-///
-/// The Texture remains owned by ARCoreVulkanImporter/VulkanRgbaTarget. This
-/// bridge never disposes it.
+/// Generation-scoped handoff between the ARCore producer and Evergine draw
+/// thread. It also owns the draw-thread teardown barrier used before Android
+/// detaches a Vulkan surface.
 /// </summary>
 public static class ARCameraTextureBridge
 {
-    private static readonly object processingSync =
-        new();
+    private static readonly object processingSync = new();
 
     private static readonly ManualResetEventSlim processorIdle =
         new(initialState: true);
 
-    private static Texture? currentTexture;
+    private static TextureSnapshot current =
+        TextureSnapshot.Unavailable;
+
     private static long version;
     private static Action? drawThreadProcessor;
-
-    private static bool processingSuspended;
+    private static long processorGraphicsGeneration;
+    private static bool processingSuspended = true;
     private static int activeProcessorCalls;
+    private static TeardownRequest? pendingTeardown;
+    private static TeardownRequest? teardownAwaitingFrameBoundary;
+    private static long completedTeardownGeneration;
+    private static Task completedTeardownTask = Task.CompletedTask;
+
+    public static TextureSnapshot Current
+    {
+        get
+        {
+            TextureSnapshot snapshot;
+
+            lock (processingSync)
+            {
+                snapshot = current;
+            }
+
+            /*
+             * Do not call the generation bridge while holding processingSync.
+             * Activation takes the inverse lock order when it resumes camera
+             * processing, so validating outside the lock avoids a teardown /
+             * resume deadlock.
+             */
+            if (snapshot.Texture is null ||
+                !ARRenderGenerationBridge.IsCurrent(snapshot.Generation))
+            {
+                return TextureSnapshot.UnavailableWithVersion(
+                    snapshot.Version);
+            }
+
+            return snapshot;
+        }
+    }
 
     public static Texture? CurrentTexture =>
-        Volatile.Read(ref currentTexture);
+        Current.Texture;
 
     public static long Version =>
         Interlocked.Read(ref version);
 
-    /// <summary>
-    /// Registers the platform-specific callback that consumes the newest
-    /// pending camera frame. Android supplies this from ArCoreService after
-    /// Evergine's Vulkan graphics context becomes available.
-    /// </summary>
     public static void SetDrawThreadProcessor(
-        Action? processor)
+        long graphicsGeneration,
+        Action processor)
     {
-        Volatile.Write(
-            ref drawThreadProcessor,
-            processor);
+        ArgumentNullException.ThrowIfNull(processor);
+
+        if (graphicsGeneration <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(graphicsGeneration));
+        }
+
+        lock (processingSync)
+        {
+            drawThreadProcessor = processor;
+            processorGraphicsGeneration = graphicsGeneration;
+            processingSuspended = true;
+        }
     }
 
     /// <summary>
-    /// Prevents new platform camera conversions and waits for a conversion
-    /// already running on the Evergine draw thread to finish. Camera-tab
-    /// teardown uses this barrier before Android can detach the Vulkan surface.
+    /// Rejects new camera conversions and waits for the currently executing
+    /// conversion callback. A queued teardown command can still run while the
+    /// ordinary processor is suspended.
     /// </summary>
     public static bool SuspendProcessing(
         TimeSpan timeout)
     {
         lock (processingSync)
         {
-            processingSuspended =
-                true;
+            processingSuspended = true;
 
-            if (activeProcessorCalls ==
-                0)
+            if (activeProcessorCalls == 0)
             {
                 processorIdle.Set();
             }
         }
 
-        return processorIdle.Wait(
-            timeout);
+        return processorIdle.Wait(timeout);
     }
 
-    /// <summary>
-    /// Re-enables draw-thread camera conversion after the retained Camera
-    /// surface and ARCore Session are ready to resume.
-    /// </summary>
-    public static void ResumeProcessing()
+    public static void ResumeProcessing(
+        long graphicsGeneration)
     {
         lock (processingSync)
         {
-            processingSuspended =
-                false;
+            if (graphicsGeneration != processorGraphicsGeneration ||
+                pendingTeardown is not null ||
+                teardownAwaitingFrameBoundary is not null)
+            {
+                return;
+            }
+
+            processingSuspended = false;
         }
     }
 
     /// <summary>
-    /// Called from MyApplication.DrawFrame(). If Android has registered a
-    /// processor, it is executed on the same application draw thread that
-    /// invoked this method.
+    /// Queues one context-specific teardown action for the Evergine draw
+    /// thread. Completion occurs only after MyApplication has skipped the
+    /// corresponding base draw/present call and reached the frame boundary.
     /// </summary>
-    public static void ProcessDrawThreadWork()
+    public static Task RequestDrawThreadTeardownAsync(
+        long graphicsGeneration,
+        Action teardownAction)
     {
-        Action? processor;
+        ArgumentNullException.ThrowIfNull(teardownAction);
 
         lock (processingSync)
         {
-            if (processingSuspended)
+            if (graphicsGeneration != processorGraphicsGeneration)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (completedTeardownGeneration == graphicsGeneration)
+            {
+                return completedTeardownTask;
+            }
+
+            if (pendingTeardown is not null &&
+                pendingTeardown.GraphicsGeneration == graphicsGeneration)
+            {
+                return pendingTeardown.Completion.Task;
+            }
+
+            if (teardownAwaitingFrameBoundary is not null &&
+                teardownAwaitingFrameBoundary.GraphicsGeneration ==
+                    graphicsGeneration)
+            {
+                return teardownAwaitingFrameBoundary.Completion.Task;
+            }
+
+            processingSuspended = true;
+            drawThreadProcessor = null;
+
+            TeardownRequest request =
+                new(graphicsGeneration, teardownAction);
+
+            pendingTeardown = request;
+            return request.Completion.Task;
+        }
+    }
+
+    /// <summary>
+    /// Executes the teardown inline when Android raises its final surface
+    /// boundary on the Evergine owner thread and no later draw frame is
+    /// guaranteed. Any waiter for the same generation receives the result.
+    /// </summary>
+    public static void ExecuteDrawThreadTeardownAtSurfaceBoundary(
+        long graphicsGeneration,
+        Action teardownAction)
+    {
+        ArgumentNullException.ThrowIfNull(teardownAction);
+
+        TeardownRequest request;
+
+        lock (processingSync)
+        {
+            if (graphicsGeneration != processorGraphicsGeneration)
             {
                 return;
             }
 
-            processor =
-                Volatile.Read(
-                    ref drawThreadProcessor);
-
-            if (processor is null)
+            if (completedTeardownGeneration == graphicsGeneration)
             {
+                completedTeardownTask.GetAwaiter().GetResult();
                 return;
             }
 
-            activeProcessorCalls++;
+            if (activeProcessorCalls != 0)
+            {
+                throw new InvalidOperationException(
+                    "Cannot tear down AR Vulkan resources while draw-thread " +
+                    "camera work is still active.");
+            }
 
-            processorIdle.Reset();
+            request =
+                pendingTeardown ??
+                teardownAwaitingFrameBoundary ??
+                new TeardownRequest(
+                    graphicsGeneration,
+                    teardownAction);
+
+            pendingTeardown = null;
+            teardownAwaitingFrameBoundary = null;
+            processingSuspended = true;
+            drawThreadProcessor = null;
+        }
+
+        Exception? failure = null;
+
+        try
+        {
+            request.Action();
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+
+        lock (processingSync)
+        {
+            completedTeardownGeneration = graphicsGeneration;
+            completedTeardownTask = request.Completion.Task;
+        }
+
+        if (failure is null)
+        {
+            request.Completion.TrySetResult();
+        }
+        else
+        {
+            request.Completion.TrySetException(failure);
+            throw failure;
+        }
+    }
+
+    /// <summary>
+    /// Runs at most one camera conversion or teardown command. True means the
+    /// caller must skip Evergine's base draw/present for this graphics context.
+    /// </summary>
+    public static bool ProcessDrawThreadWork(
+        long drawGraphicsGeneration)
+    {
+        Action? work = null;
+        TeardownRequest? teardown = null;
+        bool skipDraw;
+
+        lock (processingSync)
+        {
+            skipDraw =
+                processorGraphicsGeneration > 0 &&
+                (processingSuspended ||
+                 drawGraphicsGeneration != processorGraphicsGeneration);
+
+            if (pendingTeardown is not null &&
+                pendingTeardown.GraphicsGeneration == drawGraphicsGeneration)
+            {
+                teardown = pendingTeardown;
+                pendingTeardown = null;
+                work = teardown.Action;
+                skipDraw = true;
+            }
+            else if (!skipDraw)
+            {
+                work = drawThreadProcessor;
+            }
+
+            if (work is not null)
+            {
+                activeProcessorCalls++;
+                processorIdle.Reset();
+            }
+        }
+
+        if (work is null)
+        {
+            return skipDraw;
         }
 
         try
         {
-            processor();
+            work();
+        }
+        catch (Exception exception)
+        {
+            if (teardown is null)
+            {
+                throw;
+            }
+
+            teardown.Exception = exception;
         }
         finally
         {
@@ -128,46 +304,149 @@ public static class ARCameraTextureBridge
             {
                 activeProcessorCalls--;
 
-                if (activeProcessorCalls ==
-                    0)
+                if (activeProcessorCalls == 0)
                 {
                     processorIdle.Set();
                 }
+
+                if (teardown is not null)
+                {
+                    teardownAwaitingFrameBoundary = teardown;
+                }
             }
         }
+
+        return skipDraw;
     }
 
-    public static void Publish(
-        Texture texture)
+    /// <summary>
+    /// Called from MyApplication after the draw was either completed normally
+    /// or intentionally skipped. This is the acknowledgement consumed by the
+    /// Android handler before it pauses/detaches the surface.
+    /// </summary>
+    public static void CompleteDrawThreadFrame(
+        long drawGraphicsGeneration)
     {
-        ArgumentNullException.ThrowIfNull(
-            texture);
+        TeardownRequest? completed = null;
 
-        Texture? previous =
-            Volatile.Read(ref currentTexture);
+        lock (processingSync)
+        {
+            if (teardownAwaitingFrameBoundary is not null &&
+                teardownAwaitingFrameBoundary.GraphicsGeneration ==
+                    drawGraphicsGeneration)
+            {
+                completed = teardownAwaitingFrameBoundary;
+                teardownAwaitingFrameBoundary = null;
+            }
+        }
 
-        if (ReferenceEquals(
-            previous,
-            texture))
+        if (completed is null)
         {
             return;
         }
 
-        Volatile.Write(
-            ref currentTexture,
-            texture);
+        lock (processingSync)
+        {
+            completedTeardownGeneration =
+                completed.GraphicsGeneration;
 
-        Interlocked.Increment(
-            ref version);
+            completedTeardownTask =
+                completed.Completion.Task;
+        }
+
+        if (completed.Exception is null)
+        {
+            completed.Completion.TrySetResult();
+        }
+        else
+        {
+            completed.Completion.TrySetException(completed.Exception);
+        }
+    }
+
+    public static bool Publish(
+        ARRenderGenerationToken generation,
+        long frameTimestamp,
+        Texture texture)
+    {
+        ArgumentNullException.ThrowIfNull(texture);
+
+        if (!ARRenderGenerationBridge.TryAcceptCallback(
+                generation,
+                "camera-texture-publish"))
+        {
+            return false;
+        }
+
+        lock (processingSync)
+        {
+            if (processingSuspended ||
+                generation.GraphicsGeneration !=
+                    processorGraphicsGeneration)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(current.Texture, texture) &&
+                current.Generation == generation &&
+                current.FrameTimestamp == frameTimestamp)
+            {
+                return true;
+            }
+
+            long nextVersion = Interlocked.Increment(ref version);
+            current = new TextureSnapshot(
+                nextVersion,
+                generation,
+                frameTimestamp,
+                texture);
+
+            return true;
+        }
     }
 
     public static void Clear()
     {
-        Volatile.Write(
-            ref currentTexture,
-            null);
+        long nextVersion = Interlocked.Increment(ref version);
 
-        Interlocked.Increment(
-            ref version);
+        lock (processingSync)
+        {
+            current = TextureSnapshot.UnavailableWithVersion(nextVersion);
+        }
+    }
+
+    public readonly record struct TextureSnapshot(
+        long Version,
+        ARRenderGenerationToken Generation,
+        long FrameTimestamp,
+        Texture? Texture)
+    {
+        public static TextureSnapshot Unavailable =>
+            UnavailableWithVersion(0);
+
+        public static TextureSnapshot UnavailableWithVersion(long version) =>
+            new(
+                version,
+                ARRenderGenerationToken.Invalid,
+                long.MinValue,
+                null);
+    }
+
+    private sealed class TeardownRequest
+    {
+        public TeardownRequest(
+            long graphicsGeneration,
+            Action action)
+        {
+            GraphicsGeneration = graphicsGeneration;
+            Action = action;
+            Completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        public long GraphicsGeneration { get; }
+        public Action Action { get; }
+        public TaskCompletionSource Completion { get; }
+        public Exception? Exception { get; set; }
     }
 }

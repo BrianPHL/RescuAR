@@ -41,6 +41,8 @@ public static class ARFloodDepthRenderer
 
     private static Entity? activeRoot;
 
+    private static long boundGraphicsGeneration;
+
     private static long appliedVersion =
         -1;
 
@@ -91,6 +93,8 @@ public static class ARFloodDepthRenderer
         lock (sync)
         {
             activeRoot = root;
+            boundGraphicsGeneration =
+                ARRenderGenerationBridge.Current.GraphicsGeneration;
             appliedVersion = -1;
             appliedDepthMeters = 0.0f;
         }
@@ -120,7 +124,9 @@ public static class ARFloodDepthRenderer
         {
             if (!ReferenceEquals(
                     activeRoot,
-                    floodRoot))
+                    floodRoot) ||
+                !ARRenderGenerationBridge.IsCurrentGraphics(
+                    boundGraphicsGeneration))
             {
                 return false;
             }
@@ -128,6 +134,16 @@ public static class ARFloodDepthRenderer
 
         ARFloodDepthBridge.FloodDepthSnapshot snapshot =
             ARFloodDepthBridge.Current;
+
+        if (!ARRenderGenerationBridge.IsCurrentSession(
+                snapshot.Generation))
+        {
+            floodRoot.IsEnabled = false;
+            appliedDepthMeters = 0.0f;
+            ARFloodDepthBridge.AcknowledgeDrawThreadVersion(
+                snapshot.Version);
+            return false;
+        }
 
         if (snapshot.Version == appliedVersion)
         {
@@ -153,6 +169,9 @@ public static class ARFloodDepthRenderer
                 $"version={snapshot.Version}; " +
                 "no Evergine water mesh is rendered.");
 
+            ARFloodDepthBridge.AcknowledgeDrawThreadVersion(
+                snapshot.Version);
+
             return false;
         }
 
@@ -171,6 +190,31 @@ public static class ARFloodDepthRenderer
             "evergineFloodMesh=False, " +
             $"source='{snapshot.Source}'.");
 
+        ARFloodDepthBridge.AcknowledgeDrawThreadVersion(
+            snapshot.Version);
+
         return true;
+    }
+
+    public static void TeardownGraphicsGeneration(
+        long graphicsGeneration)
+    {
+        lock (sync)
+        {
+            if (boundGraphicsGeneration != graphicsGeneration)
+            {
+                return;
+            }
+
+            if (activeRoot is not null)
+            {
+                activeRoot.IsEnabled = false;
+            }
+
+            activeRoot = null;
+            boundGraphicsGeneration = 0;
+            appliedVersion = -1;
+            appliedDepthMeters = 0.0f;
+        }
     }
 }

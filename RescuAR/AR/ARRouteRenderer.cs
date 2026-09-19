@@ -84,6 +84,8 @@ public static class ARRouteRenderer
 
     private static Entity? activeRouteRoot;
 
+    private static long boundGraphicsGeneration;
+
     private static SegmentSlot[] segmentSlots =
         [];
 
@@ -226,6 +228,9 @@ public static class ARRouteRenderer
             activeRouteRoot =
                 routeRoot;
 
+            boundGraphicsGeneration =
+                ARRenderGenerationBridge.Current.GraphicsGeneration;
+
             segmentSlots =
                 slots;
 
@@ -271,7 +276,9 @@ public static class ARRouteRenderer
         {
             if (!ReferenceEquals(
                     activeRouteRoot,
-                    routeRoot))
+                    routeRoot) ||
+                !ARRenderGenerationBridge.IsCurrentGraphics(
+                    boundGraphicsGeneration))
             {
                 return false;
             }
@@ -285,6 +292,15 @@ public static class ARRouteRenderer
 
         ARRouteBridge.RouteSnapshot snapshot =
             ARRouteBridge.Current;
+
+        if (!ARRenderGenerationBridge.IsCurrentSession(
+                snapshot.Generation))
+        {
+            DisableAll(slots);
+            DisableAll(arrows);
+            activeSegmentCount = 0;
+            return false;
+        }
 
         if (snapshot.Version ==
             appliedRouteVersion)
@@ -423,6 +439,34 @@ public static class ARRouteRenderer
 
         return activeSegmentCount >
             0;
+    }
+
+    public static void TeardownGraphicsGeneration(
+        long graphicsGeneration)
+    {
+        lock (sync)
+        {
+            if (boundGraphicsGeneration != graphicsGeneration)
+            {
+                return;
+            }
+
+            DisableAll(segmentSlots);
+            DisableAll(arrowSlots);
+
+            if (activeRouteRoot is not null)
+            {
+                activeRouteRoot.IsEnabled = false;
+            }
+
+            activeRouteRoot = null;
+            segmentSlots = [];
+            arrowSlots = [];
+            appliedRouteVersion = -1;
+            activeSegmentCount = 0;
+            boundGraphicsGeneration = 0;
+            Volatile.Write(ref depthOcclusionRequested, 0);
+        }
     }
 
     public static void SetDepthOcclusionRequested(

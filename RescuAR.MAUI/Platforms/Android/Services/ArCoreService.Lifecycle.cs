@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content.PM;
 using Android.Util;
+using Evergine.Vulkan;
 using Google.AR.Core;
 using Microsoft.Maui.ApplicationModel;
 using RescuAR.AR;
@@ -22,6 +23,7 @@ public sealed partial class ArCoreService
     private static readonly TimeSpan FrameLoopDrainTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan UpdateGateTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan CameraProcessorDrainTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan GraphicsTeardownTimeout = TimeSpan.FromSeconds(6);
     private const int AvailabilityRetryDelayMilliseconds = 200;
     private const int AvailabilityRetryLimit = 15;
 
@@ -245,6 +247,8 @@ public sealed partial class ArCoreService
 
                 long sessionGeneration = Interlocked.Increment(ref currentSessionGeneration);
 
+                ActivateRenderGenerationIfReady();
+
                 if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
                 {
                     return SupersededLifecycleRequest(requestGeneration);
@@ -310,6 +314,15 @@ public sealed partial class ArCoreService
         long requestGeneration = BeginLifecycleRequest(
             ArCoreLifecycleTarget.Paused,
             "ARCore pause requested");
+
+        ARRenderGenerationBridge.Suspend(
+            Interlocked.Read(ref currentSessionGeneration),
+            Interlocked.Read(ref graphicsGeneration));
+
+        ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
+        InvalidatePublishedPausedState(
+            "ARCore pause requested");
+
         bool gateEntered = false;
 
         try
@@ -339,7 +352,8 @@ public sealed partial class ArCoreService
 
             if (session is null || sessionPaused)
             {
-                InvalidatePublishedFrameState();
+                InvalidatePublishedPausedState(
+                    "ARCore session is paused");
                 SetLifecycleState(
                     session is null ? ArCoreLifecycleState.Uninitialized : ArCoreLifecycleState.Paused,
                     ArCoreFailure.None);
@@ -414,6 +428,29 @@ public sealed partial class ArCoreService
             SetLifecycleState(ArCoreLifecycleState.Disposing, ArCoreFailure.None);
             Interlocked.Increment(ref currentSessionGeneration);
 
+            VKGraphicsContext? shutdownGraphicsContext;
+            long shutdownGraphicsGeneration;
+
+            lock (graphicsTeardownLock)
+            {
+                shutdownGraphicsContext =
+                    graphicsContext ?? graphicsTeardownContext;
+
+                shutdownGraphicsGeneration =
+                    Interlocked.Read(ref graphicsGeneration);
+
+                graphicsContext = null;
+
+                if (shutdownGraphicsContext is not null)
+                {
+                    graphicsTeardownContext = shutdownGraphicsContext;
+                    graphicsTeardownGeneration =
+                        shutdownGraphicsGeneration;
+                }
+            }
+
+            ARRenderGenerationBridge.Invalidate();
+
             bool cameraProcessorIdle = await Task.Run(
                 () => ARCameraTextureBridge.SuspendProcessing(CameraProcessorDrainTimeout),
                 cancellationToken).ConfigureAwait(false);
@@ -447,6 +484,27 @@ public sealed partial class ArCoreService
 
             await CancelGroundAnchorRecoveryAsync(
                 cancellationToken).ConfigureAwait(false);
+
+            if (shutdownGraphicsContext is not null)
+            {
+                Task drawThreadTeardown =
+                    ARCameraTextureBridge.RequestDrawThreadTeardownAsync(
+                        shutdownGraphicsGeneration,
+                        () => TeardownGraphicsResourcesOnDrawThread(
+                            shutdownGraphicsContext,
+                            shutdownGraphicsGeneration));
+
+                await drawThreadTeardown.WaitAsync(
+                    GraphicsTeardownTimeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (importer is not null)
+            {
+                throw new InvalidOperationException(
+                    "The ARCore Vulkan importer still exists after its " +
+                    "graphics context became unavailable. Refusing an " +
+                    "off-thread resource teardown.");
+            }
 
             bool updateGateEntered = await EnterGateAsync(
                 updateGate,
@@ -500,11 +558,15 @@ public sealed partial class ArCoreService
                 updateGate.Release();
             }
 
-            ARCameraTextureBridge.SetDrawThreadProcessor(null);
-            ARCoreVulkanImporter? currentImporter = importer;
-            importer = null;
-            currentImporter?.Dispose();
             lastProcessedTimestamp = long.MinValue;
+            ARRenderGenerationBridge.Invalidate();
+
+            lock (graphicsTeardownLock)
+            {
+                graphicsTeardownContext = null;
+                graphicsTeardownTask = null;
+            }
+
             SetLifecycleState(ArCoreLifecycleState.Disposed, ArCoreFailure.None);
             LifecycleChanged = null;
             return CurrentLifecycleResult(true);
@@ -612,6 +674,10 @@ public sealed partial class ArCoreService
                     "The camera draw-thread processor did not become idle during pause.");
             }
 
+            ARRenderGenerationBridge.Suspend(
+                Interlocked.Read(ref currentSessionGeneration),
+                Interlocked.Read(ref graphicsGeneration));
+
             CancellationTokenSource? cancellation = frameLoopCancellation;
             Task? runningLoop = frameLoopTask;
             cancellation?.Cancel();
@@ -651,7 +717,8 @@ public sealed partial class ArCoreService
             try
             {
                 ReleasePendingCameraFrame();
-                InvalidatePublishedFrameState();
+                InvalidatePublishedPausedState(
+                    "ARCore session paused");
                 Session? currentSession = session;
                 if (currentSession is not null && !sessionPaused)
                 {
@@ -691,7 +758,7 @@ public sealed partial class ArCoreService
 
         if (!sessionPaused)
         {
-            ARCameraTextureBridge.ResumeProcessing();
+            ActivateRenderGenerationIfReady();
             StartFrameLoop(Interlocked.Read(ref currentSessionGeneration));
             return true;
         }
@@ -714,7 +781,7 @@ public sealed partial class ArCoreService
             sessionPaused = false;
             InvalidatePendingRecoveryCountdown();
             ResetResumedFrameState();
-            ARCameraTextureBridge.ResumeProcessing();
+            ActivateRenderGenerationIfReady();
         }
         catch (Exception exception)
         {
@@ -848,15 +915,15 @@ public sealed partial class ArCoreService
         }
     }
 
-    private void RegisterGraphicsContextGeneration()
+    private long RegisterGraphicsContextGeneration()
     {
-        lock (lifecycleStateLock)
-        {
-            graphicsGeneration++;
-        }
+        long generation =
+            Interlocked.Increment(ref graphicsGeneration);
 
         InvalidateCapabilitySnapshot(
             "The graphics context changed; capabilities require a fresh check.");
+
+        return generation;
     }
 
     private static ArCoreFailureCode ClassifyFailureCode(
@@ -1102,6 +1169,13 @@ public sealed partial class ArCoreService
         ARCameraPoseBridge.Clear();
         ARDepthOcclusionBridge.Clear();
         ARCameraTextureBridge.Clear();
+    }
+
+    private static void InvalidatePublishedPausedState(
+        string reason)
+    {
+        InvalidatePublishedFrameState();
+        ARFloodDepthBridge.Clear(reason);
     }
 
     private static void InvalidatePublishedSessionState()

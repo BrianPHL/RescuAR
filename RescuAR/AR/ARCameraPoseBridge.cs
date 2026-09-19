@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 
 namespace RescuAR.AR;
@@ -15,6 +16,8 @@ namespace RescuAR.AR;
 /// </summary>
 public static class ARCameraPoseBridge
 {
+    public const long MaximumPoseAgeMilliseconds = 750;
+
     private static readonly object sync =
         new();
 
@@ -40,10 +43,22 @@ public static class ARCameraPoseBridge
     {
         get
         {
+            SpatialSnapshot snapshot;
+
             lock (sync)
             {
-                return spatialSnapshot;
+                snapshot = spatialSnapshot;
             }
+
+            if (!ARRenderGenerationBridge.IsCurrent(
+                    snapshot.Generation) ||
+                !snapshot.IsFresh)
+            {
+                return snapshot.AsUnavailable(
+                    "The AR pose is stale or belongs to an inactive render generation.");
+            }
+
+            return snapshot;
         }
     }
 
@@ -105,8 +120,16 @@ public static class ARCameraPoseBridge
         float anchorX,
         float anchorY,
         float anchorZ,
-        long frameTimestamp)
+        long frameTimestamp,
+        ARRenderGenerationToken generation)
     {
+        if (!ARRenderGenerationBridge.TryAcceptCallback(
+                generation,
+                "camera-pose-publish"))
+        {
+            return;
+        }
+
         ProjectionSnapshot projection =
             CreateProjectionSnapshot(
                 columnMajorProjection,
@@ -142,7 +165,9 @@ public static class ARCameraPoseBridge
         SpatialSnapshot next =
             new(
                 nextVersion,
+                generation,
                 frameTimestamp,
+                Environment.TickCount64,
                 isTracking,
                 trackingFailureReason ?? string.Empty,
                 pose,
@@ -157,27 +182,31 @@ public static class ARCameraPoseBridge
     }
 
     /// <summary>
-    /// Publishes a non-tracking frame without inventing a new camera pose.
-    /// Evergine will hold its last applied valid transform.
+    /// Publishes a non-tracking frame with an explicitly unavailable pose and
+    /// anchor. No last-known world transform remains consumable.
     /// </summary>
     public static void PublishTrackingUnavailable(
         string trackingFailureReason,
-        long frameTimestamp)
+        long frameTimestamp,
+        ARRenderGenerationToken generation)
     {
-        SpatialSnapshot previous =
-            CurrentFrame;
+        if (!ARRenderGenerationBridge.TryAcceptCallback(
+                generation,
+                "tracking-unavailable-publish"))
+        {
+            return;
+        }
 
-        PoseSnapshot unavailablePose =
-            new(
-                false,
-                previous.Pose.PositionX,
-                previous.Pose.PositionY,
-                previous.Pose.PositionZ,
-                previous.Pose.RotationX,
-                previous.Pose.RotationY,
-                previous.Pose.RotationZ,
-                previous.Pose.RotationW,
-                frameTimestamp);
+        SpatialSnapshot previous;
+
+        lock (sync)
+        {
+            previous = spatialSnapshot;
+        }
+        ProjectionSnapshot projection =
+            previous.Generation == generation
+                ? previous.Projection
+                : ProjectionSnapshot.Unavailable;
 
         long nextVersion =
             Interlocked.Increment(
@@ -186,12 +215,14 @@ public static class ARCameraPoseBridge
         SpatialSnapshot next =
             new(
                 nextVersion,
+                generation,
                 frameTimestamp,
+                Environment.TickCount64,
                 false,
                 trackingFailureReason ?? string.Empty,
-                unavailablePose,
-                previous.Projection,
-                previous.Anchor);
+                PoseSnapshot.Unavailable,
+                projection,
+                AnchorSnapshot.Unavailable);
 
         lock (sync)
         {
@@ -252,10 +283,13 @@ public static class ARCameraPoseBridge
 
     public static void Clear()
     {
+        long nextVersion =
+            Interlocked.Increment(ref version);
+
         lock (sync)
         {
             spatialSnapshot =
-                SpatialSnapshot.Unavailable;
+                SpatialSnapshot.UnavailableWithVersion(nextVersion);
 
             engineTelemetry =
                 EngineTelemetry.Unavailable;
@@ -264,8 +298,6 @@ public static class ARCameraPoseBridge
                 ProjectionTelemetry.Unavailable;
         }
 
-        Interlocked.Increment(
-            ref version);
     }
 
     private static ProjectionSnapshot CreateProjectionSnapshot(
@@ -308,8 +340,13 @@ public static class ARCameraPoseBridge
     public readonly struct SpatialSnapshot
     {
         public static SpatialSnapshot Unavailable =>
+            UnavailableWithVersion(-1);
+
+        public static SpatialSnapshot UnavailableWithVersion(long version) =>
             new(
-                -1,
+                version,
+                ARRenderGenerationToken.Invalid,
+                long.MinValue,
                 long.MinValue,
                 false,
                 string.Empty,
@@ -319,7 +356,9 @@ public static class ARCameraPoseBridge
 
         public SpatialSnapshot(
             long version,
+            ARRenderGenerationToken generation,
             long frameTimestamp,
+            long publishedAtMonotonicMilliseconds,
             bool isTracking,
             string trackingFailureReason,
             PoseSnapshot pose,
@@ -327,7 +366,10 @@ public static class ARCameraPoseBridge
             AnchorSnapshot anchor)
         {
             Version = version;
+            Generation = generation;
             FrameTimestamp = frameTimestamp;
+            PublishedAtMonotonicMilliseconds =
+                publishedAtMonotonicMilliseconds;
             IsTracking = isTracking;
             TrackingFailureReason = trackingFailureReason;
             Pose = pose;
@@ -336,12 +378,32 @@ public static class ARCameraPoseBridge
         }
 
         public long Version { get; }
+        public ARRenderGenerationToken Generation { get; }
         public long FrameTimestamp { get; }
+        public long PublishedAtMonotonicMilliseconds { get; }
         public bool IsTracking { get; }
         public string TrackingFailureReason { get; }
         public PoseSnapshot Pose { get; }
         public ProjectionSnapshot Projection { get; }
         public AnchorSnapshot Anchor { get; }
+
+        public bool IsFresh =>
+            PublishedAtMonotonicMilliseconds != long.MinValue &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds >= 0 &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds <=
+                MaximumPoseAgeMilliseconds;
+
+        public SpatialSnapshot AsUnavailable(string reason) =>
+            new(
+                Version,
+                Generation,
+                FrameTimestamp,
+                PublishedAtMonotonicMilliseconds,
+                false,
+                reason,
+                PoseSnapshot.Unavailable,
+                ProjectionSnapshot.Unavailable,
+                AnchorSnapshot.Unavailable);
     }
 
     public readonly struct PoseSnapshot

@@ -72,6 +72,9 @@ public static class ARRouteBridge
                 windowStartProgressMeters,
                 sourceSegmentIndex);
 
+        ARRenderGenerationToken generation =
+            ARRenderGenerationBridge.Current;
+
         RouteSnapshot next;
         int suppressedCount =
             0;
@@ -114,6 +117,7 @@ public static class ARRouteBridge
                 next =
                     new RouteSnapshot(
                         nextVersion,
+                        generation,
                         copy.Length >= 2,
                         normalizedAlgorithm,
                         totalDistanceMeters,
@@ -169,6 +173,8 @@ public static class ARRouteBridge
             candidatePoints.Count >= 2;
 
         if (existing.Version < 0 ||
+            existing.Generation.SessionGeneration !=
+                ARRenderGenerationBridge.Current.SessionGeneration ||
             existing.IsAvailable !=
                 candidateAvailable ||
             !string.Equals(
@@ -277,6 +283,7 @@ public static class ARRouteBridge
             current =
                 new RouteSnapshot(
                     nextVersion,
+                    ARRenderGenerationBridge.Current,
                     false,
                     string.Empty,
                     0.0,
@@ -294,6 +301,7 @@ public static class ARRouteBridge
         public static RouteSnapshot Unavailable =>
             new(
                 -1,
+                ARRenderGenerationToken.Invalid,
                 false,
                 string.Empty,
                 0.0,
@@ -302,6 +310,7 @@ public static class ARRouteBridge
 
         public RouteSnapshot(
             long version,
+            ARRenderGenerationToken generation,
             bool isAvailable,
             string algorithm,
             double totalDistanceMeters,
@@ -310,6 +319,9 @@ public static class ARRouteBridge
         {
             Version =
                 version;
+
+            Generation =
+                generation;
 
             IsAvailable =
                 isAvailable;
@@ -328,6 +340,7 @@ public static class ARRouteBridge
         }
 
         public long Version { get; }
+        public ARRenderGenerationToken Generation { get; }
         public bool IsAvailable { get; }
         public string Algorithm { get; }
         public double TotalDistanceMeters { get; }

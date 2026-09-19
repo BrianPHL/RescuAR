@@ -18,6 +18,8 @@ namespace RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
 internal unsafe sealed class VulkanCameraCommandContext : IDisposable
 {
     private const string Tag = "RescuAR-Vulkan";
+    private const ulong FenceWaitTimeoutNanoseconds =
+        2_000_000_000;
 
     private readonly VKGraphicsContext graphicsContext;
 
@@ -597,7 +599,14 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
                 1,
                 &fence,
                 1,
-                ulong.MaxValue);
+                FenceWaitTimeoutNanoseconds);
+
+        if (result == VkResult.VK_TIMEOUT)
+        {
+            throw new TimeoutException(
+                "Timed out after two seconds waiting for the ARCore Vulkan " +
+                "camera conversion fence.");
+        }
 
         ThrowIfFailed(
             result,
@@ -646,6 +655,8 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
              * Do not destroy command resources while submitted GPU work may
              * still reference them.
              */
+            bool gpuWorkCompleted = true;
+
             if (hasSubmittedWork &&
                 conversionFence.Handle != 0)
             {
@@ -653,14 +664,24 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
                 {
                     WaitForFence();
                 }
-                catch
+                catch (Exception exception)
                 {
-                    /*
-                     * Dispose must still attempt to release local Vulkan
-                     * objects. The original error path remains responsible
-                     * for reporting the submission failure.
-                     */
+                    gpuWorkCompleted = false;
+                    Log.Error(
+                        Tag,
+                        "Refusing to destroy Vulkan command resources while " +
+                        $"GPU ownership is uncertain: {exception.Message}");
                 }
+            }
+
+            if (!gpuWorkCompleted)
+            {
+                /*
+                 * Leaking handles on a terminal device-loss/timeout path is
+                 * safer than destroying resources the GPU may still own.
+                 */
+                disposed = true;
+                return;
             }
 
             if (conversionFence.Handle != 0)

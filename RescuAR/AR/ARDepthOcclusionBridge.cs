@@ -15,6 +15,8 @@ namespace RescuAR.AR;
 /// </summary>
 public static class ARDepthOcclusionBridge
 {
+    public const long MaximumDepthAgeMilliseconds = 750;
+
     private static readonly object sync = new();
 
     private static long version;
@@ -25,10 +27,22 @@ public static class ARDepthOcclusionBridge
     {
         get
         {
+            DepthSnapshot snapshot;
+
             lock (sync)
             {
-                return current;
+                snapshot = current;
             }
+
+            if (!ARRenderGenerationBridge.IsCurrent(
+                    snapshot.Generation) ||
+                !snapshot.IsFresh)
+            {
+                return DepthSnapshot.UnavailableWithVersion(
+                    snapshot.Version);
+            }
+
+            return snapshot;
         }
     }
 
@@ -53,12 +67,16 @@ public static class ARDepthOcclusionBridge
         int textureHeight,
         bool groundAvailable,
         bool groundIsProvisional,
-        float groundWorldY)
+        float groundWorldY,
+        ARRenderGenerationToken generation)
     {
         ArgumentNullException.ThrowIfNull(depthMillimeters);
         ArgumentNullException.ThrowIfNull(viewToTextureUv);
 
-        if (width <= 0 ||
+        if (!ARRenderGenerationBridge.TryAcceptCallback(
+                generation,
+                "depth-publish") ||
+            width <= 0 ||
             height <= 0 ||
             depthMillimeters.Length < width * height ||
             viewToTextureUv.Length < 8 ||
@@ -76,7 +94,9 @@ public static class ARDepthOcclusionBridge
 
         DepthSnapshot next = new(
             nextVersion,
+            generation,
             frameTimestamp,
+            Environment.TickCount64,
             true,
             width,
             height,
@@ -122,6 +142,8 @@ public static class ARDepthOcclusionBridge
         public static DepthSnapshot UnavailableWithVersion(long version) =>
             new(
                 version,
+                ARRenderGenerationToken.Invalid,
+                long.MinValue,
                 long.MinValue,
                 false,
                 0,
@@ -139,7 +161,9 @@ public static class ARDepthOcclusionBridge
 
         public DepthSnapshot(
             long version,
+            ARRenderGenerationToken generation,
             long frameTimestamp,
+            long publishedAtMonotonicMilliseconds,
             bool isAvailable,
             int width,
             int height,
@@ -163,7 +187,10 @@ public static class ARDepthOcclusionBridge
             float groundWorldY)
         {
             Version = version;
+            Generation = generation;
             FrameTimestamp = frameTimestamp;
+            PublishedAtMonotonicMilliseconds =
+                publishedAtMonotonicMilliseconds;
             IsAvailable = isAvailable;
             Width = width;
             Height = height;
@@ -188,7 +215,9 @@ public static class ARDepthOcclusionBridge
         }
 
         public long Version { get; }
+        public ARRenderGenerationToken Generation { get; }
         public long FrameTimestamp { get; }
+        public long PublishedAtMonotonicMilliseconds { get; }
         public bool IsAvailable { get; }
         public int Width { get; }
         public int Height { get; }
@@ -216,5 +245,11 @@ public static class ARDepthOcclusionBridge
         public bool GroundAvailable { get; }
         public bool GroundIsProvisional { get; }
         public float GroundWorldY { get; }
+
+        public bool IsFresh =>
+            PublishedAtMonotonicMilliseconds != long.MinValue &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds >= 0 &&
+            Environment.TickCount64 - PublishedAtMonotonicMilliseconds <=
+                MaximumDepthAgeMilliseconds;
     }
 }

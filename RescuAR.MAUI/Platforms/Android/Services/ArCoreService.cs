@@ -61,6 +61,10 @@ public sealed partial class ArCoreService : IArCoreService
     private volatile VKGraphicsContext? graphicsContext;
     private ARCoreVulkanImporter? importer;
     private Exception? lastSessionOperationException;
+    private readonly object graphicsTeardownLock = new();
+    private Task? graphicsTeardownTask;
+    private long graphicsTeardownGeneration;
+    private VKGraphicsContext? graphicsTeardownContext;
 
     /*
      * Latest-frame handoff between the ARCore worker and Evergine's draw
@@ -122,6 +126,8 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool displayGeometryAvailable;
     private bool displayGeometryDirty;
+    private long requestedDisplayGeometryGeneration;
+    private long appliedDisplayGeometryGeneration;
 
     /*
      * VIEW_NORMALIZED coordinates for the four corners used by our Vulkan
@@ -724,6 +730,8 @@ public sealed partial class ArCoreService : IArCoreService
 
             displayGeometryDirty =
                 true;
+
+            requestedDisplayGeometryGeneration++;
         }
 
         hasLoggedTransformedUv =
@@ -737,21 +745,48 @@ public sealed partial class ArCoreService : IArCoreService
             $"height={height}");
     }
 
-    public void SetGraphicsContext(
+    public long SetGraphicsContext(
         VKGraphicsContext graphicsContext)
     {
         ArgumentNullException.ThrowIfNull(
             graphicsContext);
 
-        this.graphicsContext =
-            graphicsContext;
+        long registeredGraphicsGeneration;
 
-        RegisterGraphicsContextGeneration();
+        lock (graphicsTeardownLock)
+        {
+            VKGraphicsContext? existingContext =
+                this.graphicsContext;
 
-        ARCameraTextureBridge.SetDrawThreadProcessor(
-            ProcessPendingCameraFrameOnDrawThread);
+            if (ReferenceEquals(existingContext, graphicsContext))
+            {
+                return Interlocked.Read(ref graphicsGeneration);
+            }
 
-        ARCameraTextureBridge.ResumeProcessing();
+            if (existingContext is not null ||
+                (graphicsTeardownTask is not null &&
+                 !graphicsTeardownTask.IsCompleted) ||
+                importer is not null)
+            {
+                throw new InvalidOperationException(
+                    "The previous Vulkan graphics context has not completed " +
+                    "its acknowledged draw-thread teardown.");
+            }
+
+            this.graphicsContext = graphicsContext;
+
+            registeredGraphicsGeneration =
+                RegisterGraphicsContextGeneration();
+
+            ARRenderGenerationBridge.RegisterGraphicsContext(
+                registeredGraphicsGeneration);
+
+            ARCameraTextureBridge.SetDrawThreadProcessor(
+                registeredGraphicsGeneration,
+                ProcessPendingCameraFrameOnDrawThread);
+        }
+
+        ActivateRenderGenerationIfReady();
 
         bool shouldResume;
         lock (lifecycleStateLock)
@@ -788,35 +823,259 @@ public sealed partial class ArCoreService : IArCoreService
                 EnsureRunningAsync(),
                 "Evergine graphics context became available");
         }
+
+        return registeredGraphicsGeneration;
     }
 
-    public void NotifyGraphicsContextUnavailable(
-        VKGraphicsContext unavailableContext)
+    /// <summary>
+    /// Rejects new AR frames and completes the old graphics generation on the
+    /// Evergine draw thread before the Android handler detaches its surface.
+    /// Repeated Closing/Disconnect callbacks share the same acknowledgement.
+    /// </summary>
+    public Task QuiesceGraphicsContextAsync(
+        VKGraphicsContext unavailableContext,
+        long unavailableGraphicsGeneration,
+        string reason)
     {
-        if (!ReferenceEquals(
-                graphicsContext,
-                unavailableContext))
+        ArgumentNullException.ThrowIfNull(unavailableContext);
+
+        lock (graphicsTeardownLock)
         {
-            return;
+            if (graphicsTeardownTask is not null &&
+                graphicsTeardownGeneration == unavailableGraphicsGeneration)
+            {
+                return graphicsTeardownTask;
+            }
+
+            if (!ReferenceEquals(graphicsContext, unavailableContext) ||
+                Interlocked.Read(ref graphicsGeneration) !=
+                    unavailableGraphicsGeneration)
+            {
+                return Task.CompletedTask;
+            }
+
+            lock (lifecycleStateLock)
+            {
+                resumeAfterGraphicsRecreation =
+                    desiredLifecycleState == ArCoreLifecycleTarget.Running ||
+                    lifecycleState == ArCoreLifecycleState.Running;
+            }
+
+            graphicsContext = null;
+            graphicsTeardownGeneration = unavailableGraphicsGeneration;
+            graphicsTeardownContext = unavailableContext;
+
+            ARRenderGenerationBridge.Suspend(
+                Interlocked.Read(ref currentSessionGeneration),
+                unavailableGraphicsGeneration);
+
+            ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
+            ReleasePendingCameraFrame();
+            InvalidatePublishedFrameState();
+            InvalidateCapabilitySnapshot(
+                "The Vulkan graphics surface is being torn down.");
+
+            Log.Info(
+                Tag,
+                "ARCORE_VULKAN_TEARDOWN_BEGIN " +
+                $"graphicsGeneration={unavailableGraphicsGeneration}, " +
+                $"reason='{reason}'.");
+
+            graphicsTeardownTask =
+                QuiesceGraphicsContextCoreAsync(
+                    unavailableContext,
+                    unavailableGraphicsGeneration,
+                    reason);
+
+            return graphicsTeardownTask;
+        }
+    }
+
+    /// <summary>
+    /// Synchronous terminal path for AndroidSurface.Closing when that event is
+    /// raised on the Evergine graphics-owner thread. It does not depend on a
+    /// future DrawFrame callback, because the closing surface may not provide
+    /// one.
+    /// </summary>
+    public void QuiesceGraphicsContextAtSurfaceBoundary(
+        VKGraphicsContext unavailableContext,
+        long unavailableGraphicsGeneration,
+        string reason)
+    {
+        ArgumentNullException.ThrowIfNull(unavailableContext);
+
+        lock (graphicsTeardownLock)
+        {
+            if (!ReferenceEquals(graphicsContext, unavailableContext) ||
+                Interlocked.Read(ref graphicsGeneration) !=
+                    unavailableGraphicsGeneration)
+            {
+                return;
+            }
+
+            if (graphicsTeardownTask is not null &&
+                !graphicsTeardownTask.IsCompleted)
+            {
+                throw new InvalidOperationException(
+                    "An asynchronous Vulkan teardown is already in progress.");
+            }
+
+            lock (lifecycleStateLock)
+            {
+                resumeAfterGraphicsRecreation =
+                    desiredLifecycleState == ArCoreLifecycleTarget.Running ||
+                    lifecycleState == ArCoreLifecycleState.Running;
+            }
+
+            graphicsContext = null;
+            graphicsTeardownGeneration = unavailableGraphicsGeneration;
+            graphicsTeardownContext = unavailableContext;
         }
 
-        graphicsContext =
-            null;
+        ARRenderGenerationBridge.Suspend(
+            Interlocked.Read(ref currentSessionGeneration),
+            unavailableGraphicsGeneration);
 
-        lock (lifecycleStateLock)
-        {
-            resumeAfterGraphicsRecreation =
-                desiredLifecycleState == ArCoreLifecycleTarget.Running;
-        }
-
-        RegisterGraphicsContextGeneration();
-
+        ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
         ReleasePendingCameraFrame();
         InvalidatePublishedFrameState();
+        InvalidateCapabilitySnapshot(
+            "The Vulkan graphics surface reached its owner-thread boundary.");
 
-        TrackTransition(
-            PauseAsync(),
-            "Evergine graphics context became unavailable");
+        Log.Info(
+            Tag,
+            "ARCORE_VULKAN_TEARDOWN_BEGIN " +
+            $"graphicsGeneration={unavailableGraphicsGeneration}, " +
+            $"reason='{reason}', ownerThreadBoundary=True.");
+
+        try
+        {
+            ArCoreLifecycleResult pauseResult =
+                PauseAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(12))
+                    .GetAwaiter()
+                    .GetResult();
+
+            if (!pauseResult.Success)
+            {
+                throw new InvalidOperationException(
+                    "ARCore could not be paused before owner-thread Vulkan " +
+                    $"teardown: {pauseResult.Failure.Message}");
+            }
+
+            ARCameraTextureBridge
+                .ExecuteDrawThreadTeardownAtSurfaceBoundary(
+                    unavailableGraphicsGeneration,
+                    () => TeardownGraphicsResourcesOnDrawThread(
+                        unavailableContext,
+                        unavailableGraphicsGeneration));
+        }
+        finally
+        {
+            lock (graphicsTeardownLock)
+            {
+                graphicsTeardownTask = null;
+                graphicsTeardownContext = null;
+            }
+        }
+    }
+
+    private async Task QuiesceGraphicsContextCoreAsync(
+        VKGraphicsContext unavailableContext,
+        long unavailableGraphicsGeneration,
+        string reason)
+    {
+        try
+        {
+            ArCoreLifecycleResult pauseResult =
+                await PauseAsync(CancellationToken.None).ConfigureAwait(false);
+
+            if (!pauseResult.Success)
+            {
+                throw new InvalidOperationException(
+                    "ARCore could not be paused before Vulkan teardown: " +
+                    pauseResult.Failure.Message);
+            }
+
+            Task drawThreadTeardown =
+                ARCameraTextureBridge.RequestDrawThreadTeardownAsync(
+                    unavailableGraphicsGeneration,
+                    () => TeardownGraphicsResourcesOnDrawThread(
+                        unavailableContext,
+                        unavailableGraphicsGeneration));
+
+            await drawThreadTeardown.WaitAsync(
+                GraphicsTeardownTimeout).ConfigureAwait(false);
+
+            Log.Debug(
+                Tag,
+                "ARCore Vulkan graphics generation quiesced: " +
+                $"generation={unavailableGraphicsGeneration}, " +
+                $"reason='{reason}'.");
+        }
+        finally
+        {
+            lock (graphicsTeardownLock)
+            {
+                if (graphicsTeardownGeneration ==
+                    unavailableGraphicsGeneration)
+                {
+                    graphicsTeardownTask = null;
+                    graphicsTeardownContext = null;
+                }
+            }
+        }
+    }
+
+    private void TeardownGraphicsResourcesOnDrawThread(
+        VKGraphicsContext unavailableContext,
+        long unavailableGraphicsGeneration)
+    {
+        /*
+         * MyApplication skips base.DrawFrame for this callback, so no new
+         * submit/present can race the device-idle barrier below.
+         */
+        ARCoreVulkanImporter.WaitForGraphicsDeviceIdle(
+            unavailableContext);
+
+        Log.Info(
+            Tag,
+            "ARCORE_VULKAN_GPU_IDLE " +
+            $"graphicsGeneration={unavailableGraphicsGeneration}.");
+
+        ARCameraBackgroundBehavior.TeardownGraphicsGeneration(
+            unavailableGraphicsGeneration);
+
+        ARCameraSpatialController.TeardownGraphicsGeneration(
+            unavailableGraphicsGeneration);
+
+        ARCameraTextureBridge.Clear();
+        ARCameraPoseBridge.Clear();
+        ARDepthOcclusionBridge.Clear();
+        long clearedFloodVersion =
+            ARFloodDepthBridge.Clear(
+                "Vulkan graphics generation teardown");
+
+        ARFloodDepthBridge.AcknowledgeDrawThreadVersion(
+            clearedFloodVersion);
+        ARRouteBridge.Clear();
+
+        ARCoreVulkanImporter? currentImporter = importer;
+        currentImporter?.Dispose();
+
+        if (ReferenceEquals(importer, currentImporter))
+        {
+            importer = null;
+        }
+
+        lastProcessedTimestamp = long.MinValue;
+
+        Log.Info(
+            Tag,
+            "ARCORE_VULKAN_DRAW_TEARDOWN_ACK " +
+            $"graphicsGeneration={unavailableGraphicsGeneration}, " +
+            $"rejectedStaleCallbacks=" +
+            $"{ARRenderGenerationBridge.RejectedCallbackCount}.");
     }
 
     private void StartFrameLoop(
@@ -1050,6 +1309,16 @@ public sealed partial class ArCoreService : IArCoreService
             ApplyDisplayGeometryIfNeeded(
                 currentSession);
 
+            ARRenderGenerationToken renderGeneration =
+                CaptureRenderGeneration(sessionGeneration);
+
+            if (!ARRenderGenerationBridge.TryAcceptCallback(
+                    renderGeneration,
+                    "session-frame-update"))
+            {
+                return null;
+            }
+
             Frame? frame =
                 currentSession.Update();
 
@@ -1091,7 +1360,8 @@ public sealed partial class ArCoreService : IArCoreService
                 frame,
                 camera,
                 timestamp,
-                frameZoomRatio);
+                frameZoomRatio,
+                renderGeneration);
 
             LogTextureIntrinsicsOnce(
                 camera);
@@ -1103,7 +1373,8 @@ public sealed partial class ArCoreService : IArCoreService
                 frame,
                 camera,
                 timestamp,
-                frameZoomRatio);
+                frameZoomRatio,
+                renderGeneration);
 
             if (captureCpuDiagnosticRequested)
             {
@@ -1159,7 +1430,7 @@ public sealed partial class ArCoreService : IArCoreService
                     out uint outputHeight);
 
                 QueuePendingCameraFrame(
-                    sessionGeneration,
+                    renderGeneration,
                     hardwareBuffer,
                     cameraUv,
                     outputWidth,
@@ -1191,7 +1462,7 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     private void QueuePendingCameraFrame(
-        long sessionGeneration,
+        ARRenderGenerationToken renderGeneration,
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
@@ -1200,7 +1471,7 @@ public sealed partial class ArCoreService : IArCoreService
     {
         PendingCameraFrame replacement =
             new(
-                sessionGeneration,
+                renderGeneration,
                 hardwareBuffer,
                 cameraUv,
                 outputWidth,
@@ -1243,9 +1514,9 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
-        if (pendingFrame.SessionGeneration !=
-            Interlocked.Read(
-                ref currentSessionGeneration))
+        if (!ARRenderGenerationBridge.TryAcceptCallback(
+                pendingFrame.Generation,
+                "pending-camera-import"))
         {
             pendingFrame.Dispose();
             return;
@@ -1275,6 +1546,8 @@ public sealed partial class ArCoreService : IArCoreService
                         pendingFrame.OutputHeight);
 
                 ARCameraTextureBridge.Publish(
+                    pendingFrame.Generation,
+                    pendingFrame.Timestamp,
                     texture);
             }
             catch (NotSupportedException exception)
@@ -1338,15 +1611,15 @@ public sealed partial class ArCoreService : IArCoreService
         private HardwareBuffer? hardwareBuffer;
 
         public PendingCameraFrame(
-            long sessionGeneration,
+            ARRenderGenerationToken generation,
             HardwareBuffer hardwareBuffer,
             float[] cameraUv,
             uint outputWidth,
             uint outputHeight,
             long timestamp)
         {
-            SessionGeneration =
-                sessionGeneration;
+            Generation =
+                generation;
 
             this.hardwareBuffer =
                 hardwareBuffer
@@ -1373,7 +1646,7 @@ public sealed partial class ArCoreService : IArCoreService
             ?? throw new ObjectDisposedException(
                 nameof(PendingCameraFrame));
 
-        public long SessionGeneration { get; }
+        public ARRenderGenerationToken Generation { get; }
 
         public float[] CameraUv { get; }
 
@@ -1407,7 +1680,8 @@ public sealed partial class ArCoreService : IArCoreService
         Frame frame,
         ArCoreCamera camera,
         long timestamp,
-        float zoomRatio)
+        float zoomRatio,
+        ARRenderGenerationToken renderGeneration)
     {
         string trackingState =
             camera.TrackingState.ToString();
@@ -1431,9 +1705,13 @@ public sealed partial class ArCoreService : IArCoreService
              */
             InvalidatePendingRecoveryCountdown();
 
+            ARFloodDepthBridge.Clear(
+                "ARCore camera tracking unavailable");
+
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
-                timestamp);
+                timestamp,
+                renderGeneration);
 
             LogSpatialPoseTelemetryIfNeeded(
                 trackingState,
@@ -1454,9 +1732,13 @@ public sealed partial class ArCoreService : IArCoreService
 
             InvalidatePendingRecoveryCountdown();
 
+            ARFloodDepthBridge.Clear(
+                "ARCore display-oriented pose unavailable");
+
             ARCameraPoseBridge.PublishTrackingUnavailable(
                 trackingFailureReason,
-                timestamp);
+                timestamp,
+                renderGeneration);
 
             LogSpatialPoseTelemetryIfNeeded(
                 trackingState,
@@ -1554,6 +1836,12 @@ public sealed partial class ArCoreService : IArCoreService
                     out anchorZ);
         }
 
+        if (!anchorAvailable)
+        {
+            ARFloodDepthBridge.Clear(
+                "ARCore ground reference unavailable");
+        }
+
         /*
          * Publish camera, projection, anchor, tracking, and timestamp as one
          * coherent snapshot.
@@ -1576,7 +1864,8 @@ public sealed partial class ArCoreService : IArCoreService
             anchorX,
             anchorY,
             anchorZ,
-            timestamp);
+            timestamp,
+            renderGeneration);
 
         /*
          * Start/clear retained-anchor recovery from the ARCore frame cadence
@@ -2844,7 +3133,8 @@ public sealed partial class ArCoreService : IArCoreService
         Frame frame,
         ArCoreCamera camera,
         long timestamp,
-        float zoomRatio)
+        float zoomRatio,
+        ARRenderGenerationToken renderGeneration)
     {
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
@@ -3073,7 +3363,8 @@ public sealed partial class ArCoreService : IArCoreService
                 dimensions[1],
                 groundAvailable,
                 groundIsProvisional,
-                groundWorldY);
+                groundWorldY,
+                renderGeneration);
 
             lastDepthOcclusionPublishTimestamp =
                 timestamp;
@@ -3264,6 +3555,7 @@ public sealed partial class ArCoreService : IArCoreService
         int rotation;
         int width;
         int height;
+        long geometryGeneration;
         bool shouldApply;
 
         lock (displayGeometryLock)
@@ -3288,6 +3580,9 @@ public sealed partial class ArCoreService : IArCoreService
 
             height =
                 requestedDisplayHeight;
+
+            geometryGeneration =
+                requestedDisplayGeometryGeneration;
         }
 
         currentSession.SetDisplayGeometry(
@@ -3306,6 +3601,9 @@ public sealed partial class ArCoreService : IArCoreService
             appliedDisplayHeight =
                 height;
 
+            appliedDisplayGeometryGeneration =
+                geometryGeneration;
+
             displayGeometryDirty =
                 requestedDisplayRotation != rotation ||
                 requestedDisplayWidth != width ||
@@ -3315,12 +3613,50 @@ public sealed partial class ArCoreService : IArCoreService
         hasLoggedTransformedUv =
             false;
 
+        ActivateRenderGenerationIfReady();
+
         Log.Debug(
             Tag,
             "ARCore display geometry applied: " +
             $"rotation={rotation}, " +
             $"width={width}, " +
             $"height={height}");
+    }
+
+    private ARRenderGenerationToken CaptureRenderGeneration(
+        long sessionGeneration)
+    {
+        long geometryGeneration;
+
+        lock (displayGeometryLock)
+        {
+            geometryGeneration =
+                appliedDisplayGeometryGeneration;
+        }
+
+        return new ARRenderGenerationToken(
+            sessionGeneration,
+            Interlocked.Read(ref graphicsGeneration),
+            geometryGeneration);
+    }
+
+    private void ActivateRenderGenerationIfReady()
+    {
+        ARRenderGenerationToken token =
+            CaptureRenderGeneration(
+                Interlocked.Read(ref currentSessionGeneration));
+
+        if (!token.IsValid ||
+            graphicsContext is null ||
+            session is null ||
+            sessionPaused)
+        {
+            return;
+        }
+
+        ARRenderGenerationBridge.Activate(token);
+        ARCameraTextureBridge.ResumeProcessing(
+            token.GraphicsGeneration);
     }
 
     private static ARCoreVulkanImporter CreateImporter(
