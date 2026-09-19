@@ -172,6 +172,7 @@ namespace RescuAR.App.Views.Camera
         private bool emergencyAdvisoryEventSubscribed;
         private bool emergencyAdvisoryVisible;
         private bool pageIsVisible;
+        private bool cameraPipelineTerminalFailureVisible;
 
         private static readonly float[] CameraZoomLevels =
         {
@@ -772,12 +773,14 @@ namespace RescuAR.App.Views.Camera
 
             ARCameraSpatialController.SetRouteRenderingEnabled(
                 arCameraMode &&
+                    !cameraPipelineTerminalFailureVisible &&
                     lastArGuidanceConfidence.AllowsRouteGeometry,
                 $"Camera module view = {mode}; " +
                 $"guidanceState={lastArGuidanceConfidence.State}; {reason}");
 
             SetFloodVisualizationVisibility(
                 floodMode &&
+                    !cameraPipelineTerminalFailureVisible &&
                     currentFloodVisualization.IsAvailable,
                 $"Camera module view = {mode}; {reason}");
 
@@ -791,13 +794,15 @@ namespace RescuAR.App.Views.Camera
                         !mapMode;
 
                     floodDepthOcclusionView.IsVisible =
-                        floodMode;
+                        floodMode &&
+                        !cameraPipelineTerminalFailureVisible;
 
                     cameraModeStatusBanner.IsVisible =
                         arCameraMode;
 
                     floodWaitingBanner.IsVisible =
                         floodMode &&
+                        !cameraPipelineTerminalFailureVisible &&
                         !lowLightFallbackActive &&
                         (!currentFloodVisualization.IsAvailable ||
                          (HasLocalFloodDepth() &&
@@ -809,6 +814,7 @@ namespace RescuAR.App.Views.Camera
 
                     floodVisualizationLayer.IsVisible =
                         floodMode &&
+                        !cameraPipelineTerminalFailureVisible &&
                         currentFloodVisualization.IsAvailable &&
                         !safeZoneConfirmed;
 
@@ -871,6 +877,7 @@ namespace RescuAR.App.Views.Camera
                     }
                     else if (!emergencyAdvisoryVisible &&
                              !safeZoneConfirmed &&
+                             !cameraPipelineTerminalFailureVisible &&
                              lastTurnGuidance.IsAvailable)
                     {
                         ApplyPrototypeTurnGuidance(
@@ -1002,6 +1009,7 @@ namespace RescuAR.App.Views.Camera
 
             floodWaitingBanner.IsVisible =
                 floodMode &&
+                !cameraPipelineTerminalFailureVisible &&
                 !lowLightFallbackActive &&
                 (!currentFloodVisualization.IsAvailable ||
                  (hasLocalFloodDepth &&
@@ -1018,6 +1026,17 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshLowLightFallbackState()
         {
+            if (cameraPipelineTerminalFailureVisible)
+            {
+                lowLightFallbackActive =
+                    false;
+
+                lowLightFallbackBanner.IsVisible =
+                    false;
+
+                return;
+            }
+
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
@@ -1164,6 +1183,11 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshFloodGroundTrustState()
         {
+            if (cameraPipelineTerminalFailureVisible)
+            {
+                return;
+            }
+
             bool verifiedGround =
                 HasVerifiedArGround();
 
@@ -1235,6 +1259,15 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshArTrackingStatusBanner()
         {
+            if (cameraPipelineTerminalFailureVisible)
+            {
+                ARCameraSpatialController.SetRouteRenderingEnabled(
+                    false,
+                    "terminal AR camera pipeline failure is visible");
+
+                return;
+            }
+
             bool headingTrusted =
                 lastHeadingAlignment.HasValue &&
                 lastHeadingAlignment.Value.IsAvailable &&
@@ -2648,11 +2681,18 @@ namespace RescuAR.App.Views.Camera
         private void OnArCoreLifecycleChanged(
             ArCoreLifecycleSnapshot snapshot)
         {
+            if (IsTerminalCameraPipelineFailure(
+                    snapshot.Failure))
+            {
+                Dispatcher.Dispatch(
+                    () => ApplyTerminalCameraPipelineFailure(
+                        snapshot.Failure));
+
+                return;
+            }
+
             if (snapshot.State !=
-                    ArCoreLifecycleState.Running ||
-                !pageIsVisible ||
-                currentCameraModuleView ==
-                    CameraModuleViewMode.Map2D)
+                ArCoreLifecycleState.Running)
             {
                 return;
             }
@@ -2660,13 +2700,73 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
+                    cameraPipelineTerminalFailureVisible =
+                        false;
+
                     if (pageIsVisible &&
                         currentCameraModuleView !=
                             CameraModuleViewMode.Map2D)
                     {
+                        RefreshArTrackingStatusBanner();
                         StartRouteRequestIfPossible();
                     }
                 });
+        }
+
+        private static bool IsTerminalCameraPipelineFailure(
+            ArCoreFailure failure) =>
+            failure.Classification ==
+                ArCoreFailureClassification.Terminal &&
+            failure.Code is
+                ArCoreFailureCode.NativeBridgeUnavailable or
+                ArCoreFailureCode.CameraPassthroughUnavailable or
+                ArCoreFailureCode.RendererUnavailable;
+
+        private void ApplyTerminalCameraPipelineFailure(
+            ArCoreFailure failure)
+        {
+            cameraPipelineTerminalFailureVisible =
+                true;
+
+            ARCameraSpatialController.SetRouteRenderingEnabled(
+                false,
+                $"terminal camera pipeline failure: {failure.Code}");
+
+            turnGuidancePanel.IsVisible =
+                false;
+
+            floodDepthOcclusionView.IsVisible =
+                false;
+
+            floodVisualizationLayer.IsVisible =
+                false;
+
+            floodWaitingBanner.IsVisible =
+                false;
+
+            lowLightFallbackBanner.IsVisible =
+                false;
+
+            arTrackingStatusBanner.BackgroundColor =
+                Color.FromArgb(
+                    "#FBE1E3");
+
+            arTrackingStatusBanner.Stroke =
+                new SolidColorBrush(
+                    Color.FromArgb(
+                        "#F2B4BA"));
+
+            arTrackingStatusLabel.TextColor =
+                Color.FromArgb(
+                    "#B4232B");
+
+            arTrackingStatusLabel.Text =
+                failure.Message;
+
+            arTrackingStatusBanner.IsVisible =
+                pageIsVisible &&
+                currentCameraModuleView !=
+                    CameraModuleViewMode.Map2D;
         }
 
         private static bool ShouldSuppressArCoreFailureAlert(

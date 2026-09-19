@@ -125,6 +125,15 @@ public sealed partial class ArCoreService
                     "The ARCore service has already been disposed.");
             }
 
+            if (TryGetTerminalCameraPipelineFailure(
+                    out ArCoreFailure terminalCameraFailure))
+            {
+                return FailLifecycleRequest(
+                    terminalCameraFailure.Code,
+                    terminalCameraFailure.Classification,
+                    terminalCameraFailure.Message);
+            }
+
             if (session is not null && !sessionPaused && IsFrameLoopRunning)
             {
                 SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
@@ -175,6 +184,15 @@ public sealed partial class ArCoreService
                     ArCoreFailureCode.GraphicsUnavailable,
                     ArCoreFailureClassification.Recoverable,
                     "The AR rendering surface is not ready.");
+            }
+
+            if (!EnsureNativeBridgeReadyForStart(
+                    out ArCoreFailure nativeBridgeFailure))
+            {
+                return FailLifecycleRequest(
+                    nativeBridgeFailure.Code,
+                    nativeBridgeFailure.Classification,
+                    nativeBridgeFailure.Message);
             }
 
             if (session is null)
@@ -895,7 +913,9 @@ public sealed partial class ArCoreService
                     ? null
                     : depthModeSupported,
                 graphicsContext is not null,
-                null,
+                AHardwareBufferInterop.CurrentReadiness.WasTested
+                    ? AHardwareBufferInterop.CurrentReadiness.IsReady
+                    : null,
                 graphicsGeneration,
                 reason);
         }
@@ -953,7 +973,9 @@ public sealed partial class ArCoreService
             return ArCoreFailureCode.CameraUnavailable;
         }
 
-        if (exception is DllNotFoundException)
+        if (exception is DllNotFoundException or
+            EntryPointNotFoundException or
+            BadImageFormatException)
         {
             return ArCoreFailureCode.NativeBridgeUnavailable;
         }
@@ -1028,6 +1050,25 @@ public sealed partial class ArCoreService
                     IsCurrent = true,
                     CameraPermissionGranted = HasCameraPermission(),
                     CameraAvailable = false,
+                    Reason = message,
+                };
+            }
+        }
+        else if (code is ArCoreFailureCode.NativeBridgeUnavailable or
+                         ArCoreFailureCode.CameraPassthroughUnavailable or
+                         ArCoreFailureCode.RendererUnavailable)
+        {
+            lock (lifecycleStateLock)
+            {
+                capabilitySnapshot = capabilitySnapshot with
+                {
+                    Version = ++capabilityVersion,
+                    CapturedAtUtc = DateTimeOffset.UtcNow,
+                    IsCurrent = true,
+                    NativeBridgeReady =
+                        code == ArCoreFailureCode.NativeBridgeUnavailable
+                            ? false
+                            : capabilitySnapshot.NativeBridgeReady,
                     Reason = message,
                 };
             }
