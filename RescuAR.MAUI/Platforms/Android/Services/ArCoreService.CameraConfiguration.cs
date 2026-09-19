@@ -124,10 +124,10 @@ public sealed partial class ArCoreService
                 return false;
             }
 
-            Size textureSize =
+            global::Android.Util.Size textureSize =
                 configuration.TextureSize;
 
-            Size imageSize =
+            global::Android.Util.Size imageSize =
                 configuration.ImageSize;
 
             string depthUsage =
