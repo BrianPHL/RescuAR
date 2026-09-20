@@ -72,9 +72,10 @@ public static class ARRouteRenderer
     /*
      * The route visual has two bounded local horizons: a 40 m road-following
      * window during normal navigation and a short recovery window after
-     * verified off-course detection. The renderer still reuses a fixed pool;
-     * ordinary OSRM/A* pedestrian geometry is sparse enough that 64 segments
-     * covers either local window without per-frame allocation.
+     * verified off-course detection. The renderer reuses a measured fixed
+     * pool, while ARRouteGeometrySanitizer maps the complete local window into
+     * that budget by distance and curvature. Capacity pressure therefore
+     * reduces detail explicitly instead of cutting off the route tail.
      */
     private const int MaxRouteSegments =
         64;
@@ -360,14 +361,51 @@ public static class ARRouteRenderer
                 LogTag,
                 "Renderer rejected route geometry after removing invalid or tiny segments.");
 
+            ARRouteBridge.PublishGeometryQuality(
+                snapshot,
+                prepared,
+                0,
+                slots.Length);
+
+            return false;
+        }
+
+        if (renderPoints.Count -
+                1 >
+                    slots.Length ||
+            !prepared.FirstPointPreserved ||
+            !prepared.FinalPointPreserved)
+        {
+            DisableAll(
+                slots);
+
+            DisableAll(
+                arrows);
+
+            activeSegmentCount =
+                0;
+
+            AndroidLog.Warn(
+                LogTag,
+                "Renderer rejected route geometry that exceeded the pool or " +
+                "did not preserve both route-window endpoints: " +
+                $"preparedPoints={renderPoints.Count}, " +
+                $"segmentCapacity={slots.Length}, " +
+                $"firstPreserved={prepared.FirstPointPreserved}, " +
+                $"finalPreserved={prepared.FinalPointPreserved}.");
+
+            ARRouteBridge.PublishGeometryQuality(
+                snapshot,
+                prepared,
+                0,
+                slots.Length);
+
             return false;
         }
 
         int requestedSegmentCount =
-            Math.Min(
-                renderPoints.Count -
-                    1,
-                slots.Length);
+            renderPoints.Count -
+                1;
 
         int renderedSegmentCount =
             0;
@@ -423,6 +461,12 @@ public static class ARRouteRenderer
         activeSegmentCount =
             renderedSegmentCount;
 
+        ARRouteBridge.PublishGeometryQuality(
+            snapshot,
+            prepared,
+            renderedSegmentCount,
+            slots.Length);
+
         AndroidLog.Debug(
             LogTag,
             "Renderer applied route snapshot: " +
@@ -432,7 +476,11 @@ public static class ARRouteRenderer
             $"removedPoints={prepared.RemovedPointCount}, " +
             $"beveledCorners={prepared.BeveledCornerCount}, " +
             $"subdivisionPoints={prepared.InsertedSubdivisionPointCount}, " +
-            $"truncated={prepared.WasTruncated}, " +
+            $"capacityResampled={prepared.WasCapacityResampled}, " +
+            $"endpointPreserved=" +
+            $"{prepared.FirstPointPreserved && prepared.FinalPointPreserved}, " +
+            $"maximumSegment=" +
+            $"{prepared.MaximumRenderedSegmentLengthMeters:F2}m, " +
             $"requestedSegments={requestedSegmentCount}, " +
             $"activeSegments={activeSegmentCount}, " +
             $"forwardArrow={arrowVisible}");

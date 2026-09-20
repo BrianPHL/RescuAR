@@ -1290,6 +1290,9 @@ namespace RescuAR.App.Views.Camera
             ARRouteBridge.RouteSnapshot route =
                 ARRouteBridge.Current;
 
+            ARRouteBridge.RouteGeometryQualitySnapshot routeGeometryQuality =
+                ARRouteBridge.GeometryQuality;
+
             RouteProgressTracker.ProgressSnapshot progress =
                 _routeProgressTracker.Current;
 
@@ -1414,6 +1417,56 @@ namespace RescuAR.App.Views.Camera
                     };
             }
 
+            if (confidence.AllowsRouteGeometry &&
+                routeGeometryQuality.IsCurrentFor(
+                    route))
+            {
+                if (routeGeometryQuality.State ==
+                    RouteGeometryQualityState.Pending)
+                {
+                    confidence =
+                        confidence with
+                        {
+                            State =
+                                ARGuidanceConfidencePolicy
+                                    .GuidanceConfidenceState
+                                    .Recovery,
+                            AllowsRouteGeometry = false,
+                            DisplayMessage =
+                                "Preparing AR route geometry…"
+                        };
+                }
+                else if (routeGeometryQuality.State ==
+                         RouteGeometryQualityState.Rejected)
+                {
+                    confidence =
+                        confidence with
+                        {
+                            State =
+                                ARGuidanceConfidencePolicy
+                                    .GuidanceConfidenceState
+                                    .Hidden,
+                            AllowsRouteGeometry = false,
+                            DisplayMessage =
+                                "AR route geometry unavailable — follow text guidance"
+                        };
+                }
+                else if (routeGeometryQuality.IsCapacityLimitedFor(
+                             route))
+                {
+                    confidence =
+                        confidence with
+                        {
+                            State =
+                                ARGuidanceConfidencePolicy
+                                    .GuidanceConfidenceState
+                                    .Degraded,
+                            DisplayMessage =
+                                "Complex route simplified — confirm turns with text guidance"
+                        };
+                }
+            }
+
             bool confidenceChanged =
                 confidence.State !=
                     lastArGuidanceConfidence.State ||
@@ -1448,6 +1501,10 @@ namespace RescuAR.App.Views.Camera
                     $"gpsFresh={gpsFresh}, " +
                     $"gps={gpsConfidence}, " +
                     $"routeMatch={routeMatchConfidence}, " +
+                    $"routeGeometry={routeGeometryQuality.State}, " +
+                    $"routeGeometryPoints=" +
+                    $"{routeGeometryQuality.RenderedPointCount}/" +
+                    $"{routeGeometryQuality.DetailedPointCount}, " +
                     $"spatial={continuity.State}, " +
                     $"provisionalGround={provisionalGround}, " +
                     $"consultationOverride=" +
@@ -6693,11 +6750,23 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
+            ARTrackingStateBridge.TrackingSnapshot tracking =
+                ARTrackingStateBridge.Current;
+
             if (!route.IsAvailable ||
                 route.Points.Count <
                     2 ||
+                !ARRenderGenerationBridge.IsCurrentSession(
+                    route.Generation) ||
+                !spatial.IsFresh ||
                 !spatial.IsTracking ||
-                !spatial.Pose.IsTracking)
+                !spatial.Pose.IsTracking ||
+                !ARRenderGenerationBridge.IsCurrent(
+                    spatial.Generation) ||
+                route.Generation.SessionGeneration !=
+                    spatial.Generation.SessionGeneration ||
+                !tracking.IsRenderableFor(
+                    spatial.Generation.SessionGeneration))
             {
                 return false;
             }

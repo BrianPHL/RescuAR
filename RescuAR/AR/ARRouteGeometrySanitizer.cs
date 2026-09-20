@@ -8,6 +8,10 @@ namespace RescuAR.AR;
 /// Produces bounded local route geometry before pooled segment rendering.
 /// Tiny spans are removed, sharp corners are beveled, and long spans are
 /// subdivided so one raw route edge cannot create an oversized visual wedge.
+/// When the detailed geometry exceeds the renderer budget, the complete
+/// window is resampled by both travelled distance and local curvature. The
+/// first and final points are always retained, so capacity pressure can reduce
+/// detail but can never silently cut off the remaining route.
 /// </summary>
 public static class ARRouteGeometrySanitizer
 {
@@ -29,6 +33,9 @@ public static class ARRouteGeometrySanitizer
     private const float MinimumCornerTrimMeters =
         0.08f;
 
+    private const double CurvatureSamplingWeight =
+        1.75;
+
     public static GeometryPreparationResult Prepare(
         IReadOnlyList<ArHorizontalRoutePoint> source,
         int maximumPoints)
@@ -44,17 +51,28 @@ public static class ARRouteGeometrySanitizer
         }
 
         List<ArHorizontalRoutePoint> cleaned =
-            new(
-                Math.Min(
-                    source.Count,
-                    maximumPoints));
+            new(source.Count);
 
         int removedPoints =
             0;
 
-        foreach (ArHorizontalRoutePoint point in
-                 source)
+        bool sourceStartValid =
+            source.Count > 0 &&
+            IsFinite(
+                source[0]);
+
+        bool sourceFinalValid =
+            source.Count > 0 &&
+            IsFinite(
+                source[^1]);
+
+        for (int i = 0;
+             i < source.Count;
+             i++)
         {
+            ArHorizontalRoutePoint point =
+                source[i];
+
             if (!IsFinite(
                     point))
             {
@@ -72,6 +90,20 @@ public static class ARRouteGeometrySanitizer
             {
                 removedPoints++;
 
+                /*
+                 * Keep the source endpoint authoritative. Replacing the last
+                 * retained point avoids manufacturing a tiny final segment
+                 * while ensuring a dense tail cannot discard the end of the
+                 * visible route window.
+                 */
+                if (i ==
+                    source.Count -
+                        1)
+                {
+                    cleaned[^1] =
+                        point;
+                }
+
                 continue;
             }
 
@@ -84,11 +116,21 @@ public static class ARRouteGeometrySanitizer
         {
             return new GeometryPreparationResult(
                 cleaned,
+                source.Count,
+                cleaned.Count,
                 removedPoints,
                 0,
                 0,
-                false);
+                false,
+                false,
+                false,
+                PolylineLength(cleaned),
+                PolylineLength(cleaned),
+                MaximumSegmentLength(cleaned));
         }
+
+        float sourceLengthMeters =
+            PolylineLength(cleaned);
 
         List<ArHorizontalRoutePoint> beveled =
             new(
@@ -181,21 +223,14 @@ public static class ARRouteGeometrySanitizer
             beveled,
             cleaned[^1]);
 
-        List<ArHorizontalRoutePoint> prepared =
-            new(
-                Math.Min(
-                    maximumPoints,
-                    beveled.Count *
-                        2));
+        List<ArHorizontalRoutePoint> detailed =
+            new(beveled.Count);
 
-        prepared.Add(
+        detailed.Add(
             beveled[0]);
 
         int insertedSubdivisionPoints =
             0;
-
-        bool truncated =
-            false;
 
         for (int i = 0;
              i <
@@ -226,20 +261,11 @@ public static class ARRouteGeometrySanitizer
                     partCount;
                  part++)
             {
-                if (prepared.Count >=
-                    maximumPoints)
-                {
-                    truncated =
-                        true;
-
-                    break;
-                }
-
                 double amount =
                     (double)part /
                     partCount;
 
-                prepared.Add(
+                detailed.Add(
                     Interpolate(
                         start,
                         end,
@@ -251,19 +277,183 @@ public static class ARRouteGeometrySanitizer
                     insertedSubdivisionPoints++;
                 }
             }
-
-            if (truncated)
-            {
-                break;
-            }
         }
+
+        bool capacityLimited =
+            detailed.Count >
+                maximumPoints;
+
+        IReadOnlyList<ArHorizontalRoutePoint> prepared =
+            capacityLimited
+                ? ResampleByDistanceAndCurvature(
+                    detailed,
+                    maximumPoints)
+                : detailed;
+
+        bool firstPointPreserved =
+            sourceStartValid &&
+            prepared.Count > 0 &&
+            PointsEqual(
+                prepared[0],
+                source[0]);
+
+        bool finalPointPreserved =
+            sourceFinalValid &&
+            prepared.Count > 0 &&
+            PointsEqual(
+                prepared[^1],
+                source[^1]);
 
         return new GeometryPreparationResult(
             prepared,
+            source.Count,
+            detailed.Count,
             removedPoints,
             beveledCorners,
             insertedSubdivisionPoints,
-            truncated);
+            capacityLimited,
+            firstPointPreserved,
+            finalPointPreserved,
+            sourceLengthMeters,
+            PolylineLength(prepared),
+            MaximumSegmentLength(prepared));
+    }
+
+    private static IReadOnlyList<ArHorizontalRoutePoint>
+        ResampleByDistanceAndCurvature(
+            IReadOnlyList<ArHorizontalRoutePoint> source,
+            int maximumPoints)
+    {
+        if (source.Count <=
+            maximumPoints)
+        {
+            return source;
+        }
+
+        double[] turnStrength =
+            new double[source.Count];
+
+        for (int i = 1;
+             i < source.Count -
+                    1;
+             i++)
+        {
+            turnStrength[i] =
+                Math.Clamp(
+                    GetTurnAngleDegrees(
+                        source[i -
+                            1],
+                        source[i],
+                        source[i +
+                            1]) /
+                        90.0,
+                    0.0,
+                    1.0);
+        }
+
+        double[] cumulativeWeight =
+            new double[source.Count];
+
+        for (int i = 0;
+             i < source.Count -
+                    1;
+             i++)
+        {
+            double edgeLength =
+                Distance(
+                    source[i],
+                    source[i +
+                        1]);
+
+            double curvature =
+                Math.Max(
+                    turnStrength[i],
+                    turnStrength[i +
+                        1]);
+
+            double edgeWeight =
+                edgeLength *
+                (1.0 +
+                 CurvatureSamplingWeight *
+                    curvature);
+
+            cumulativeWeight[i +
+                1] =
+                cumulativeWeight[i] +
+                edgeWeight;
+        }
+
+        double totalWeight =
+            cumulativeWeight[^1];
+
+        if (!double.IsFinite(
+                totalWeight) ||
+            totalWeight <=
+                0.0)
+        {
+            return
+            [
+                source[0],
+                source[^1]
+            ];
+        }
+
+        List<ArHorizontalRoutePoint> resampled =
+            new(maximumPoints)
+            {
+                source[0]
+            };
+
+        int edgeIndex =
+            0;
+
+        for (int sampleIndex = 1;
+             sampleIndex <
+                maximumPoints -
+                    1;
+             sampleIndex++)
+        {
+            double targetWeight =
+                totalWeight *
+                sampleIndex /
+                (maximumPoints -
+                    1);
+
+            while (edgeIndex <
+                       source.Count -
+                           2 &&
+                   cumulativeWeight[edgeIndex +
+                        1] <
+                       targetWeight)
+            {
+                edgeIndex++;
+            }
+
+            double edgeWeight =
+                cumulativeWeight[edgeIndex +
+                    1] -
+                cumulativeWeight[edgeIndex];
+
+            double amount =
+                edgeWeight >
+                    0.0
+                    ? (targetWeight -
+                       cumulativeWeight[edgeIndex]) /
+                        edgeWeight
+                    : 0.0;
+
+            resampled.Add(
+                Interpolate(
+                    source[edgeIndex],
+                    source[edgeIndex +
+                        1],
+                    amount));
+        }
+
+        resampled.Add(
+            source[^1]);
+
+        return resampled;
     }
 
     private static void AddIfSeparated(
@@ -422,10 +612,69 @@ public static class ARRouteGeometrySanitizer
                 z);
     }
 
+    private static float PolylineLength(
+        IReadOnlyList<ArHorizontalRoutePoint> points)
+    {
+        float length =
+            0.0f;
+
+        for (int i = 0;
+             i < points.Count -
+                    1;
+             i++)
+        {
+            length +=
+                Distance(
+                    points[i],
+                    points[i +
+                        1]);
+        }
+
+        return length;
+    }
+
+    private static float MaximumSegmentLength(
+        IReadOnlyList<ArHorizontalRoutePoint> points)
+    {
+        float maximum =
+            0.0f;
+
+        for (int i = 0;
+             i < points.Count -
+                    1;
+             i++)
+        {
+            maximum =
+                MathF.Max(
+                    maximum,
+                    Distance(
+                        points[i],
+                        points[i +
+                            1]));
+        }
+
+        return maximum;
+    }
+
+    private static bool PointsEqual(
+        ArHorizontalRoutePoint first,
+        ArHorizontalRoutePoint second) =>
+        first.X == second.X &&
+        first.Z == second.Z &&
+        first.DistanceFromWindowStartMeters ==
+            second.DistanceFromWindowStartMeters;
+
     public readonly record struct GeometryPreparationResult(
         IReadOnlyList<ArHorizontalRoutePoint> Points,
+        int InputPointCount,
+        int DetailedPointCount,
         int RemovedPointCount,
         int BeveledCornerCount,
         int InsertedSubdivisionPointCount,
-        bool WasTruncated);
+        bool WasCapacityResampled,
+        bool FirstPointPreserved,
+        bool FinalPointPreserved,
+        float SourceLengthMeters,
+        float RenderedLengthMeters,
+        float MaximumRenderedSegmentLengthMeters);
 }
