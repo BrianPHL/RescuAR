@@ -14,6 +14,7 @@ using Microsoft.Maui.Devices.Sensors;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
+using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.Services;
 
@@ -388,9 +389,8 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         Log.Debug(
             MldLogTag,
             "Evacuation-center AR navigation selected: " +
-            $"name='{center.Name}', " +
-            $"lat={center.Latitude:F7}, " +
-            $"lon={center.Longitude:F7}");
+            $"name='{DiagnosticPrivacyPolicy.FormatRouteLabel(center.Name)}', " +
+            $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(center.Latitude, center.Longitude)}");
 #endif
 
         try

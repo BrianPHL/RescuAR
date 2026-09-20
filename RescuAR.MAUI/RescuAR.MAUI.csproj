@@ -53,7 +53,7 @@
 		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
 		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
 		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
-		<RescuArCorrectiveBatch>ARCore-05</RescuArCorrectiveBatch>
+		<RescuArCorrectiveBatch>ARCore-08</RescuArCorrectiveBatch>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
 
@@ -136,6 +136,15 @@
 		<AndroidNativeLibrary Include="$(NativeBridgePath)" Abi="$(NativeBridgeAbi)" />
 		<AssemblyMetadata Include="RescuAR.CorrectiveBatch" Value="$(RescuArCorrectiveBatch)" />
 		<AssemblyMetadata Include="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
+		<AssemblyMetadata Include="RescuAR.DiagnosticBuild" Value="$(RescuArDiagnosticBuild)" />
+		<AssemblyMetadata Include="RescuAR.DiagnosticRouteOverride" Value="$(RescuArDiagnosticBuild)" />
+		<AssemblyMetadata Include="RescuAR.LocationLogPolicy" Value="production-redacted;diagnostic-consent-quantized" />
+		<AssemblyMetadata Include="RescuAR.LocationLogRetentionDays" Value="30" />
+		<AssemblyMetadata Include="RescuAR.StateGlossary" Value="AR_STATE_GLOSSARY_V1" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Remove="Views\Camera\CameraPage.Diagnostics.cs" />
+		<Compile Include="Views\Camera\CameraPage.Diagnostics.cs" Condition="'$(RescuArDiagnosticBuild)' == 'true'" />
 	</ItemGroup>
 	<ItemGroup>
 	  <Folder Include="Platforms\Android\Vulkan\Shaders\" />

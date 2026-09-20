@@ -49,7 +49,7 @@ public static class NavigationDestinationBridge
         {
             AndroidLog.Warn(
                 LogTag,
-                $"Destination rejected: '{center.Name}' has no verified coordinate.");
+                $"Destination rejected: '{DiagnosticPrivacyPolicy.FormatRouteLabel(center.Name)}' has no verified coordinate.");
 
             return false;
         }
@@ -115,9 +115,8 @@ public static class NavigationDestinationBridge
         AndroidLog.Debug(
             LogTag,
             "Navigation destination published: " +
-            $"name='{next.Name}', " +
-            $"lat={next.Coordinate.Latitude:F7}, " +
-            $"lon={next.Coordinate.Longitude:F7}, " +
+            $"name='{DiagnosticPrivacyPolicy.FormatRouteLabel(next.Name)}', " +
+            $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(next.Coordinate.Latitude, next.Coordinate.Longitude)}, " +
             $"safeZoneRadius={next.SafeZoneRadiusMeters:F1} m");
 
         DestinationChanged?.Invoke(

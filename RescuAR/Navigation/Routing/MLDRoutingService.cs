@@ -145,8 +145,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         AndroidLog.Debug(
             LogTag,
             "MLD route request started: " +
-            $"origin=({origin.Latitude:F7},{origin.Longitude:F7}), " +
-            $"destination=({destination.Latitude:F7},{destination.Longitude:F7})");
+            $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
+            $"destination={DiagnosticPrivacyPolicy.FormatCoordinate(destination.Latitude, destination.Longitude)}");
 
         Exception? lastFailure =
             null;
@@ -208,7 +208,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 AndroidLog.Warn(
                     LogTag,
                     $"MLD endpoint '{baseUrls[i]}' HTTP failure: " +
-                    $"{ex.GetType().Name}: {ex.Message}");
+                    DiagnosticPrivacyPolicy.FormatException(ex));
 
                 lastFailure =
                     ex;
@@ -218,7 +218,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         AndroidLog.Error(
             LogTag,
             "All configured Railway MLD endpoints failed. " +
-            $"{lastFailure?.GetType().Name}: {lastFailure?.Message}");
+            DiagnosticPrivacyPolicy.FormatException(lastFailure));
 
         throw new HttpRequestException(
             "All configured Railway OSRM endpoints failed.",
@@ -288,8 +288,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         AndroidLog.Warn(
             LogTag,
             "MLD HAZARD-AWARE route request started: " +
-            $"origin=({origin.Latitude:F7},{origin.Longitude:F7}), " +
-            $"destination=({destination.Latitude:F7},{destination.Longitude:F7}), " +
+            $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
+            $"destination={DiagnosticPrivacyPolicy.FormatCoordinate(destination.Latitude, destination.Longitude)}, " +
             $"hazards={validHazards.Length}.");
 
         Exception? lastFailure =
@@ -415,7 +415,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 AndroidLog.Warn(
                     LogTag,
                     $"MLD hazard-aware endpoint '{baseUrl}' transport failure: " +
-                    $"{ex.Message}");
+                    DiagnosticPrivacyPolicy.FormatException(ex));
 
                 lastFailure =
                     ex;
@@ -558,7 +558,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                             LogTag,
                             "MLD hazard detour candidate validated SAFE: " +
                             $"pass={pass + 1}, bypass={bypassIndex + 1}, " +
-                            $"waypoint=({waypoint.Latitude:F7},{waypoint.Longitude:F7}), " +
+                            $"waypoint={DiagnosticPrivacyPolicy.FormatCoordinate(waypoint.Latitude, waypoint.Longitude)}, " +
                             $"distance={candidate.TotalDistanceMeters:F1} m.");
 
                         return candidate;

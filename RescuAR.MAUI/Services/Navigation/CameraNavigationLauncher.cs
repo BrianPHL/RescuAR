@@ -3,6 +3,7 @@ using Android.Util;
 #endif
 
 using System.Globalization;
+using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.State;
 
@@ -84,9 +85,8 @@ public static class CameraNavigationLauncher
         Log.Debug(
             LogTag,
             "UI evacuation center mapped to navigation destination: " +
-            $"name='{name}', " +
-            $"lat={coordinate.Latitude:F7}, " +
-            $"lon={coordinate.Longitude:F7}");
+            $"name='{DiagnosticPrivacyPolicy.FormatRouteLabel(name)}', " +
+            $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(coordinate.Latitude, coordinate.Longitude)}");
 #endif
 
         return await OpenAsync(
@@ -109,7 +109,7 @@ public static class CameraNavigationLauncher
 #if ANDROID
             Log.Warn(
                 LogTag,
-                $"Navigation not started: '{center.Name}' has no verified coordinate.");
+                $"Navigation not started: '{DiagnosticPrivacyPolicy.FormatRouteLabel(center.Name)}' has no verified coordinate.");
 #endif
 
             return false;
@@ -167,8 +167,8 @@ public static class CameraNavigationLauncher
             Log.Warn(
                 LogTag,
                 "Navigation not started: " +
-                $"'{cleanName}' coordinate is invalid " +
-                $"({coordinate.Latitude:F7},{coordinate.Longitude:F7}).");
+                $"'{DiagnosticPrivacyPolicy.FormatRouteLabel(cleanName)}' coordinate is invalid " +
+                $"{DiagnosticPrivacyPolicy.FormatCoordinate(coordinate.Latitude, coordinate.Longitude)}.");
 #endif
 
             return false;
@@ -255,7 +255,7 @@ public static class CameraNavigationLauncher
 #if ANDROID
         Log.Debug(
             LogTag,
-            $"Opening Camera tab for destination '{destinationName}'.");
+            $"Opening Camera tab for destination '{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'.");
 #endif
 
         try
@@ -273,7 +273,7 @@ public static class CameraNavigationLauncher
 #if ANDROID
             Log.Debug(
                 LogTag,
-                $"Camera tab navigation completed for '{destinationName}'.");
+                $"Camera tab navigation completed for '{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'.");
 #endif
 
             return true;
@@ -284,7 +284,7 @@ public static class CameraNavigationLauncher
             Log.Error(
                 LogTag,
                 "Failed to open Camera tab after publishing destination: " +
-                $"{exception}");
+                DiagnosticPrivacyPolicy.FormatException(exception));
 #endif
 
             return false;

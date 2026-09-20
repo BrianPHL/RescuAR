@@ -133,14 +133,14 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             AndroidLog.Warn(
                 LogTag,
                 "Online routing timed out. Falling back to offline A*: " +
-                ex.Message);
+                DiagnosticPrivacyPolicy.FormatException(ex));
         }
         catch (HttpRequestException ex)
         {
             AndroidLog.Warn(
                 LogTag,
                 "Online routing transport failed. Falling back to offline A*: " +
-                ex.Message);
+                DiagnosticPrivacyPolicy.FormatException(ex));
         }
 
         return await FindOfflineRouteAsync(
@@ -235,14 +235,14 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 AndroidLog.Warn(
                     LogTag,
                     "Online hazard-aware MLD timed out. Falling back to A*: " +
-                    ex.Message);
+                    DiagnosticPrivacyPolicy.FormatException(ex));
             }
             catch (HttpRequestException ex)
             {
                 AndroidLog.Warn(
                     LogTag,
                     "Online hazard-aware MLD transport failed. Falling back to A*: " +
-                    ex.Message);
+                    DiagnosticPrivacyPolicy.FormatException(ex));
             }
             catch (InvalidDataException ex)
             {
@@ -250,7 +250,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                     LogTag,
                     "Online hazard-aware MLD response/request was unusable. " +
                     "Falling back to A*: " +
-                    ex.Message);
+                    DiagnosticPrivacyPolicy.FormatException(ex));
             }
         }
         else if (internetAvailable)
@@ -349,8 +349,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         AndroidLog.Warn(
             LogTag,
             "OFFLINE A* route request started: " +
-            $"origin=({origin.Latitude:F7},{origin.Longitude:F7}), " +
-            $"destination=({destination.Latitude:F7},{destination.Longitude:F7}).");
+            $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
+            $"destination={DiagnosticPrivacyPolicy.FormatCoordinate(destination.Latitude, destination.Longitude)}.");
 
         RouteResult? route =
             await offline.FindRouteAsync(
@@ -438,7 +438,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 LogTag,
                 "Connectivity-state query failed; treating the device as offline " +
                 "for resilient routing. " +
-                $"{ex.GetType().Name}: {ex.Message}");
+                DiagnosticPrivacyPolicy.FormatException(ex));
 
             return false;
         }

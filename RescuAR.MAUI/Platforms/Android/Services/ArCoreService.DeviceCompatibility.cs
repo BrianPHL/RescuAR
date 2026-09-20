@@ -4,6 +4,7 @@ using Android.Util;
 using Google.AR.Core;
 using System;
 using AndroidBuild = global::Android.OS.Build;
+using RescuAR.Diagnostics;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
@@ -35,7 +36,7 @@ public sealed partial class ArCoreService
                 Tag,
                 "Could not read the controlled Depth-test launch flag; " +
                 "continuing with normal on-demand Depth. " +
-                $"{exception.GetType().Name}: {exception.Message}");
+                DiagnosticPrivacyPolicy.FormatException(exception));
 
             return false;
         }
@@ -121,17 +122,10 @@ public sealed partial class ArCoreService
                 static value =>
                     value.GetDepthSensorUsage().ToString());
 
-        string manufacturer =
-            AndroidBuild.Manufacturer ??
-            "unknown";
-
-        string model =
-            AndroidBuild.Model ??
-            "unknown";
-
-        string device =
-            AndroidBuild.Device ??
-            "unknown";
+        string deviceProfile =
+            DiagnosticPrivacyPolicy.FormatDeviceProfile(
+                AndroidBuild.Manufacturer,
+                AndroidBuild.Model);
 
         int androidApi =
             (int)AndroidBuild.VERSION.SdkInt;
@@ -139,9 +133,7 @@ public sealed partial class ArCoreService
         Log.Info(
             Tag,
             "DEVICE COMPATIBILITY PROFILE: " +
-            $"manufacturer='{manufacturer}', " +
-            $"model='{model}', " +
-            $"device='{device}', " +
+            $"deviceProfile='{deviceProfile}', " +
             $"androidApi={androidApi}, " +
             $"featureLevel={featureLevel}, " +
             $"arCoreAvailability={availability}, " +

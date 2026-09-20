@@ -5,6 +5,7 @@ using Android.Locations;
 
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Devices.Sensors;
+using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
 
 namespace RescuAR.MAUI.Services.Location;
@@ -216,7 +217,7 @@ public sealed class MauiLocationService : ILocationService
         {
             WriteLog(
                 $"{source}: invalid coordinate returned: " +
-                $"lat={location.Latitude}, lon={location.Longitude}");
+                $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(location.Latitude, location.Longitude)}");
 
             return null;
         }
@@ -233,8 +234,7 @@ public sealed class MauiLocationService : ILocationService
 
         WriteLog(
             $"{source}: " +
-            $"lat={reading.Coordinate.Latitude:F7}, " +
-            $"lon={reading.Coordinate.Longitude:F7}, " +
+            $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(reading.Coordinate.Latitude, reading.Coordinate.Longitude)}, " +
             $"accuracy={FormatNullable(reading.AccuracyMeters)} m, " +
             $"altitude={FormatNullable(reading.AltitudeMeters)} m, " +
             $"speed={FormatNullable(reading.SpeedMetersPerSecond)} m/s, " +

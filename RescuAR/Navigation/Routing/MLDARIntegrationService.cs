@@ -344,8 +344,8 @@ public sealed class MLDARIntegrationService
             ProgressLogTag,
             "Approach-to-route AR connector published: " +
             $"distance={connectorDistanceMeters:F1} m, " +
-            $"user=({userCoordinate.Latitude:F7},{userCoordinate.Longitude:F7}), " +
-            $"route=({snappedRouteCoordinate.Latitude:F7},{snappedRouteCoordinate.Longitude:F7}), " +
+            $"user={DiagnosticPrivacyPolicy.FormatCoordinate(userCoordinate.Latitude, userCoordinate.Longitude)}, " +
+            $"route={DiagnosticPrivacyPolicy.FormatCoordinate(snappedRouteCoordinate.Latitude, snappedRouteCoordinate.Longitude)}, " +
             $"arOriginOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m");
 
         return true;
@@ -428,8 +428,7 @@ public sealed class MLDARIntegrationService
             $"windowPoints={localPoints.Count}, " +
             $"window={boundedWindowMeters:F1} m, " +
             $"startDistance={startDistanceMeters:F1} m, " +
-            $"reference=({reference.Latitude:F7}," +
-            $"{reference.Longitude:F7})");
+            $"reference={DiagnosticPrivacyPolicy.FormatCoordinate(reference.Latitude, reference.Longitude)}");
 
         if (localPoints.Count <
             2)

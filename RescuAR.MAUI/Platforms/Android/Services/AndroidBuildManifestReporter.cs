@@ -4,6 +4,8 @@ using Microsoft.Maui.ApplicationModel;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using RescuAR.AR;
+using RescuAR.Diagnostics;
 
 namespace RescuAR.MAUI.Platforms.Android.Services;
 
@@ -66,6 +68,26 @@ internal static class AndroidBuildManifestReporter
                     assembly,
                     "RescuAR.SourceRevision");
 
+            string diagnosticBuild =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.DiagnosticBuild");
+
+            string diagnosticRouteOverride =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.DiagnosticRouteOverride");
+
+            string locationLogPolicy =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.LocationLogPolicy");
+
+            string locationLogRetentionDays =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.LocationLogRetentionDays");
+
             string nativeLibraryDirectory =
                 context.ApplicationInfo?.NativeLibraryDir ??
                 string.Empty;
@@ -101,6 +123,12 @@ internal static class AndroidBuildManifestReporter
                 $"appVersion={AppInfo.Current.VersionString}; " +
                 $"appBuild={AppInfo.Current.BuildString}; " +
                 $"configuration={configuration}; " +
+                $"diagnosticBuild={diagnosticBuild}; " +
+                $"diagnosticRouteOverride={diagnosticRouteOverride}; " +
+                $"locationLogPolicy={locationLogPolicy}; " +
+                $"locationLogRetentionDays={locationLogRetentionDays}; " +
+                $"locationLogConsent={DiagnosticPrivacyPolicy.HasLocationLoggingConsent}; " +
+                $"stateGlossary={ARStateTerminology.Version}; " +
                 $"targetFramework='{targetFramework}'; " +
                 $"assemblyInformationalVersion='{informationalVersion}'; " +
                 $"package='{context.PackageName}'; " +
@@ -119,8 +147,7 @@ internal static class AndroidBuildManifestReporter
             Log.Error(
                 Tag,
                 "BUILD_MANIFEST_FAILED " +
-                $"failureType={exception.GetType().Name}; " +
-                $"message='{exception.Message}'.");
+                $"details='{DiagnosticPrivacyPolicy.FormatException(exception)}'.");
         }
     }
 

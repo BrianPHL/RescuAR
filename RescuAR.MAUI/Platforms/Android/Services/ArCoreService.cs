@@ -283,7 +283,8 @@ public sealed partial class ArCoreService : IArCoreService
      * --------------------------------
      * ARCore Plane growth can take 10-16 seconds on glossy or repetitive
      * indoor floors. After a short verified-tracking interval, publish a
-     * fixed camera-relative floor estimate so consultation guidance can begin
+     * fixed camera-relative floor estimate so provisional ground-referenced
+     * guidance can begin
      * without waiting for Plane polygon growth. Real Plane/Depth acquisition
      * continues unchanged in the background and always replaces this estimate.
      *
@@ -1913,7 +1914,7 @@ public sealed partial class ArCoreService : IArCoreService
             {
                 ARGroundStateBridge.PublishProvisional(
                     frameMetadata.Generation,
-                    "camera-relative provisional consultation ground");
+                    "camera-relative provisional ground");
             }
             else if (ARGroundStateBridge.Current.Trust !=
                      ARGroundTrust.Verified)
@@ -2998,12 +2999,12 @@ public sealed partial class ArCoreService : IArCoreService
 
             ARGroundStateBridge.PublishProvisional(
                 ARRenderGenerationBridge.Current,
-                "camera-relative provisional consultation ground");
+                "camera-relative provisional ground");
 
             Log.Warn(
                 SpatialPoseTag,
                 "PROVISIONAL ground reference published for emergency-start " +
-                "consultation: " +
+                "guidance: " +
                 $"delay={elapsedMilliseconds}ms, " +
                 $"estimatedCameraHeight={ProvisionalCameraHeightMeters:F2}m, " +
                 $"reference=({provisionalGroundX:F2}," +
@@ -3081,7 +3082,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         ARCameraSpatialController.SetRouteRecoveryRebasePending(
             true,
-            "verified floor replaced provisional consultation reference");
+            "verified floor replaced provisional ground reference");
 
         Log.Debug(
             SpatialPoseTag,

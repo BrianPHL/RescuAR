@@ -59,10 +59,10 @@ public sealed class OffRouteReroutePolicy
             update.CrossTrackErrorMeters,
             update.AccuracyMeters,
             update.MatchConfidence,
-            timestampUtc,
-            developerSimulation: false);
+            timestampUtc);
     }
 
+#if RESCUAR_DIAGNOSTICS
     /// <summary>
     /// Developer-validation hook used only by the temporary CameraPage test
     /// harness. It deliberately bypasses geometric route matching while still
@@ -98,17 +98,16 @@ public sealed class OffRouteReroutePolicy
             crossTrackErrorMeters: simulatedCrossTrackErrorMeters,
             accuracyMeters: simulatedAccuracyMeters,
             matchConfidence: RouteMatchConfidence.High,
-            timestampUtc,
-            developerSimulation: true);
+            timestampUtc);
     }
+#endif
 
     private OffRouteDecision EvaluateCore(
         bool isOffRoute,
         double crossTrackErrorMeters,
         double? accuracyMeters,
         RouteMatchConfidence matchConfidence,
-        DateTimeOffset timestampUtc,
-        bool developerSimulation)
+        DateTimeOffset timestampUtc)
     {
         bool accuracyUsable =
             accuracyMeters.HasValue &&
@@ -192,6 +191,11 @@ public sealed class OffRouteReroutePolicy
                 0;
         }
 
+        string reason =
+            shouldReroute
+                ? "repeated trustworthy off-route GPS matches confirmed"
+                : "waiting for repeated off-route confirmation";
+
         return new OffRouteDecision(
             true,
             shouldReroute,
@@ -200,13 +204,7 @@ public sealed class OffRouteReroutePolicy
             crossTrackErrorMeters,
             accuracyMeters,
             matchConfidence,
-            shouldReroute
-                ? developerSimulation
-                    ? "DEVELOPER SIMULATION: repeated trustworthy off-route confirmations injected"
-                    : "repeated trustworthy off-route GPS matches confirmed"
-                : developerSimulation
-                    ? "DEVELOPER SIMULATION: waiting for repeated off-route confirmation"
-                    : "waiting for repeated off-route confirmation");
+            reason);
     }
 
     public readonly record struct OffRouteDecision(

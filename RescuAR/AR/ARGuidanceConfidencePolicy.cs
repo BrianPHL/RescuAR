@@ -4,7 +4,7 @@ namespace RescuAR.AR;
 
 /// <summary>
 /// Combines the critical inputs used by AR navigation into one route-visibility
-/// decision. The camera preview remains available even when cyan geometry is
+/// decision. Camera passthrough remains available even when cyan geometry is
 /// withheld, allowing text guidance and recovery instructions to continue.
 /// </summary>
 public static class ARGuidanceConfidencePolicy
@@ -146,7 +146,7 @@ public static class ARGuidanceConfidencePolicy
                 GuidanceConfidenceState.Full,
                 score,
                 true,
-                "AR guidance ready");
+                "AR guidance readiness: Full");
         }
 
         bool degradedGuidance =

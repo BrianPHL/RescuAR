@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Reports;
+using RescuAR.Diagnostics;
 using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Models;
 
@@ -51,8 +52,10 @@ public sealed class HazardReroutingService
     private RouteHazard[] verifiedRemoteHazards =
         Array.Empty<RouteHazard>();
 
+#if RESCUAR_DIAGNOSTICS
     private RouteHazard[] developerHazards =
         Array.Empty<RouteHazard>();
+#endif
 
     private readonly Dictionary<string, DateTimeOffset> lastRerouteAttemptUtcByHazard =
         new(StringComparer.Ordinal);
@@ -191,10 +194,10 @@ public sealed class HazardReroutingService
         {
             WriteWarning(
                 "ACTIVE ROUTE HAZARD DETECTED: " +
-                $"id='{hazard.Id}', " +
+                $"id='{DiagnosticPrivacyPolicy.FormatRouteLabel(hazard.Id)}', " +
                 $"category='{hazard.Category}', " +
                 $"severity='{hazard.Severity}', " +
-                $"title='{hazard.Title}', " +
+                $"title='{DiagnosticPrivacyPolicy.FormatRouteLabel(hazard.Title)}', " +
                 $"distanceAhead={intersection.DistanceAheadMeters:F1} m, " +
                 $"routeClearance={intersection.MinimumDistanceMeters:F1} m, " +
                 $"exclusionRadius={hazard.RadiusMeters:F1} m, " +
@@ -260,6 +263,7 @@ public sealed class HazardReroutingService
         return true;
     }
 
+#if RESCUAR_DIAGNOSTICS
     /// <summary>
     /// Adds/replaces a controlled test hazard without touching production
     /// report data. Used only by the Stage 10 developer field-test harness.
@@ -291,17 +295,20 @@ public sealed class HazardReroutingService
             hazard is null
                 ? "Developer route hazard cleared."
                 : "DEVELOPER ROUTE HAZARD ARMED: " +
-                  $"id='{hazard.Id}', " +
-                  $"coord=({hazard.Coordinate.Latitude:F7},{hazard.Coordinate.Longitude:F7}), " +
+                  $"id='{DiagnosticPrivacyPolicy.FormatRouteLabel(hazard.Id)}', " +
+                  $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(hazard.Coordinate.Latitude, hazard.Coordinate.Longitude)}, " +
                   $"radius={hazard.RadiusMeters:F1} m.");
     }
+#endif
 
     public void ResetSessionState()
     {
         lock (sync)
         {
+#if RESCUAR_DIAGNOSTICS
             developerHazards =
                 Array.Empty<RouteHazard>();
+#endif
 
             lastRerouteAttemptUtcByHazard.Clear();
 
@@ -402,7 +409,7 @@ public sealed class HazardReroutingService
         {
             WriteWarning(
                 "Verified hazard refresh failed; retaining previous snapshot: " +
-                $"{exception.GetType().Name}: {exception.Message}");
+                DiagnosticPrivacyPolicy.FormatException(exception));
         }
         finally
         {
@@ -479,7 +486,8 @@ public sealed class HazardReroutingService
         {
             WriteWarning(
                 "Unable to load cached verified hazards; continuing without " +
-                $"offline hazard cache: {exception.Message}");
+                "offline hazard cache: " +
+                DiagnosticPrivacyPolicy.FormatException(exception));
         }
     }
 
@@ -520,7 +528,7 @@ public sealed class HazardReroutingService
         {
             WriteWarning(
                 "Unable to persist verified hazard snapshot: " +
-                exception.Message);
+                DiagnosticPrivacyPolicy.FormatException(exception));
         }
     }
 
@@ -547,6 +555,7 @@ public sealed class HazardReroutingService
 
     private RouteHazard[] MergeHazardsLocked()
     {
+#if RESCUAR_DIAGNOSTICS
         if (developerHazards.Length == 0)
         {
             return verifiedRemoteHazards.ToArray();
@@ -560,6 +569,9 @@ public sealed class HazardReroutingService
                 StringComparer.Ordinal)
             .Select(group => group.Last())
             .ToArray();
+#else
+        return verifiedRemoteHazards.ToArray();
+#endif
     }
 
     private static bool IsApprovedRoutingHazard(

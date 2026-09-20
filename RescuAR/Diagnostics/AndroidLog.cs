@@ -15,10 +15,11 @@ namespace RescuAR.Diagnostics;
 public static class AndroidLog
 {
     /// <summary>
-    /// Detailed diagnostics are compiled out of Release callers. Information,
-    /// warning, and error messages remain available for field validation.
+    /// Detailed diagnostics are compiled only into explicit diagnostic builds.
+    /// Information, warning, and error messages remain available for field
+    /// validation, with sensitive fields passed through DiagnosticPrivacyPolicy.
     /// </summary>
-    [System.Diagnostics.Conditional("DEBUG")]
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
     public static void Debug(
         string tag,
         string message)
