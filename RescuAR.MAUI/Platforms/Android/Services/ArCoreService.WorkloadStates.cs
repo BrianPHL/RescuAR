@@ -44,6 +44,7 @@ public sealed partial class ArCoreService
 
         bool desiredDepth =
             depthModeSupported &&
+            !forceDepthDisabledForExperiment &&
             (groundDepthRequested ||
              floodDepthRequired ||
              routeOcclusionRequired);
@@ -116,6 +117,7 @@ public sealed partial class ArCoreService
                 "AR WORKLOAD STATE: " +
                 $"planeFinding={(planeFindingEnabled ? "ACTIVE" : "SUSPENDED")}, " +
                 $"depth={(depthModeEnabled ? "ACTIVE" : "SUSPENDED")}, " +
+                $"experimentMode={depthExperimentMode}, " +
                 $"groundSearch={groundDepthRequested}, " +
                 $"floodDepth={floodDepthRequired}, " +
                 $"routeOcclusion={routeOcclusionRequired}.");

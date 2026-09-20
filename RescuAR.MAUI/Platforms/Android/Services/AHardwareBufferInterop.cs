@@ -160,6 +160,11 @@ internal static class AHardwareBufferInterop
                 "AHardwareBuffer_fromHardwareBuffer failed.");
         }
 
+        ArCoreJniOwnershipDiagnostics.Record(
+            "AHardwareBuffer",
+            "AHardwareBuffer_fromHardwareBuffer",
+            "NATIVE_ACQUIRE");
+
         return nativeHardwareBuffer;
     }
 
@@ -176,6 +181,11 @@ internal static class AHardwareBufferInterop
 
         ReleaseNativeHardwareBuffer(
             nativeHardwareBuffer);
+
+        ArCoreJniOwnershipDiagnostics.Record(
+            "AHardwareBuffer",
+            "AHardwareBuffer_release",
+            "NATIVE_RELEASE");
     }
 }
 

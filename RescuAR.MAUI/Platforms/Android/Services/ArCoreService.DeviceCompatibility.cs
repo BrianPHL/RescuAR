@@ -14,6 +14,33 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 /// </summary>
 public sealed partial class ArCoreService
 {
+    private const string ForceDepthOffIntentExtra =
+        "rescuar.arcore.force_depth_off";
+
+    private static bool IsDepthDisabledForControlledRetest()
+    {
+        try
+        {
+            return global::Microsoft.Maui.ApplicationModel.Platform
+                .CurrentActivity?
+                .Intent?
+                .GetBooleanExtra(
+                    ForceDepthOffIntentExtra,
+                    false) ??
+                false;
+        }
+        catch (Exception exception)
+        {
+            Log.Warn(
+                Tag,
+                "Could not read the controlled Depth-test launch flag; " +
+                "continuing with normal on-demand Depth. " +
+                $"{exception.GetType().Name}: {exception.Message}");
+
+            return false;
+        }
+    }
+
     private void LogDeviceCompatibilityProfile(
         Session currentSession,
         ArCoreApk.Availability availability)
@@ -119,6 +146,8 @@ public sealed partial class ArCoreService
             $"featureLevel={featureLevel}, " +
             $"arCoreAvailability={availability}, " +
             $"depthSupported={depthModeSupported}, " +
+            $"depthExperimentMode={depthExperimentMode}, " +
+            $"depthEnabled={depthModeEnabled}, " +
             $"cameraFacing={cameraFacing}, " +
             $"cameraFps={cameraFps}, " +
             $"gpuTexture={gpuTexture}, " +

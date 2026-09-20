@@ -10,6 +10,7 @@ using Microsoft.Maui.Storage;
 using RescuAR.App.Services.Authentication;
 
 using RescuAR.MAUI;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Authentication
 {
@@ -219,11 +220,15 @@ namespace RescuAR.App.ViewModels.Authentication
                     Compass.Default.Stop();
                 }
 
-                if (OrientationSensor.Default.IsSupported && !OrientationSensor.Default.IsMonitoring)
+                if (OrientationSensor.Default.IsSupported)
                 {
-                    OrientationSensor.Default.Start(SensorSpeed.UI);
+                    using IDisposable orientationLease =
+                        SharedMotionSensorLeaseManager.AcquireOrientation(
+                            nameof(PermissionsViewModel),
+                            static (_, _) => { },
+                            SensorSpeed.UI);
+
                     await Task.Delay(100);
-                    OrientationSensor.Default.Stop();
                 }
             }
             catch (Exception ex)

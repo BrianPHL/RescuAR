@@ -314,6 +314,11 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool depthModeEnabled;
 
+    private bool forceDepthDisabledForExperiment;
+
+    private string depthExperimentMode =
+        "DEPTH_ON_DEMAND";
+
     /*
      * Updated by the spatial-pose path on every tracked frame. Depth remains
      * available while the local ground anchor is missing or a validated
@@ -550,13 +555,22 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 8: Configuring DepthMode when supported.");
 
+            forceDepthDisabledForExperiment =
+                IsDepthDisabledForControlledRetest();
+
+            depthExperimentMode =
+                forceDepthDisabledForExperiment
+                    ? "FORCED_DEPTH_OFF"
+                    : "DEPTH_ON_DEMAND";
+
             depthModeSupported =
                 TryConfigureAutomaticDepth(
                     session,
                     config);
 
             depthModeEnabled =
-                depthModeSupported;
+                depthModeSupported &&
+                !forceDepthDisabledForExperiment;
 
             Log.Debug(
                 Tag,
@@ -1341,6 +1355,11 @@ public sealed partial class ArCoreService : IArCoreService
                 return null;
             }
 
+            ArCoreJniOwnershipDiagnostics.Record(
+                "Frame",
+                "Session.Update",
+                "BORROWED_WRAPPER");
+
             long timestamp =
                 frame.Timestamp;
 
@@ -1423,6 +1442,11 @@ public sealed partial class ArCoreService : IArCoreService
 
                 return frame;
             }
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "HardwareBuffer",
+                "Frame.HardwareBuffer",
+                "OWNED_UNTIL_CLOSE");
 
             bool ownershipTransferred =
                 false;
@@ -1619,6 +1643,11 @@ public sealed partial class ArCoreService : IArCoreService
     private static void CloseHardwareBuffer(
         HardwareBuffer hardwareBuffer)
     {
+        ArCoreJniOwnershipDiagnostics.Record(
+            "HardwareBuffer",
+            "CloseHardwareBuffer",
+            "CLOSE_AND_DISPOSE");
+
         try
         {
             hardwareBuffer.Close();
@@ -1714,10 +1743,19 @@ public sealed partial class ArCoreService : IArCoreService
         string trackingFailureReason =
             camera.TrackingFailureReason.ToString();
 
+        ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+            ARTrackingStateBridge.PublishObservation(
+                frameMetadata.Generation.SessionGeneration,
+                trackingState,
+                trackingFailureReason,
+                timestamp,
+                depthModeEnabled);
+
         LogTrackingTransitionIfNeeded(
             trackingState,
             trackingFailureReason,
-            timestamp);
+            timestamp,
+            trackingSnapshot);
 
         if (!trackingState.Equals(
                 "Tracking",
@@ -1777,6 +1815,11 @@ public sealed partial class ArCoreService : IArCoreService
 
             return;
         }
+
+        ArCoreJniOwnershipDiagnostics.Record(
+            "Pose",
+            "Camera.DisplayOrientedPose",
+            "USING_DISPOSE");
 
         float[] translation =
             new float[3];
@@ -2281,6 +2324,11 @@ public sealed partial class ArCoreService : IArCoreService
 
         foreach (Google.AR.Core.HitResult hit in hitResults)
         {
+            ArCoreJniOwnershipDiagnostics.Record(
+                "HitResult",
+                "TryCreatePlaneGroundAnchorFromHits",
+                "ENUMERATED_BORROWED_WRAPPER");
+
             if (hit.Trackable is not ArCorePlane plane)
             {
                 continue;
@@ -2288,11 +2336,25 @@ public sealed partial class ArCoreService : IArCoreService
 
             planeObserved = true;
 
+            ArCoreJniOwnershipDiagnostics.Record(
+                "Plane",
+                "HitResult.Trackable",
+                "BORROWED_WRAPPER");
+
             using Google.AR.Core.Pose? hitPose =
                 hit.HitPose;
 
-            if (hitPose is null ||
-                !plane.IsPoseInPolygon(
+            if (hitPose is null)
+            {
+                continue;
+            }
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "Pose",
+                "HitResult.HitPose.Plane",
+                "USING_DISPOSE");
+
+            if (!plane.IsPoseInPolygon(
                     hitPose))
             {
                 continue;
@@ -2305,6 +2367,11 @@ public sealed partial class ArCoreService : IArCoreService
             {
                 continue;
             }
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "Pose",
+                "Plane.CenterPose",
+                "USING_DISPOSE");
 
             float[]? planeNormal =
                 planeCenterPose.GetTransformedAxis(
@@ -2478,12 +2545,22 @@ public sealed partial class ArCoreService : IArCoreService
 
         foreach (Google.AR.Core.HitResult hit in hitResults)
         {
+            ArCoreJniOwnershipDiagnostics.Record(
+                "HitResult",
+                "TryCreateDepthGroundAnchorFromHits",
+                "ENUMERATED_BORROWED_WRAPPER");
+
             if (hit.Trackable is not Google.AR.Core.DepthPoint)
             {
                 continue;
             }
 
             depthPointObserved = true;
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "DepthPoint",
+                "HitResult.Trackable",
+                "BORROWED_WRAPPER");
 
             using Google.AR.Core.Pose? hitPose = hit.HitPose;
 
@@ -2492,6 +2569,11 @@ public sealed partial class ArCoreService : IArCoreService
                 RecordGroundProbeRejection(GroundProbeRejection.NoTrackable);
                 continue;
             }
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "Pose",
+                "HitResult.HitPose.DepthPoint",
+                "USING_DISPOSE");
 
             float[]? surfaceNormal = hitPose.GetTransformedAxis(1, 1.0f);
 
@@ -3055,7 +3137,8 @@ public sealed partial class ArCoreService : IArCoreService
     private void LogTrackingTransitionIfNeeded(
         string trackingState,
         string trackingFailureReason,
-        long timestamp)
+        long timestamp,
+        ARTrackingStateBridge.TrackingSnapshot snapshot)
     {
         bool stateChanged =
             !string.Equals(
@@ -3085,10 +3168,18 @@ public sealed partial class ArCoreService : IArCoreService
 
         Log.Debug(
             SpatialPoseTag,
-            "ARCore tracking transition: " +
+            "ARCORE_TRACKING_TRANSITION " +
             $"{previousState} -> {trackingState}; " +
             $"failure {previousFailureReason} -> {trackingFailureReason}; " +
-            $"frameTimestamp={timestamp}");
+            $"frameTimestamp={timestamp}; " +
+            $"sessionGeneration={snapshot.SessionGeneration}; " +
+            $"depthEnabled={snapshot.DepthEnabled}; " +
+            $"activePauses={snapshot.ActivePauseTransitionCount}; " +
+            $"lifecyclePauses={snapshot.LifecyclePauseTransitionCount}; " +
+            $"recoveries={snapshot.RecoveryTransitionCount}; " +
+            $"lossStart={snapshot.LossStartedAtUtc?.ToString("O") ?? "<none>"}; " +
+            $"lastLossDurationMs={snapshot.LastLossDurationMilliseconds}; " +
+            $"recoveryTransition='{snapshot.RecoveryTransition}'");
 
         if (trackingState.Equals(
                 "Tracking",
@@ -3362,6 +3453,11 @@ public sealed partial class ArCoreService : IArCoreService
             using global::Android.Media.Image depthImage =
                 frame.AcquireDepthImage16Bits();
 
+            ArCoreJniOwnershipDiagnostics.Record(
+                "DepthImage",
+                "Frame.AcquireDepthImage16Bits",
+                "USING_DISPOSE");
+
             int width =
                 depthImage.Width;
 
@@ -3380,6 +3476,11 @@ public sealed partial class ArCoreService : IArCoreService
 
             global::Android.Media.Image.Plane[]? planes =
                 depthImage.GetPlanes();
+
+            ArCoreJniOwnershipDiagnostics.Record(
+                "ImagePlaneArray",
+                "DepthImage.GetPlanes",
+                "BORROWED_WRAPPERS");
 
             if (planes is null ||
                 planes.Length < 1)
@@ -4024,7 +4125,8 @@ public sealed partial class ArCoreService : IArCoreService
                     automaticDepthMode);
 
             config.SetDepthMode(
-                isSupported
+                isSupported &&
+                !forceDepthDisabledForExperiment
                     ? automaticDepthMode
                     : Google.AR.Core.Config.DepthMode.Disabled);
 
@@ -4032,7 +4134,8 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "ARCore Depth API configuration: " +
                 $"supported={isSupported}, " +
-                $"requested={(isSupported ? "AUTOMATIC" : "DISABLED")}. " +
+                $"experimentMode={depthExperimentMode}, " +
+                $"requested={(isSupported && !forceDepthDisabledForExperiment ? "AUTOMATIC" : "DISABLED")}. " +
                 "Ground acquisition uses spatially supported Plane hits first and rolling-confidence DepthPoint fallback when enabled.");
 
             return isSupported;

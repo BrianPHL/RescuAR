@@ -4,6 +4,7 @@ using Android.Util;
 #endif
 
 using System.Numerics;
+using Microsoft.Maui.Devices;
 using Microsoft.Maui.Devices.Sensors;
 using RescuAR.AR;
 using RescuAR.Navigation.Models;
@@ -65,6 +66,14 @@ public sealed class ArHeadingAlignmentService : IDisposable
     private const double StableMaxDeviationDegrees =
         8.0;
 
+    private const double StableMinimumCircularConcentration =
+        0.98;
+
+    private const string HeadingCoordinateConvention =
+        "device(+X right,+Y screen-top,+Z display-out); " +
+        "rear-camera=-Z; earth(+X east,+Y north,+Z up); " +
+        "ARCore camera=-Z; AR azimuth atan2(+X,+Z)";
+
     private readonly object sync =
         new();
 
@@ -77,6 +86,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
     private bool hasOrientationReading;
     private bool started;
     private bool disposed;
+    private IDisposable? orientationLease;
 
     /*
      * The map<->AR relationship belongs to the retained ARCore Session, not
@@ -174,14 +184,11 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
         try
         {
-            OrientationSensor.Default.ReadingChanged +=
-                OnOrientationReadingChanged;
-
-            if (!OrientationSensor.Default.IsMonitoring)
-            {
-                OrientationSensor.Default.Start(
+            orientationLease =
+                SharedMotionSensorLeaseManager.AcquireOrientation(
+                    nameof(ArHeadingAlignmentService),
+                    OnOrientationReadingChanged,
                     SensorSpeed.UI);
-            }
 
             lock (sync)
             {
@@ -197,15 +204,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
         }
         catch (Exception exception)
         {
-            try
-            {
-                OrientationSensor.Default.ReadingChanged -=
-                    OnOrientationReadingChanged;
-            }
-            catch
-            {
-                // Best effort cleanup only.
-            }
+            Interlocked.Exchange(
+                ref orientationLease,
+                null)?.Dispose();
 
 #if ANDROID
             Log.Error(
@@ -239,25 +240,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
             return;
         }
 
-        try
-        {
-            OrientationSensor.Default.ReadingChanged -=
-                OnOrientationReadingChanged;
-
-            if (OrientationSensor.Default.IsMonitoring)
-            {
-                OrientationSensor.Default.Stop();
-            }
-        }
-        catch (Exception exception)
-        {
-#if ANDROID
-            Log.Warn(
-                LogTag,
-                $"Stopping orientation sensor reported: " +
-                $"{exception.GetType().Name}: {exception.Message}");
-#endif
-        }
+        Interlocked.Exchange(
+            ref orientationLease,
+            null)?.Dispose();
 
 #if ANDROID
         Log.Debug(
@@ -365,8 +350,16 @@ public sealed class ArHeadingAlignmentService : IDisposable
                                         item.MapToArYawDegrees -
                                         meanYaw)));
 
+                    double circularConcentration =
+                        CircularConcentration(
+                            samples.Select(
+                                item =>
+                                    item.MapToArYawDegrees));
+
                     if (maxDeviation <=
-                        StableMaxDeviationDegrees)
+                            StableMaxDeviationDegrees &&
+                        circularConcentration >=
+                            StableMinimumCircularConcentration)
                     {
                         HeadingAlignmentResult locked =
                             sample with
@@ -377,6 +370,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                                     samples.Count,
                                 MaxSampleDeviationDegrees =
                                     maxDeviation,
+                                CircularConcentration =
+                                    circularConcentration,
                                 IsStable =
                                     true
                             };
@@ -429,7 +424,13 @@ public sealed class ArHeadingAlignmentService : IDisposable
                         Math.Abs(
                             NormalizeSignedDegrees(
                                 item.MapToArYawDegrees -
-                                meanYaw)));
+                                    meanYaw)));
+
+            double circularConcentration =
+                CircularConcentration(
+                    samples.Select(
+                        item =>
+                            item.MapToArYawDegrees));
 
             HeadingAlignmentResult bestEffort =
                 latest with
@@ -440,6 +441,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                         samples.Count,
                     MaxSampleDeviationDegrees =
                         maxDeviation,
+                    CircularConcentration =
+                        circularConcentration,
                     IsStable =
                         false
                 };
@@ -448,7 +451,10 @@ public sealed class ArHeadingAlignmentService : IDisposable
             Log.Warn(
                 LogTag,
                 "Heading calibration timed out before reaching the stability " +
-                "threshold; using the circular mean without locking it for the session.");
+                "threshold; using the circular mean without locking it for the session. " +
+                $"maxDeviation={maxDeviation:F2}deg, " +
+                $"circularConcentration={circularConcentration:F3}. " +
+                "Magnetic interference or device movement may be present.");
 #endif
 
             return bestEffort;
@@ -500,7 +506,10 @@ public sealed class ArHeadingAlignmentService : IDisposable
                     0,
                     double.NaN,
                     false,
-                    timestampUtc);
+                    timestampUtc,
+                    GetDisplayRotationName(),
+                    HeadingCoordinateConvention,
+                    0.0);
 
             corrected =
                 previous with
@@ -783,7 +792,10 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 1,
                 0.0,
                 false,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow,
+                GetDisplayRotationName(),
+                HeadingCoordinateConvention,
+                1.0);
 
         return true;
     }
@@ -841,6 +853,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
             $"arCameraAzimuth={result.ArCameraAzimuthDegrees:F2} deg, " +
             $"samples={result.SampleCount}, " +
             $"maxDeviation={result.MaxSampleDeviationDegrees:F2} deg, " +
+            $"circularConcentration={result.CircularConcentration:F3}, " +
+            $"displayRotation={result.DisplayRotation}, " +
+            $"coordinateConvention='{result.CoordinateConvention}', " +
             $"stable={result.IsStable}, " +
             $"spatialVersion={result.SpatialVersion}");
 #endif
@@ -890,6 +905,44 @@ public sealed class ArHeadingAlignmentService : IDisposable
                     count,
                     cosSum /
                     count)));
+    }
+
+    private static string GetDisplayRotationName()
+    {
+        try
+        {
+            return DeviceDisplay.MainDisplayInfo.Rotation.ToString();
+        }
+        catch
+        {
+            return "Unavailable";
+        }
+    }
+
+    private static double CircularConcentration(
+        IEnumerable<double> values)
+    {
+        double sinSum = 0.0;
+        double cosSum = 0.0;
+        int count = 0;
+
+        foreach (double value in values)
+        {
+            double radians = value * Math.PI / 180.0;
+            sinSum += Math.Sin(radians);
+            cosSum += Math.Cos(radians);
+            count++;
+        }
+
+        if (count == 0)
+        {
+            return 0.0;
+        }
+
+        return Math.Clamp(
+            Math.Sqrt(sinSum * sinSum + cosSum * cosSum) / count,
+            0.0,
+            1.0);
     }
 
     private static double Normalize360Degrees(
@@ -965,5 +1018,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
         int SampleCount,
         double MaxSampleDeviationDegrees,
         bool IsStable,
-        DateTimeOffset Timestamp);
+        DateTimeOffset Timestamp,
+        string DisplayRotation,
+        string CoordinateConvention,
+        double CircularConcentration);
 }

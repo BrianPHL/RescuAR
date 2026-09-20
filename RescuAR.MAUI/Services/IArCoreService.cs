@@ -1,3 +1,5 @@
+using RescuAR.AR;
+
 namespace RescuAR.MAUI.Services;
 
 public interface IArCoreService : IAsyncDisposable
@@ -11,6 +13,13 @@ public interface IArCoreService : IAsyncDisposable
     ArCoreLifecycleSnapshot LifecycleSnapshot { get; }
 
     ArCoreCapabilitySnapshot CapabilitySnapshot { get; }
+
+    /// <summary>
+    /// The authoritative tracking transition snapshot shared by UI and
+    /// render gates. Lifecycle pauses are explicitly separated from active
+    /// session tracking degradation.
+    /// </summary>
+    ARTrackingStateBridge.TrackingSnapshot TrackingSnapshot { get; }
 
     Task<ArCoreLifecycleResult> EnsureRunningAsync(
         CancellationToken cancellationToken = default);

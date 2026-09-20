@@ -1040,11 +1040,13 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
+            ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+                _arCoreService.TrackingSnapshot;
             bool insufficientLight =
-                !spatial.IsTracking &&
+                !trackingSnapshot.IsTracking &&
                 !string.IsNullOrWhiteSpace(
-                    spatial.TrackingFailureReason) &&
-                spatial.TrackingFailureReason.Contains(
+                    trackingSnapshot.FailureReason) &&
+                trackingSnapshot.FailureReason.Contains(
                     "LIGHT",
                     StringComparison.OrdinalIgnoreCase);
 
@@ -1268,6 +1270,9 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+                _arCoreService.TrackingSnapshot;
+
             bool headingTrusted =
                 lastHeadingAlignment.HasValue &&
                 lastHeadingAlignment.Value.IsAvailable &&
@@ -1376,6 +1381,23 @@ namespace RescuAR.App.Views.Camera
                                 : "GPS accuracy reduced — verify direction with the 2D map"
                     }
                     : policyConfidence;
+
+            if (trackingSnapshot.IsAvailable &&
+                !trackingSnapshot.IsTracking &&
+                !trackingSnapshot.IsIntentionalLifecycleEvent)
+            {
+                confidence = confidence with
+                {
+                    State =
+                        ARGuidanceConfidencePolicy
+                            .GuidanceConfidenceState
+                            .Hidden,
+                    AllowsRouteGeometry = false,
+                    DisplayMessage =
+                        GetTrackingRecoveryMessage(
+                            trackingSnapshot.FailureReason)
+                };
+            }
 
             if (lowLightFallbackActive)
             {
@@ -1487,6 +1509,40 @@ namespace RescuAR.App.Views.Camera
 
             arTrackingStatusLabel.Text =
                 confidence.DisplayMessage;
+        }
+
+        private static string GetTrackingRecoveryMessage(
+            string failureReason)
+        {
+            if (failureReason.Contains(
+                    "LIGHT",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "AR tracking paused—move to a brighter area";
+            }
+
+            if (failureReason.Contains(
+                    "MOTION",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "AR tracking paused—move the phone more slowly";
+            }
+
+            if (failureReason.Contains(
+                    "FEATURE",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "AR tracking paused—aim at a textured surface";
+            }
+
+            if (failureReason.Contains(
+                    "CAMERA",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "AR camera interrupted—return to the camera view";
+            }
+
+            return "AR tracking paused—hold the phone steady";
         }
 
         private bool ShouldEnableConsultationRouteVisibilityOverride(
@@ -9322,12 +9378,28 @@ namespace RescuAR.App.Views.Camera
             PedestrianDeadReckoningService.PdrStepDetectedEventArgs e)
         {
 #if ANDROID
+            Log.Info(
+                PdrLogTag,
+                "PDR STEP OUTCOME: outcome=DETECTED; " +
+                $"step={e.StepNumber}; " +
+                $"peakDynamicG={e.PeakDynamicAccelerationG:F3}; " +
+                $"magnitudeG={e.AccelerationMagnitudeG:F3}; " +
+                $"peakDurationMs={e.PeakDurationMilliseconds:F0}.");
+
             if (!EnablePedestrianDeadReckoning ||
                 safeZoneConfirmed ||
                 !pageIsVisible ||
                 !_arCoreService.IsInitialized ||
                 _arCoreService.IsSessionPaused)
             {
+                RecordPdrStepRejection(
+                    e,
+                    "SERVICE_STATE",
+                    $"enabled={EnablePedestrianDeadReckoning}, " +
+                    $"safeZone={safeZoneConfirmed}, visible={pageIsVisible}, " +
+                    $"initialized={_arCoreService.IsInitialized}, " +
+                    $"sessionPaused={_arCoreService.IsSessionPaused}");
+
                 return;
             }
 
@@ -9336,6 +9408,11 @@ namespace RescuAR.App.Views.Camera
 
             if (route is null)
             {
+                RecordPdrStepRejection(
+                    e,
+                    "NO_ACTIVE_ROUTE",
+                    "active route is unavailable");
+
                 return;
             }
 
@@ -9343,12 +9420,10 @@ namespace RescuAR.App.Views.Camera
                 lastRouteMatchConfidence <
                 RouteMatchConfidence.Medium)
             {
-                rejectedPdrStepCount++;
-
-                LogDetailedDebug(
-                    PdrLogTag,
-                    "PDR step held because the current route-segment match " +
-                    $"is not trustworthy: confidence={lastRouteMatchConfidence}.");
+                RecordPdrStepRejection(
+                    e,
+                    "ROUTE_MATCH_LOW",
+                    $"confidence={lastRouteMatchConfidence}");
 
                 return;
             }
@@ -9356,12 +9431,10 @@ namespace RescuAR.App.Views.Camera
             if (!IndoorRouteTestMode &&
                 _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
             {
-                rejectedPdrStepCount++;
-
-                LogDetailedDebug(
-                    PdrLogTag,
-                    "PDR step held while GPS route identity is unresolved. " +
-                    $"step={e.StepNumber}.");
+                RecordPdrStepRejection(
+                    e,
+                    "ROUTE_IDENTITY_SUSPENDED",
+                    "GPS route identity is unresolved");
 
                 return;
             }
@@ -9373,12 +9446,10 @@ namespace RescuAR.App.Views.Camera
                     out PdrHeadingSmoother.HeadingEstimate headingEstimate,
                     out string unavailableReason))
             {
-                rejectedPdrStepCount++;
-
-                LogDetailedDebug(
-                    PdrLogTag,
-                    "PDR step held: route-direction validation unavailable. " +
-                    $"step={e.StepNumber}, reason={unavailableReason}");
+                RecordPdrStepRejection(
+                    e,
+                    "HEADING_UNAVAILABLE",
+                    unavailableReason);
 
                 return;
             }
@@ -9404,12 +9475,9 @@ namespace RescuAR.App.Views.Camera
 
             if (!pdrConfidence.IsAccepted)
             {
-                rejectedPdrStepCount++;
-
-                LogDetailedDebug(
-                    PdrLogTag,
-                    "PDR step REJECTED by confidence gate: " +
-                    $"step={e.StepNumber}, " +
+                RecordPdrStepRejection(
+                    e,
+                    "HEADING_CONFIDENCE",
                     $"smoothedCameraArAzimuth={cameraAzimuthDegrees:F1} deg, " +
                     $"walkingArAzimuth=" +
                     $"{(headingEstimate.UsedWalkingVector ? headingEstimate.WalkingAzimuthDegrees.ToString("F1") : "<accumulating>")} deg, " +
@@ -9417,7 +9485,7 @@ namespace RescuAR.App.Views.Camera
                     $"error={headingErrorDegrees:F1} deg, " +
                     $"motionCoherence={headingEstimate.MotionCoherence:F2}, " +
                     $"confidence={pdrConfidence.Confidence}, " +
-                    $"reason='{pdrConfidence.Reason}'.");
+                    $"reason='{pdrConfidence.Reason}'");
 
                 return;
             }
@@ -9452,13 +9520,10 @@ namespace RescuAR.App.Views.Camera
 
             if (!update.IsAccepted)
             {
-                rejectedPdrStepCount++;
-
-                LogDetailedDebug(
-                    PdrLogTag,
-                    "PDR step could not advance route progress: " +
-                    $"step={e.StepNumber}, " +
-                    $"reason={update.RejectionReason}");
+                RecordPdrStepRejection(
+                    e,
+                    "PROGRESS_REJECTED",
+                    update.RejectionReason);
 
                 return;
             }
@@ -9467,11 +9532,11 @@ namespace RescuAR.App.Views.Camera
 
             UpdateTurnGuidance();
 
-            LogDetailedDebug(
+            Log.Info(
                 PdrLogTag,
-                "PDR step ACCEPTED: " +
-                $"step={e.StepNumber}, " +
-                $"acceptedSteps={acceptedPdrStepCount}, " +
+                "PDR STEP OUTCOME: outcome=ACCEPTED; " +
+                $"step={e.StepNumber}; " +
+                $"acceptedSteps={acceptedPdrStepCount}; " +
                 $"confidence={pdrConfidence.Confidence}, " +
                 $"strideScale={pdrConfidence.StrideScale:F2}, " +
                 $"advance={fusedStepAdvanceMeters:F2} m, " +
@@ -9480,6 +9545,25 @@ namespace RescuAR.App.Views.Camera
                 $"headingSource='{headingEstimate.Reason}', " +
                 $"motionCoherence={headingEstimate.MotionCoherence:F2}, " +
                 $"publishWindow={published}.");
+#endif
+        }
+
+        private void RecordPdrStepRejection(
+            PedestrianDeadReckoningService.PdrStepDetectedEventArgs step,
+            string reasonCode,
+            string detail)
+        {
+            rejectedPdrStepCount++;
+
+#if ANDROID
+            Log.Info(
+                PdrLogTag,
+                "PDR STEP OUTCOME: outcome=REJECTED; " +
+                $"step={step.StepNumber}; " +
+                $"rejectedSteps={rejectedPdrStepCount}; " +
+                $"reasonCode={reasonCode}; detail='{detail}'; " +
+                $"peakDynamicG={step.PeakDynamicAccelerationG:F3}; " +
+                $"peakDurationMs={step.PeakDurationMilliseconds:F0}.");
 #endif
         }
 
@@ -9939,9 +10023,14 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
+            ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+                _arCoreService.TrackingSnapshot;
+
             bool tracking =
                 spatial.IsTracking &&
-                spatial.Pose.IsTracking;
+                spatial.Pose.IsTracking &&
+                trackingSnapshot.IsRenderableFor(
+                    spatial.Generation.SessionGeneration);
 
             if (!tracking)
             {
@@ -10595,6 +10684,9 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
+            ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+                _arCoreService.TrackingSnapshot;
+
             ARRouteBridge.RouteSnapshot route =
                 ARRouteBridge.Current;
 
@@ -10603,7 +10695,9 @@ namespace RescuAR.App.Views.Camera
 
             bool tracking =
                 spatial.IsTracking &&
-                spatial.Pose.IsTracking;
+                spatial.Pose.IsTracking &&
+                trackingSnapshot.IsRenderableFor(
+                    spatial.Generation.SessionGeneration);
 
             /*
              * Recovery State V6
@@ -10886,6 +10980,14 @@ namespace RescuAR.App.Views.Camera
                 $"sessionPaused={_arCoreService.IsSessionPaused}, " +
                 $"frameLoop={_arCoreService.IsFrameLoopRunning}, " +
                 $"tracking={tracking}, " +
+                $"trackingState={trackingSnapshot.TrackingState}, " +
+                $"trackingReason='{trackingSnapshot.FailureReason}', " +
+                $"trackingLifecycleEvent={trackingSnapshot.IsIntentionalLifecycleEvent}, " +
+                $"trackingLossMs={trackingSnapshot.CurrentLossDurationMilliseconds}, " +
+                $"trackingActivePauses={trackingSnapshot.ActivePauseTransitionCount}, " +
+                $"trackingLifecyclePauses={trackingSnapshot.LifecyclePauseTransitionCount}, " +
+                $"trackingRecoveries={trackingSnapshot.RecoveryTransitionCount}, " +
+                $"trackingDepthEnabled={trackingSnapshot.DepthEnabled}, " +
                 $"anchor={spatial.Anchor.IsAvailable}, " +
                 $"cameraToAnchor=" +
                 $"{(float.IsFinite(cameraToAnchorHorizontalMeters) ? cameraToAnchorHorizontalMeters.ToString("F2") : "<none>")}m, " +

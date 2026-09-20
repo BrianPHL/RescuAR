@@ -763,9 +763,14 @@ public static class ARCameraSpatialController
         ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
             out ARCameraPoseBridge.SpatialSnapshot frame);
 
+        ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
+            ARTrackingStateBridge.Current;
+
         bool trackingValid =
             frame.IsTracking &&
-            frame.Pose.IsTracking;
+            frame.Pose.IsTracking &&
+            trackingSnapshot.IsRenderableFor(
+                frame.Generation.SessionGeneration);
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;

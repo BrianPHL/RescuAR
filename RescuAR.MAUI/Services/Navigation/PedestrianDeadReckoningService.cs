@@ -60,6 +60,8 @@ public sealed class PedestrianDeadReckoningService
 
     private bool isRunning;
 
+    private IDisposable? accelerometerLease;
+
     private bool hasGravityEstimate;
 
     private double gravityMagnitudeG =
@@ -125,22 +127,19 @@ public sealed class PedestrianDeadReckoningService
 
             ResetDetectorStateLocked();
 
-            Accelerometer.Default.ReadingChanged +=
-                OnAccelerometerReadingChanged;
-
             try
             {
-                Accelerometer.Default.Start(
-                    SensorSpeed.UI);
+                accelerometerLease =
+                    SharedMotionSensorLeaseManager.AcquireAccelerometer(
+                        nameof(PedestrianDeadReckoningService),
+                        OnAccelerometerReadingChanged,
+                        SensorSpeed.UI);
 
                 isRunning =
                     true;
             }
             catch
             {
-                Accelerometer.Default.ReadingChanged -=
-                    OnAccelerometerReadingChanged;
-
                 ResetDetectorStateLocked();
 
                 throw;
@@ -179,20 +178,9 @@ public sealed class PedestrianDeadReckoningService
             return;
         }
 
-        try
-        {
-            Accelerometer.Default.ReadingChanged -=
-                OnAccelerometerReadingChanged;
-
-            if (Accelerometer.Default.IsMonitoring)
-            {
-                Accelerometer.Default.Stop();
-            }
-        }
-        catch
-        {
-            // Best-effort sensor shutdown on page exit.
-        }
+        Interlocked.Exchange(
+            ref accelerometerLease,
+            null)?.Dispose();
 
 #if ANDROID
         Log.Debug(
@@ -326,7 +314,8 @@ public sealed class PedestrianDeadReckoningService
                     detectedStepCount,
                     now,
                     peakDynamicG,
-                    magnitudeG);
+                    magnitudeG,
+                    peakAge.TotalMilliseconds);
         }
 
         if (acceptedStep is null)
@@ -339,7 +328,8 @@ public sealed class PedestrianDeadReckoningService
             LogTag,
             "STEP detected: " +
             $"step={acceptedStep.StepNumber}, " +
-            $"peakDynamic={acceptedStep.PeakDynamicAccelerationG:F3}g.");
+            $"peakDynamic={acceptedStep.PeakDynamicAccelerationG:F3}g, " +
+            $"peakDurationMs={acceptedStep.PeakDurationMilliseconds:F0}.");
 #endif
 
         StepDetected?.Invoke(
@@ -375,5 +365,6 @@ public sealed class PedestrianDeadReckoningService
         long StepNumber,
         DateTimeOffset TimestampUtc,
         double PeakDynamicAccelerationG,
-        double AccelerationMagnitudeG);
+        double AccelerationMagnitudeG,
+        double PeakDurationMilliseconds);
 }

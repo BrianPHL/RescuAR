@@ -81,6 +81,9 @@ public sealed partial class ArCoreService
         }
     }
 
+    public ARTrackingStateBridge.TrackingSnapshot TrackingSnapshot =>
+        ARTrackingStateBridge.Current;
+
     public async Task<ArCoreLifecycleResult> EnsureRunningAsync(
         CancellationToken cancellationToken = default)
     {
@@ -1205,16 +1208,22 @@ public sealed partial class ArCoreService
         }
     }
 
-    private static void InvalidatePublishedFrameState()
+    private void InvalidatePublishedFrameState()
     {
         ARCameraPoseBridge.Clear();
         ARDepthOcclusionBridge.Clear();
         ARCameraTextureBridge.Clear();
     }
 
-    private static void InvalidatePublishedPausedState(
+    private void InvalidatePublishedPausedState(
         string reason)
     {
+        ARTrackingStateBridge.PublishLifecycleTransition(
+            Interlocked.Read(ref currentSessionGeneration),
+            lifecycleState.ToString(),
+            reason,
+            depthModeEnabled);
+
         ARGroundStateBridge.Suspend(
             ARRenderGenerationBridge.Current,
             reason);
@@ -1222,8 +1231,14 @@ public sealed partial class ArCoreService
         ARFloodDepthBridge.Clear(reason);
     }
 
-    private static void InvalidatePublishedSessionState()
+    private void InvalidatePublishedSessionState()
     {
+        ARTrackingStateBridge.PublishLifecycleTransition(
+            Interlocked.Read(ref currentSessionGeneration),
+            ArCoreLifecycleState.Disposed.ToString(),
+            "ARCore session shutdown",
+            depthModeEnabled);
+
         ARGroundStateBridge.Clear("ARCore session shutdown");
         InvalidatePublishedFrameState();
         ARFloodDepthBridge.Clear("ARCore session shutdown");
