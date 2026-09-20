@@ -142,7 +142,7 @@ $expectedBuildMetadata = [ordered]@{
     "RescuAR.ArCoreBindingVersion" = '$(ArCoreBindingVersion)'
     "RescuAR.NdkVersion" = '$(NativeBridgeNdkVersion)'
     "RescuAR.CMakeVersion" = '$(NativeBridgeCMakeVersion)'
-    "RescuAR.AutomatedSafetyProfile" = "ARCORE_SAFETY_TESTS_V1"
+    "RescuAR.ValidationProfile" = "ARCORE_MANUAL_FIELD_VALIDATION_V1"
 }
 
 foreach ($metadataName in $expectedBuildMetadata.Keys) {
@@ -162,6 +162,19 @@ foreach ($metadataName in $expectedBuildMetadata.Keys) {
     }
 }
 
+$projectText = Get-Content -LiteralPath $projectPath -Raw
+foreach ($profileToken in @(
+    'rescuar-build-profile.txt',
+    'diagnosticBuild=$(RescuArDiagnosticBuild)',
+    'correctiveBatch=$(RescuArCorrectiveBatch)',
+    'validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1',
+    'GenerateRescuArBuildProfileAsset'
+)) {
+    if (-not $projectText.Contains($profileToken)) {
+        throw "Packaged build-profile declaration is missing '$profileToken'."
+    }
+}
+
 foreach ($reportedField in @(
     "arSupportPolicy=",
     "requiredAbi=",
@@ -172,8 +185,8 @@ foreach ($reportedField in @(
     "evergine=",
     "arCoreBinding=",
     "ndk=",
-    "cmake="
-    "automatedSafetyProfile="
+    "cmake=",
+    "validationProfile="
 )) {
     if (-not $buildReporter.Contains($reportedField)) {
         throw "Build manifest reporter does not emit '$reportedField'."

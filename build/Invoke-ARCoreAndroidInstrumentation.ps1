@@ -131,7 +131,7 @@ $hits = @($fatal | Where-Object { $log -match $_ })
 if ($hits.Count) { throw "Fatal markers: $($hits -join ', '). Evidence: $logFile" }
 $required = @(
     'BUILD_MANIFEST batch=ARCore-10',
-    'automatedSafetyProfile=ARCORE_SAFETY_TESTS_V1',
+    'validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1',
     'ARCORE_NATIVE_BRIDGE_SELF_TEST result=PASS'
 )
 if (-not $SkipCameraNavigation) { $required += 'ARCore lifecycle state: state=Running' }
@@ -143,7 +143,8 @@ if ($missing.Count) { throw "Missing markers: $($missing -join ', '). Ensure the
     package = $PackageName; artifactFile = if ($artifact) { [IO.Path]::GetFileName($artifact) } else { 'preinstalled' }
     artifactSha256 = $artifactHash; installMethod = if ($SkipInstall) { "preinstalled:$InstallMethod" } else { $InstallMethod }
     cycles = $Cycles; cameraPermissionCycle = [bool]$ExerciseCameraPermission
-    scenarios = @('cold start', 'Camera page entry/exit', 'background/foreground', 'lock/unlock', 'rotation', 'surface recreation', 'shutdown')
+    scenarios = @('cold start', 'Camera page entry/exit', 'background/foreground', 'lock/unlock', 'rotation/configuration change', 'process continuity')
+    excludedClaims = @('surface/context recreation is not inferred from rotation', 'graceful shutdown is not inferred from force-stop')
     requiredMarkers = $required; fatalPatternsChecked = $fatal; device = $device; logFile = 'logcat.txt'
 } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $runDirectory 'instrumentation-result.json') -Encoding UTF8
 

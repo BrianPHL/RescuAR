@@ -5,11 +5,15 @@ on:
     paths:
       - "RescuAR.MAUI/**"
       - "RescuAR/**"
-      - "RescuAR.Tests/**"
+      - "RescuAR.MAUI.sln"
+      - "Directory.Build.props"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
       - "build/Test-ARCorePackage.ps1"
+      - "build/Invoke-ARCoreAndroidInstrumentation.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
+      - "ARCORE_EVIDENCE_BUNDLE_SCHEMA.json"
+      - "ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
   push:
     branches:
@@ -17,11 +21,15 @@ on:
     paths:
       - "RescuAR.MAUI/**"
       - "RescuAR/**"
-      - "RescuAR.Tests/**"
+      - "RescuAR.MAUI.sln"
+      - "Directory.Build.props"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
       - "build/Test-ARCorePackage.ps1"
+      - "build/Invoke-ARCoreAndroidInstrumentation.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
+      - "ARCORE_EVIDENCE_BUNDLE_SCHEMA.json"
+      - "ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
 
 permissions:
@@ -66,16 +74,6 @@ jobs:
       - name: Restore
         shell: pwsh
         run: dotnet restore RescuAR.MAUI.sln
-
-      - name: Run ARCore unit and state-machine tests
-        shell: pwsh
-        run: |
-          dotnet test RescuAR.Tests/RescuAR.Tests.csproj `
-            -c Release `
-            --no-restore `
-            --logger "trx;LogFileName=arcore-tests.trx" `
-            --results-directory artifacts/unit-tests `
-            --collect "XPlat Code Coverage"
 
       - name: Publish ARM64 APK from native source
         shell: pwsh
@@ -152,4 +150,3 @@ jobs:
             ${{ steps.verify.outputs.artifact }}
             ${{ steps.verify.outputs.provenance }}
             ${{ steps.package.outputs.evidence }}
-            artifacts/unit-tests

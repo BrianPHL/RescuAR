@@ -62,12 +62,23 @@ $archive = [IO.Compression.ZipFile]::OpenRead($artifact)
 try {
     $nativeEntries = @($archive.Entries | Where-Object { $_.FullName -match '^(?:base/)?lib/[^/]+/[^/]+\.so$' } | ForEach-Object FullName | Sort-Object)
     $observedAbis = @($nativeEntries | ForEach-Object { if ($_ -match '^(?:base/)?lib/([^/]+)/') { $Matches[1] } } | Sort-Object -Unique)
+    $profileEntryName = if ($extension -eq '.apk') { 'assets/rescuar-build-profile.txt' } else { 'base/assets/rescuar-build-profile.txt' }
+    $profileEntries = @($archive.Entries | Where-Object { $_.FullName -ceq $profileEntryName })
+    if ($profileEntries.Count -ne 1) { throw "Expected exactly one '$profileEntryName' build-profile asset; found $($profileEntries.Count)." }
+    $profileReader = [IO.StreamReader]::new($profileEntries[0].Open())
+    try { $buildProfile = $profileReader.ReadToEnd() -replace "^\uFEFF", "" }
+    finally { $profileReader.Dispose() }
 }
 finally { $archive.Dispose() }
 if ($nativeEntries.Count -eq 0) { throw "The artifact contains no native libraries." }
 if ($observedAbis.Count -ne 1 -or $observedAbis[0] -ne $ExpectedAbi) {
     throw "Expected only ABI '$ExpectedAbi'; observed '$($observedAbis -join ', ')'."
 }
+if ($buildProfile -notmatch "(?m)^diagnosticBuild=$([regex]::Escape($ExpectedDiagnosticBuild))\r?$") {
+    throw "Packaged diagnostic-build profile does not match expected value '$ExpectedDiagnosticBuild'."
+}
+if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-10\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
+if ($buildProfile -notmatch '(?m)^validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1\r?$') { throw "Packaged validation profile is missing or incorrect." }
 
 if ($extension -eq '.apk') {
     $manifestLines = @(& (Find-ApkAnalyzer) manifest print $artifact 2>&1)
@@ -98,7 +109,7 @@ if ($buildProps -notmatch '<RescuArDiagnosticBuild[^>]*>false</RescuArDiagnostic
     artifactBytes = (Get-Item -LiteralPath $artifact).Length; expectedPackage = $ExpectedPackage; expectedAbi = $ExpectedAbi
     observedAbis = $observedAbis; nativeEntries = $nativeEntries; nativeProvenance = [IO.Path]::GetFileName($provenance)
     mergedManifest = [IO.Path]::GetFileName($manifestFile); arSupportPolicy = "required"; vulkanRequirement = "vulkan-1.0-level-0"
-    diagnosticBuild = $ExpectedDiagnosticBuild
+    diagnosticBuild = $ExpectedDiagnosticBuild; buildProfileAsset = $profileEntryName; validationProfile = "ARCORE_MANUAL_FIELD_VALIDATION_V1"
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportFile -Encoding UTF8
 
 Write-Host "ARCore package test PASSED."

@@ -136,10 +136,10 @@ internal static class AndroidBuildManifestReporter
                     assembly,
                     "RescuAR.CMakeVersion");
 
-            string automatedSafetyProfile =
+            string validationProfile =
                 GetAssemblyMetadata(
                     assembly,
-                    "RescuAR.AutomatedSafetyProfile");
+                    "RescuAR.ValidationProfile");
 
             string nativeLibraryDirectory =
                 context.ApplicationInfo?.NativeLibraryDir ??
@@ -200,7 +200,7 @@ internal static class AndroidBuildManifestReporter
                 $"arCoreBinding={arCoreBindingVersion}; " +
                 $"ndk={ndkVersion}; " +
                 $"cmake={cmakeVersion}; " +
-                $"automatedSafetyProfile={automatedSafetyProfile}; " +
+                $"validationProfile={validationProfile}; " +
                 "customVulkanImporter=true; depthApi=true; " +
                 "apkSha256=FIELD_LOG_COLLECTOR.");
         }

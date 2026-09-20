@@ -161,8 +161,16 @@
 		<AssemblyMetadata Include="RescuAR.ArCoreBindingVersion" Value="$(ArCoreBindingVersion)" />
 		<AssemblyMetadata Include="RescuAR.NdkVersion" Value="$(NativeBridgeNdkVersion)" />
 		<AssemblyMetadata Include="RescuAR.CMakeVersion" Value="$(NativeBridgeCMakeVersion)" />
-		<AssemblyMetadata Include="RescuAR.AutomatedSafetyProfile" Value="ARCORE_SAFETY_TESTS_V1" />
+		<AssemblyMetadata Include="RescuAR.ValidationProfile" Value="ARCORE_MANUAL_FIELD_VALIDATION_V1" />
+		<AndroidAsset Include="$(IntermediateOutputPath)rescuar-build-profile.txt" Link="rescuar-build-profile.txt" />
+		<_RescuArBuildProfileLine Include="diagnosticBuild=$(RescuArDiagnosticBuild)" />
+		<_RescuArBuildProfileLine Include="correctiveBatch=$(RescuArCorrectiveBatch)" />
+		<_RescuArBuildProfileLine Include="validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 	</ItemGroup>
+	<Target Name="GenerateRescuArBuildProfileAsset" BeforeTargets="PrepareForBuild">
+		<MakeDir Directories="$(IntermediateOutputPath)" />
+		<WriteLinesToFile File="$(IntermediateOutputPath)rescuar-build-profile.txt" Lines="@(_RescuArBuildProfileLine)" Overwrite="true" Encoding="UTF-8" />
+	</Target>
 	<ItemGroup>
 		<Compile Remove="Views\Camera\CameraPage.Diagnostics.cs" />
 		<Compile Include="Views\Camera\CameraPage.Diagnostics.cs" Condition="'$(RescuArDiagnosticBuild)' == 'true'" />
