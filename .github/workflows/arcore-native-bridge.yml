@@ -1,10 +1,12 @@
-name: ARCore native bridge
+name: ARCore compatibility and native bridge
 
 on:
   pull_request:
     paths:
       - "RescuAR.MAUI/**"
       - "build/Verify-AndroidNativeBridge.ps1"
+      - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
   push:
     branches:
@@ -12,6 +14,8 @@ on:
     paths:
       - "RescuAR.MAUI/**"
       - "build/Verify-AndroidNativeBridge.ps1"
+      - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
 
 permissions:
@@ -48,6 +52,10 @@ jobs:
       - name: Install MAUI Android workload
         shell: pwsh
         run: dotnet workload install maui-android
+
+      - name: Verify locked AR compatibility profile
+        shell: pwsh
+        run: ./build/Verify-ARCoreReleaseReadiness.ps1
 
       - name: Restore
         shell: pwsh

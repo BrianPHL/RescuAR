@@ -16,8 +16,6 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 internal static class AndroidBuildManifestReporter
 {
     private const string Tag = "RescuAR-Build";
-    private const string EvergineVersion = "2025.10.21.3204";
-    private const string ArCoreBindingVersion = "1.47.1";
 
     private static int hasLogged;
 
@@ -88,6 +86,56 @@ internal static class AndroidBuildManifestReporter
                     assembly,
                     "RescuAR.LocationLogRetentionDays");
 
+            string arSupportPolicy =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.ArSupportPolicy");
+
+            string requiredAbi =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.RequiredAbi");
+
+            string androidMinApi =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.AndroidMinApi");
+
+            string vulkanRequirement =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.VulkanRequirement");
+
+            string compatibilityProfile =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.CompatibilityProfile");
+
+            string mauiVersion =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.MauiVersion");
+
+            string evergineVersion =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.EvergineVersion");
+
+            string arCoreBindingVersion =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.ArCoreBindingVersion");
+
+            string ndkVersion =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.NdkVersion");
+
+            string cmakeVersion =
+                GetAssemblyMetadata(
+                    assembly,
+                    "RescuAR.CMakeVersion");
+
             string nativeLibraryDirectory =
                 context.ApplicationInfo?.NativeLibraryDir ??
                 string.Empty;
@@ -129,6 +177,11 @@ internal static class AndroidBuildManifestReporter
                 $"locationLogRetentionDays={locationLogRetentionDays}; " +
                 $"locationLogConsent={DiagnosticPrivacyPolicy.HasLocationLoggingConsent}; " +
                 $"stateGlossary={ARStateTerminology.Version}; " +
+                $"arSupportPolicy={arSupportPolicy}; " +
+                $"requiredAbi={requiredAbi}; " +
+                $"androidMinApi={androidMinApi}; " +
+                $"vulkanRequirement={vulkanRequirement}; " +
+                $"compatibilityProfile={compatibilityProfile}; " +
                 $"targetFramework='{targetFramework}'; " +
                 $"assemblyInformationalVersion='{informationalVersion}'; " +
                 $"package='{context.PackageName}'; " +
@@ -137,8 +190,11 @@ internal static class AndroidBuildManifestReporter
                 $"nativeExists={nativeLibraryExists}; " +
                 $"nativeBytes={nativeLibraryBytes}; " +
                 $"nativeSha256={nativeLibrarySha256}; " +
-                $"evergine={EvergineVersion}; " +
-                $"arCoreBinding={ArCoreBindingVersion}; " +
+                $"maui={mauiVersion}; " +
+                $"evergine={evergineVersion}; " +
+                $"arCoreBinding={arCoreBindingVersion}; " +
+                $"ndk={ndkVersion}; " +
+                $"cmake={cmakeVersion}; " +
                 "customVulkanImporter=true; depthApi=true; " +
                 "apkSha256=FIELD_LOG_COLLECTOR.");
         }

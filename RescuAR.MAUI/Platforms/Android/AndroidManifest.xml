@@ -36,8 +36,23 @@
         android:name="android.permission.POST_NOTIFICATIONS" />
 
 	<uses-feature
+        android:name="android.hardware.camera"
+        android:required="true" />
+
+	<uses-feature
         android:name="android.hardware.camera.ar"
-        android:required="false" />
+		android:required="true" />
+
+	<!-- The AR camera implementation is Vulkan-only. -->
+	<uses-feature
+		android:name="android.hardware.vulkan.version"
+		android:version="0x00400003"
+		android:required="true" />
+
+	<uses-feature
+		android:name="android.hardware.vulkan.level"
+		android:version="0"
+		android:required="true" />
 
 	<uses-feature
         android:name="android.hardware.camera.flash"

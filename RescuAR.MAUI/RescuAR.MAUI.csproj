@@ -39,6 +39,16 @@
 
 		<!-- Android ABI targets -->
 		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+
+		<!--
+			Validated AR compatibility profile. Change one layer at a time and
+			update the compatibility evidence before modifying these pins.
+		-->
+		<MauiVersion>9.0.120</MauiVersion>
+		<EvergineVersion>2025.10.21.3204</EvergineVersion>
+		<EvergineLibBulletcVersion>2025.8.29.27</EvergineLibBulletcVersion>
+		<ArCoreBindingVersion>1.47.1</ArCoreBindingVersion>
+		<RescuArCompatibilityProfile>net9-maui9.0.120-evergine2025.10-arcore1.47.1</RescuArCompatibilityProfile>
 	</PropertyGroup>
 
 	<!--
@@ -53,7 +63,7 @@
 		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
 		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
 		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
-		<RescuArCorrectiveBatch>ARCore-08</RescuArCorrectiveBatch>
+		<RescuArCorrectiveBatch>ARCore-09</RescuArCorrectiveBatch>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
 
@@ -141,6 +151,16 @@
 		<AssemblyMetadata Include="RescuAR.LocationLogPolicy" Value="production-redacted;diagnostic-consent-quantized" />
 		<AssemblyMetadata Include="RescuAR.LocationLogRetentionDays" Value="30" />
 		<AssemblyMetadata Include="RescuAR.StateGlossary" Value="AR_STATE_GLOSSARY_V1" />
+		<AssemblyMetadata Include="RescuAR.ArSupportPolicy" Value="required" />
+		<AssemblyMetadata Include="RescuAR.RequiredAbi" Value="$(NativeBridgeAbi)" />
+		<AssemblyMetadata Include="RescuAR.AndroidMinApi" Value="$(NativeBridgeAndroidApi)" />
+		<AssemblyMetadata Include="RescuAR.VulkanRequirement" Value="vulkan-1.0-level-0" />
+		<AssemblyMetadata Include="RescuAR.CompatibilityProfile" Value="$(RescuArCompatibilityProfile)" />
+		<AssemblyMetadata Include="RescuAR.MauiVersion" Value="$(MauiVersion)" />
+		<AssemblyMetadata Include="RescuAR.EvergineVersion" Value="$(EvergineVersion)" />
+		<AssemblyMetadata Include="RescuAR.ArCoreBindingVersion" Value="$(ArCoreBindingVersion)" />
+		<AssemblyMetadata Include="RescuAR.NdkVersion" Value="$(NativeBridgeNdkVersion)" />
+		<AssemblyMetadata Include="RescuAR.CMakeVersion" Value="$(NativeBridgeCMakeVersion)" />
 	</ItemGroup>
 	<ItemGroup>
 		<Compile Remove="Views\Camera\CameraPage.Diagnostics.cs" />
@@ -170,6 +190,14 @@
 		This target runs before Android begins preparing build inputs.
 		It executes BuildNativeBridge first, followed by CopyNativeBridge.
 	-->
+	<Target Name="ValidateArCoreCompatibilityProfile" BeforeTargets="PrepareForBuild">
+		<Error Condition="'$(TargetFramework)' != 'net9.0-android'" Text="The validated AR compatibility profile requires TargetFramework=net9.0-android. Validate a controlled compatibility candidate before changing it." />
+		<Error Condition="'$(MauiVersion)' != '9.0.120'" Text="The validated AR compatibility profile requires Microsoft.Maui.Controls 9.0.120." />
+		<Error Condition="'$(EvergineVersion)' != '2025.10.21.3204'" Text="The validated AR compatibility profile requires Evergine 2025.10.21.3204." />
+		<Error Condition="'$(EvergineLibBulletcVersion)' != '2025.8.29.27'" Text="The validated AR compatibility profile requires Evergine.LibBulletc.Natives 2025.8.29.27." />
+		<Error Condition="'$(ArCoreBindingVersion)' != '1.47.1'" Text="The validated AR compatibility profile requires Vapolia.Google.ARCore 1.47.1." />
+	</Target>
+
 	<Target Name="ValidateNativeBridgeInput" BeforeTargets="PrepareForBuild" Condition="'$(TargetFramework)' == 'net9.0-android'">
 		<Error Condition="'$(RuntimeIdentifier)' != 'android-arm64'" Text="The current native camera bridge supports only RuntimeIdentifier=android-arm64." />
 		<Error Condition="!Exists('$(NativeBridgePath)') and '$(BuildNativeBridgeOnBuild)' != 'true'" Text="The required ARM64 native bridge is missing: $(NativeBridgePath). Rebuild with BuildNativeBridgeOnBuild=true." />
@@ -232,19 +260,19 @@
 			</PropertyGroup>
 
 			<ItemGroup>
-				<PackageReference Include="Evergine.Android" Version="2025.10.21.3204" />
+				<PackageReference Include="Evergine.Android" Version="$(EvergineVersion)" />
 
-				<PackageReference Include="Evergine.LibBulletc.Natives" Version="2025.8.29.27" />
+				<PackageReference Include="Evergine.LibBulletc.Natives" Version="$(EvergineLibBulletcVersion)" />
 
-				<PackageReference Include="Evergine.OpenAL" Version="2025.10.21.3204" />
+				<PackageReference Include="Evergine.OpenAL" Version="$(EvergineVersion)" />
 
-				<PackageReference Include="Evergine.Targets" Version="2025.10.21.3204" />
+				<PackageReference Include="Evergine.Targets" Version="$(EvergineVersion)" />
 
-				<PackageReference Include="Evergine.Targets.Maui" Version="2025.10.21.3204" />
+				<PackageReference Include="Evergine.Targets.Maui" Version="$(EvergineVersion)" />
 
-				<PackageReference Include="Evergine.Vulkan" Version="2025.10.21.3204" />
+				<PackageReference Include="Evergine.Vulkan" Version="$(EvergineVersion)" />
 
-				<PackageReference Include="Vapolia.Google.ARCore" Version="1.47.1" />
+				<PackageReference Include="Vapolia.Google.ARCore" Version="$(ArCoreBindingVersion)" />
 			</ItemGroup>
 
 			<ItemGroup>
