@@ -10,6 +10,8 @@ internal enum ArCameraImportFailureDisposition
 
 internal static class ArCameraImportFailurePolicy
 {
+    internal const int TransientFailureBudget = 3;
+
     public static ArCameraImportFailureDisposition Classify(
         Exception exception)
     {
@@ -40,5 +42,16 @@ internal static class ArCameraImportFailurePolicy
         }
 
         return ArCameraImportFailureDisposition.RetryWithBackoff;
+    }
+
+    public static bool ShouldEnterTerminalState(ArCameraImportFailureDisposition disposition, int consecutiveFailureCount)
+    {
+        if (consecutiveFailureCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(consecutiveFailureCount));
+        }
+
+        return disposition != ArCameraImportFailureDisposition.RetryWithBackoff ||
+            consecutiveFailureCount >= TransientFailureBudget;
     }
 }

@@ -81,6 +81,7 @@ Assert-Equal "ArCoreBindingVersion" (Get-ProjectValue $project "ArCoreBindingVer
 Assert-Equal "NativeBridgeNdkVersion" (Get-ProjectValue $project "NativeBridgeNdkVersion") "28.2.13676358"
 Assert-Equal "NativeBridgeCMakeVersion" (Get-ProjectValue $project "NativeBridgeCMakeVersion") "3.22.1"
 Assert-Equal "CompatibilityProfile" (Get-ProjectValue $project "RescuArCompatibilityProfile") "net9-maui9.0.120-evergine2025.10-arcore1.47.1"
+Assert-Equal "CorrectiveBatch" (Get-ProjectValue $project "RescuArCorrectiveBatch") "ARCore-10"
 
 $arCoreMetadata = @(
     $manifest.SelectNodes("/manifest/application/meta-data") |
@@ -141,6 +142,7 @@ $expectedBuildMetadata = [ordered]@{
     "RescuAR.ArCoreBindingVersion" = '$(ArCoreBindingVersion)'
     "RescuAR.NdkVersion" = '$(NativeBridgeNdkVersion)'
     "RescuAR.CMakeVersion" = '$(NativeBridgeCMakeVersion)'
+    "RescuAR.AutomatedSafetyProfile" = "ARCORE_SAFETY_TESTS_V1"
 }
 
 foreach ($metadataName in $expectedBuildMetadata.Keys) {
@@ -171,6 +173,7 @@ foreach ($reportedField in @(
     "arCoreBinding=",
     "ndk=",
     "cmake="
+    "automatedSafetyProfile="
 )) {
     if (-not $buildReporter.Contains($reportedField)) {
         throw "Build manifest reporter does not emit '$reportedField'."

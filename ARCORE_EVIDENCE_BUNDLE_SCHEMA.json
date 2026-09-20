@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rescuar.local/schemas/arcore-evidence-bundle-v1.json",
+  "title": "RescuAR ARCore corrective evidence bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "capturedAtUtc", "artifact", "environment", "testRuns", "findings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "capturedAtUtc": { "type": "string", "format": "date-time" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "sha256", "applicationVersion", "correctiveBatch", "sourceRevision", "configuration", "diagnosticBuild", "installMethod"],
+      "properties": {
+        "fileName": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "applicationVersion": { "type": "string", "minLength": 1 },
+        "correctiveBatch": { "const": "ARCore-10" },
+        "sourceRevision": { "type": "string", "minLength": 1 },
+        "configuration": { "enum": ["Debug", "Release"] },
+        "diagnosticBuild": { "type": "boolean" },
+        "installMethod": { "type": "string", "minLength": 1 },
+        "nativeBridgeSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tester", "deviceManufacturer", "deviceModel", "androidVersion", "apiLevel", "abi", "gpu", "arCoreVersion", "depthMode"],
+      "properties": {
+        "tester": { "type": "string", "minLength": 1 },
+        "deviceManufacturer": { "type": "string", "minLength": 1 },
+        "deviceModel": { "type": "string", "minLength": 1 },
+        "androidVersion": { "type": "string", "minLength": 1 },
+        "apiLevel": { "type": "integer", "minimum": 26 },
+        "abi": { "const": "arm64-v8a" },
+        "gpu": { "type": "string", "minLength": 1 },
+        "arCoreVersion": { "type": "string", "minLength": 1 },
+        "depthMode": { "enum": ["off", "automatic", "on-demand"] },
+        "lighting": { "type": "string" },
+        "batteryPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "thermalState": { "type": "string" }
+      }
+    },
+    "testRuns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["layer", "scenario", "result", "startedAtUtc", "endedAtUtc", "evidenceFiles"],
+        "properties": {
+          "layer": { "enum": ["unit", "build", "packaging", "instrumentation", "field", "recording-playback"] },
+          "scenario": { "type": "string", "minLength": 1 },
+          "result": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"] },
+          "startedAtUtc": { "type": "string", "format": "date-time" },
+          "endedAtUtc": { "type": "string", "format": "date-time" },
+          "evidenceFiles": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "minItems": 54,
+      "maxItems": 54,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["findingId", "batchOwner", "status", "filesChanged", "implementationEvidence", "buildEvidence", "runtimeEvidence", "remainingRisk", "nextAction"],
+        "properties": {
+          "findingId": { "type": "integer", "minimum": 1, "maximum": 54 },
+          "batchOwner": { "type": "integer", "minimum": 1, "maximum": 10 },
+          "status": { "enum": ["RESOLVED — VERIFIED", "IMPLEMENTED — NEEDS FIELD VALIDATION", "PARTIALLY RESOLVED", "STILL OPEN", "BLOCKED"] },
+          "filesChanged": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "implementationEvidence": { "type": "string", "minLength": 1 },
+          "buildEvidence": { "type": "string", "minLength": 1 },
+          "runtimeEvidence": { "type": "string", "minLength": 1 },
+          "remainingRisk": { "type": "string", "minLength": 1 },
+          "nextAction": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

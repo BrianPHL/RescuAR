@@ -11,7 +11,6 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 /// </summary>
 public sealed partial class ArCoreService
 {
-    private const int CameraImportTransientFailureBudget = 3;
     private const long CameraImportInitialBackoffMilliseconds = 250;
     private const long CameraImportMaximumBackoffMilliseconds = 2_000;
 
@@ -201,14 +200,15 @@ public sealed partial class ArCoreService
                     Environment.TickCount64 + backoffMilliseconds;
             }
 
-            if (failureCount <
-                CameraImportTransientFailureBudget)
+            if (!ArCameraImportFailurePolicy.ShouldEnterTerminalState(
+                    disposition,
+                    failureCount))
             {
                 Log.Warn(
                     Tag,
                     "ARCORE_CAMERA_IMPORT_RETRY " +
                     $"attempt={failureCount}, " +
-                    $"budget={CameraImportTransientFailureBudget}, " +
+                    $"budget={ArCameraImportFailurePolicy.TransientFailureBudget}, " +
                     $"backoffMs={backoffMilliseconds}, " +
                     $"failureType={exception.GetType().Name}, " +
                     $"message='{exception.Message}'.");

@@ -4,8 +4,11 @@ on:
   pull_request:
     paths:
       - "RescuAR.MAUI/**"
+      - "RescuAR/**"
+      - "RescuAR.Tests/**"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "build/Test-ARCorePackage.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
   push:
@@ -13,8 +16,11 @@ on:
       - main
     paths:
       - "RescuAR.MAUI/**"
+      - "RescuAR/**"
+      - "RescuAR.Tests/**"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "build/Test-ARCorePackage.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - ".github/workflows/arcore-native-bridge.yml"
 
@@ -60,6 +66,16 @@ jobs:
       - name: Restore
         shell: pwsh
         run: dotnet restore RescuAR.MAUI.sln
+
+      - name: Run ARCore unit and state-machine tests
+        shell: pwsh
+        run: |
+          dotnet test RescuAR.Tests/RescuAR.Tests.csproj `
+            -c Release `
+            --no-restore `
+            --logger "trx;LogFileName=arcore-tests.trx" `
+            --results-directory artifacts/unit-tests `
+            --collect "XPlat Code Coverage"
 
       - name: Publish ARM64 APK from native source
         shell: pwsh
@@ -114,6 +130,19 @@ jobs:
           "artifact=$($artifact.FullName)" >> $env:GITHUB_OUTPUT
           "provenance=$provenance" >> $env:GITHUB_OUTPUT
 
+      - name: Test final ARCore package
+        id: package
+        shell: pwsh
+        run: |
+          $packageEvidence = "artifacts/package-evidence"
+          ./build/Test-ARCorePackage.ps1 `
+            -ArtifactPath "${{ steps.verify.outputs.artifact }}" `
+            -ExpectedAbi "arm64-v8a" `
+            -ExpectedPackage "com.rescuar.app" `
+            -ExpectedDiagnosticBuild "false" `
+            -OutputDirectory $packageEvidence
+          "evidence=$packageEvidence" >> $env:GITHUB_OUTPUT
+
       - name: Upload verified APK and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -122,3 +151,5 @@ jobs:
           path: |
             ${{ steps.verify.outputs.artifact }}
             ${{ steps.verify.outputs.provenance }}
+            ${{ steps.package.outputs.evidence }}
+            artifacts/unit-tests

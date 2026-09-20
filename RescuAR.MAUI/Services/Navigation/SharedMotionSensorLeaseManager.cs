@@ -81,7 +81,7 @@ public static class SharedMotionSensorLeaseManager
                 orientationStartedByManager);
         }
 
-        return new SensorLease(
+        return new IdempotentReleaseLease(
             () => ReleaseOrientation(leaseId, owner));
     }
 
@@ -136,7 +136,7 @@ public static class SharedMotionSensorLeaseManager
                 accelerometerStartedByManager);
         }
 
-        return new SensorLease(
+        return new IdempotentReleaseLease(
             () => ReleaseAccelerometer(leaseId, owner));
     }
 
@@ -348,18 +348,4 @@ public static class SharedMotionSensorLeaseManager
 #endif
     }
 
-    private sealed class SensorLease : IDisposable
-    {
-        private Action? release;
-
-        public SensorLease(Action release)
-        {
-            this.release = release;
-        }
-
-        public void Dispose()
-        {
-            Interlocked.Exchange(ref release, null)?.Invoke();
-        }
-    }
 }

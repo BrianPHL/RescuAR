@@ -63,7 +63,7 @@
 		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
 		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
 		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
-		<RescuArCorrectiveBatch>ARCore-09</RescuArCorrectiveBatch>
+		<RescuArCorrectiveBatch>ARCore-10</RescuArCorrectiveBatch>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
 
@@ -161,6 +161,7 @@
 		<AssemblyMetadata Include="RescuAR.ArCoreBindingVersion" Value="$(ArCoreBindingVersion)" />
 		<AssemblyMetadata Include="RescuAR.NdkVersion" Value="$(NativeBridgeNdkVersion)" />
 		<AssemblyMetadata Include="RescuAR.CMakeVersion" Value="$(NativeBridgeCMakeVersion)" />
+		<AssemblyMetadata Include="RescuAR.AutomatedSafetyProfile" Value="ARCORE_SAFETY_TESTS_V1" />
 	</ItemGroup>
 	<ItemGroup>
 		<Compile Remove="Views\Camera\CameraPage.Diagnostics.cs" />
