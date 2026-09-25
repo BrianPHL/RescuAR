@@ -20,6 +20,7 @@ import {
   Upload
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { uploadImageToCloudinary } from '../utils/cloudinary';
 
 export default function EvacuationCenters() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +31,7 @@ export default function EvacuationCenters() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRefreshSpinning, setIsRefreshSpinning] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState('name-asc');
   const itemsPerPage = 10;
@@ -45,8 +47,8 @@ export default function EvacuationCenters() {
       longitude: '121.094409',
       latitude: '14.650283',
       capacity: 1200,
-      currentEvacuees: 450,
-      status: 'Open',
+      currentEvacuees: 0,
+      status: 'Standby',
       headOfficer: 'Captain Roberto Santos',
       contact: '0917-555-0192',
       facilities: ['Medical Station', 'Clean Water', 'Generator', 'Modular Tents']
@@ -59,8 +61,8 @@ export default function EvacuationCenters() {
       longitude: '121.104240',
       latitude: '14.657914',
       capacity: 1000,
-      currentEvacuees: 200,
-      status: 'Open',
+      currentEvacuees: 0,
+      status: 'Standby',
       headOfficer: 'Kagawad Arnel Cruz',
       contact: '0918-444-9120',
       facilities: ['Medical Station', 'Clean Water', 'Restrooms']
@@ -73,8 +75,8 @@ export default function EvacuationCenters() {
       longitude: '121.108440',
       latitude: '14.672991',
       capacity: 1500,
-      currentEvacuees: 980,
-      status: 'Open',
+      currentEvacuees: 0,
+      status: 'Standby',
       headOfficer: 'Kagawad Manuel Reyes',
       contact: '0920-333-8101',
       facilities: ['Clean Water', 'Generator', 'Kitchen Area', 'Child-Friendly Space']
@@ -751,19 +753,118 @@ export default function EvacuationCenters() {
     imageUrl: ''
   });
 
-  const handleImageFileChange = (e) => {
+  const handleImageFileChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, imageUrl: reader.result }));
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    try {
+      const secureUrl = await uploadImageToCloudinary(file, 'rescuAR_EvacuationCenter');
+      setFormData(prev => ({ ...prev, imageUrl: secureUrl }));
+    } catch (err) {
+      console.error('Failed to upload image to Cloudinary:', err);
+      alert(`Image upload failed: ${err.message}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const saveCentersToLocalStorage = (list) => {
+    try {
+      localStorage.setItem('rescuar_evacuation_centers_overrides', JSON.stringify(list));
+    } catch (e) {
+      console.warn('LocalStorage save notice:', e);
+    }
+  };
+
+  const handleDirectCardImageUpload = async (e, center) => {
+    const file = e.target.files[0];
+    if (!file || !center) return;
+
+    setIsUploadingImage(true);
+    try {
+      const secureUrl = await uploadImageToCloudinary(file, 'rescuAR_EvacuationCenter');
+      const updatedCenter = { ...center, imageUrl: secureUrl };
+
+      setCenters(prev => {
+        const nextList = prev.map(c => (c.name.toLowerCase() === center.name.toLowerCase() || c.id === center.id) ? updatedCenter : c);
+        saveCentersToLocalStorage(nextList);
+        return nextList;
+      });
+      setSelectedCenter(updatedCenter);
+
+      const facilitiesArray = Array.isArray(center.facilities)
+        ? center.facilities
+        : typeof center.facilities === 'string'
+          ? center.facilities.split(',').map(s => s.trim()).filter(Boolean)
+          : ['Clean Water', 'Restrooms'];
+
+      const payload = {
+        name: center.name,
+        barangay: center.barangay,
+        classification: center.classification || 'Flood-Safe Major',
+        longitude: center.longitude || null,
+        latitude: center.latitude || null,
+        capacity: center.capacity || 500,
+        current_evacuees: center.currentEvacuees || 0,
+        status: center.status || 'Standby',
+        head_officer: center.headOfficer || 'Unassigned',
+        contact: center.contact || 'N/A',
+        facilities: facilitiesArray,
+        image_url: secureUrl
       };
-      reader.readAsDataURL(file);
+
+      let targetId = null;
+      if (center.id && !String(center.id).startsWith('local-') && String(center.id).length > 5) {
+        const { data: byId } = await supabase.from('evacuation_centers').select('id').eq('id', center.id);
+        if (byId && byId.length > 0) targetId = byId[0].id;
+      }
+      if (!targetId && center.name) {
+        const { data: byName } = await supabase.from('evacuation_centers').select('id').ilike('name', center.name);
+        if (byName && byName.length > 0) targetId = byName[0].id;
+      }
+
+      if (center.name) {
+        const { error: upErr1 } = await supabase.from('evacuation_centers').update({ image_url: secureUrl }).ilike('name', center.name);
+        if (upErr1) console.error('Supabase image_url update error:', upErr1.message);
+      }
+
+      if (targetId) {
+        const { error: upErr2 } = await supabase.from('evacuation_centers').update(payload).eq('id', targetId);
+        if (upErr2) console.error('Supabase update payload error:', upErr2.message);
+      } else {
+        const { data: inserted, error: insErr } = await supabase.from('evacuation_centers').insert([payload]).select();
+        if (insErr) {
+          console.error('Supabase insert error:', insErr.message);
+        } else if (inserted && inserted.length > 0) {
+          const realId = inserted[0].id;
+          setCenters(prev => {
+            const nextList = prev.map(c => c.name.toLowerCase() === center.name.toLowerCase() ? { ...c, id: realId, imageUrl: secureUrl } : c);
+            saveCentersToLocalStorage(nextList);
+            return nextList;
+          });
+          setSelectedCenter(prev => prev && prev.name.toLowerCase() === center.name.toLowerCase() ? { ...prev, id: realId, imageUrl: secureUrl } : prev);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to upload image:', err);
+      alert(`Image upload failed: ${err.message}`);
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
   const fetchCenters = async () => {
     setLoading(true);
+
+    let localSaved = [];
+    try {
+      const stored = localStorage.getItem('rescuar_evacuation_centers_overrides');
+      if (stored) localSaved = JSON.parse(stored);
+    } catch (e) {
+      console.warn('LocalStorage read error:', e);
+    }
+
     try {
       const { data, error } = await supabase
         .from('evacuation_centers')
@@ -772,8 +873,9 @@ export default function EvacuationCenters() {
 
       if (error) {
         console.warn('Supabase fetch notice (evacuation_centers):', error.message);
-      } else if (data && data.length > 0) {
-        const mapped = data.map(item => ({
+      } else {
+        const dbItems = data || [];
+        const mappedDb = dbItems.map(item => ({
           id: item.id,
           name: item.name,
           barangay: item.barangay || 'Marikina',
@@ -792,13 +894,69 @@ export default function EvacuationCenters() {
               ? item.facilities.split(',').map(s => s.trim()).filter(Boolean)
               : ['Clean Water', 'Restrooms']
         }));
-        setCenters(mapped);
-        if (!selectedCenter) {
-          setSelectedCenter(mapped[0]);
+
+        // Forcefully auto-sync all shelter photos stored in browser localStorage directly into Supabase image_url column
+        if (localSaved && localSaved.length > 0) {
+          (async () => {
+            for (const localItem of localSaved) {
+              if (localItem.name && localItem.imageUrl) {
+                const dbMatch = dbItems.find(m => m.name && m.name.toLowerCase() === localItem.name.toLowerCase());
+                if (dbMatch) {
+                  if (!dbMatch.image_url || dbMatch.image_url !== localItem.imageUrl) {
+                    console.log(`Syncing image_url for "${localItem.name}" to Supabase ID ${dbMatch.id}...`);
+                    await supabase
+                      .from('evacuation_centers')
+                      .update({ image_url: localItem.imageUrl })
+                      .eq('id', dbMatch.id);
+                  }
+                } else {
+                  console.log(`Syncing new shelter "${localItem.name}" with image_url to Supabase...`);
+                  await supabase.from('evacuation_centers').insert([{
+                    name: localItem.name,
+                    barangay: localItem.barangay || 'Marikina',
+                    classification: localItem.classification || 'Flood-Safe Major',
+                    longitude: localItem.longitude && !String(localItem.longitude).includes('Not') ? localItem.longitude : null,
+                    latitude: localItem.latitude && !String(localItem.latitude).includes('Not') ? localItem.latitude : null,
+                    capacity: localItem.capacity || 500,
+                    current_evacuees: localItem.currentEvacuees || 0,
+                    status: localItem.status || 'Standby',
+                    head_officer: localItem.headOfficer || 'Unassigned',
+                    contact: localItem.contact || 'N/A',
+                    facilities: Array.isArray(localItem.facilities) ? localItem.facilities : ['Clean Water', 'Restrooms'],
+                    image_url: localItem.imageUrl
+                  }]);
+                }
+              }
+            }
+          })();
         }
-      } else {
-        if (!selectedCenter && defaultCenters.length > 0) {
-          setSelectedCenter(defaultCenters[0]);
+
+        setCenters(prev => {
+          const dbNameMap = new Map(mappedDb.map(m => [m.name.toLowerCase(), m]));
+          const localNameMap = new Map(localSaved.map(l => [l.name.toLowerCase(), l]));
+
+          const mergedDefaults = defaultCenters.map(dc => {
+            const dbMatch = dbNameMap.get(dc.name.toLowerCase());
+            const localMatch = localNameMap.get(dc.name.toLowerCase());
+            if (dbMatch) {
+              dbNameMap.delete(dc.name.toLowerCase());
+              return { ...dc, ...dbMatch, imageUrl: dbMatch.imageUrl || (localMatch?.imageUrl) || dc.imageUrl };
+            }
+            if (localMatch) {
+              return { ...dc, ...localMatch, imageUrl: localMatch.imageUrl || dc.imageUrl };
+            }
+            return dc;
+          });
+
+          const extraDb = Array.from(dbNameMap.values());
+          const extraLocal = localSaved.filter(l => !defaultCenters.some(dc => dc.name.toLowerCase() === l.name.toLowerCase()) && !mappedDb.some(m => m.name.toLowerCase() === l.name.toLowerCase()));
+
+          const finalList = [...extraLocal, ...extraDb, ...mergedDefaults];
+          return finalList;
+        });
+
+        if (!selectedCenter && (mappedDb.length > 0 || localSaved.length > 0)) {
+          setSelectedCenter(mappedDb[0] || localSaved[0]);
         }
       }
     } catch (err) {
@@ -908,46 +1066,81 @@ export default function EvacuationCenters() {
     }
 
     const facilitiesArray = formData.facilities
-      ? formData.facilities.split(',').map(s => s.trim()).filter(Boolean)
+      ? (Array.isArray(formData.facilities) ? formData.facilities : formData.facilities.split(',').map(s => s.trim()).filter(Boolean))
       : ['Clean Water', 'Restrooms'];
 
     const payload = {
       name: formData.name,
       barangay: formData.barangay,
-      classification: formData.classification,
+      classification: formData.classification || 'Flood-Safe Major',
       longitude: formData.longitude || null,
       latitude: formData.latitude || null,
-      status: formData.status,
+      status: formData.status || 'Standby',
       head_officer: formData.headOfficer || 'Unassigned',
       contact: formData.contact || 'N/A',
       facilities: facilitiesArray,
       image_url: formData.imageUrl || null
     };
 
-    if (isEditing && formData.id) {
-      const { error } = await supabase.from('evacuation_centers').update(payload).eq('id', formData.id);
-      if (error) {
-        console.warn('Updating local state due to Supabase notice:', error.message);
-        setCenters(prev => prev.map(item => item.id === formData.id ? { ...item, ...payload, facilities: facilitiesArray, headOfficer: payload.head_officer, imageUrl: payload.image_url } : item));
+    const updatedCenterObj = {
+      id: formData.id || `local-${Date.now()}`,
+      name: payload.name,
+      barangay: payload.barangay,
+      classification: payload.classification,
+      longitude: payload.longitude || 'N/A',
+      latitude: payload.latitude || 'N/A',
+      capacity: formData.capacity || 500,
+      currentEvacuees: formData.currentEvacuees || 0,
+      status: payload.status,
+      headOfficer: payload.head_officer,
+      contact: payload.contact,
+      facilities: facilitiesArray,
+      imageUrl: payload.image_url
+    };
+
+    setCenters(prev => {
+      const exists = prev.some(c => c.name.toLowerCase() === updatedCenterObj.name.toLowerCase() || (formData.id && c.id === formData.id));
+      let nextList;
+      if (exists) {
+        nextList = prev.map(c => (c.name.toLowerCase() === updatedCenterObj.name.toLowerCase() || (formData.id && c.id === formData.id)) ? updatedCenterObj : c);
       } else {
-        fetchCenters();
+        nextList = [updatedCenterObj, ...prev];
       }
-    } else {
-      const { error } = await supabase.from('evacuation_centers').insert([payload]);
-      if (error) {
-        console.warn('Adding to local state due to Supabase notice:', error.message);
-        const newLocalCenter = {
-          id: String(Date.now()),
-          ...payload,
-          facilities: facilitiesArray,
-          headOfficer: payload.head_officer,
-          imageUrl: payload.image_url
-        };
-        setCenters(prev => [...prev, newLocalCenter]);
-        setSelectedCenter(newLocalCenter);
+      saveCentersToLocalStorage(nextList);
+      return nextList;
+    });
+    setSelectedCenter(updatedCenterObj);
+
+    try {
+      let targetId = null;
+      if (formData.id && !String(formData.id).startsWith('local-') && String(formData.id).length > 5) {
+        const { data: byId } = await supabase.from('evacuation_centers').select('id').eq('id', formData.id);
+        if (byId && byId.length > 0) targetId = byId[0].id;
+      }
+      if (!targetId && payload.name) {
+        const { data: byName } = await supabase.from('evacuation_centers').select('id').eq('name', payload.name);
+        if (byName && byName.length > 0) targetId = byName[0].id;
+      }
+
+      if (targetId) {
+        const { error: updateErr } = await supabase.from('evacuation_centers').update(payload).eq('id', targetId);
+        if (updateErr) console.warn('Supabase update notice:', updateErr.message);
       } else {
-        fetchCenters();
+        const { data: inserted, error: insertErr } = await supabase.from('evacuation_centers').insert([payload]).select();
+        if (insertErr) {
+          console.warn('Supabase insert notice:', insertErr.message);
+        } else if (inserted && inserted.length > 0) {
+          const realId = inserted[0].id;
+          setCenters(prev => {
+            const nextList = prev.map(c => c.name.toLowerCase() === payload.name.toLowerCase() ? { ...c, id: realId } : c);
+            saveCentersToLocalStorage(nextList);
+            return nextList;
+          });
+          setSelectedCenter(prev => prev && prev.name.toLowerCase() === payload.name.toLowerCase() ? { ...prev, id: realId } : prev);
+        }
       }
+    } catch (err) {
+      console.warn('Supabase save error:', err);
     }
 
     setIsDrawerOpen(false);
@@ -1220,39 +1413,48 @@ export default function EvacuationCenters() {
                     alt={activeCenter.name}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                  <button
-                    onClick={() => openEditModal(activeCenter)}
-                    style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      padding: '4px 8px',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
+                  <label style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+                    color: '#fff',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer'
+                  }}>
                     <Camera size={12} />
-                    <span>Change Photo</span>
-                  </button>
+                    <span>{isUploadingImage ? 'Uploading...' : 'Change Photo'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={isUploadingImage}
+                      style={{ display: 'none' }}
+                      onChange={(e) => handleDirectCardImageUpload(e, activeCenter)}
+                    />
+                  </label>
                 </div>
               ) : (
                 <div style={{ width: '100%', height: '110px', borderRadius: '8px', backgroundColor: '#f8fafc', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
                   <Camera size={22} color="#94a3b8" />
-                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>No shelter photo added</span>
-                  <button
-                    onClick={() => openEditModal(activeCenter)}
-                    style={{ fontSize: '11px', color: '#0d9488', fontWeight: '600', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    + Add Shelter Photo
-                  </button>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>
+                    {isUploadingImage ? 'Uploading photo to Cloudinary...' : 'No shelter photo added'}
+                  </span>
+                  <label style={{ fontSize: '11px', color: '#0d9488', fontWeight: '600', cursor: 'pointer', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>+ Upload Shelter Photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={isUploadingImage}
+                      style={{ display: 'none' }}
+                      onChange={(e) => handleDirectCardImageUpload(e, activeCenter)}
+                    />
+                  </label>
                 </div>
               )}
 
@@ -1360,23 +1562,24 @@ export default function EvacuationCenters() {
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <label style={{
                     padding: '8px 12px',
-                    backgroundColor: '#f1f5f9',
+                    backgroundColor: isUploadingImage ? '#e2e8f0' : '#f1f5f9',
                     border: '1px solid #cbd5e1',
                     borderRadius: '6px',
                     fontSize: '12px',
                     fontWeight: '600',
                     color: '#334155',
-                    cursor: 'pointer',
+                    cursor: isUploadingImage ? 'not-allowed' : 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                     whiteSpace: 'nowrap'
                   }}>
-                    <Upload size={14} />
-                    <span>Upload Photo</span>
+                    <Upload size={14} className={isUploadingImage ? 'spin-icon' : ''} />
+                    <span>{isUploadingImage ? 'Uploading to Cloudinary...' : 'Upload Photo'}</span>
                     <input
                       type="file"
                       accept="image/*"
+                      disabled={isUploadingImage}
                       style={{ display: 'none' }}
                       onChange={handleImageFileChange}
                     />
