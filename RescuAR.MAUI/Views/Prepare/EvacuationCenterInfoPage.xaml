@@ -12,120 +12,180 @@
     BackgroundColor="#F8FAFC">
 
     <Grid>
-        <!-- Main Scrollable Content -->
-        <ScrollView>
-            <VerticalStackLayout Padding="20,24,20,24" Spacing="24">
-                
-                <!-- Title & Header -->
-                <VerticalStackLayout Spacing="6" Margin="0,0,0,4">
-                    <Label Text="Evacuation Hubs" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" CharacterSpacing="-0.5" />
-                    <Label Text="Locate nearby safe shelters and prepare your route." TextColor="#64748B" FontSize="14" />
-                </VerticalStackLayout>
+        <!-- Virtualized Shelters CollectionView -->
+        <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
+            
+            <!-- Collection Header: Search, Category Picker & Section Title -->
+            <CollectionView.Header>
+                <VerticalStackLayout Padding="20,24,20,12" Spacing="20">
+                    
+                    <!-- Search Box & Dropdown Category Filter -->
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Search &amp; Category Filter" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                        
+                        <!-- Search Input Box -->
+                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,4">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="44">
+                                <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.41L13.03,15.15C11.9,15.69 10.61,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5A4.5,4.5 0 0,0 5,9.5A4.5,4.5 0 0,0 9.5,14A4.5,4.5 0 0,0 14,9.5A4.5,4.5 0 0,0 9.5,5Z"
+                                      Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                <Entry Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="Search shelter name, barangay, or officer..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
 
-                <!-- Section Title & Map Toggle -->
-                <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,0,0,4">
-                    <VerticalStackLayout Grid.Column="0" Spacing="2">
-                        <Label Text="Nearest Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
-                        <Label Text="Within 2.5 km of your location" TextColor="#64748B" FontSize="12" />
+                        <!-- Dropdown Category Picker -->
+                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,0">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="46">
+                                <Path Data="M10,18.17V14.41L19.5,4.91H4.5L10,10.41V18.17M21,3A1,1 0 0,1 22,4C22,4.27 21.89,4.53 21.71,4.71L14,12.42V20A1,1 0 0,1 13.42,20.83L9.42,22.83C8.86,23.11 8,22.7 8,22V12.42L0.29,4.71C0.11,4.53 0,4.27 0,4A1,1 0 0,1 1,3H21Z"
+                                      Fill="#007E8A" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                                <Picker Grid.Column="1"
+                                        ItemsSource="{Binding CategoryNames}"
+                                        SelectedItem="{Binding SelectedCategoryDropdown, Mode=TwoWay}"
+                                        Title="Select Classification..."
+                                        TitleColor="#94A3B8"
+                                        TextColor="#0F172A"
+                                        FontSize="14"
+                                        FontAttributes="Bold"
+                                        VerticalOptions="Center" />
+                                <Path Grid.Column="2" Data="M7,10L12,15L17,10H7Z" Fill="#64748B" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True" />
+                            </Grid>
+                        </Border>
                     </VerticalStackLayout>
-                    <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
-                            Command="{Binding NavigateToMapCommand}" />
-                </Grid>
 
-                <!-- Shelters Feed -->
-                <VerticalStackLayout BindableLayout.ItemsSource="{Binding EvacuationCenters}" Spacing="24">
-                    <BindableLayout.ItemTemplate>
-                        <DataTemplate x:DataType="vm:EvacuationCenterItem">
-                            
-                            <!-- Shelter Card Container -->
-                            <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 20" Padding="16">
-                                <Border.Shadow>
-                                    <Shadow Brush="#0F172A" Offset="0,6" Radius="12" Opacity="0.06" />
-                                </Border.Shadow>
-                                
-                                <VerticalStackLayout Spacing="16">
-                                    
-                                    <!-- Top Row: Within Distance Chip & Save Bookmark -->
-                                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                                        <!-- Header Chip -->
-                                        <Border Grid.Column="0" BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 8" Padding="12,6" HorizontalOptions="Start">
-                                            <Label Text="Within 4 km" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" />
-                                        </Border>
+                    <!-- Section Title & Map Toggle -->
+                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                            <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                            <Label Text="Nearest shelter is listed first" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
+                                Command="{Binding NavigateToMapCommand}" />
+                    </Grid>
 
-                                        <!-- Interactive Bookmark Button -->
-                                        <Border Grid.Column="1" WidthRequest="36" HeightRequest="36" StrokeThickness="0" BackgroundColor="Transparent" HorizontalOptions="End" VerticalOptions="Center">
-                                            <Border.GestureRecognizers>
-                                                <TapGestureRecognizer Command="{Binding ToggleBookmarkCommand}" />
-                                            </Border.GestureRecognizers>
-                                            <Path Data="M17,3H7A2,2 0 0,0 5,5V21L12,18L19,21V5C19,3.89 18.1,3 17,3Z" 
-                                                  Fill="{Binding BookmarkFill}" 
-                                                  Stroke="{Binding BookmarkStroke}" 
-                                                  StrokeThickness="1.8" 
-                                                  WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
-                                        </Border>
-                                    </Grid>
-
-                                    <!-- Facility Image Banner -->
-                                    <Border StrokeShape="RoundRectangle 16" StrokeThickness="0" HeightRequest="160">
-                                        <Image Source="{Binding FacilityImageUrl}" Aspect="AspectFill" HeightRequest="160" />
-                                    </Border>
-
-                                    <!-- Shelter Title and Distance Text -->
-                                    <VerticalStackLayout Spacing="2">
-                                        <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="22" FontAttributes="Bold" LineBreakMode="WordWrap" />
-                                        <Label Text="{Binding Distance}" TextColor="#64748B" FontSize="14" />
-                                    </VerticalStackLayout>
-
-                                    <!-- Address and Verification Columns -->
-                                    <Grid RowDefinitions="Auto,Auto" RowSpacing="10" ColumnDefinitions="Auto,*" ColumnSpacing="16" Margin="0,4,0,4">
-                                        <!-- Address Row -->
-                                        <Label Grid.Row="0" Grid.Column="0" Text="Address" TextColor="#64748B" FontSize="14" VerticalOptions="Start" />
-                                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding Address}" TextColor="#0F172A" FontSize="14" HorizontalTextAlignment="End" LineBreakMode="WordWrap" />
-                                        
-                                        <!-- Verified Row -->
-                                        <Label Grid.Row="1" Grid.Column="0" Text="Verified by" TextColor="#64748B" FontSize="14" VerticalOptions="Center" />
-                                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding VerifiedBy}" TextColor="#0F172A" FontSize="14" HorizontalTextAlignment="End" />
-                                    </Grid>
-
-                                    <!-- Horizontal Divider Line -->
-                                    <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" HorizontalOptions="Fill" />
-
-                                    <!-- Action Links Stack -->
-                                    <VerticalStackLayout Spacing="12" Margin="0,4,0,0">
-                                        <!-- Link 1: Start practice AR evacuation route -->
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <HorizontalStackLayout.GestureRecognizers>
-                                                <TapGestureRecognizer 
-                                                    Command="{Binding ViewModel.NavigateToCameraCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
-                                                    CommandParameter="{Binding .}" />
-                                            </HorizontalStackLayout.GestureRecognizers>
-                                            <Label Text="Start practice AR evacuation route" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
-                                            <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#007E8A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
-                                        </HorizontalStackLayout>
-
-                                        <!-- Link 2: View more details -->
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <HorizontalStackLayout.GestureRecognizers>
-                                                <TapGestureRecognizer 
-                                                    Command="{Binding ViewModel.ViewMoreDetailsCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
-                                                    CommandParameter="{Binding .}" />
-                                            </HorizontalStackLayout.GestureRecognizers>
-                                            <Label Text="View more details" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
-                                            <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#007E8A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
-                                        </HorizontalStackLayout>
-                                    </VerticalStackLayout>
-
-                                </VerticalStackLayout>
-                            </Border>
-                        </DataTemplate>
-                    </BindableLayout.ItemTemplate>
                 </VerticalStackLayout>
+            </CollectionView.Header>
 
-                <!-- Preparedness Tools Section -->
-                <VerticalStackLayout Spacing="16" Margin="0,8,0,0">
+            <!-- Card Template -->
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:EvacuationCenterItem">
+                    <Grid Padding="20,8">
+                        <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 20" Padding="16">
+                            <Border.Shadow>
+                                <Shadow Brush="#0F172A" Offset="0,6" Radius="12" Opacity="0.06" />
+                            </Border.Shadow>
+                            
+                            <VerticalStackLayout Spacing="14">
+                                
+                                <!-- Top Badges Row -->
+                                <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                    <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                                        <Border IsVisible="{Binding IsNearestShelter}" BackgroundColor="#10B981" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,5">
+                                            <HorizontalStackLayout Spacing="5" VerticalOptions="Center">
+                                                <Path Data="M12,2A8,8 0 0,0 4,10C4,15.25 12,22 12,22C12,22 20,15.25 20,10A8,8 0 0,0 12,2M12,6A4,4 0 0,1 16,10A4,4 0 0,1 12,14A4,4 0 0,1 8,10A4,4 0 0,1 12,6Z"
+                                                      Fill="#FFFFFF" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
+                                                <Label Text="NEAREST TO YOU" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                            </HorizontalStackLayout>
+                                        </Border>
+
+                                        <Border BackgroundColor="#F1F5F9" StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 8" Padding="10,5">
+                                            <Label Text="{Binding Classification}" TextColor="{Binding ClassificationColor}" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+
+                                        <Border IsVisible="{Binding IsWithin5Km}" BackgroundColor="#DBEAFE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,5">
+                                            <Label Text="WITHIN 5 KM" TextColor="#1D4ED8" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+
+                                    <Border Grid.Column="1" WidthRequest="36" HeightRequest="36" StrokeThickness="0" BackgroundColor="Transparent" HorizontalOptions="End" VerticalOptions="Center">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding ToggleBookmarkCommand}" />
+                                        </Border.GestureRecognizers>
+                                        <Path Data="M17,3H7A2,2 0 0,0 5,5V21L12,18L19,21V5C19,3.89 18.1,3 17,3Z" 
+                                              Fill="{Binding BookmarkFill}" 
+                                              Stroke="{Binding BookmarkStroke}" 
+                                              StrokeThickness="1.8" 
+                                              WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                </Grid>
+
+                                <!-- Facility Image Banner -->
+                                <Border StrokeShape="RoundRectangle 16" StrokeThickness="0" HeightRequest="160" BackgroundColor="#E2E8F0" IsVisible="{Binding HasFacilityImage}">
+                                    <Grid>
+                                        <Image Source="{Binding FacilityImageUrl}" Aspect="AspectFill" HeightRequest="160" />
+                                        <Border HorizontalOptions="End" VerticalOptions="Start" Margin="10" BackgroundColor="{Binding StatusPillBg}" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,5">
+                                            <Label Text="{Binding StatusLabel}" TextColor="{Binding StatusPillText}" FontSize="11" FontAttributes="Bold" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Shelter Title and Distance -->
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="22" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                    <Label Text="{Binding DetailedDistanceString}" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
+                                </VerticalStackLayout>
+
+                                <!-- Metadata Grid -->
+                                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnDefinitions="Auto,*" ColumnSpacing="16" Margin="0,2,0,2">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="Address" TextColor="#64748B" FontSize="13" VerticalOptions="Start" />
+                                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding Address}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" LineBreakMode="WordWrap" />
+                                    
+                                    <Label Grid.Row="1" Grid.Column="0" Text="Occupancy" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
+                                    <Label Grid.Row="1" Grid.Column="1" Text="{Binding OccupancyDisplay}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
+
+                                    <Label Grid.Row="2" Grid.Column="0" Text="Head Officer" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
+                                    <Label Grid.Row="2" Grid.Column="1" Text="{Binding HeadOfficer}" TextColor="#0F172A" FontSize="13" HorizontalTextAlignment="End" />
+
+                                    <Label Grid.Row="3" Grid.Column="0" Text="Hotline" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
+                                    <Label Grid.Row="3" Grid.Column="1" Text="{Binding Contact}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding ViewModel.MakePhoneCallCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
+                                                CommandParameter="{Binding Contact}" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                </Grid>
+
+                                <!-- Facilities Tags -->
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="Facilities &amp; Amenities" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                                    <Label Text="{Binding FacilitiesDisplay}" TextColor="#334155" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+
+                                <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" HorizontalOptions="Fill" />
+
+                                <!-- Action Links -->
+                                <VerticalStackLayout Spacing="12" Margin="0,2,0,0">
+                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                        <HorizontalStackLayout.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding ViewModel.NavigateToCameraCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
+                                                CommandParameter="{Binding .}" />
+                                        </HorizontalStackLayout.GestureRecognizers>
+                                        <Label Text="Start practice AR evacuation route" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#007E8A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                        <HorizontalStackLayout.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding ViewModel.ViewMoreDetailsCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
+                                                CommandParameter="{Binding .}" />
+                                        </HorizontalStackLayout.GestureRecognizers>
+                                        <Label Text="View complete shelter details &amp; map" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#007E8A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+
+                            </VerticalStackLayout>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+
+            <!-- Collection Footer: PASS Assessment Tool -->
+            <CollectionView.Footer>
+                <VerticalStackLayout Padding="20,16,20,32" Spacing="16">
                     <Label Text="Preparedness Tools" TextColor="#0F172A" FontSize="22" FontAttributes="Bold" />
 
-                    <!-- PASS Tool Container -->
                     <VerticalStackLayout Spacing="6">
                         <Label Text="Preparation Assessment (PASS)" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" />
                         
@@ -135,17 +195,12 @@
                             </Border.Shadow>
                             
                             <VerticalStackLayout Spacing="14">
-                                <!-- Clipboard Icon -->
                                 <Path Data="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5C3.9,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3M12,3C12.55,3 13,3.45 13,4C13,4.55 12.55,5 12,5C11.45,5 11,4.55 11,4C11,3.45 11.45,3 12,3Z"
                                       Fill="Transparent" Stroke="#CBD5E1" StrokeThickness="2" WidthRequest="28" HeightRequest="28" Aspect="Uniform" HorizontalOptions="Start" />
 
-                                <!-- Preparedness Stat -->
                                 <Label Text="{Binding PassScoreText}" TextColor="#007E8A" FontSize="24" FontAttributes="Bold" />
-
-                                <!-- Description -->
                                 <Label Text="Evaluate your overall preparedness for emergencies and evacuation." TextColor="#334155" FontSize="14" LineBreakMode="WordWrap" />
 
-                                <!-- Take Assessment Action Link -->
                                 <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,0">
                                     <HorizontalStackLayout.GestureRecognizers>
                                         <TapGestureRecognizer Command="{Binding OpenPASSAssessmentCommand}" />
@@ -156,54 +211,25 @@
                             </VerticalStackLayout>
                         </Border>
                     </VerticalStackLayout>
-
-                    <!-- AR Route Practice Tool Container -->
-                    <VerticalStackLayout Spacing="6">
-                        <Label Text="AR Route Practice" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" />
-                        
-                        <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 20" Padding="20">
-                            <Border.Shadow>
-                                <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.05" />
-                            </Border.Shadow>
-                            
-                            <VerticalStackLayout Spacing="14">
-                                <!-- Route Nodes S-Curve Icon -->
-                                <Path Data="M18.5 4a2.5 2.5 0 0 0-2.45 2H9.5a4.5 4.5 0 0 0-4.5 4.5V13a2.5 2.5 0 1 0 2 0v-2.5a2.5 2.5 0 0 1 2.5-2.5h6.55a2.5 2.5 0 1 0 2.45-4z"
-                                      Fill="Transparent" Stroke="#CBD5E1" StrokeThickness="2.2" WidthRequest="32" HeightRequest="32" Aspect="Uniform" HorizontalOptions="Start" />
-
-                                <!-- Description -->
-                                <Label Text="Simulate evacuation guidance to familiarize yourself with nearby evacuation routes." TextColor="#334155" FontSize="14" LineBreakMode="WordWrap" />
-
-                                <!-- Start Practice Action Link -->
-                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center" Margin="0,4,0,0">
-                                    <HorizontalStackLayout.GestureRecognizers>
-                                        <TapGestureRecognizer Command="{Binding NavigateToCameraCommand}" />
-                                    </HorizontalStackLayout.GestureRecognizers>
-                                    <Label Text="Start Practice" TextColor="#007E8A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
-                                    <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#007E8A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
-                                </HorizontalStackLayout>
-                            </VerticalStackLayout>
-                        </Border>
-                    </VerticalStackLayout>
                 </VerticalStackLayout>
+            </CollectionView.Footer>
 
+        </CollectionView>
 
+        <!-- FULL DETAILS OVERLAY POPUP DIALOG -->
+        <Grid IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#660F172A" Padding="16,20">
+            <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 24" Padding="18,16" VerticalOptions="Center" MaximumHeightRequest="620">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Offset="0,10" Radius="20" Opacity="0.2" />
+                </Border.Shadow>
 
-            </VerticalStackLayout>
-        </ScrollView>
-
-        <!-- Translucent Backdrop Modal Overlay -->
-        <Grid IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#AA000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
-            <!-- Modal Dialog Container -->
-            <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" WidthRequest="360" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="20">
-                <VerticalStackLayout Spacing="14">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
                     
-                    <!-- Pop-up Header Row & Title -->
-                    <VerticalStackLayout Spacing="10">
+                    <!-- Row 0: Pop-up Header Row & Title -->
+                    <VerticalStackLayout Grid.Row="0" Spacing="6">
                         <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                            <Label Grid.Column="0" Text="Evacuation Center Details" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
-                            <!-- Close X button -->
-                            <Border Grid.Column="1" BackgroundColor="Transparent" StrokeThickness="0" WidthRequest="24" HeightRequest="24" HorizontalOptions="End">
+                            <Label Grid.Column="0" Text="Shelter Details &amp; Admin Info" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                            <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="30" HeightRequest="30" HorizontalOptions="End">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding CloseDetailsPopupCommand}" />
                                 </Border.GestureRecognizers>
@@ -211,10 +237,9 @@
                             </Border>
                         </Grid>
 
-                        <!-- Title & Bookmark Row -->
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" VerticalOptions="Center">
-                            <Label Grid.Column="0" Text="{Binding SelectedCenter.Name}" TextColor="#0F172A" FontSize="22" FontAttributes="Bold" LineBreakMode="WordWrap" />
-                            <Border Grid.Column="1" WidthRequest="36" HeightRequest="36" StrokeThickness="0" BackgroundColor="Transparent" HorizontalOptions="End" VerticalOptions="Center">
+                            <Label Grid.Column="0" Text="{Binding SelectedCenter.Name}" TextColor="#0F172A" FontSize="20" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                            <Border Grid.Column="1" WidthRequest="32" HeightRequest="32" StrokeThickness="0" BackgroundColor="Transparent" HorizontalOptions="End" VerticalOptions="Center">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding ToggleSelectedCenterBookmarkCommand}" />
                                 </Border.GestureRecognizers>
@@ -226,129 +251,133 @@
                         </Grid>
                     </VerticalStackLayout>
 
-                    <!-- Scrollable Body -->
-                    <ScrollView MaximumHeightRequest="300" VerticalScrollBarVisibility="Default">
-                        <VerticalStackLayout Spacing="16" Padding="0,2">
+                    <!-- Row 1: Scrollable Body -->
+                    <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Default" Margin="0,4">
+                        <VerticalStackLayout Spacing="14" Padding="0,2">
+                            
+                            <!-- Shelter Photo Banner (Cloudinary Upload from Admin) -->
+                            <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="140" BackgroundColor="#E2E8F0" IsVisible="{Binding SelectedCenter.HasFacilityImage}">
+                                <Image Source="{Binding SelectedCenter.FacilityImageUrl}" Aspect="AspectFill" HeightRequest="140" />
+                            </Border>
+
                             <!-- Map Section -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Map Preview" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
-                                <!-- Interactive Mapsui MapControl container -->
-                                <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="150" BackgroundColor="#F1F5F9">
-                                    <mapsui:MapControl x:Name="PopupMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" HeightRequest="150" />
+                                <Label Text="Location Map Preview" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                                <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="130" BackgroundColor="#F1F5F9">
+                                    <mapsui:MapControl x:Name="PopupMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" HeightRequest="130" />
                                 </Border>
                             </VerticalStackLayout>
 
-                            <!-- Information Metadata Rows -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Information" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <!-- Admin Information Metadata -->
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Admin &amp; Shelter Details" TextColor="#334155" FontSize="13" FontAttributes="Bold" />
                                 
-                                <!-- Address -->
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Start">
-                                    <Label Grid.Column="0" Text="Address" TextColor="#64748B" FontSize="13" />
-                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.Address}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" LineBreakMode="WordWrap" />
+                                <!-- Classification -->
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="Classification" TextColor="#64748B" FontSize="13" />
+                                    <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 6" Padding="8,4" HorizontalOptions="End">
+                                        <Label Text="{Binding SelectedCenter.Classification}" TextColor="{Binding SelectedCenter.ClassificationColor}" FontSize="12" FontAttributes="Bold" />
+                                    </Border>
                                 </Grid>
 
                                 <!-- Status -->
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="Status" TextColor="#64748B" FontSize="13" />
-                                    <Border Grid.Column="1" BackgroundColor="#D1FAE5" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4" HorizontalOptions="End">
-                                        <Label Text="Open" TextColor="#065F46" FontSize="12" FontAttributes="Bold" />
+                                    <Label Grid.Column="0" Text="Operating Status" TextColor="#64748B" FontSize="13" />
+                                    <Border Grid.Column="1" BackgroundColor="{Binding SelectedCenter.StatusPillBg}" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,4" HorizontalOptions="End">
+                                        <Label Text="{Binding SelectedCenter.StatusLabel}" TextColor="{Binding SelectedCenter.StatusPillText}" FontSize="12" FontAttributes="Bold" />
                                     </Border>
                                 </Grid>
 
-                                <!-- Capacity -->
+                                <!-- Address -->
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Start">
+                                    <Label Grid.Column="0" Text="Barangay / Address" TextColor="#64748B" FontSize="13" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.Address}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" LineBreakMode="WordWrap" />
+                                </Grid>
+
+                                <!-- Occupancy & Capacity -->
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="Capacity" TextColor="#64748B" FontSize="13" />
-                                    <Label Grid.Column="1" Text="No available data" TextColor="#64748B" FontSize="13" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="0" Text="Occupancy" TextColor="#64748B" FontSize="13" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.OccupancyDisplay}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
                                 </Grid>
 
                                 <!-- Distance -->
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
                                     <Label Grid.Column="0" Text="Distance" TextColor="#64748B" FontSize="13" />
-                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.DetailedDistanceString}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.DetailedDistanceString}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
                                 </Grid>
 
-                                <!-- Verified by -->
+                                <!-- Head Officer -->
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="Verified by" TextColor="#64748B" FontSize="13" />
-                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.VerifiedBy}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="0" Text="Head Officer" TextColor="#64748B" FontSize="13" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.HeadOfficer}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
                                 </Grid>
-                            </VerticalStackLayout>
 
-                            <!-- Available Facilities Grid -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Available Facilities" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
-                                
-                                <FlexLayout Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Center" AlignContent="Start">
-                                    <!-- Restrooms -->
-                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" Padding="8,6" Margin="0,0,8,8">
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <Path Data="M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4M16.5,11L13,11.5V21H11V15H9V21H7V11.5L3.5,11V9H16.5V11Z" Fill="#0F172A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                            <Label Text="Restrooms" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-
-                                    <!-- Water -->
-                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" Padding="8,6" Margin="0,0,8,8">
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <Path Data="M12,2C12,2 6,8.28 6,12.5C6,15.82 8.68,18.5 12,18.5C15.32,18.5 18,15.82 18,12.5C18,8.28 12,2 12,2Z" Fill="#0F172A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                            <Label Text="Water" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-
-                                    <!-- Charging Stations -->
-                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" Padding="8,6" Margin="0,0,8,8">
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <Path Data="M7 2v4h10V2H7zm-2 6h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zm4 3v3h6v-3H9z" Fill="#0F172A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                            <Label Text="Charging Stations" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-
-                                    <!-- Sleeping Area -->
-                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" Padding="8,6" Margin="0,0,8,8">
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <Path Data="M19 7h-8v7H3V5H1v15h2v-3h18v3h2v-9a4 4 0 0 0-4-4zm-8 5v-3h8a2 2 0 0 1 2 2v1h-10z" Fill="#0F172A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                            <Label Text="Sleeping Area" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-
-                                    <!-- First Aid -->
-                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" Padding="8,6" Margin="0,0,8,8">
-                                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                            <Path Data="M19,3H5C3.89,3 3,3.89 3,5V19C3,20.1 3.89,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.89 20.1,3 19,3M17,13H13V17H11V13H7V11H11V7H13V11H17V13Z" Fill="#0F172A" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                            <Label Text="First Aid" TextColor="#0F172A" FontSize="11" FontAttributes="Bold" />
-                                        </HorizontalStackLayout>
-                                    </Border>
-                                </FlexLayout>
-                            </VerticalStackLayout>
-
-                            <!-- Current Conditions -->
-                            <VerticalStackLayout Spacing="8">
-                                <Label Text="Current Conditions" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
-                                
+                                <!-- Contact Hotline -->
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="Structure safety" TextColor="#64748B" FontSize="13" />
-                                    <Label Grid.Column="1" Text="Intact" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="0" Text="Contact Hotline" TextColor="#64748B" FontSize="13" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.Contact}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" HorizontalTextAlignment="End">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer 
+                                                Command="{Binding MakePhoneCallCommand}" 
+                                                CommandParameter="{Binding SelectedCenter.Contact}" />
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                </Grid>
+
+                                <!-- GPS Coordinates -->
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="GPS Coordinates" TextColor="#64748B" FontSize="13" />
+                                    <Label Grid.Column="1" Text="{Binding SelectedCenter.GpsDisplay}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" HorizontalTextAlignment="End" />
                                 </Grid>
                             </VerticalStackLayout>
+
+                            <!-- Available Facilities -->
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="Available Facilities &amp; Amenities" TextColor="#334155" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="{Binding SelectedCenter.FacilitiesDisplay}" TextColor="#0F172A" FontSize="13" LineBreakMode="WordWrap" />
+                            </VerticalStackLayout>
+
                         </VerticalStackLayout>
                     </ScrollView>
 
-                    <!-- Fixed Footer Action Buttons Row -->
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,4,0,0">
-                        <!-- Dismiss Button -->
-                        <Button Grid.Column="0" Text="Dismiss" TextColor="#0F172A" BackgroundColor="#E2E8F0" BorderColor="#CBD5E1" BorderWidth="1" CornerRadius="12" HeightRequest="44" FontSize="14" FontAttributes="Bold"
-                                Command="{Binding CloseDetailsPopupCommand}" />
-                        
-                        <!-- Start AR Navigation Button -->
-                        <Button Grid.Column="1" Text="Start AR Navigation" TextColor="#FFFFFF" BackgroundColor="#007E8A" CornerRadius="12" HeightRequest="44" FontSize="14" FontAttributes="Bold"
+                    <!-- Row 2: Fixed Bottom Action Buttons -->
+                    <VerticalStackLayout Grid.Row="2" Spacing="8" Margin="0,4,0,0">
+                        <Button Text="Start AR Evacuation Guidance" 
+                                TextColor="#FFFFFF" 
+                                BackgroundColor="#0A8491" 
+                                CornerRadius="14" 
+                                HeightRequest="48" 
+                                FontSize="15" 
+                                FontAttributes="Bold" 
                                 Command="{Binding StartARNavigationCommand}" />
-                    </Grid>
 
-                </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <Button Grid.Column="0"
+                                    Text="Call Officer" 
+                                    TextColor="#0A8491" 
+                                    BackgroundColor="#E6F4F5" 
+                                    CornerRadius="12" 
+                                    HeightRequest="38" 
+                                    FontSize="13" 
+                                    FontAttributes="Bold" 
+                                    Command="{Binding MakePhoneCallCommand}"
+                                    CommandParameter="{Binding SelectedCenter.Contact}" />
+
+                            <Button Grid.Column="1"
+                                    Text="Close Details" 
+                                    TextColor="#475569" 
+                                    BackgroundColor="#F1F5F9" 
+                                    CornerRadius="12" 
+                                    HeightRequest="38" 
+                                    FontSize="13" 
+                                    FontAttributes="Bold" 
+                                    Command="{Binding CloseDetailsPopupCommand}" />
+                        </Grid>
+                    </VerticalStackLayout>
+
+                </Grid>
             </Border>
         </Grid>
-
     </Grid>
 
 </ContentPage>
