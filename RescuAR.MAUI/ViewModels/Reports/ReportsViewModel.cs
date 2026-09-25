@@ -419,6 +419,8 @@ namespace RescuAR.App.ViewModels.Reports
                 }
             }
 
+            string userFullName = await GetActiveUserFullNameAsync();
+
             var report = new CommunityReport
             {
                 Title = NewReportTitle.Trim(),
@@ -428,7 +430,7 @@ namespace RescuAR.App.ViewModels.Reports
                 Latitude = NewReportLatitude,
                 Longitude = NewReportLongitude,
                 DistanceText = "50 meters away",
-                PostedBy = "Aubrey T.",
+                PostedBy = userFullName,
                 CreatedAt = DateTime.UtcNow,
                 MediaUrl = publicMediaUrl,
                 MediaType = NewReportMediaType,
@@ -530,6 +532,53 @@ namespace RescuAR.App.ViewModels.Reports
             {
                 await Shell.Current.GoToAsync("AdvisoryFeedPage");
             }
+        }
+
+        private async Task<string> GetActiveUserFullNameAsync()
+        {
+            string fname = Microsoft.Maui.Storage.Preferences.Default.Get("UserFirstName", "").Trim();
+            string lname = Microsoft.Maui.Storage.Preferences.Default.Get("UserLastName", "").Trim();
+            string storedFullName = $"{fname} {lname}".Trim();
+            if (!string.IsNullOrWhiteSpace(storedFullName)) return storedFullName;
+
+            string username = Microsoft.Maui.Storage.Preferences.Default.Get("UserName", "").Trim();
+            if (!string.IsNullOrWhiteSpace(username)) return username;
+
+            try
+            {
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync();
+                if (client?.Auth?.CurrentUser != null)
+                {
+                    var user = client.Auth.CurrentUser;
+                    if (user.UserMetadata != null)
+                    {
+                        if (user.UserMetadata.TryGetValue("full_name", out var fnObj) && fnObj != null && !string.IsNullOrWhiteSpace(fnObj.ToString()))
+                            return fnObj.ToString()!.Trim();
+                        if (user.UserMetadata.TryGetValue("name", out var nameObj) && nameObj != null && !string.IsNullOrWhiteSpace(nameObj.ToString()))
+                            return nameObj.ToString()!.Trim();
+                    }
+
+                    var profileRes = await client.From<RescuAR.App.Models.SupabaseProfile>().Filter("id", Supabase.Postgrest.Constants.Operator.Equals, user.Id).Get();
+                    if (profileRes?.Models != null && profileRes.Models.Count > 0)
+                    {
+                        var prof = profileRes.Models.First();
+                        string profName = $"{prof.FirstName} {prof.LastName}".Trim();
+                        if (!string.IsNullOrWhiteSpace(profName)) return profName;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(user.Email) && user.Email.Contains("@"))
+                    {
+                        string emailPrefix = user.Email.Split('@')[0];
+                        if (!string.IsNullOrWhiteSpace(emailPrefix))
+                        {
+                            return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(emailPrefix.Replace('.', ' ').Replace('_', ' '));
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return "Anonymous Resident";
         }
     }
 
