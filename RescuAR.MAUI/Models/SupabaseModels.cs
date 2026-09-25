@@ -129,4 +129,47 @@ namespace RescuAR.App.Models
         [Column("coverage")]
         public string Coverage { get; set; } = "Citywide";
     }
+
+    [Table("evacuation_centers")]
+    public class SupabaseEvacuationCenter : BaseModel
+    {
+        [PrimaryKey("id", false)]
+        public string Id { get; set; } = string.Empty;
+
+        [Column("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Column("barangay")]
+        public string Barangay { get; set; } = string.Empty;
+
+        [Column("classification")]
+        public string Classification { get; set; } = string.Empty;
+
+        [Column("longitude")]
+        public string Longitude { get; set; } = string.Empty;
+
+        [Column("latitude")]
+        public string Latitude { get; set; } = string.Empty;
+
+        [Column("capacity")]
+        public int Capacity { get; set; }
+
+        [Column("current_evacuees")]
+        public int CurrentEvacuees { get; set; }
+
+        [Column("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [Column("head_officer")]
+        public string HeadOfficer { get; set; } = string.Empty;
+
+        [Column("contact")]
+        public string Contact { get; set; } = string.Empty;
+
+        [Column("image_url")]
+        public string ImageUrl { get; set; } = string.Empty;
+
+        [Column("facilities")]
+        public object? Facilities { get; set; }
+    }
 }
