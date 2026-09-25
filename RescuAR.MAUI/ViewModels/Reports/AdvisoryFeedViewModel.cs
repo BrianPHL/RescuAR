@@ -171,11 +171,12 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task NavigateToEvacuationCentersAsync()
+    private async Task NavigateToEvacuationCentersAsync(string? emergencyType = "flood")
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("Prepare/EvacuationCenterInfo");
+            var param = string.IsNullOrWhiteSpace(emergencyType) ? "flood" : emergencyType;
+            await Shell.Current.GoToAsync($"Prepare/EvacuationCenterInfo?type={Uri.EscapeDataString(param)}");
         }
     }
 
