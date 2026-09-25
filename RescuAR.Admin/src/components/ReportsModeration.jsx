@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, CheckCircle, AlertTriangle, XCircle, MapPin, User, Clock, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Check, X, Clock, ShieldCheck, MapPin, User, AlertTriangle } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -83,15 +83,48 @@ export default function ReportsModeration() {
   }, []);
 
   const maskName = (name) => {
-    if (!name) return 'Us*** U.';
-    const parts = name.trim().split(/\s+/);
-    const firstName = parts[0] || '';
-    const first2 = firstName.length >= 2 ? firstName.substring(0, 2) : firstName;
-    let surnameInitial = '';
-    if (parts.length > 1) {
-      surnameInitial = parts[parts.length - 1][0].toUpperCase() + '.';
+    if (!name) return 'Anonymous Citizen';
+    return name;
+  };
+
+  const renderStatusPill = (status) => {
+    const s = status || 'Pending';
+    let bg = '#fef3c7';
+    let color = '#b45309';
+    let IconComponent = Clock;
+
+    if (s === 'Approved') {
+      bg = '#dcfce7';
+      color = '#15803d';
+      IconComponent = Check;
+    } else if (s === 'Resolved') {
+      bg = '#e0f2fe';
+      color = '#0369a1';
+      IconComponent = ShieldCheck;
+    } else if (s === 'Rejected') {
+      bg = '#fee2e2';
+      color = '#dc2626';
+      IconComponent = X;
     }
-    return `${first2}*** ${surnameInitial}`.trim();
+
+    return (
+      <span 
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '4px 10px',
+          borderRadius: '12px',
+          backgroundColor: bg,
+          color: color,
+          fontSize: '12px',
+          fontWeight: '600'
+        }}
+      >
+        <IconComponent size={14} color={color} strokeWidth={2.5} />
+        {s}
+      </span>
+    );
   };
 
   const handleUpdateStatus = async (reportId, newStatus) => {
@@ -236,15 +269,7 @@ export default function ReportsModeration() {
                             )}
                           </td>
                           <td style={{ padding: '16px 24px', fontSize: '14px', fontWeight: '600' }}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              backgroundColor: report.status === 'Approved' ? '#dcfce7' : report.status === 'Resolved' ? '#e0f2fe' : report.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
-                              color: report.status === 'Approved' ? '#15803d' : report.status === 'Resolved' ? '#0369a1' : report.status === 'Rejected' ? '#dc2626' : '#b45309'
-                            }}>
-                              {report.status || 'Pending'}
-                            </span>
+                            {renderStatusPill(report.status)}
                           </td>
                         </tr>
                       ))
@@ -331,18 +356,9 @@ export default function ReportsModeration() {
                     >
                       <Popup>
                         <div style={{ padding: '4px', maxWidth: '200px' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '10px',
-                            fontWeight: '700',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: rpt.status === 'Approved' ? '#dcfce7' : rpt.status === 'Resolved' ? '#e0f2fe' : rpt.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
-                            color: rpt.status === 'Approved' ? '#15803d' : rpt.status === 'Resolved' ? '#0369a1' : rpt.status === 'Rejected' ? '#dc2626' : '#b45309',
-                            marginBottom: '4px'
-                          }}>
-                            {rpt.status || 'Pending'}
-                          </span>
+                          <div style={{ marginBottom: '6px' }}>
+                            {renderStatusPill(rpt.status)}
+                          </div>
                           <h4 style={{ margin: '2px 0 4px 0', fontSize: '13px', color: '#0f172a', fontWeight: '700' }}>
                             {rpt.title || 'Report Location'}
                           </h4>
@@ -386,9 +402,7 @@ export default function ReportsModeration() {
                 <span style={{ fontSize: '12px', fontWeight: '700', color: '#0284c7', backgroundColor: '#e0f2fe', padding: '4px 10px', borderRadius: '8px' }}>
                   {selectedReport.category || 'General'}
                 </span>
-                <span style={{ fontSize: '12px', fontWeight: '700', color: selectedReport.status === 'Approved' ? '#15803d' : selectedReport.status === 'Resolved' ? '#0369a1' : selectedReport.status === 'Rejected' ? '#dc2626' : '#b45309', backgroundColor: selectedReport.status === 'Approved' ? '#dcfce7' : selectedReport.status === 'Resolved' ? '#e0f2fe' : selectedReport.status === 'Rejected' ? '#fee2e2' : '#fef3c7', padding: '4px 10px', borderRadius: '8px' }}>
-                  {selectedReport.status || 'Pending'}
-                </span>
+                {renderStatusPill(selectedReport.status)}
               </div>
 
               {/* Title & Description */}
@@ -469,7 +483,7 @@ export default function ReportsModeration() {
                       cursor: 'pointer'
                     }}
                   >
-                    <CheckCircle size={16} /> Approve
+                    <Check size={16} /> Approve
                   </button>
 
                   <button
@@ -489,7 +503,7 @@ export default function ReportsModeration() {
                       cursor: 'pointer'
                     }}
                   >
-                    <ShieldAlert size={16} /> Resolve
+                    <ShieldCheck size={16} /> Resolve
                   </button>
                 </div>
 
@@ -510,7 +524,7 @@ export default function ReportsModeration() {
                     cursor: 'pointer'
                   }}
                 >
-                  <XCircle size={16} /> Reject Report
+                  <X size={16} /> Reject Report
                 </button>
               </div>
 
