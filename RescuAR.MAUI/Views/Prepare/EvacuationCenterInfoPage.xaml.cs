@@ -41,8 +41,8 @@ namespace RescuAR.App.Views.Prepare
                     CRS = "EPSG:3857"
                 };
 
-                // Add OpenStreetMap (OSM) Base Layer
-                var osmLayer = Mapsui.Tiling.OpenStreetMap.CreateTileLayer();
+                // Add OpenStreetMap (OSM) Base Layer with custom User-Agent to comply with OSM Tile Policy
+                var osmLayer = Mapsui.Tiling.OpenStreetMap.CreateTileLayer("RescuAR-Mobile/1.0 (Marikina Emergency System)");
                 map.Layers.Add(osmLayer);
 
                 // Project shelter center coordinates (SphericalMercator)
