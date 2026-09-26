@@ -403,7 +403,7 @@
                 StrokeShape="RoundRectangle 8">
                 <Label
                     x:Name="floodWaitingLabel"
-                    Text="Waiting for simulation..."
+                    Text="No verified local flood-depth data"
                     TextColor="#0876B9"
                     FontSize="13"
                     FontAttributes="Bold"
@@ -438,7 +438,7 @@
                             VerticalOptions="Center">
                             <Label
                                 x:Name="floodVisualizationPrimaryLabel"
-                                Text="Simulating 0.60 meters of flood depth near you"
+                                Text="Verified local flood-depth data"
                                 TextColor="#0876B9"
                                 FontSize="13"
                                 FontAttributes="Bold"

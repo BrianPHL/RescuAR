@@ -1,6 +1,7 @@
 using Evergine.Framework;
 using Evergine.Framework.Graphics;
 using Evergine.Mathematics;
+using RescuAR.Diagnostics;
 using System;
 using System.Threading;
 
@@ -95,8 +96,9 @@ public sealed class ARCameraPoseBehavior : Behavior
             testTargetEntity?.FindComponent<Transform3D>();
 
         /*
-         * The serialized MyScene.wescene position is editor-only.
-         * Hide the capsule until ARCore supplies a real floor anchor.
+         * The serialized MyScene.wescene position is editor-only. The legacy
+         * ground marker remains hidden in production and is rendered only in
+         * an explicit diagnostic build after ARCore supplies a floor anchor.
          */
         if (testTargetEntity is not null)
         {
@@ -182,7 +184,7 @@ public sealed class ARCameraPoseBehavior : Behavior
                 !testTargetEntity.IsEnabled)
             {
                 testTargetEntity.IsEnabled =
-                    true;
+                    DiagnosticPrivacyPolicy.IsDiagnosticBuild;
             }
         }
         else if (testTargetEntity is not null &&

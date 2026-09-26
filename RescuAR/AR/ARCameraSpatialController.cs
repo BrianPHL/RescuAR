@@ -856,9 +856,9 @@ public static class ARCameraSpatialController
         /*
          * GROUND MARKER / FLOOD BASELINE
          * ------------------------------
-         * Apply the compact ground marker before flood placement. The flood
-         * root then derives its baseline directly from that SAME marker
-         * transform rather than independently reconstructing the ground pose.
+         * Update the compact ground-reference transform before flood placement.
+         * The entity is visible only in diagnostic builds, while production
+         * still uses its transform as the shared flood baseline.
          *
          * This makes the visual contract explicit:
          *
@@ -879,11 +879,8 @@ public static class ARCameraSpatialController
                         GroundMarkerCenterOffsetMeters,
                     anchor.PositionZ);
 
-            if (!capsule.IsEnabled)
-            {
-                capsule.IsEnabled =
-                    true;
-            }
+            capsule.IsEnabled =
+                DiagnosticPrivacyPolicy.IsDiagnosticBuild;
         }
         else if (capsule.IsEnabled)
         {

@@ -929,7 +929,7 @@ namespace RescuAR.App.Views.Camera
             else if (floodMode)
             {
                 floodModeDepthSummaryLabel.Text =
-                    "Waiting for simulation...";
+                    "No verified local flood-depth data";
             }
 
             floodWaitingBanner.IsVisible =
@@ -1094,7 +1094,7 @@ namespace RescuAR.App.Views.Camera
                 return "Scanning for verified floor...";
             }
 
-            return "Waiting for simulation...";
+            return "No verified local flood-depth data";
         }
 
         private bool HasLocalFloodDepth()
@@ -7865,7 +7865,7 @@ namespace RescuAR.App.Views.Camera
 
                     floodVisualizationPrimaryLabel.Text =
                         hasLocalArDepth
-                            ? $"Simulating {snapshot.LocalDepthMeters!.Value:0.0#} meters of flood depth near you"
+                            ? $"Estimated local flood depth: {snapshot.LocalDepthMeters!.Value:0.0#} m"
                             : snapshot.PrimaryText;
 
                     floodVisualizationSecondaryLabel.Text =

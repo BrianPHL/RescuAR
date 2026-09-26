@@ -15,11 +15,14 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 /// </summary>
 public sealed partial class ArCoreService
 {
+#if RESCUAR_DIAGNOSTICS
     private const string ForceDepthOffIntentExtra =
         "rescuar.arcore.force_depth_off";
+#endif
 
     private static bool IsDepthDisabledForControlledRetest()
     {
+#if RESCUAR_DIAGNOSTICS
         try
         {
             return global::Microsoft.Maui.ApplicationModel.Platform
@@ -40,6 +43,9 @@ public sealed partial class ArCoreService
 
             return false;
         }
+#else
+        return false;
+#endif
     }
 
     private void LogDeviceCompatibilityProfile(
