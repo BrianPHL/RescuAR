@@ -65,13 +65,6 @@ public static class ARGuidanceConfidencePolicy
                     spatial.State));
         }
 
-        if (!headingTrusted)
-        {
-            return Hidden(
-                score,
-                "Calibrating direction — AR route hidden");
-        }
-
         if (spatial.State ==
             ARCameraSpatialController.SpatialContinuityState.ShortHold)
         {
@@ -113,6 +106,15 @@ public static class ARGuidanceConfidencePolicy
                 "Confirming your route position — AR route hidden");
         }
 
+        if (!headingTrusted)
+        {
+            return new GuidanceConfidenceSnapshot(
+                GuidanceConfidenceState.Recovery,
+                score,
+                false,
+                "Direction alignment unavailable — use the 2D map");
+        }
+
         bool verifiedRecovery =
             routeVisualKind ==
                 RouteVisualKind.ApproachConnector &&
@@ -125,10 +127,14 @@ public static class ARGuidanceConfidencePolicy
         if (verifiedRecovery)
         {
             return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Recovery,
+                headingTrusted
+                    ? GuidanceConfidenceState.Recovery
+                    : GuidanceConfidenceState.Degraded,
                 score,
                 true,
-                "Returning to the route — follow the short cyan arrow");
+                headingTrusted
+                    ? "Returning to the route — follow the short cyan arrow"
+                    : "Direction accuracy reduced — confirm the short cyan arrow with the 2D map");
         }
 
         bool fullGuidance =
@@ -143,10 +149,14 @@ public static class ARGuidanceConfidencePolicy
         if (fullGuidance)
         {
             return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Full,
+                headingTrusted
+                    ? GuidanceConfidenceState.Full
+                    : GuidanceConfidenceState.Degraded,
                 score,
                 true,
-                "AR guidance readiness: Full");
+                headingTrusted
+                    ? "AR guidance readiness: Full"
+                    : "Direction accuracy reduced — confirm the cyan route with the 2D map");
         }
 
         bool degradedGuidance =
@@ -161,10 +171,10 @@ public static class ARGuidanceConfidencePolicy
         if (degradedGuidance)
         {
             return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Degraded,
+                GuidanceConfidenceState.Recovery,
                 score,
-                true,
-                "AR accuracy reduced — confirm with text guidance");
+                false,
+                "Position uncertain — use the 2D map until the route is verified");
         }
 
         return new GuidanceConfidenceSnapshot(

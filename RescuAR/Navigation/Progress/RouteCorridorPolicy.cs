@@ -124,8 +124,7 @@ public static class RouteCorridorPolicy
             courseAlignmentErrorDegrees <=
                 90.0;
 
-        if (!directionSupportsMatch ||
-            matchScoreGap <
+        if (matchScoreGap <
                 MinimumScoreGapForMediumConfidence)
         {
             return RouteMatchConfidence.Low;
@@ -137,7 +136,7 @@ public static class RouteCorridorPolicy
             courseAlignmentErrorDegrees <=
                 60.0;
 
-        if (accuracyMeters.Value <=
+        if (directionSupportsMatch && accuracyMeters.Value <=
                 15.0 &&
             highDirectionAgreement &&
             matchScoreGap >=

@@ -25,9 +25,11 @@ param(
     [ValidateSet("V", "D", "I", "W", "E", "F")]
     [string]$MinimumPriority = "D",
 
-    [Parameter(Mandatory = $true, ParameterSetName = "Start")]
-    [ValidateSet("VisualStudio", "ADB", "PlayInternal", "Sideload", "Other")]
-    [string]$InstallMethod,
+    # Normal operation requires only -Start. When left as Auto, the script
+    # records the best install-method classification available from Android's
+    # package-installer metadata.
+    [ValidateSet("Auto", "VisualStudio", "ADB", "PlayInternal", "Sideload", "Other")]
+    [string]$InstallMethod = "Auto",
 
     [switch]$DeleteAfterPull
 )
@@ -152,15 +154,16 @@ function Get-InstalledPackageEvidence {
         "unavailable"
     }
 
-    $installerOutput = Invoke-AdbShellText `
-        -Serial $Serial `
-        -Command "cmd package list packages -i $PackageName"
-
-    $installer = if ($installerOutput -match 'installer=([^\s]+)') {
-        $Matches[1]
-    }
-    else {
-        "unknown"
+    # Do not use `cmd package list packages -i` here. On Samsung devices with
+    # Secure Folder or another secondary profile, that command can scan an
+    # inaccessible user and abort with SecurityException. The package dump is
+    # already scoped to RescuAR and normally contains the same installer data.
+    $installer = "unknown"
+    if ($packageDump -match '(?m)^\s*installerPackageName[=:]\s*([^\s\r\n]+)') {
+        $installerCandidate = $Matches[1].Trim()
+        if ($installerCandidate -and $installerCandidate -notin @("null", "none")) {
+            $installer = $installerCandidate
+        }
     }
 
     return [PSCustomObject]@{
@@ -170,6 +173,37 @@ function Get-InstalledPackageEvidence {
         Installer = $installer
         PackagePaths = $packagePaths
         ArtifactHashes = $artifactHashes
+    }
+}
+
+function Resolve-InstallMethod {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RequestedMethod,
+
+        [string]$Installer
+    )
+
+    if ($RequestedMethod -ne "Auto") {
+        return $RequestedMethod
+    }
+
+    switch -Regex ($Installer) {
+        '^com\.android\.vending$' {
+            return "PlayInternalOrStore"
+        }
+        '^com\.android\.shell$' {
+            # Android records both command-line ADB installs and Visual Studio
+            # deployments as shell-driven installs, so they cannot be
+            # distinguished reliably without asking the operator.
+            return "ADBOrVisualStudio"
+        }
+        '(?i)(packageinstaller|permissioncontroller)' {
+            return "Sideload"
+        }
+        default {
+            return "Unknown"
+        }
     }
 }
 
@@ -188,12 +222,17 @@ function Export-InstalledArtifactManifest {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+    # PowerShell's current location can differ from the process working
+    # directory used by .NET APIs. Resolve once so ZipFile.OpenRead receives an
+    # unambiguous absolute path.
+    $resolvedDestinationDirectory = (Resolve-Path -LiteralPath $DestinationDirectory).Path
+
     $collectEvidence = Get-InstalledPackageEvidence -Serial $Serial
     $artifacts = @()
 
     for ($index = 0; $index -lt $collectEvidence.PackagePaths.Count; $index++) {
         $remotePath = $collectEvidence.PackagePaths[$index]
-        $temporaryApk = Join-Path $DestinationDirectory "__installed_$index.apk"
+        $temporaryApk = Join-Path $resolvedDestinationDirectory "__installed_$index.apk"
 
         try {
             & adb -s $Serial pull $remotePath $temporaryApk | Out-Null
@@ -536,6 +575,10 @@ if ($Start) {
         throw "$PackageName is not installed; field evidence cannot be tied to an application artifact."
     }
 
+    $resolvedInstallMethod = Resolve-InstallMethod `
+        -RequestedMethod $InstallMethod `
+        -Installer $installedPackage.Installer
+
     & adb -s $serial shell "echo 'Session=$session' > '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'Device=$model' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'Android=$androidVersion' >> '$remoteMeta'" | Out-Null
@@ -544,7 +587,7 @@ if ($Start) {
     & adb -s $serial shell "echo 'PackageVersionName=$($installedPackage.VersionName)' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'PackageVersionCode=$($installedPackage.VersionCode)' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'PackageInstaller=$($installedPackage.Installer)' >> '$remoteMeta'" | Out-Null
-    & adb -s $serial shell "echo 'InstallMethod=$InstallMethod' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'InstallMethod=$resolvedInstallMethod' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'SupportedAbis=$supportedAbis' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'InstalledArtifactHashes=$($installedPackage.ArtifactHashes -join ';')' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'MinimumPriority=$MinimumPriority' >> '$remoteMeta'" | Out-Null
@@ -624,6 +667,7 @@ exec logcat \
     Write-Host "Rotated files retained: $RotateCount (+ 1 active file)"
     Write-Host "Approximate maximum log retention: $approxRetentionMB MB"
     Write-Host "Minimum priority: $MinimumPriority"
+    Write-Host "Install method: $resolvedInstallMethod"
 
     $launchCommand =
         "nohup sh '$RemoteWrapper' " +
@@ -728,10 +772,16 @@ if ($Collect) {
     Start-Sleep -Milliseconds 750
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-    $localSessionDir = Join-Path $OutputDirectory "RescuAR_FieldTest_$session"
+    $resolvedOutputDirectory = (Resolve-Path -LiteralPath $OutputDirectory).Path
+    $localSessionDir = Join-Path $resolvedOutputDirectory "RescuAR_FieldTest_$session"
 
     if (Test-Path -LiteralPath $localSessionDir) {
-        throw "The local collection directory already exists: $localSessionDir. Move/delete it first so an earlier field test cannot be mixed with this one."
+        $retryTimestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $localSessionDir = Join-Path `
+            $resolvedOutputDirectory `
+            "RescuAR_FieldTest_${session}_retry_$retryTimestamp"
+
+        Write-Warning "A previous collection directory already exists. This retry will be saved separately at: $localSessionDir"
     }
 
     New-Item -ItemType Directory -Path $localSessionDir -Force | Out-Null

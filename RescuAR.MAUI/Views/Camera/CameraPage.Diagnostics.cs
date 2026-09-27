@@ -1,4 +1,10 @@
 using RescuAR.Diagnostics;
+using System.Collections.Generic;
+using System.Threading;
+using RescuAR.AR;
+using RescuAR.Navigation.Data;
+using RescuAR.Navigation.Projection;
+using RescuAR.Navigation.Models;
 
 namespace RescuAR.App.Views.Camera;
 
@@ -23,6 +29,10 @@ public partial class CameraPage
 
     private Button developerHazardRerouteTestButton =
         null!;
+
+    private Button developerRoadLinesButton = null!;
+
+    private const double RoadLineDiagnosticRadiusMeters = 40.0;
 
     private Grid floodSimulationConfigurationSheet =
         null!;
@@ -154,6 +164,10 @@ public partial class CameraPage
         developerHazardRerouteTestButton.Clicked +=
             OnDeveloperHazardRerouteTestClicked;
 
+        developerRoadLinesButton = CreateDiagnosticButton(
+            "DEV: Show GeoJSON roads (not directions)");
+        developerRoadLinesButton.Clicked += OnDeveloperRoadLinesClicked;
+
         diagnosticNavigationControlsHost.Children.Add(
             developerSafeZoneTestButton);
 
@@ -165,8 +179,113 @@ public partial class CameraPage
 
         diagnosticNavigationControlsHost.Children.Add(
             developerHazardRerouteTestButton);
+        diagnosticNavigationControlsHost.Children.Add(developerRoadLinesButton);
 
         ConfigureFloodSimulationSheet();
+    }
+
+    private async void OnDeveloperRoadLinesClicked(object? sender, EventArgs e)
+    {
+        if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
+        {
+            ARRouteRenderer.HideRoadDiagnostics();
+            developerRoadLinesButton.Text = "DEV: Show GeoJSON roads (not directions)";
+            RefreshArTrackingStatusBanner();
+            UpdateTurnGuidance();
+            return;
+        }
+
+        developerRoadLinesButton.IsEnabled = false;
+        try
+        {
+            if (!pageIsVisible ||
+                currentCameraModuleView != CameraModuleViewMode.ArCamera)
+                return;
+
+            var reading = await _locationService.GetCurrentLocationAsync();
+            if (reading is null || !reading.Coordinate.IsValid ||
+                reading.AccuracyMeters is not double accuracy ||
+                !double.IsFinite(accuracy) || accuracy > 15.0)
+            {
+                await DisplayAlert("GeoJSON roads",
+                    "Wait for a GPS fix with accuracy of 15 m or better.", "OK");
+                return;
+            }
+
+            var heading = await _headingAlignmentService.CaptureAsync(
+                reading.Coordinate, reading.AltitudeMeters,
+                CancellationToken.None);
+            if (!heading.HasValue || !heading.Value.IsAvailable ||
+                !heading.Value.IsStable)
+            {
+                await DisplayAlert("GeoJSON roads",
+                    "Stable heading is required to align road data with the camera.", "OK");
+                return;
+            }
+
+            if (reading.Timestamp > DateTimeOffset.UtcNow ||
+                DateTimeOffset.UtcNow - reading.Timestamp >
+                    TimeSpan.FromSeconds(5))
+            {
+                await DisplayAlert("GeoJSON roads",
+                    "The GPS fix expired while aligning the camera. Try again.", "OK");
+                return;
+            }
+
+            IReadOnlyList<GeoJsonRoadFeature> roads =
+                await NavigationDataBootstrap.GetRoadFeaturesAsync();
+            IReadOnlyList<NearbyRoadLineProjector.RoadLineSegment> lines =
+                NearbyRoadLineProjector.Project(roads, reading.Coordinate,
+                    RoadLineDiagnosticRadiusMeters,
+                    heading.Value.MapToArYawDegrees);
+
+            if (lines.Count == 0 ||
+                lines.Count > ARRouteRenderer.MaximumDiagnosticSegments)
+            {
+                await DisplayAlert("GeoJSON roads",
+                    lines.Count == 0
+                        ? "No GeoJSON lines are within 40 m of this location."
+                        : $"Found {lines.Count} lines; this exceeds the diagnostic display limit. None were hidden or displayed.",
+                    "OK");
+                return;
+            }
+
+            ARCameraPoseBridge.SpatialSnapshot frame =
+                ARCameraPoseBridge.CurrentFrame;
+            if (!pageIsVisible ||
+                currentCameraModuleView != CameraModuleViewMode.ArCamera ||
+                !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
+                !frame.Anchor.IsAvailable ||
+                frame.Anchor.ReferenceGeneration <= 0 ||
+                frame.Generation.SessionGeneration <= 0)
+            {
+                await DisplayAlert("GeoJSON roads",
+                    "Wait for camera tracking and a ground reference.", "OK");
+                return;
+            }
+
+            ARRouteRenderer.ShowRoadDiagnostics(lines,
+                frame.Pose.PositionX, frame.Pose.PositionZ,
+                frame.Anchor.ReferenceGeneration,
+                frame.Generation.SessionGeneration);
+            developerRoadLinesButton.Text = "DEV: Hide GeoJSON roads";
+            turnGuidancePanel.IsVisible = false;
+            navigationAwarenessSheet.IsVisible = false;
+            RefreshArTrackingStatusBanner();
+            await DisplayAlert("GeoJSON roads",
+                $"Showing all {lines.Count} raw GeoJSON line segments within 40 m. Cyan lines are map data, not a walking route. Tap the same button to restore navigation.",
+                "OK");
+        }
+        catch (Exception exception)
+        {
+            ARRouteRenderer.HideRoadDiagnostics();
+            developerRoadLinesButton.Text = "DEV: Show GeoJSON roads (not directions)";
+            await DisplayAlert("GeoJSON roads", exception.Message, "OK");
+        }
+        finally
+        {
+            developerRoadLinesButton.IsEnabled = true;
+        }
     }
 
     private void ConfigureFloodSimulationSheet()

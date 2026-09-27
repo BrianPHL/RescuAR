@@ -18,17 +18,7 @@ public static class ARRouteVisualPolicy
     public const float NearCameraOcclusionExemptionMeters =
         1.5f;
 
-    private const float MinimumRouteWidthMeters =
-        0.30f;
-
-    private const float MaximumRouteWidthMeters =
-        0.65f;
-
-    private const float MinimumWidthDistanceMeters =
-        1.25f;
-
-    private const float MaximumWidthDistanceMeters =
-        9.0f;
+    private const float RouteWidthMeters = 0.55f;
 
     private const float OcclusionClearanceMeters =
         0.30f;
@@ -45,32 +35,8 @@ public static class ARRouteVisualPolicy
     public static float GetRouteWidthMeters(
         float horizontalCameraDistanceMeters)
     {
-        if (!float.IsFinite(
-                horizontalCameraDistanceMeters))
-        {
-            return MaximumRouteWidthMeters;
-        }
-
-        float progress =
-            Math.Clamp(
-                (horizontalCameraDistanceMeters -
-                 MinimumWidthDistanceMeters) /
-                    (MaximumWidthDistanceMeters -
-                     MinimumWidthDistanceMeters),
-                0.0f,
-                1.0f);
-
-        // Smoothstep prevents visible width jumps as the user walks.
-        progress =
-            progress *
-            progress *
-            (3.0f -
-             2.0f * progress);
-
-        return MinimumRouteWidthMeters +
-            (MaximumRouteWidthMeters -
-             MinimumRouteWidthMeters) *
-            progress;
+        // One width across all pieces avoids a zebra pattern as the camera moves.
+        return RouteWidthMeters;
     }
 
     public static bool HasNearbyRoute(

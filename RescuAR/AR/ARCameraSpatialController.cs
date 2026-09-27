@@ -166,9 +166,6 @@ public static class ARCameraSpatialController
 
     private static bool routeHeadingTrusted;
 
-    private static string routeHeadingTrustReason =
-        "No stable map-to-AR heading alignment is available.";
-
     private static SpatialContinuitySnapshot currentSpatialContinuity =
         new(
             SpatialContinuityState.Live,
@@ -469,9 +466,6 @@ public static class ARCameraSpatialController
             routeHeadingTrusted =
                 false;
 
-            routeHeadingTrustReason =
-                "No stable map-to-AR heading alignment is available.";
-
             currentSpatialContinuity =
                 new SpatialContinuitySnapshot(
                     SpatialContinuityState.Live,
@@ -649,9 +643,6 @@ public static class ARCameraSpatialController
             routeHeadingTrusted =
                 false;
 
-            routeHeadingTrustReason =
-                "A new ARCore world frame requires heading alignment.";
-
             currentSpatialContinuity =
                 new SpatialContinuitySnapshot(
                     SpatialContinuityState.Live,
@@ -827,8 +818,6 @@ public static class ARCameraSpatialController
 
         bool headingTrusted;
 
-        string headingTrustReason;
-
         lock (sync)
         {
             routeAlignmentTrusted =
@@ -837,9 +826,6 @@ public static class ARCameraSpatialController
 
             headingTrusted =
                 routeHeadingTrusted;
-
-            headingTrustReason =
-                routeHeadingTrustReason;
         }
 
         SpatialContinuitySnapshot continuity =
@@ -848,7 +834,6 @@ public static class ARCameraSpatialController
                 anchor.IsAvailable,
                 routeGroundHeightPlausible,
                 headingTrusted,
-                headingTrustReason,
                 routeAlignmentTrusted,
                 frame.TrackingFailureReason,
                 frame.Version);
@@ -856,9 +841,9 @@ public static class ARCameraSpatialController
         /*
          * GROUND MARKER / FLOOD BASELINE
          * ------------------------------
-         * Update the compact ground-reference transform before flood placement.
-         * The entity is visible only in diagnostic builds, while production
-         * still uses its transform as the shared flood baseline.
+         * Apply the compact ground marker before flood placement. The flood
+         * root then derives its baseline directly from that SAME marker
+         * transform rather than independently reconstructing the ground pose.
          *
          * This makes the visual contract explicit:
          *
@@ -879,8 +864,11 @@ public static class ARCameraSpatialController
                         GroundMarkerCenterOffsetMeters,
                     anchor.PositionZ);
 
-            capsule.IsEnabled =
-                DiagnosticPrivacyPolicy.IsDiagnosticBuild;
+            if (!capsule.IsEnabled)
+            {
+                capsule.IsEnabled =
+                    true;
+            }
         }
         else if (capsule.IsEnabled)
         {
@@ -1143,6 +1131,24 @@ public static class ARCameraSpatialController
             }
         }
 
+        ARRouteRenderer.RoadDiagnosticPlacement roadDiagnostic =
+            ARRouteRenderer.CurrentRoadDiagnosticPlacement;
+        if (roadDiagnostic.Active)
+        {
+            bool diagnosticPlacementValid = hasRouteGeometry &&
+                trackingValid && anchor.IsAvailable &&
+                routeGroundHeightPlausible &&
+                roadDiagnostic.SessionGeneration == frame.Generation.SessionGeneration &&
+                roadDiagnostic.AnchorGeneration == anchor.ReferenceGeneration;
+            route.IsEnabled = diagnosticPlacementValid;
+            if (diagnosticPlacementValid)
+                routeRootTransform.Position = new Vector3(
+                    roadDiagnostic.X,
+                    anchor.PositionY + RouteYOffsetAboveGroundMeters,
+                    roadDiagnostic.Z);
+            hasValidRouteSpatialPlacement = false;
+        }
+
         bool routeHeldFromLastValidPlacement =
             route.IsEnabled &&
             hasRouteGeometry &&
@@ -1152,7 +1158,7 @@ public static class ARCameraSpatialController
 
         ARRouteRenderer.SetDepthOcclusionRequested(
             route.IsEnabled &&
-            trackingValid);
+            trackingValid && !roadDiagnostic.Active);
 
         if (route.IsEnabled &&
             trackingValid)
@@ -1460,9 +1466,6 @@ public static class ARCameraSpatialController
 
             routeHeadingTrusted =
                 trusted;
-
-            routeHeadingTrustReason =
-                normalizedReason;
         }
 
         if (changed)
@@ -1618,7 +1621,6 @@ public static class ARCameraSpatialController
         bool anchorAvailable,
         bool groundHeightPlausible,
         bool headingTrusted,
-        string headingTrustReason,
         bool routeAlignmentTrusted,
         string trackingFailureReason,
         long spatialVersion)
@@ -1685,21 +1687,15 @@ public static class ARCameraSpatialController
                 reason =
                     "Route alignment correction is pending.";
             }
-            else if (!headingTrusted)
-            {
-                state =
-                    SpatialContinuityState.Untrusted;
-
-                reason =
-                    headingTrustReason;
-            }
             else
             {
                 state =
                     SpatialContinuityState.Live;
 
                 reason =
-                    "Spatial tracking is healthy.";
+                    headingTrusted
+                        ? "Spatial tracking is healthy."
+                        : "Spatial tracking is healthy; heading confidence is reduced.";
             }
         }
         else

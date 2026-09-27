@@ -42,6 +42,8 @@ public sealed class RoadGraphBuilder
 
         Dictionary<CoordinateKey, RoadNode> byCoordinate =
             new();
+        var crossingPolicy = new MajorRoadCrossingPolicy(features);
+        int rejectedCrossingEdges = 0;
 
         Dictionary<int, RoadNode> nodes =
             new();
@@ -74,15 +76,23 @@ public sealed class RoadGraphBuilder
                 GeoCoordinate toCoordinate =
                     feature.Coordinates[i + 1];
 
-                if (fromCoordinate ==
-                    toCoordinate)
+                if (fromCoordinate == toCoordinate)
+                    continue;
+                if (crossingPolicy.IsUnverifiedCrossing(feature,
+                        fromCoordinate, toCoordinate))
                 {
+                    rejectedCrossingEdges++;
                     continue;
                 }
 
+                // At the ends of a bridge/tunnel feature the mapped way
+                // rejoins the ground network; intermediate crossings remain
+                // separated by grade.
+                int featureLayer = MajorRoadCrossingPolicy.LayerOf(feature);
                 RoadNode from =
                     GetOrCreateNode(
                         fromCoordinate,
+                        i == 0 ? 0 : featureLayer,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -90,6 +100,8 @@ public sealed class RoadGraphBuilder
                 RoadNode to =
                     GetOrCreateNode(
                         toCoordinate,
+                        i + 1 == feature.Coordinates.Count - 1
+                            ? 0 : featureLayer,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -140,9 +152,12 @@ public sealed class RoadGraphBuilder
             }
         }
 
+        RescuAR.Diagnostics.AndroidLog.Warn("RescuAR-RoadGraph",
+            $"Unverified major-road crossing segments excluded: {rejectedCrossingEdges}.");
         return new RoadGraph(
             nodes,
-            edges);
+            edges,
+            crossingPolicy.CrossesMajorRoadBetween);
     }
 
     private static RoadEdge CreateEdge(
@@ -166,13 +181,14 @@ public sealed class RoadGraphBuilder
 
     private static RoadNode GetOrCreateNode(
         GeoCoordinate coordinate,
+        int layer,
         Dictionary<CoordinateKey, RoadNode> byCoordinate,
         Dictionary<int, RoadNode> nodes,
         ref int nextNodeId)
     {
         CoordinateKey key =
             CoordinateKey.From(
-                coordinate);
+                coordinate, layer);
 
         if (byCoordinate.TryGetValue(
                 key,
@@ -199,10 +215,12 @@ public sealed class RoadGraphBuilder
 
     private readonly record struct CoordinateKey(
         double Latitude,
-        double Longitude)
+        double Longitude,
+        int Layer)
     {
         public static CoordinateKey From(
-            GeoCoordinate coordinate)
+            GeoCoordinate coordinate,
+            int layer)
         {
             return new CoordinateKey(
                 Math.Round(
@@ -210,7 +228,8 @@ public sealed class RoadGraphBuilder
                     CoordinatePrecision),
                 Math.Round(
                     coordinate.Longitude,
-                    CoordinatePrecision));
+                    CoordinatePrecision),
+                layer);
         }
     }
 }

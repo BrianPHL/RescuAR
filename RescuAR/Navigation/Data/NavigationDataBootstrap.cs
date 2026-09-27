@@ -33,6 +33,7 @@ public static class NavigationDataBootstrap
     private static Task<NavigationRuntimeValidationResult>? validationTask;
 
     private static RoadGraph? cachedRoadGraph;
+    private static IReadOnlyList<GeoJsonRoadFeature>? cachedRoadFeatures;
 
     public static NavigationRuntimeValidationResult? LastResult { get; private set; }
 
@@ -55,6 +56,18 @@ public static class NavigationDataBootstrap
             return cachedRoadGraph ??
                 throw new InvalidOperationException(
                     "Navigation data validation completed without publishing the RoadGraph.");
+        }
+    }
+
+    /// <summary>Raw embedded lines, including those excluded from routing.</summary>
+    public static async Task<IReadOnlyList<GeoJsonRoadFeature>> GetRoadFeaturesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await ValidateOnceAsync().WaitAsync(cancellationToken);
+        lock (sync)
+        {
+            return cachedRoadFeatures ??
+                throw new InvalidOperationException("ROADS.geojson was not loaded.");
         }
     }
 
@@ -175,6 +188,7 @@ public static class NavigationDataBootstrap
         {
             cachedRoadGraph =
                 graph;
+            cachedRoadFeatures = roads;
         }
 
         NavigationRuntimeValidationResult result =

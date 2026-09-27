@@ -22,30 +22,36 @@ public sealed partial class ArCoreService
 
     private static bool IsDepthDisabledForControlledRetest()
     {
+        // Field tombstones on Android 16 SM-A156E and SM-A546E identify
+        // ARCore's native ms_depth worker. A managed exception handler cannot
+        // catch that process fault. Prefer the existing Plane ground path on
+        // these exact device/OS profiles until a controlled Depth retest.
+        bool affectedProfile = (int)AndroidBuild.VERSION.SdkInt >= 36 &&
+            (string.Equals(AndroidBuild.Model, "SM-A156E",
+                StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(AndroidBuild.Model, "SM-A546E",
+                StringComparison.OrdinalIgnoreCase));
 #if RESCUAR_DIAGNOSTICS
         try
         {
-            return global::Microsoft.Maui.ApplicationModel.Platform
-                .CurrentActivity?
-                .Intent?
-                .GetBooleanExtra(
-                    ForceDepthOffIntentExtra,
-                    false) ??
-                false;
+            var intent = global::Microsoft.Maui.ApplicationModel.Platform
+                .CurrentActivity?.Intent;
+            if (intent?.GetBooleanExtra("rescuar.arcore.force_depth_on", false) == true)
+                return false;
+            if (intent?.GetBooleanExtra(ForceDepthOffIntentExtra, false) == true)
+                return true;
         }
         catch (Exception exception)
         {
-            Log.Warn(
-                Tag,
-                "Could not read the controlled Depth-test launch flag; " +
-                "continuing with normal on-demand Depth. " +
+            Log.Warn(Tag, "Could not read diagnostic Depth flag: " +
                 DiagnosticPrivacyPolicy.FormatException(exception));
-
-            return false;
         }
-#else
-        return false;
 #endif
+        if (affectedProfile)
+            Log.Warn(Tag,
+                "Depth disabled on known native-crash device/OS profile; " +
+                "using Plane-only ground acquisition.");
+        return affectedProfile;
     }
 
     private void LogDeviceCompatibilityProfile(

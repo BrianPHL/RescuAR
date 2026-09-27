@@ -6,35 +6,19 @@ namespace RescuAR.AR;
 
 /// <summary>
 /// Produces bounded local route geometry before pooled segment rendering.
-/// Tiny spans are removed, sharp corners are beveled, and long spans are
-/// subdivided so one raw route edge cannot create an oversized visual wedge.
-/// When the detailed geometry exceeds the renderer budget, the complete
-/// window is resampled by both travelled distance and local curvature. The
-/// first and final points are always retained, so capacity pressure can reduce
-/// detail but can never silently cut off the remaining route.
+/// Tiny duplicate spans are removed and long source spans are subdivided.
+/// Every retained GeoJSON vertex stays on the line: bevels and budget-driven
+/// chords can cut across the inside of a building or an unmapped crossing.
+/// If too many source vertices need rendering, the renderer rejects the
+/// window and reports the capacity limit rather than inventing a shortcut.
 /// </summary>
 public static class ARRouteGeometrySanitizer
 {
     private const float MinimumPointSpacingMeters =
-        0.20f;
+        0.01f;
 
     private const float MaximumRenderedSegmentLengthMeters =
         4.0f;
-
-    private const double CornerBevelThresholdDegrees =
-        35.0;
-
-    private const float MaximumCornerTrimMeters =
-        0.45f;
-
-    private const float CornerTrimFraction =
-        0.25f;
-
-    private const float MinimumCornerTrimMeters =
-        0.08f;
-
-    private const double CurvatureSamplingWeight =
-        1.75;
 
     public static GeometryPreparationResult Prepare(
         IReadOnlyList<ArHorizontalRoutePoint> source,
@@ -132,96 +116,10 @@ public static class ARRouteGeometrySanitizer
         float sourceLengthMeters =
             PolylineLength(cleaned);
 
-        List<ArHorizontalRoutePoint> beveled =
-            new(
-                cleaned.Count *
-                2);
-
-        beveled.Add(
-            cleaned[0]);
-
-        int beveledCorners =
-            0;
-
-        for (int i = 1;
-             i <
-                cleaned.Count -
-                    1;
-             i++)
-        {
-            ArHorizontalRoutePoint previous =
-                cleaned[i - 1];
-
-            ArHorizontalRoutePoint corner =
-                cleaned[i];
-
-            ArHorizontalRoutePoint next =
-                cleaned[i + 1];
-
-            float incomingLength =
-                Distance(
-                    previous,
-                    corner);
-
-            float outgoingLength =
-                Distance(
-                    corner,
-                    next);
-
-            double turnDegrees =
-                GetTurnAngleDegrees(
-                    previous,
-                    corner,
-                    next);
-
-            float trimMeters =
-                MathF.Min(
-                    MaximumCornerTrimMeters,
-                    MathF.Min(
-                        incomingLength,
-                        outgoingLength) *
-                    CornerTrimFraction);
-
-            if (turnDegrees <
-                    CornerBevelThresholdDegrees ||
-                trimMeters <
-                    MinimumCornerTrimMeters)
-            {
-                AddIfSeparated(
-                    beveled,
-                    corner);
-
-                continue;
-            }
-
-            ArHorizontalRoutePoint beforeCorner =
-                InterpolateByDistance(
-                    corner,
-                    previous,
-                    trimMeters,
-                    incomingLength);
-
-            ArHorizontalRoutePoint afterCorner =
-                InterpolateByDistance(
-                    corner,
-                    next,
-                    trimMeters,
-                    outgoingLength);
-
-            AddIfSeparated(
-                beveled,
-                beforeCorner);
-
-            AddIfSeparated(
-                beveled,
-                afterCorner);
-
-            beveledCorners++;
-        }
-
-        AddIfSeparated(
-            beveled,
-            cleaned[^1]);
+        // Retain each mapped corner exactly. Filling in straight source
+        // edges is safe because interpolation stays on the same line.
+        List<ArHorizontalRoutePoint> beveled = cleaned;
+        int beveledCorners = 0;
 
         List<ArHorizontalRoutePoint> detailed =
             new(beveled.Count);
@@ -283,12 +181,11 @@ public static class ARRouteGeometrySanitizer
             detailed.Count >
                 maximumPoints;
 
+        // Discard only the optional interpolation points when capacity is
+        // tight. Never connect across omitted source corners. If even the
+        // source corners exceed capacity, the renderer rejects the window.
         IReadOnlyList<ArHorizontalRoutePoint> prepared =
-            capacityLimited
-                ? ResampleByDistanceAndCurvature(
-                    detailed,
-                    maximumPoints)
-                : detailed;
+            capacityLimited ? cleaned : detailed;
 
         bool firstPointPreserved =
             sourceStartValid &&
@@ -319,191 +216,30 @@ public static class ARRouteGeometrySanitizer
             MaximumSegmentLength(prepared));
     }
 
-    private static IReadOnlyList<ArHorizontalRoutePoint>
-        ResampleByDistanceAndCurvature(
-            IReadOnlyList<ArHorizontalRoutePoint> source,
-            int maximumPoints)
-    {
-        if (source.Count <=
-            maximumPoints)
-        {
-            return source;
-        }
-
-        double[] turnStrength =
-            new double[source.Count];
-
-        for (int i = 1;
-             i < source.Count -
-                    1;
-             i++)
-        {
-            turnStrength[i] =
-                Math.Clamp(
-                    GetTurnAngleDegrees(
-                        source[i -
-                            1],
-                        source[i],
-                        source[i +
-                            1]) /
-                        90.0,
-                    0.0,
-                    1.0);
-        }
-
-        double[] cumulativeWeight =
-            new double[source.Count];
-
-        for (int i = 0;
-             i < source.Count -
-                    1;
-             i++)
-        {
-            double edgeLength =
-                Distance(
-                    source[i],
-                    source[i +
-                        1]);
-
-            double curvature =
-                Math.Max(
-                    turnStrength[i],
-                    turnStrength[i +
-                        1]);
-
-            double edgeWeight =
-                edgeLength *
-                (1.0 +
-                 CurvatureSamplingWeight *
-                    curvature);
-
-            cumulativeWeight[i +
-                1] =
-                cumulativeWeight[i] +
-                edgeWeight;
-        }
-
-        double totalWeight =
-            cumulativeWeight[^1];
-
-        if (!double.IsFinite(
-                totalWeight) ||
-            totalWeight <=
-                0.0)
-        {
-            return
-            [
-                source[0],
-                source[^1]
-            ];
-        }
-
-        List<ArHorizontalRoutePoint> resampled =
-            new(maximumPoints)
-            {
-                source[0]
-            };
-
-        int edgeIndex =
-            0;
-
-        for (int sampleIndex = 1;
-             sampleIndex <
-                maximumPoints -
-                    1;
-             sampleIndex++)
-        {
-            double targetWeight =
-                totalWeight *
-                sampleIndex /
-                (maximumPoints -
-                    1);
-
-            while (edgeIndex <
-                       source.Count -
-                           2 &&
-                   cumulativeWeight[edgeIndex +
-                        1] <
-                       targetWeight)
-            {
-                edgeIndex++;
-            }
-
-            double edgeWeight =
-                cumulativeWeight[edgeIndex +
-                    1] -
-                cumulativeWeight[edgeIndex];
-
-            double amount =
-                edgeWeight >
-                    0.0
-                    ? (targetWeight -
-                       cumulativeWeight[edgeIndex]) /
-                        edgeWeight
-                    : 0.0;
-
-            resampled.Add(
-                Interpolate(
-                    source[edgeIndex],
-                    source[edgeIndex +
-                        1],
-                    amount));
-        }
-
-        resampled.Add(
-            source[^1]);
-
-        return resampled;
-    }
-
-    private static void AddIfSeparated(
-        List<ArHorizontalRoutePoint> points,
-        ArHorizontalRoutePoint candidate)
-    {
-        if (points.Count ==
-                0 ||
-            Distance(
-                points[^1],
-                candidate) >=
-                MinimumCornerTrimMeters)
-        {
-            points.Add(
-                candidate);
-        }
-    }
-
-    private static ArHorizontalRoutePoint InterpolateByDistance(
-        ArHorizontalRoutePoint from,
-        ArHorizontalRoutePoint toward,
-        float distanceMeters,
-        float fullDistanceMeters)
-    {
-        double amount =
-            fullDistanceMeters >
-                0.0f
-                ? Math.Clamp(
-                    distanceMeters /
-                        fullDistanceMeters,
-                    0.0f,
-                    1.0f)
-                : 0.0;
-
-        return Interpolate(
-            from,
-            toward,
-            amount);
-    }
-
     private static ArHorizontalRoutePoint Interpolate(
         ArHorizontalRoutePoint start,
         ArHorizontalRoutePoint end,
         double amount)
     {
+        if (amount <=
+            0.0)
+        {
+            return start;
+        }
+
+        if (amount >=
+            1.0)
+        {
+            /*
+             * Preserve the authoritative endpoint exactly. Reconstructing it
+             * through floating-point arithmetic can differ by one bit and
+             * falsely fail the renderer's endpoint-integrity check.
+             */
+            return end;
+        }
+
         float t =
-            (float)Math.Clamp(
-                amount,
-                0.0,
-                1.0);
+            (float)amount;
 
         return new ArHorizontalRoutePoint(
             start.X +
@@ -518,68 +254,6 @@ public static class ARRouteGeometrySanitizer
                 (end.DistanceFromWindowStartMeters -
                  start.DistanceFromWindowStartMeters) *
                 t);
-    }
-
-    private static double GetTurnAngleDegrees(
-        ArHorizontalRoutePoint previous,
-        ArHorizontalRoutePoint corner,
-        ArHorizontalRoutePoint next)
-    {
-        float incomingX =
-            corner.X -
-            previous.X;
-
-        float incomingZ =
-            corner.Z -
-            previous.Z;
-
-        float outgoingX =
-            next.X -
-            corner.X;
-
-        float outgoingZ =
-            next.Z -
-            corner.Z;
-
-        float incomingLength =
-            MathF.Sqrt(
-                incomingX *
-                    incomingX +
-                incomingZ *
-                    incomingZ);
-
-        float outgoingLength =
-            MathF.Sqrt(
-                outgoingX *
-                    outgoingX +
-                outgoingZ *
-                    outgoingZ);
-
-        if (incomingLength <
-                MinimumCornerTrimMeters ||
-            outgoingLength <
-                MinimumCornerTrimMeters)
-        {
-            return 0.0;
-        }
-
-        double dot =
-            incomingX /
-                incomingLength *
-                outgoingX /
-                outgoingLength +
-            incomingZ /
-                incomingLength *
-                outgoingZ /
-                outgoingLength;
-
-        return Math.Acos(
-                Math.Clamp(
-                    dot,
-                    -1.0,
-                    1.0)) *
-            180.0 /
-            Math.PI;
     }
 
     private static bool IsFinite(
@@ -671,7 +345,7 @@ public static class ARRouteGeometrySanitizer
         int RemovedPointCount,
         int BeveledCornerCount,
         int InsertedSubdivisionPointCount,
-        bool WasCapacityResampled,
+        bool WasCapacityLimited,
         bool FirstPointPreserved,
         bool FinalPointPreserved,
         float SourceLengthMeters,

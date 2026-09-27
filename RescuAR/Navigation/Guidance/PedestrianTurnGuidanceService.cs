@@ -197,6 +197,14 @@ public sealed class PedestrianTurnGuidanceService
             if (absoluteDelta <
                 MinimumTurnAngleDegrees)
             {
+                baselineBearing = futureBearing;
+                continue;
+            }
+
+            if (absoluteDelta >= 150.0 &&
+                !HasSustainedReverse(samples, i, baselineBearing))
+            {
+                baselineBearing = futureBearing;
                 continue;
             }
 
@@ -374,6 +382,14 @@ public sealed class PedestrianTurnGuidanceService
                     signedDelta) <
                 MinimumTurnAngleDegrees)
             {
+                baselineBearing = futureBearing;
+                continue;
+            }
+
+            if (Math.Abs(signedDelta) >= 150.0 &&
+                !HasSustainedReverse(samples, i, baselineBearing))
+            {
+                baselineBearing = futureBearing;
                 continue;
             }
 
@@ -473,6 +489,25 @@ public sealed class PedestrianTurnGuidanceService
                         from.X,
                     to.Z -
                         from.Z)));
+    }
+
+    // A one-segment GPS wiggle at a vertex cannot order a pedestrian to
+    // reverse direction. Require two successive 5 m legs pointing back.
+    private static bool HasSustainedReverse(
+        IReadOnlyList<GeoCoordinate> samples, int index, double baseline)
+    {
+        if (index + 2 >= samples.Count) return false;
+        double next = BearingDegrees(samples[index + 1], samples[index + 2]);
+        return Math.Abs(NormalizeSignedDegrees(next - baseline)) >= 150.0;
+    }
+
+    private static bool HasSustainedReverse(
+        IReadOnlyList<ArSamplePoint> samples, int index, double baseline)
+    {
+        if (index + 2 >= samples.Count) return false;
+        double next = ArBearingDegrees(samples[index + 1], samples[index + 2]);
+        return double.IsFinite(next) &&
+            Math.Abs(NormalizeSignedDegrees(next - baseline)) >= 150.0;
     }
 
     private static TurnInstruction ClassifyTurn(

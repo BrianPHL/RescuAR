@@ -62,9 +62,30 @@ public sealed class MLDARIntegrationService
                 destination,
                 cancellationToken);
 
-        if (route is null ||
-            route.Points.Count <
-                2)
+        return PublishInitialRoute(
+                route,
+                mapToArYawDegrees,
+                arWindowMeters,
+                userCoordinate: origin)
+            ? route
+            : null;
+    }
+
+    /// <summary>
+    /// Publishes geometry calculated alongside heading acquisition. Until
+    /// both are ready, no route is published with an unverified yaw.
+    /// </summary>
+    public bool PublishInitialRoute(
+        RouteResult? route,
+        double mapToArYawDegrees,
+        double arWindowMeters = 7.5,
+        GeoCoordinate? userCoordinate = null,
+        float arOriginOffsetX = 0.0f,
+        float arOriginOffsetZ = 0.0f)
+    {
+        if (!IsCameraOffsetAcceptable(arOriginOffsetX, arOriginOffsetZ))
+            return false;
+        if (route is null || route.Points.Count < 2)
         {
             AndroidLog.Warn(
                 LogTag,
@@ -73,12 +94,20 @@ public sealed class MLDARIntegrationService
 
             ARRouteBridge.Clear();
 
-            return route;
+            return false;
         }
 
         GeoCoordinate initialReference =
             route.Points[0]
                 .Coordinate;
+
+        if (userCoordinate.HasValue &&
+            !TryApplyGpsToRouteOffset(userCoordinate.Value, initialReference,
+                mapToArYawDegrees, ref arOriginOffsetX, ref arOriginOffsetZ))
+        {
+            ARRouteBridge.Clear();
+            return false;
+        }
 
         bool published =
             PublishWindow(
@@ -88,9 +117,9 @@ public sealed class MLDARIntegrationService
                 initialReference,
                 mapToArYawDegrees,
                 arOriginOffsetX:
-                    0.0f,
+                    arOriginOffsetX,
                 arOriginOffsetZ:
-                    0.0f,
+                    arOriginOffsetZ,
                 arWindowMeters:
                     arWindowMeters,
                 sourceSegmentIndex:
@@ -108,7 +137,7 @@ public sealed class MLDARIntegrationService
                 $"algorithm='{route.Algorithm}'.");
         }
 
-        return route;
+        return published;
     }
 
     /// <summary>
@@ -152,10 +181,20 @@ public sealed class MLDARIntegrationService
         float arOriginOffsetZ,
         double arWindowMeters = 7.5,
         bool clearRouteOnFailure = true,
-        int sourceSegmentIndex = -1)
+        int sourceSegmentIndex = -1,
+        GeoCoordinate? userCoordinate = null)
     {
         ArgumentNullException.ThrowIfNull(
             route);
+        if (!IsCameraOffsetAcceptable(arOriginOffsetX, arOriginOffsetZ))
+            return false;
+        if (userCoordinate.HasValue &&
+            !TryApplyGpsToRouteOffset(userCoordinate.Value, snappedReference,
+                mapToArYawDegrees, ref arOriginOffsetX, ref arOriginOffsetZ))
+        {
+            if (clearRouteOnFailure) ARRouteBridge.Clear();
+            return false;
+        }
 
         bool published =
             PublishWindow(
@@ -190,13 +229,9 @@ public sealed class MLDARIntegrationService
     }
 
     /// <summary>
-    /// Publishes a direct local access connector from the user's current GPS
-    /// position to the route-matched pedestrian corridor coordinate.
-    ///
-    /// This is intentionally different from PublishProgressWindow(...): while
-    /// the user is not yet verified inside the routed pedestrian corridor, the
-    /// cyan visual should point TO the nearest route instead of pretending the
-    /// camera is already inside that route corridor.
+    /// Deliberately rejects straight GPS-to-graph connectors. The source data
+    /// does not prove that the space between the user and the mapped line is
+    /// walkable; a connector can cross a building or live traffic.
     /// </summary>
     public bool PublishApproachToRoute(
         RouteResult route,
@@ -207,148 +242,9 @@ public sealed class MLDARIntegrationService
         float arOriginOffsetZ,
         bool clearRouteOnFailure = true)
     {
-        ArgumentNullException.ThrowIfNull(
-            route);
-
-        if (!ValidateLocalRouteOriginOffset(
-                arOriginOffsetX,
-                arOriginOffsetZ,
-                ProgressLogTag,
-                clearRouteOnFailure))
-        {
-            return false;
-        }
-
-        if (!userCoordinate.IsValid ||
-            !snappedRouteCoordinate.IsValid)
-        {
-            AndroidLog.Warn(
-                ProgressLogTag,
-                "Approach-to-route connector rejected because GPS or snapped route coordinate is invalid.");
-
-            return false;
-        }
-
-        double connectorDistanceMeters =
-            userCoordinate.DistanceTo(
-                snappedRouteCoordinate);
-
-        if (!double.IsFinite(
-                connectorDistanceMeters) ||
-            connectorDistanceMeters <=
-                0.05)
-        {
-            return false;
-        }
-
-        if (connectorDistanceMeters >
-            RouteCorridorPolicy.MaximumRecoveryConnectorMeters)
-        {
-            AndroidLog.Warn(
-                ProgressLogTag,
-                "Approach-to-route connector rejected because it exceeds " +
-                "the bounded local recovery distance: " +
-                $"distance={connectorDistanceMeters:F1} m, " +
-                $"maximum={RouteCorridorPolicy.MaximumRecoveryConnectorMeters:F1} m.");
-
-            return false;
-        }
-
-        const double earthRadiusMeters =
-            6371008.8;
-
-        double referenceLatitudeRadians =
-            userCoordinate.Latitude *
-            Math.PI /
-            180.0;
-
-        double deltaLatitudeRadians =
-            (snappedRouteCoordinate.Latitude -
-             userCoordinate.Latitude) *
-            Math.PI /
-            180.0;
-
-        double deltaLongitudeRadians =
-            (snappedRouteCoordinate.Longitude -
-             userCoordinate.Longitude) *
-            Math.PI /
-            180.0;
-
-        double northMeters =
-            deltaLatitudeRadians *
-            earthRadiusMeters;
-
-        double eastMeters =
-            deltaLongitudeRadians *
-            earthRadiusMeters *
-            Math.Cos(
-                referenceLatitudeRadians);
-
-        LocalRoutePoint[] connector =
-        [
-            new LocalRoutePoint(
-                userCoordinate,
-                0.0,
-                0.0,
-                0.0),
-            new LocalRoutePoint(
-                snappedRouteCoordinate,
-                eastMeters,
-                northMeters,
-                connectorDistanceMeters)
-        ];
-
-        IReadOnlyList<ArHorizontalRoutePoint> aligned =
-            ArRouteAlignment.Rotate(
-                connector,
-                mapToArYawDegrees);
-
-        if (aligned.Count <
-            2)
-        {
-            if (clearRouteOnFailure)
-            {
-                ARRouteBridge.Clear();
-            }
-
-            return false;
-        }
-
-        ArHorizontalRoutePoint[] shifted =
-            new ArHorizontalRoutePoint[
-                aligned.Count];
-
-        for (int i = 0;
-             i < aligned.Count;
-             i++)
-        {
-            ArHorizontalRoutePoint point =
-                aligned[i];
-
-            shifted[i] =
-                new ArHorizontalRoutePoint(
-                    point.X +
-                        arOriginOffsetX,
-                    point.Z +
-                        arOriginOffsetZ,
-                    point.DistanceFromWindowStartMeters);
-        }
-
-        ARRouteBridge.Publish(
-            shifted,
-            route.Algorithm,
-            route.TotalDistanceMeters,
-            RouteVisualKind.ApproachConnector);
-
-        AndroidLog.Debug(
-            ProgressLogTag,
-            "Approach-to-route AR connector published: " +
-            $"distance={connectorDistanceMeters:F1} m, " +
-            $"user={DiagnosticPrivacyPolicy.FormatCoordinate(userCoordinate.Latitude, userCoordinate.Longitude)}, " +
-            $"route={DiagnosticPrivacyPolicy.FormatCoordinate(snappedRouteCoordinate.Latitude, snappedRouteCoordinate.Longitude)}, " +
-            $"arOriginOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m");
-
-        return true;
+        AndroidLog.Warn(ProgressLogTag,
+            "Unsurveyed GPS-to-route cyan connector refused; use 2D map guidance.");
+        return false;
     }
 
     public void ClearRoute()
@@ -359,6 +255,35 @@ public sealed class MLDARIntegrationService
 
         ARRouteBridge.Clear();
     }
+
+    private static bool TryApplyGpsToRouteOffset(
+        GeoCoordinate user, GeoCoordinate routePoint, double yawDegrees,
+        ref float arOffsetX, ref float arOffsetZ)
+    {
+        if (!user.IsValid || !routePoint.IsValid ||
+            !double.IsFinite(yawDegrees) ||
+            user.DistanceTo(routePoint) > 20.0)
+        {
+            AndroidLog.Warn(ProgressLogTag,
+                "GPS-to-graph displacement too uncertain for an AR route origin.");
+            return false;
+        }
+        double latitude = user.Latitude * Math.PI / 180.0;
+        double east = (routePoint.Longitude - user.Longitude) *
+            Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude);
+        double north = (routePoint.Latitude - user.Latitude) *
+            Math.PI / 180.0 * 6371008.8;
+        double yaw = yawDegrees * Math.PI / 180.0;
+        arOffsetX += (float)(east * Math.Cos(yaw) + north * Math.Sin(yaw));
+        arOffsetZ += (float)(-east * Math.Sin(yaw) + north * Math.Cos(yaw));
+        return LocalArNavigationPolicy.IsRouteOriginOffsetAcceptable(
+            arOffsetX, arOffsetZ, out _);
+    }
+
+    private static bool IsCameraOffsetAcceptable(float x, float z) =>
+        float.IsFinite(x) && float.IsFinite(z) &&
+        MathF.Sqrt(x * x + z * z) <=
+            LocalArNavigationPolicy.MaximumCameraToAnchorOffsetMeters;
 
     private static bool PublishWindow(
         RouteResult route,

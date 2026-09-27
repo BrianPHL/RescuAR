@@ -208,8 +208,8 @@ public static class ARRouteBridge
                 renderedSegmentCount <=
                     0
                     ? RouteGeometryQualityState.Rejected
-                    : prepared.WasCapacityResampled
-                        ? RouteGeometryQualityState.CapacityResampled
+                    : prepared.WasCapacityLimited
+                        ? RouteGeometryQualityState.CapacityLimited
                         : RouteGeometryQualityState.WithinCapacity;
 
             next =
@@ -259,7 +259,7 @@ public static class ARRouteBridge
             $"endpointPreserved={next.EndpointPreserved}.";
 
         if (next.State ==
-            RouteGeometryQualityState.CapacityResampled ||
+            RouteGeometryQualityState.CapacityLimited ||
             next.State ==
                 RouteGeometryQualityState.Rejected)
         {
@@ -517,7 +517,7 @@ public static class ARRouteBridge
         public bool IsCapacityLimitedFor(
             RouteSnapshot route) =>
             State ==
-                RouteGeometryQualityState.CapacityResampled &&
+                RouteGeometryQualityState.CapacityLimited &&
             EndpointPreserved &&
             IsCurrentFor(
                 route);
@@ -538,7 +538,7 @@ public enum RouteGeometryQualityState
     Unavailable,
     Pending,
     WithinCapacity,
-    CapacityResampled,
+    CapacityLimited,
     Rejected
 }
 

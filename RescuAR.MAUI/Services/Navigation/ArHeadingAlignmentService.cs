@@ -176,7 +176,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
             Log.Warn(
                 LogTag,
                 "Device orientation sensor is not supported. " +
-                "Heading alignment will fall back to yaw=0.");
+                "Directional AR guidance will wait for verified alignment.");
 #endif
 
             return;

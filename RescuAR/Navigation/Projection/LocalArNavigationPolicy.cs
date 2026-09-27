@@ -39,13 +39,14 @@ public static class LocalArNavigationPolicy
         15.0f;
 
     /// <summary>
-    /// Hard publication guard. An AR route must never be shifted by a large
-    /// city-scale camera-to-anchor offset while waiting for anchor renewal.
-    /// This is deliberately slightly larger than the retirement threshold to
-    /// allow a short handoff margin between ARCore frames.
+    /// The camera may be up to 20 m from its retiring anchor and the mapped
+    /// path may independently be up to 20 m from GPS. Their vector sum is a
+    /// placement offset, not a measure of anchor drift.
     /// </summary>
     public const float MaximumRouteOriginOffsetMeters =
-        20.0f;
+        40.0f;
+
+    public const float MaximumCameraToAnchorOffsetMeters = 20.0f;
 
     /// <summary>
     /// Lowest plausible upright-device camera height above a navigable floor.

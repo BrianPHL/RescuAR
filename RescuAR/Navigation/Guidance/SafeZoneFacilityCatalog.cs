@@ -38,20 +38,21 @@ public static class SafeZoneFacilityCatalog
         new(
             StringComparer.OrdinalIgnoreCase)
         {
-            ["Malanday Elementary School"] = 70.0,
-            ["San Roque High School"] = 65.0,
-            ["San Roque National High School"] = 65.0,
-            ["Concepcion Uno Covered Court"] = 45.0,
-            ["Concepcion Subdivision Covered Court"] = 45.0,
-            ["Concepcion Integrated School"] = 65.0,
-            ["Marikina Elementary School"] = 60.0,
+            ["Malanday Elementary School"] = 100.0,
+            ["San Roque High School"] = 95.0,
+            ["San Roque National High School"] = 95.0,
+            ["Concepcion Uno Covered Court"] = 70.0,
+            ["Concepcion Subdivision Covered Court"] = 70.0,
+            ["Concepcion Integrated School"] = 95.0,
+            ["Concepcion Integrated School ES"] = 95.0,
+            ["Marikina Elementary School"] = 90.0,
 
             // Additional evacuation-center models already present elsewhere
             // in the MAUI project.
-            ["Marikina Sports Center"] = 90.0,
-            ["Marikina City Hall"] = 65.0,
-            ["Marikina City Hall Gym"] = 65.0,
-            ["Riverbanks Center"] = 100.0
+            ["Marikina Sports Center"] = 120.0,
+            ["Marikina City Hall"] = 90.0,
+            ["Marikina City Hall Gym"] = 90.0,
+            ["Riverbanks Center"] = 120.0
         };
 
     public static double GetArrivalRadiusMeters(

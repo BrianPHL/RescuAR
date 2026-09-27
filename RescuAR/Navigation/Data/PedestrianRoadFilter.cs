@@ -6,7 +6,7 @@ namespace RescuAR.Navigation.Data;
 /// <summary>
 /// Pedestrian-first filter for the supplied Marikina OSM road export.
 ///
-/// The filter is intentionally conservative about explicit access bans.
+/// Motor-road centerlines are not pedestrian sidewalks or verified crossings.
 /// It does not treat motor-vehicle oneway restrictions as pedestrian oneway
 /// restrictions.
 /// </summary>
@@ -22,16 +22,7 @@ public sealed class PedestrianRoadFilter
             "steps",
             "residential",
             "service",
-            "unclassified",
-            "tertiary",
-            "tertiary_link",
-            "secondary",
-            "secondary_link",
-            "primary",
-            "primary_link",
             "living_street",
-            "track",
-            "cycleway",
             "corridor"
         };
 
@@ -71,12 +62,15 @@ public sealed class PedestrianRoadFilter
             return false;
         }
 
-        /*
-         * OSM cycleways are not automatically pedestrian routes everywhere.
-         * Admit them only when the export does not explicitly deny walking.
-         * A later policy layer can tighten this further if field testing
-         * identifies unsuitable bicycle-only facilities.
-         */
+        // A vehicle service way mapped beneath a building is not proof of a
+        // pedestrian passage. Explicit footway passages remain graph edges.
+        if (string.Equals(feature.Highway, "service",
+                StringComparison.OrdinalIgnoreCase) &&
+            feature.Tags.TryGetValue("tunnel", out string? tunnel) &&
+            string.Equals(tunnel, "building_passage",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
         return true;
     }
 

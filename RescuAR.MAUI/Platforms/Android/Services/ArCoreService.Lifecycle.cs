@@ -655,17 +655,38 @@ public sealed partial class ArCoreService
     public void NotifyActivityResumed()
     {
         bool shouldResume;
+        bool waitingForGraphics;
+
         lock (lifecycleStateLock)
         {
             activityIsResumed = true;
-            shouldResume =
+
+            bool resumeRequested =
                 resumeAfterActivityPause ||
-                (resumeAfterGraphicsRecreation &&
-                 graphicsContext is not null);
+                resumeAfterGraphicsRecreation;
+
+            shouldResume =
+                resumeRequested &&
+                graphicsContext is not null;
+
+            waitingForGraphics =
+                resumeRequested &&
+                graphicsContext is null;
+
             resumeAfterActivityPause = false;
+
             if (shouldResume)
             {
                 resumeAfterGraphicsRecreation = false;
+            }
+            else if (waitingForGraphics)
+            {
+                /*
+                 * Android can resume the Activity before its SurfaceView has
+                 * recreated the Vulkan surface. Keep the request pending;
+                 * SetGraphicsContext resumes ARCore after registration.
+                 */
+                resumeAfterGraphicsRecreation = true;
             }
         }
 
@@ -678,6 +699,13 @@ public sealed partial class ArCoreService
                 installRequestPending
                     ? "Resuming pending ARCore installation"
                     : "Android Activity resumed");
+        }
+        else if (waitingForGraphics)
+        {
+            Log.Debug(
+                Tag,
+                "ARCore resume deferred until the recreated Evergine " +
+                "graphics context is registered.");
         }
     }
 

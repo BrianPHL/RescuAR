@@ -90,7 +90,7 @@ public sealed class GpsPdrFusionPolicy
      * limits correction to about 0.75 m/s.
      */
     private const double MaximumBackwardCorrectionPerFixMeters =
-        1.50;
+        3.0;
 
     /*
      * Keep a small PDR lead cushion instead of forcing progress exactly onto a

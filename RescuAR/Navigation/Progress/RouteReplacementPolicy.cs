@@ -9,8 +9,13 @@ namespace RescuAR.Navigation.Progress;
 /// </summary>
 public sealed class RouteReplacementPolicy
 {
-    private const double MaximumEndpointOffsetMeters =
-        150.0;
+    // The AR publisher refuses to align a route beginning over 20 m from
+    // the user's GPS position. Reject it here before replacing route state.
+    private const double MaximumOriginOffsetMeters =
+        20.0;
+
+    private const double MaximumDestinationOffsetMeters =
+        50.0;
 
     private const double MinimumGeometryConsistencyAllowanceMeters =
         75.0;
@@ -120,7 +125,7 @@ public sealed class RouteReplacementPolicy
         if (!double.IsFinite(
                 startOffsetMeters) ||
             startOffsetMeters >
-                MaximumEndpointOffsetMeters)
+                MaximumOriginOffsetMeters)
         {
             return Reject(
                 $"replacement route begins {startOffsetMeters:F1} m from the requested origin");
@@ -129,7 +134,7 @@ public sealed class RouteReplacementPolicy
         if (!double.IsFinite(
                 destinationOffsetMeters) ||
             destinationOffsetMeters >
-                MaximumEndpointOffsetMeters)
+                MaximumDestinationOffsetMeters)
         {
             return Reject(
                 $"replacement route ends {destinationOffsetMeters:F1} m from the destination");

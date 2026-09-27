@@ -63,7 +63,7 @@ public sealed class RouteProgressTracker
      * Ordinary GPS noise should not continually rebuild Evergine geometry.
      */
     private const double MinimumProgressAdvanceForPublishMeters =
-        1.50;
+        3.0;
 
     private readonly object sync =
         new();
@@ -277,10 +277,17 @@ public sealed class RouteProgressTracker
                 accuracyMeters);
         }
 
-        if (accuracyMeters.HasValue &&
-            double.IsFinite(
-                accuracyMeters.Value) &&
-            accuracyMeters.Value >
+        if (!accuracyMeters.HasValue ||
+            !double.IsFinite(accuracyMeters.Value) ||
+            accuracyMeters.Value < 0.0)
+        {
+            return Reject(
+                "GPS accuracy unavailable or invalid",
+                gpsCoordinate,
+                accuracyMeters);
+        }
+
+        if (accuracyMeters.Value >
                 MaximumAcceptedAccuracyMeters)
         {
             return Reject(
@@ -530,6 +537,7 @@ public sealed class RouteProgressTracker
             $"crossTrack={best.CrossTrackErrorMeters:F1} m, " +
             $"corridor={corridorRadiusMeters:F1} m, " +
             $"matchConfidence={matchConfidence}, " +
+            $"independentCorridorGap={best.MatchScoreGap:F1}, " +
             $"courseError={FormatFinite(best.CourseAlignmentErrorDegrees)} deg, " +
             $"accuracy={FormatNullable(accuracyMeters)} m, " +
             $"publishWindow={shouldPublish}");
@@ -615,7 +623,7 @@ public sealed class RouteProgressTracker
         /*
          * Fusion corrections can be forward OR backward. Republish only after
          * the corrected progress differs from the currently visible window by
-         * the same 1.5 m threshold already used by normal progress.
+         * the same 3 m threshold already used by normal progress.
          */
         bool shouldPublish =
             !alreadyPublished ||
@@ -1103,83 +1111,54 @@ public sealed class RouteProgressTracker
         double? courseDegrees,
         double? speedMetersPerSecond)
     {
-        SegmentMatch best =
-            SegmentMatch.Unavailable;
+        SegmentMatch best = SegmentMatch.Unavailable;
+        var candidates = new System.Collections.Generic.List<SegmentMatch>();
 
-        double secondBestScore =
-            double.PositiveInfinity;
-
-        for (int i = startSegmentIndex;
-             i <=
-             endSegmentIndex;
-             i++)
+        for (int i = startSegmentIndex; i <= endSegmentIndex; i++)
         {
-            RoutePoint start =
-                route.Points[i];
+            RoutePoint start = route.Points[i];
+            RoutePoint end = route.Points[i + 1];
+            SegmentMatch candidate = ProjectOntoSegment(
+                gpsCoordinate, start, end, i);
+            if (!candidate.IsAvailable) continue;
 
-            RoutePoint end =
-                route.Points[i + 1];
+            candidate = ScoreCandidate(candidate, start, end,
+                hasPreviousProgress, previousProgressMeters,
+                previousSegmentIndex, courseDegrees, speedMetersPerSecond);
+            candidates.Add(candidate);
+            if (!best.IsAvailable || candidate.MatchScore < best.MatchScore)
+                best = candidate;
+        }
 
-            SegmentMatch candidate =
-                ProjectOntoSegment(
-                    gpsCoordinate,
-                    start,
-                    end,
-                    i);
+        if (!best.IsAvailable) return best;
 
-            if (!candidate.IsAvailable)
-            {
+        // Two adjoining segments of one planned road are the same corridor.
+        // Treat a genuinely separate branch (or an immediate reversal) as
+        // competition; ordinary vertex proximity must not lower confidence.
+        double secondBestScore = double.PositiveInfinity;
+        foreach (SegmentMatch candidate in candidates)
+        {
+            if (candidate.SegmentIndex == best.SegmentIndex ||
+                IsSameCorridorNeighbor(route, best.SegmentIndex,
+                    candidate.SegmentIndex))
                 continue;
-            }
-
-            candidate =
-                ScoreCandidate(
-                    candidate,
-                    start,
-                    end,
-                    hasPreviousProgress,
-                    previousProgressMeters,
-                    previousSegmentIndex,
-                    courseDegrees,
-                    speedMetersPerSecond);
-
-            if (!best.IsAvailable ||
-                candidate.MatchScore <
-                    best.MatchScore)
-            {
-                if (best.IsAvailable)
-                {
-                    secondBestScore =
-                        best.MatchScore;
-                }
-
-                best =
-                    candidate;
-            }
-            else if (candidate.MatchScore <
-                secondBestScore)
-            {
-                secondBestScore =
-                    candidate.MatchScore;
-            }
+            secondBestScore = Math.Min(secondBestScore, candidate.MatchScore);
         }
+        double scoreGap = double.IsFinite(secondBestScore)
+            ? Math.Max(0.0, secondBestScore - best.MatchScore)
+            : double.PositiveInfinity;
+        return best.WithScoreGap(scoreGap);
+    }
 
-        if (!best.IsAvailable)
-        {
-            return best;
-        }
-
-        double scoreGap =
-            double.IsFinite(
-                secondBestScore)
-                ? Math.Max(
-                    0.0,
-                    secondBestScore -
-                        best.MatchScore)
-                : double.PositiveInfinity;
-
-        return best.WithScoreGap(
-            scoreGap);
+    private static bool IsSameCorridorNeighbor(
+        RouteResult route, int first, int second)
+    {
+        if (Math.Abs(first - second) != 1) return false;
+        double firstBearing = CalculateInitialBearingDegrees(
+            route.Points[first].Coordinate, route.Points[first + 1].Coordinate);
+        double secondBearing = CalculateInitialBearingDegrees(
+            route.Points[second].Coordinate, route.Points[second + 1].Coordinate);
+        return AbsoluteHeadingDifferenceDegrees(firstBearing, secondBearing) < 140.0;
     }
 
     private static SegmentMatch ScoreCandidate(
@@ -1264,17 +1243,10 @@ public sealed class RouteProgressTracker
                     courseDegrees!.Value,
                     segmentBearing);
 
-            score +=
-                courseAlignmentError /
-                180.0 *
-                25.0;
-
-            if (courseAlignmentError >
-                100.0)
-            {
-                score +=
-                    20.0;
-            }
+            // GPS course is particularly noisy at walking speed. It may
+            // break a close geometric tie but must never pull the match to a
+            // parallel street tens of metres farther away.
+            score += courseAlignmentError / 180.0 * 3.0;
         }
 
         return candidate.WithScore(

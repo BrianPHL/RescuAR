@@ -973,7 +973,7 @@
                         HorizontalOptions="Center" />
 
                     <Label
-                        Text="You've Reached a&#10;Safe Zone"
+                        Text="You've Arrived at the&#10;Evacuation Center"
                         TextColor="White"
                         FontSize="27"
                         FontAttributes="Bold"
@@ -1024,8 +1024,11 @@
 
                     <Label
                         x:Name="safeZoneDetailsLabel"
-                        Text="Arrival confirmed."
-                        IsVisible="False" />
+                        Text="Follow posted signs to the entrance and check local advisories."
+                        TextColor="White"
+                        FontSize="12"
+                        HorizontalTextAlignment="Center"
+                        IsVisible="True" />
 
                     <Label
                         Text="Advisories remain active in surrounding areas."

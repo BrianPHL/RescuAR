@@ -33,6 +33,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     private readonly IRoutingService onlineRoutingService;
     private readonly Func<CancellationToken, Task<RoadGraph>> roadGraphProvider;
     private readonly Func<bool> isInternetAvailable;
+    private readonly bool requireEmbeddedPedestrianGraph;
 
     private readonly SemaphoreSlim offlineInitializationGate =
         new(
@@ -47,7 +48,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     public HybridRoutingService(
         IRoutingService onlineRoutingService,
         Func<CancellationToken, Task<RoadGraph>> roadGraphProvider,
-        Func<bool> isInternetAvailable)
+        Func<bool> isInternetAvailable,
+        bool requireEmbeddedPedestrianGraph = false)
     {
         this.onlineRoutingService =
             onlineRoutingService ??
@@ -63,6 +65,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             isInternetAvailable ??
             throw new ArgumentNullException(
                 nameof(isInternetAvailable));
+
+        this.requireEmbeddedPedestrianGraph = requireEmbeddedPedestrianGraph;
     }
 
     /// <summary>
@@ -75,6 +79,11 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (requireEmbeddedPedestrianGraph)
+        {
+            return await FindOfflineRouteAsync(origin, destination, cancellationToken);
+        }
 
         if (!GetInternetAvailabilitySafely())
         {
@@ -175,7 +184,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         }
 
         bool internetAvailable =
-            GetInternetAvailabilitySafely();
+            !requireEmbeddedPedestrianGraph && GetInternetAvailabilitySafely();
 
         if (internetAvailable &&
             onlineRoutingService is IHazardAwareRoutingService hazardAwareOnline)
