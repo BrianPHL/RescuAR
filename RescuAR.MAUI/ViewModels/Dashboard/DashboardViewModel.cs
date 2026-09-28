@@ -173,7 +173,8 @@ public partial class DashboardViewModel : ObservableObject
     public string QuickActionsToggleLabelText => IsQuickActionsExpanded ? "Hide" : "Show";
 
     public bool HasQuickActions => QuickActions.Count > 0;
-    public bool IsQuickActionsCardVisible => QuickActions.Count > 0 && IsQuickActionsExpanded;
+    public bool HasNoQuickActions => QuickActions.Count == 0;
+    public bool IsQuickActionsCardVisible => IsQuickActionsExpanded;
 
     public double QuickActionsCarouselHeight
     {
@@ -518,6 +519,7 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasQuickActions));
+        OnPropertyChanged(nameof(HasNoQuickActions));
         OnPropertyChanged(nameof(IsQuickActionsCardVisible));
         OnPropertyChanged(nameof(HasMultipleQuickActionPages));
         OnPropertyChanged(nameof(QuickActionsCarouselHeight));
