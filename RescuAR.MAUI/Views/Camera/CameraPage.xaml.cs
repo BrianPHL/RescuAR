@@ -1206,7 +1206,10 @@ namespace RescuAR.App.Views.Camera
             {
                 arTrackingStatusBanner.IsVisible = true;
                 arTrackingStatusLabel.Text =
-                    "GeoJSON road data only — not navigation guidance";
+                    "GeoJSON roads - estimated placement" +
+                    (roadDiagnosticAccuracyMeters.HasValue
+                        ? $" (GPS ±{roadDiagnosticAccuracyMeters.Value:0} m)" : "") +
+                    " - not navigation guidance";
                 turnGuidancePanel.IsVisible = false;
                 return;
             }
@@ -1250,7 +1253,10 @@ namespace RescuAR.App.Views.Camera
             bool headingTrusted =
                 lastHeadingAlignment.HasValue &&
                 lastHeadingAlignment.Value.IsAvailable &&
-                lastHeadingAlignment.Value.IsStable;
+                lastHeadingAlignment.Value.IsStable &&
+                lastHeadingAlignment.Value.SessionGeneration > 0 &&
+                lastHeadingAlignment.Value.SessionGeneration ==
+                    ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
 
             ARCameraSpatialController.SetRouteHeadingTrust(
                 headingTrusted,
@@ -1351,6 +1357,21 @@ namespace RescuAR.App.Views.Camera
                         ? "Finding a pedestrian route…"
                         : routeStartupFailureMessage ??
                           "Pedestrian route unavailable — use the 2D map"
+                };
+            }
+
+            if (activeRoute is not null && arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+            {
+                policyConfidence = policyConfidence with
+                {
+                    State = policyConfidence.State == ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden
+                        ? policyConfidence.State : ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    AllowsRouteGeometry = false,
+                    DisplayMessage = gpsFresh && headingTrusted &&
+                        gpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+                        routeMatchConfidence >= RouteMatchConfidence.Medium &&
+                        continuity.State == ARCameraSpatialController.SpatialContinuityState.Live
+                            ? "Approach the mapped road - check access" : policyConfidence.DisplayMessage
                 };
             }
 
@@ -1637,6 +1658,7 @@ namespace RescuAR.App.Views.Camera
                 ARCameraPoseBridge.CurrentFrame.Anchor.ReferenceGeneration;
 
             bool ready =
+                arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong &&
                 pageIsVisible &&
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
                 route.IsAvailable &&
@@ -3630,16 +3652,17 @@ namespace RescuAR.App.Views.Camera
                 if (route is null || route.Points.Count < 2)
                 {
                     pendingInitialRoute = null;
-                    startupWork.Cancel();
-                    try { await headingWork; }
-                    catch (OperationCanceledException) { }
+                    // A failed graph result does not invalidate independent
+                    // heading work. Reuse it for the nearest-road cue.
+                    var approachHeading = await headingWork;
 
                     _mldArIntegrationService.PublishInitialRoute(
                         null,
                         0.0);
                     routeStartupFailureMessage =
                         "No connected pedestrian route — use the 2D map";
-                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken);
+                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken,
+                        approachHeading, captureHeading: false);
 
                     Log.Warn(
                         RoutingLogTag,
@@ -3658,13 +3681,15 @@ namespace RescuAR.App.Views.Camera
 
                 if (!headingAlignment.HasValue ||
                     !headingAlignment.Value.IsAvailable ||
-                    !headingAlignment.Value.IsStable)
+                    !headingAlignment.Value.IsStable ||
+                    headingAlignment.Value.SessionGeneration !=
+                        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
                 {
                     pendingInitialRoute = route;
                     pendingInitialOrigin = origin;
                     pendingInitialDestination = destination.Coordinate;
                     pendingInitialRouteAt = DateTimeOffset.UtcNow;
-                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(5);
+                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
                     lastHeadingAlignment = null;
                     routeStartupFailureMessage =
                         "Align the phone for AR guidance — use the 2D map";
@@ -3692,64 +3717,19 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                ARCameraPoseBridge.SpatialSnapshot startupPose =
-                    ARCameraPoseBridge.CurrentFrame;
-                float startupOffsetX = startupPose.IsFresh &&
-                    startupPose.IsTracking && startupPose.Anchor.IsAvailable
-                    ? startupPose.Pose.PositionX - startupPose.Anchor.PositionX : 0.0f;
-                float startupOffsetZ = startupPose.IsFresh &&
-                    startupPose.IsTracking && startupPose.Anchor.IsAvailable
-                    ? startupPose.Pose.PositionZ - startupPose.Anchor.PositionZ : 0.0f;
-                bool initialRoutePublished =
-                    IsRoadApproachFixUsable(locationReading) &&
-                    _mldArIntegrationService.PublishInitialRoute(
-                        route,
-                        mapToArYawDegrees,
-                        GetCurrentArRouteVisualWindowMeters(),
-                        userCoordinate: origin,
-                        arOriginOffsetX: startupOffsetX,
-                        arOriginOffsetZ: startupOffsetZ);
-
-                Log.Info(
-                    RoutingLogTag,
-                    "ROUTE STARTUP AR PUBLICATION: " +
-                    $"elapsed={startupClock.ElapsedMilliseconds}ms, " +
-                    $"published={initialRoutePublished}, " +
-                    $"headingStable={headingAlignment?.IsStable ?? false}.");
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (!initialRoutePublished)
-                {
-                    pendingInitialRoute = route;
-                    pendingInitialOrigin = origin;
-                    pendingInitialDestination = destination.Coordinate;
-                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
-                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(5);
-                    routeStartupFailureMessage =
-                        "Aligning the route to your position — use the 2D map";
-                    Log.Warn(
-                        RoutingLogTag,
-                        "Route calculation completed but AR publication failed.");
-                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken);
-
-                    return false;
-                }
+                // Retain the complete calculated route, but publish no cyan
+                // corridor until independent GPS observations confirm road entry.
+                // This also keeps a route calculated from a road >20 m away
+                // available while the floor arrow guides the approach.
+                ARRouteBridge.Clear();
+                Log.Info(RoutingLogTag,
+                    $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
+                    $"headingStable={headingAlignment.Value.IsStable}, roadEntry=PENDING.");
 
                 ClearRoadApproachCue();
-                ARRouteBridge.RouteSnapshot routeSnapshot =
-                    ARRouteBridge.Current;
-
-                routeStartupPublishedVersion = routeSnapshot.Version;
+                routeStartupPublishedVersion = -1;
                 routeStartupFailureMessage = null;
                 pendingInitialRoute = null;
-
-                LogRouteDirectionDiagnostics(
-                    route,
-                    routeSnapshot,
-                    origin,
-                    destination.Coordinate,
-                    mapToArYawDegrees);
 
                 activeRoute =
                     route;
@@ -3769,8 +3749,8 @@ namespace RescuAR.App.Views.Camera
                 activeMapToArYawDegrees =
                     mapToArYawDegrees;
 
-                _routeProgressTracker.SetRoute(
-                    route);
+                ResetArRouteVisualMode("new route requires independent road-entry confirmation");
+                _routeProgressTracker.SetRoute(route);
 
                 _gpsPdrFusionPolicy.Reset();
                 RouteProgressTracker.RouteProgressUpdate initialMatch =
@@ -3789,9 +3769,9 @@ namespace RescuAR.App.Views.Camera
                     initialFused = _routeProgressTracker.ApplyFusionCorrection(
                         initialFusion.TargetProgressMeters, initialMatch,
                         $"GPS_PDR_{initialFusion.Action}");
-                initialRoadApproachPending = initialMatch.IsOffRoute;
-                if (initialRoadApproachPending)
-                    TrySetRouteRoadApproachCue(initialMatch, returningToRoute: false);
+                initialRoadApproachPending = true;
+                roadEntryConfirmation.Reset();
+                TrySetRouteRoadApproachCue(initialMatch, returningToRoute: false);
                 lastRouteMatchConfidence = initialMatch.MatchConfidence;
                 lastGpsConfidence = initialFusion.Confidence;
 
@@ -3808,14 +3788,6 @@ namespace RescuAR.App.Views.Camera
                 if (initialFused.IsAccepted && !initialFused.IsOffRoute)
                     UpdateRoadFollowingVisualModeFromAcceptedGps(initialFused);
 
-                if (initialFused.IsAccepted && !initialFused.IsOffRoute &&
-                    initialFused.MatchConfidence >= RouteMatchConfidence.Medium &&
-                    initialFusion.Confidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
-                    !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
-                    TryPublishMovingRouteWindow(
-                        route, initialFused, "INITIAL_GPS"))
-                    routeStartupPublishedVersion = ARRouteBridge.Current.Version;
-
                 _offRouteReroutePolicy.Reset();
 
                 _routeReplacementPolicy.Reset();
@@ -3826,6 +3798,7 @@ namespace RescuAR.App.Views.Camera
 
                 StartRouteProgress();
 
+                var routeSnapshot = ARRouteBridge.Current;
                 LogDetailedDebug(
                     RoutingLogTag,
                     "Navigation route request COMPLETE: " +
@@ -4869,7 +4842,7 @@ namespace RescuAR.App.Views.Camera
                             lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
                             {
-                                await UpdateRoadApproachAsync(arrivalReading, arrivalGraph, cancellationToken);
+                                BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
                                 RetryRouteFromRoadApproachIfReady(cancellationToken);
                             }
                             else ClearRoadApproachCue();
@@ -4884,10 +4857,7 @@ namespace RescuAR.App.Views.Camera
                                 StartRouteRequestIfPossible();
                             }
                         }
-                        await Task.Delay(
-                            TimeSpan.FromSeconds(5),
-                            cancellationToken);
-
+                        await Task.Delay(RouteProgressPollInterval, cancellationToken);
                         continue;
                     }
 
@@ -7122,10 +7092,8 @@ namespace RescuAR.App.Views.Camera
                             routeDeltaX,
                             routeDeltaZ)));
 
-            signedAngleDegrees =
-                NormalizeSignedDegrees(
-                    routeAzimuthDegrees -
-                        cameraAzimuthDegrees);
+            signedAngleDegrees = MapToArCoordinates.CalculateCameraRelativeAngle(
+                routeAzimuthDegrees, cameraAzimuthDegrees);
 
             return double.IsFinite(
                 signedAngleDegrees);
@@ -9455,6 +9423,8 @@ namespace RescuAR.App.Views.Camera
             LocationReading reading,
             RouteProgressTracker.RouteProgressUpdate update)
         {
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+
 #if ANDROID
             if (!update.IsAccepted ||
                 update.IsOffRoute ||
@@ -10023,6 +9993,10 @@ namespace RescuAR.App.Views.Camera
             arRouteVisualMode =
                 ArRouteVisualMode.ApproachOrOffCourseShort;
 
+            ARCameraSpatialController.SetRouteRenderingEnabled(false,
+                "mapped road entry requires fresh confirmation");
+            roadEntryConfirmation.Reset();
+
             roadFollowingReentryConfirmationCount =
                 0;
 
@@ -10049,6 +10023,10 @@ namespace RescuAR.App.Views.Camera
         private void EnterVerifiedOffCourseVisualMode(
             string reason)
         {
+            ARCameraSpatialController.SetRouteRenderingEnabled(false,
+                "mapped road entry requires fresh confirmation");
+            roadEntryConfirmation.Reset();
+
             roadFollowingReentryConfirmationCount =
                 0;
 
@@ -10077,7 +10055,7 @@ namespace RescuAR.App.Views.Camera
         /// <summary>
         /// Promotes the short access cue to the long road-following corridor
         /// only after consecutive MEDIUM-or-better matches place the user
-        /// inside the accuracy-aware route-entry radius. A GPS sample can be
+        /// within 5 m of the mapped road using distinct fresh fixes. A GPS sample can be
         /// usable for progress while still being too uncertain to justify
         /// drawing the long corridor from the camera.
         ///
@@ -10097,23 +10075,16 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            bool canEnterRoadFollowing =
-                RouteCorridorPolicy.CanEnterRoadFollowing(
-                    update.IsAccepted,
-                    update.IsOffRoute,
-                    update.CrossTrackErrorMeters,
-                    update.CorridorRadiusMeters,
-                    update.MatchConfidence);
-
-            if (!canEnterRoadFollowing)
-            {
-                roadFollowingReentryConfirmationCount =
-                    0;
-
-                return false;
-            }
-
-            roadFollowingReentryConfirmationCount++;
+            DateTimeOffset fixTimestamp;
+            lock (routeProgressFusionSync)
+                fixTimestamp = latestGpsTimestampForRouting ?? DateTimeOffset.MinValue;
+            bool accessVerified = arrivalRoadGraph is not null &&
+                !arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate);
+            bool confirmed = roadEntryConfirmation.Observe(
+                update.IsAccepted && accessVerified, update.IsOffRoute, update.CrossTrackErrorMeters,
+                update.CorridorRadiusMeters, update.MatchConfidence, update.AccuracyMeters,
+                fixTimestamp, DateTimeOffset.UtcNow);
+            roadFollowingReentryConfirmationCount = roadEntryConfirmation.ConfirmationCount;
 
 #if ANDROID
             LogDetailedDebug(
@@ -10130,11 +10101,7 @@ namespace RescuAR.App.Views.Camera
                 $"{(update.AccuracyMeters.HasValue ? update.AccuracyMeters.Value.ToString("F1") : "<unknown>")} m.");
 #endif
 
-            if (roadFollowingReentryConfirmationCount <
-                RoadFollowingEntryRequiredSamples)
-            {
-                return false;
-            }
+            if (!confirmed) return false;
 
             arRouteVisualMode =
                 ArRouteVisualMode.RoadFollowingLong;
@@ -10160,7 +10127,7 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
-        /// Keeps mapped route geometry while confirming corridor membership.
+        /// Holds mapped route geometry until independent fixes confirm road entry.
         /// Confirmed off-route observations use a floor arrow and screen cue;
         /// they never create a straight GPS-to-road cyan connector.
         /// </summary>
@@ -10170,19 +10137,15 @@ namespace RescuAR.App.Views.Camera
             string progressSource = "GPS")
         {
 #if ANDROID
-            if (initialRoadApproachPending &&
-                arRouteVisualMode == ArRouteVisualMode.ApproachOrOffCourseShort &&
-                TrySetRouteRoadApproachCue(update, returningToRoute: false))
+            if (initialRoadApproachPending)
             {
+                TrySetRouteRoadApproachCue(update, returningToRoute: false);
                 ARRouteBridge.Clear();
                 return false;
             }
-            if (update.IsAccepted && !update.IsOffRoute)
-            {
-                initialRoadApproachPending = false;
-                ClearRoadApproachCue();
-                return TryPublishMovingRouteWindow(route, update, $"{progressSource}/GRAPH-CORRIDOR");
-            }
+            if (update.IsAccepted && !update.IsOffRoute &&
+                arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong)
+                return TryPublishMovingRouteWindow(route, update, $"{progressSource}/ROAD-ENTRY-CONFIRMED");
             if (TrySetRouteRoadApproachCue(update, returningToRoute: true))
             {
                 ARRouteBridge.Clear();
@@ -10197,6 +10160,12 @@ namespace RescuAR.App.Views.Camera
             RouteProgressTracker.RouteProgressUpdate update,
             string progressSource = "GPS")
         {
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+            {
+                ARRouteBridge.Clear();
+                return false;
+            }
+
 #if ANDROID
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
@@ -10233,9 +10202,8 @@ namespace RescuAR.App.Views.Camera
              * Rebase the active local route window horizontally near the
              * current AR camera position so the guidance moves with the user.
              *
-             * This publisher is used for the road-following corridor and the
-             * short confidence-building cue before route membership is
-             * confirmed. Neither GPS nor PDR drives the Evergine camera; they
+             * This publisher is used after mapped road entry is confirmed.
+             * Neither GPS nor PDR drives the Evergine camera; they
              * only advance route progress and republish route geometry.
              */
             float arOriginOffsetX =
@@ -10290,6 +10258,13 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
+            if (routeStartupPublishedVersion < 0 && activeDestinationCoordinate.HasValue)
+            {
+                routeStartupPublishedVersion = ARRouteBridge.Current.Version;
+                LogRouteDirectionDiagnostics(route, ARRouteBridge.Current, update.GpsCoordinate,
+                    activeDestinationCoordinate.Value, activeMapToArYawDegrees);
+            }
+
             _routeProgressTracker.MarkWindowPublished(
                 update.CommittedProgressMeters);
 
@@ -10328,6 +10303,8 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial,
             ARCameraSpatialController.RouteWorldCorrectionRequest request)
         {
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+
 #if ANDROID
             RouteResult? route =
                 activeRoute;
@@ -10496,6 +10473,8 @@ namespace RescuAR.App.Views.Camera
         private bool TryRebaseRouteAfterAnchorRecovery(
             ARCameraPoseBridge.SpatialSnapshot spatial)
         {
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+
 #if ANDROID
             RouteResult? route =
                 activeRoute;
@@ -10641,10 +10620,8 @@ namespace RescuAR.App.Views.Camera
                     origin,
                     destination);
 
-            double predictedArAzimuthDegrees =
-                Normalize360Degrees(
-                    geographicFirstLegBearingDegrees +
-                    mapToArYawDegrees);
+            double predictedArAzimuthDegrees = MapToArCoordinates.CalculateArAzimuthDegrees(
+                geographicFirstLegBearingDegrees, mapToArYawDegrees);
 
             if (!TryGetFirstArLegAzimuth(
                     routeSnapshot,

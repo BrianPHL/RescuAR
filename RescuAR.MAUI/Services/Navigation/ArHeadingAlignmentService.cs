@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Projection;
 #if ANDROID
 using Android.Hardware;
 using Android.Util;
@@ -22,7 +23,7 @@ namespace RescuAR.MAUI.Services.Navigation;
 ///
 /// Calibration equation:
 ///
-///     mapToArYaw = ARCoreCameraAzimuth - GeographicCameraBearing
+///     mapToArYaw = ARCoreCameraAzimuth + GeographicCameraBearing - 180
 ///
 /// ArRouteAlignment then rotates East/North route coordinates into AR X/Z
 /// using that constant yaw.
@@ -72,7 +73,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
     private const string HeadingCoordinateConvention =
         "device(+X right,+Y screen-top,+Z display-out); " +
         "rear-camera=-Z; earth(+X east,+Y north,+Z up); " +
-        "ARCore camera=-Z; AR azimuth atan2(+X,+Z)";
+        "ARCore camera=-Z; AR azimuth atan2(+X,+Z); zero-yaw map East=+X North=-Z";
 
     private readonly object sync =
         new();
@@ -86,6 +87,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
     private bool hasOrientationReading;
     private bool started;
     private bool disposed;
+    private readonly SemaphoreSlim captureGate = new(1, 1);
     private IDisposable? orientationLease;
 
     /*
@@ -120,7 +122,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             lock (sessionCalibrationSync)
             {
-                return sessionCalibration;
+                long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+                return session > 0 && sessionCalibration?.SessionGeneration == session
+                    ? sessionCalibration : null;
             }
         }
     }
@@ -131,7 +135,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             lock (sessionCalibrationSync)
             {
-                return sessionCalibration.HasValue;
+                return LastResult.HasValue;
             }
         }
     }
@@ -257,9 +261,17 @@ public sealed class ArHeadingAlignmentService : IDisposable
     /// TRACKING ARCore pose.
     /// </summary>
     public async Task<HeadingAlignmentResult?> CaptureAsync(
-        GeoCoordinate location,
-        double? altitudeMeters,
+        GeoCoordinate location, double? altitudeMeters,
         CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await captureGate.WaitAsync(cancellationToken);
+        try { return await CaptureCoreAsync(location, altitudeMeters, cancellationToken); }
+        finally { captureGate.Release(); }
+    }
+
+    private async Task<HeadingAlignmentResult?> CaptureCoreAsync(
+        GeoCoordinate location, double? altitudeMeters, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
@@ -279,12 +291,14 @@ public sealed class ArHeadingAlignmentService : IDisposable
             return null;
         }
 
+        long captureSession = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+        if (captureSession <= 0) return null;
+
         HeadingAlignmentResult? cachedCalibration;
 
         lock (sessionCalibrationSync)
         {
-            cachedCalibration =
-                sessionCalibration;
+            cachedCalibration = LastResult;
         }
 
         if (cachedCalibration.HasValue)
@@ -323,6 +337,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                MaximumSamples)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != captureSession)
+                return null;
 
             if (TryCreateSample(
                     location,
@@ -330,20 +346,26 @@ public sealed class ArHeadingAlignmentService : IDisposable
                     out HeadingAlignmentResult sample,
                     out string? unavailableReason))
             {
-                samples.Add(
-                    sample);
+                if (sample.SessionGeneration != captureSession) return null;
+                if (samples.Count > 0 && sample.SpatialVersion == samples[^1].SpatialVersion)
+                {
+                    await Task.Delay(100, cancellationToken);
+                    continue;
+                }
+                samples.Add(sample);
 
                 if (samples.Count >=
                     MinimumStableSamples)
                 {
+                    var window = samples.TakeLast(MinimumStableSamples).ToArray();
                     double meanYaw =
                         CircularMeanDegrees(
-                            samples.Select(
+                            window.Select(
                                 item =>
                                     item.MapToArYawDegrees));
 
                     double maxDeviation =
-                        samples.Max(
+                        window.Max(
                             item =>
                                 Math.Abs(
                                     NormalizeSignedDegrees(
@@ -352,7 +374,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
                     double circularConcentration =
                         CircularConcentration(
-                            samples.Select(
+                            window.Select(
                                 item =>
                                     item.MapToArYawDegrees));
 
@@ -367,7 +389,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                                 MapToArYawDegrees =
                                     meanYaw,
                                 SampleCount =
-                                    samples.Count,
+                                    window.Length,
                                 MaxSampleDeviationDegrees =
                                     maxDeviation,
                                 CircularConcentration =
@@ -376,10 +398,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                                     true
                             };
 
-                        StoreAndLogResult(
-                            locked);
-
-                        return locked;
+                        return StoreAndLogResult(locked) ? locked : null;
                     }
                 }
             }
@@ -494,7 +513,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         lock (sessionCalibrationSync)
         {
             HeadingAlignmentResult previous =
-                sessionCalibration ??
+                LastResult ??
                 new HeadingAlignmentResult(
                     true,
                     correctedMapToArYawDegrees,
@@ -532,8 +551,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                         Math.Abs(
                             residualAlignmentErrorDegrees) <=
                             StableMaxDeviationDegrees,
-                    Timestamp =
-                        timestampUtc
+                    Timestamp = timestampUtc,
+                    SessionGeneration = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration
                 };
 
             sessionCalibration =
@@ -693,7 +712,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         ARCameraPoseBridge.SpatialSnapshot spatial =
             ARCameraPoseBridge.CurrentFrame;
 
-        if (!spatial.IsTracking ||
+        if (!spatial.IsFresh || !spatial.IsTracking ||
             !spatial.Pose.IsTracking)
         {
             unavailableReason =
@@ -761,7 +780,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
         }
 
         /*
-         * AR horizontal azimuth convention matches ArRouteAlignment:
+         * AR azimuth is measured from +Z toward +X. Geographic bearings
+         * have the opposite winding because zero-yaw North is -Z:
          *
          *     0 deg   = +Z
          *     90 deg  = +X
@@ -776,9 +796,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                         arCameraForward.Z)));
 
         double mapToArYawDegrees =
-            NormalizeSignedDegrees(
-                arCameraAzimuthDegrees -
-                trueCameraHeadingDegrees);
+            MapToArCoordinates.CalculateYawDegrees(
+                arCameraAzimuthDegrees, trueCameraHeadingDegrees);
 
         result =
             new HeadingAlignmentResult(
@@ -795,7 +814,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 DateTimeOffset.UtcNow,
                 GetDisplayRotationName(),
                 HeadingCoordinateConvention,
-                1.0);
+                1.0,
+                spatial.Generation.SessionGeneration);
 
         return true;
     }
@@ -833,13 +853,15 @@ public sealed class ArHeadingAlignmentService : IDisposable
 #endif
     }
 
-    private void StoreAndLogResult(
+    private bool StoreAndLogResult(
         HeadingAlignmentResult result)
     {
         lock (sessionCalibrationSync)
         {
-            sessionCalibration =
-                result;
+            if (!result.IsStable || result.SessionGeneration <= 0 ||
+                result.SessionGeneration != ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+                return false;
+            sessionCalibration = result;
         }
 
 #if ANDROID
@@ -857,8 +879,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
             $"displayRotation={result.DisplayRotation}, " +
             $"coordinateConvention='{result.CoordinateConvention}', " +
             $"stable={result.IsStable}, " +
-            $"spatialVersion={result.SpatialVersion}");
+            $"spatialVersion={result.SpatialVersion}, session={result.SessionGeneration}");
 #endif
+        return true;
     }
 
     private static double CircularMeanDegrees(
@@ -1021,5 +1044,6 @@ public sealed class ArHeadingAlignmentService : IDisposable
         DateTimeOffset Timestamp,
         string DisplayRotation,
         string CoordinateConvention,
-        double CircularConcentration);
+        double CircularConcentration,
+        long SessionGeneration = 0);
 }

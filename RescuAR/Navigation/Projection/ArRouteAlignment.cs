@@ -9,7 +9,7 @@ namespace RescuAR.Navigation.Projection;
 /// Convention:
 /// - mapToArYawDegrees = 0:
 ///     East  -> +X
-///     North -> +Z
+///     North -> -Z
 ///
 /// The caller determines mapToArYawDegrees from the eventual map/heading to
 /// ARCore alignment stage. Keeping this explicit prevents GPS/PDR from
@@ -30,18 +30,6 @@ public static class ArRouteAlignment
             return [];
         }
 
-        double radians =
-            mapToArYawDegrees *
-            (Math.PI / 180.0);
-
-        double cos =
-            Math.Cos(
-                radians);
-
-        double sin =
-            Math.Sin(
-                radians);
-
         List<ArHorizontalRoutePoint> result =
             new(
                 points.Count);
@@ -49,17 +37,8 @@ public static class ArRouteAlignment
         foreach (LocalRoutePoint point in
                  points)
         {
-            double x =
-                point.EastMeters *
-                cos +
-                point.NorthMeters *
-                sin;
-
-            double z =
-                -point.EastMeters *
-                sin +
-                point.NorthMeters *
-                cos;
+            var (x, z) = MapToArCoordinates.Rotate(
+                point.EastMeters, point.NorthMeters, mapToArYawDegrees);
 
             result.Add(
                 new ArHorizontalRoutePoint(

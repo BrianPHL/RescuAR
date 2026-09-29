@@ -76,18 +76,10 @@ public static class RouteCorridorPolicy
     public static double GetRoadFollowingEntryRadiusMeters(
         double corridorRadiusMeters)
     {
-        if (!double.IsFinite(
-                corridorRadiusMeters) ||
-            corridorRadiusMeters <=
-                0.0)
-        {
-            return MinimumCorridorRadiusMeters;
-        }
-
-        return Math.Min(
-            20.0,
-            corridorRadiusMeters *
-                0.70);
+        // GPS tolerance determines match eligibility, not physical road entry.
+        // Never widen this proximity check to the 15-35 m match corridor.
+        return double.IsFinite(corridorRadiusMeters) && corridorRadiusMeters > 0
+            ? Math.Min(5.0, corridorRadiusMeters * 0.70) : 5.0;
     }
 
     public static bool IsCourseUsable(
@@ -155,21 +147,16 @@ public static class RouteCorridorPolicy
     }
 
     public static bool CanEnterRoadFollowing(
-        bool isAccepted,
-        bool isOffRoute,
-        double crossTrackErrorMeters,
-        double corridorRadiusMeters,
-        RouteMatchConfidence confidence)
+        bool isAccepted, bool isOffRoute, double crossTrackErrorMeters,
+        double corridorRadiusMeters, RouteMatchConfidence confidence,
+        double? accuracyMeters)
     {
-        return isAccepted &&
-            !isOffRoute &&
-            confidence >=
-                RouteMatchConfidence.Medium &&
-            double.IsFinite(
-                crossTrackErrorMeters) &&
-            crossTrackErrorMeters <=
-                GetRoadFollowingEntryRadiusMeters(
-                    corridorRadiusMeters);
+        return isAccepted && !isOffRoute && confidence >= RouteMatchConfidence.Medium &&
+            double.IsFinite(corridorRadiusMeters) && corridorRadiusMeters > 0 &&
+            accuracyMeters is double accuracy && double.IsFinite(accuracy) &&
+            accuracy >= 0 && accuracy <= 20.0 &&
+            double.IsFinite(crossTrackErrorMeters) && crossTrackErrorMeters >= 0 &&
+            crossTrackErrorMeters <= GetRoadFollowingEntryRadiusMeters(corridorRadiusMeters);
     }
 
     public static bool CanPublishRecoveryConnector(

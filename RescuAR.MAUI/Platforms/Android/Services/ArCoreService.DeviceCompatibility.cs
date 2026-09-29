@@ -1,3 +1,4 @@
+using RescuAR.AR;
 using Android.Content;
 using Android.Hardware;
 using Android.Util;
@@ -22,15 +23,10 @@ public sealed partial class ArCoreService
 
     private static bool IsDepthDisabledForControlledRetest()
     {
-        // Field tombstones on Android 16 SM-A156E and SM-A546E identify
-        // ARCore's native ms_depth worker. A managed exception handler cannot
-        // catch that process fault. Prefer the existing Plane ground path on
-        // these exact device/OS profiles until a controlled Depth retest.
-        bool affectedProfile = (int)AndroidBuild.VERSION.SdkInt >= 36 &&
-            (string.Equals(AndroidBuild.Model, "SM-A156E",
-                StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(AndroidBuild.Model, "SM-A546E",
-                StringComparison.OrdinalIgnoreCase));
+        // A native depth-worker abort cannot be caught by managed exception
+        // handling. Use the existing plane-only path on field-confirmed profiles.
+        bool affectedProfile = ARDepthCompatibilityPolicy.DisableAutomaticDepth(
+            AndroidBuild.Model, (int)AndroidBuild.VERSION.SdkInt);
 #if RESCUAR_DIAGNOSTICS
         try
         {

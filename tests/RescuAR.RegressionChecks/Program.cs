@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Data;
 using RescuAR.AR;
 using RescuAR.MAUI.Services;
 using RescuAR.Navigation.Guidance;
@@ -224,8 +225,8 @@ bool Angle(GeoCoordinate target, System.Numerics.Quaternion rotation, double exp
     Math.Abs(angle - expected) < 0.01;
 Check(Angle(C(10),System.Numerics.Quaternion.Identity,90) &&
     Angle(C(-10),System.Numerics.Quaternion.Identity,-90), "approach arrows use camera-relative left and right");
-Check(Angle(C(0,-10),System.Numerics.Quaternion.Identity,0) &&
-    Angle(C(0,10),System.Numerics.Quaternion.Identity,180), "approach front and behind are distinct");
+Check(Angle(C(0,10),System.Numerics.Quaternion.Identity,0) &&
+    Angle(C(0,-10),System.Numerics.Quaternion.Identity,180), "approach front and behind are distinct");
 Check(Angle(C(-10),System.Numerics.Quaternion.CreateFromAxisAngle(
     System.Numerics.Vector3.UnitY,MathF.PI/2),0), "rotating the phone changes the screen arrow");
 Check(!RoadApproachCuePolicy.TryGetAngle(C(0),C(10),0,default,out _,out _) &&
@@ -348,6 +349,125 @@ Check(!CanRenderArrow(arrowState with { Active=false },arrowGeneration) &&
     "cleared or invalid arrow publications are hidden");
 Check(!RescuAR.Diagnostics.DiagnosticPrivacyPolicy.DiagnosticRouteVisibilityOverrideEnabled,
     "road diagnostics do not bypass normal route confidence gates");
+
+// Batch 14: expected directions come from camera quaternions, independently
+// of the conversion formulas. These checks catch reflected geographic maps.
+foreach (float worldYaw in new[] { 0f, 0.53f, -1.2f, MathF.PI })
+{
+    var worldRotation = System.Numerics.Quaternion.CreateFromAxisAngle(
+        System.Numerics.Vector3.UnitY, worldYaw);
+    foreach (var cardinal in new (double Bearing,double E,double N)[] { (0,0,10), (90,10,0),
+                                    (180,0,-10), (270,-10,0) })
+    {
+        var cameraRotation = System.Numerics.Quaternion.CreateFromAxisAngle(
+            System.Numerics.Vector3.UnitY, worldYaw - (float)(cardinal.Bearing * Math.PI / 180));
+        var cameraForward = System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ,cameraRotation);
+        double azimuth = Math.Atan2(cameraForward.X,cameraForward.Z) * 180 / Math.PI;
+        double yaw = MapToArCoordinates.CalculateYawDegrees(azimuth,cardinal.Bearing);
+        Check(Math.Abs(Math.IEEERemainder(yaw - worldYaw * 180 / Math.PI,360)) < 0.001,
+            $"camera turns preserve alignment: worldYaw={worldYaw}, bearing={cardinal.Bearing}");
+        Check(Math.Abs(Math.IEEERemainder(
+            MapToArCoordinates.CalculateArAzimuthDegrees(cardinal.Bearing,yaw)-azimuth,360))<0.001,
+            $"direction diagnostic predicts the physical AR azimuth: {worldYaw}/{cardinal.Bearing}");
+        var expected = System.Numerics.Vector3.Transform(
+            new((float)cardinal.E,0,(float)-cardinal.N),worldRotation);
+        var target = C(cardinal.E,cardinal.N);
+        var projectedRoute = ArRouteAlignment.Rotate(
+            new[] { new LocalRoutePoint(target,cardinal.E,cardinal.N,0) },yaw)[0];
+        Check(Math.Abs(projectedRoute.X - expected.X)<0.001 && Math.Abs(projectedRoute.Z - expected.Z)<0.001,
+            $"mapped route points follow physical cardinal directions: {worldYaw}/{cardinal.Bearing}");
+        var rawRoad = new GeoJsonRoadFeature { Highway="residential", Coordinates=new[] { C(0),target } };
+        var projectedRoad = NearbyRoadLineProjector.Project(new[] { rawRoad },C(0),40,yaw)[0].End;
+        Check(Math.Abs(projectedRoad.X-expected.X)<0.001 && Math.Abs(projectedRoad.Z-expected.Z)<0.001,
+            $"raw GeoJSON roads follow camera coordinates: {worldYaw}/{cardinal.Bearing}");
+        Check(RoadApproachCuePolicy.TryGetDirection(C(0),target,yaw,out var direction,out _) &&
+            Math.Abs(direction.X - expected.X/10)<0.001 && Math.Abs(direction.Y - expected.Z/10)<0.001,
+            $"floor arrow follows the road without reflection: {worldYaw}/{cardinal.Bearing}");
+        Check(RoadApproachCuePolicy.TryGetAngle(C(0),target,yaw,cameraRotation,out double angle,out _) &&
+            Math.Abs(angle)<0.001,
+            $"cardinal target in front of camera produces a forward screen cue: {worldYaw}/{cardinal.Bearing}");
+        var offsetRoute = Route(target,C(cardinal.E*2,cardinal.N*2));
+        var offsetPublisher = new MLDARIntegrationService(new FixedRoutingService(offsetRoute));
+        bool initialOffsetPublished = offsetPublisher.PublishInitialRoute(offsetRoute,yaw,userCoordinate:C(0));
+        var initialOffset = ARRouteBridge.Current;
+        Check(initialOffsetPublished && initialOffset.Points.Count>=2 &&
+            Math.Abs(initialOffset.Points[0].X-expected.X)<0.001 &&
+            Math.Abs(initialOffset.Points[0].Z-expected.Z)<0.001,
+            $"initial GPS-to-road origin uses the physical frame: {worldYaw}/{cardinal.Bearing}");
+        bool progressOffsetPublished = offsetPublisher.PublishProgressWindow(offsetRoute,0,target,yaw,0,0,
+            userCoordinate:C(0));
+        var progressOffset = ARRouteBridge.Current;
+        Check(progressOffsetPublished && progressOffset.Points.Count>=2 &&
+            Math.Abs(progressOffset.Points[0].X-expected.X)<0.001 &&
+            Math.Abs(progressOffset.Points[0].Z-expected.Z)<0.001,
+            $"moving GPS-to-road origin uses the physical frame: {worldYaw}/{cardinal.Bearing}");
+        var headingPolicy = new HeadingRevalidationPolicy();
+        headingPolicy.Evaluate(yaw,C(0),5,1,cardinal.Bearing,RouteMatchConfidence.High,
+            cardinal.Bearing,0,0,now);
+        var headingDecision = headingPolicy.Evaluate(yaw,target,5,1,cardinal.Bearing,
+            RouteMatchConfidence.High,cardinal.Bearing,expected.X,expected.Z,now.AddSeconds(5));
+        Check(headingDecision.Disposition == HeadingRevalidationDisposition.AlignmentStable,
+            $"movement revalidation uses the same physical frame: {worldYaw}/{cardinal.Bearing}");
+    }
+}
+Check(MapToArCoordinates.CalculateCameraRelativeAngle(90,180)==90 &&
+    MapToArCoordinates.CalculateCameraRelativeAngle(270,180)==-90,
+    "east is right and west is left in north-facing mapped-route screen guidance");
+
+Check(ARDepthCompatibilityPolicy.DisableAutomaticDepth("SM-A546E",34),
+    "Android 14 field-crash phone uses the plane fallback");
+Check(ARDepthCompatibilityPolicy.DisableAutomaticDepth("sm-a546e",36) &&
+    ARDepthCompatibilityPolicy.DisableAutomaticDepth("SM-A156E",36),
+    "previous Android 16 depth quarantines remain covered");
+Check(!ARDepthCompatibilityPolicy.DisableAutomaticDepth("SM-A156E",34) &&
+    !ARDepthCompatibilityPolicy.DisableAutomaticDepth("other",34) &&
+    !ARDepthCompatibilityPolicy.DisableAutomaticDepth(null,36),
+    "native depth quarantine is limited to field-confirmed profiles");
+
+Check(!RouteCorridorPolicy.CanEnterRoadFollowing(true,false,8.2,25,RouteMatchConfidence.Medium,20) &&
+    RoadApproachCuePolicy.TryGetAngle(C(0),C(0,8.2),0,System.Numerics.Quaternion.Identity,out _,out _),
+    "return arrow remains possible inside GPS tolerance while mapped road entry is unconfirmed");
+
+var entryConfirmation = new RoadEntryConfirmationPolicy();
+bool ObserveEntry(double distance,double? accuracy,DateTimeOffset at,DateTimeOffset clock,
+    bool offRoute=false,RouteMatchConfidence confidence=RouteMatchConfidence.Medium) =>
+    entryConfirmation.Observe(true,offRoute,distance,25,confidence,accuracy,at,clock);
+Check(!ObserveEntry(15.5,20,now,now) && entryConfirmation.ConfirmationCount==0,
+    "15.5 m field match inside a 25 m corridor retains the approach arrow");
+Check(!ObserveEntry(8.2,20,now.AddSeconds(1),now.AddSeconds(1)) &&
+    entryConfirmation.ConfirmationCount==0,
+    "later 8.2 m corridor match still does not establish road entry");
+Check(!ObserveEntry(4,20,now.AddSeconds(2),now.AddSeconds(2)) &&
+    entryConfirmation.ConfirmationCount==1,
+    "first fresh near-road sample begins confirmation at the existing placement accuracy limit");
+Check(!ObserveEntry(4,20,now.AddSeconds(2),now.AddSeconds(3)) &&
+    entryConfirmation.ConfirmationCount==1,
+    "cached duplicate GPS cannot count as a second road-entry observation");
+Check(ObserveEntry(3,12,now.AddSeconds(4),now.AddSeconds(4)),
+    "second independent recent near-road sample confirms entry");
+entryConfirmation.Reset();
+Check(!ObserveEntry(3,21,now,now) && !ObserveEntry(3,null,now.AddSeconds(1),now.AddSeconds(1)) &&
+    !ObserveEntry(3,double.NaN,now.AddSeconds(2),now.AddSeconds(2)),
+    "poor or missing accuracy cannot confirm road entry");
+entryConfirmation.Reset();
+Check(!ObserveEntry(3,5,now,now.AddSeconds(6)) &&
+    !ObserveEntry(3,5,now.AddSeconds(3),now) && entryConfirmation.ConfirmationCount==0,
+    "expired and future fixes cannot establish entry");
+entryConfirmation.Reset();
+ObserveEntry(3,5,now,now);
+Check(!ObserveEntry(3,5,now.AddSeconds(1),now.AddSeconds(1),offRoute:true) &&
+    entryConfirmation.ConfirmationCount==0,
+    "off-route observation resets road-entry evidence");
+ObserveEntry(3,5,now.AddSeconds(2),now.AddSeconds(2));
+Check(!ObserveEntry(3,5,now.AddSeconds(12),now.AddSeconds(12)) &&
+    entryConfirmation.ConfirmationCount==1,
+    "long gaps cannot reuse old entry evidence");
+Check(!ObserveEntry(3,5,now.AddSeconds(13),now.AddSeconds(13),confidence:RouteMatchConfidence.Low) &&
+    entryConfirmation.ConfirmationCount==0,
+    "ambiguous route matches do not establish entry");
+Check(connectedAccess is { RoadComponentNodeCount:3, DestinationComponentCount:1 } &&
+    pendingAccess is { RoadComponentNodeCount:2, DestinationComponentCount:0 },
+    "road approach reports local connectivity without inventing a connection");
 
 Console.WriteLine($"{passed} regression checks passed.");
 

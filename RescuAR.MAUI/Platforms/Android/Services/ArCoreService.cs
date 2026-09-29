@@ -318,7 +318,7 @@ public sealed partial class ArCoreService : IArCoreService
     private bool forceDepthDisabledForExperiment;
 
     private string depthExperimentMode =
-        "DEPTH_ON_DEMAND";
+        "DEPTH_SESSION_STABLE";
 
     /*
      * Updated by the spatial-pose path on every tracked frame. Depth remains
@@ -545,8 +545,8 @@ public sealed partial class ArCoreService : IArCoreService
                     .PlaneFindingMode
                     .Horizontal);
 
-            planeFindingEnabled =
-                true;
+            planeFindingEnabled = true;
+            lastWorkloadStateLog = null;
 
             Log.Debug(
                 Tag,
@@ -562,7 +562,7 @@ public sealed partial class ArCoreService : IArCoreService
             depthExperimentMode =
                 forceDepthDisabledForExperiment
                     ? "FORCED_DEPTH_OFF"
-                    : "DEPTH_ON_DEMAND";
+                    : "DEPTH_SESSION_STABLE";
 
             depthModeSupported =
                 TryConfigureAutomaticDepth(
@@ -1392,8 +1392,7 @@ public sealed partial class ArCoreService : IArCoreService
             LogTextureIntrinsicsOnce(
                 camera);
 
-            UpdateDepthModeForCurrentDemand(
-                currentSession);
+            LogCurrentWorkloadDemand();
 
             TryPublishDepthOcclusionFrame(
                 frame,

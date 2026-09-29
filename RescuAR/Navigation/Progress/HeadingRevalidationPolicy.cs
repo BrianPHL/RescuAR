@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Models;
 using System;
 using System.Collections.Generic;
@@ -319,9 +320,8 @@ public sealed class HeadingRevalidationPolicy
                 geographicSignals);
 
         double candidateMapToArYawDegrees =
-            NormalizeSignedDegrees(
-                arMovementAzimuthDegrees -
-                geographicMovementBearingDegrees);
+            MapToArCoordinates.CalculateYawDegrees(
+                arMovementAzimuthDegrees, geographicMovementBearingDegrees);
 
         double currentAlignmentErrorDegrees =
             NormalizeSignedDegrees(

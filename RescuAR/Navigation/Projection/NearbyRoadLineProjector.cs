@@ -24,8 +24,6 @@ public static class NearbyRoadLineProjector
             throw new ArgumentOutOfRangeException(nameof(center));
 
         double cosLatitude = Math.Cos(center.Latitude * Math.PI / 180.0);
-        double radians = mapToArYawDegrees * Math.PI / 180.0;
-        double cos = Math.Cos(radians), sin = Math.Sin(radians);
         var lines = new List<RoadLineSegment>();
 
         foreach (GeoJsonRoadFeature road in roads)
@@ -56,11 +54,11 @@ public static class NearbyRoadLineProjector
 
                 double x0 = ax + dx * enter, y0 = ay + dy * enter;
                 double x1 = ax + dx * exit, y1 = ay + dy * exit;
+                var start = MapToArCoordinates.Rotate(x0, y0, mapToArYawDegrees);
+                var end = MapToArCoordinates.Rotate(x1, y1, mapToArYawDegrees);
                 lines.Add(new RoadLineSegment(
-                    new ArHorizontalRoutePoint((float)(x0 * cos + y0 * sin),
-                        (float)(-x0 * sin + y0 * cos), 0),
-                    new ArHorizontalRoutePoint((float)(x1 * cos + y1 * sin),
-                        (float)(-x1 * sin + y1 * cos), 0)));
+                    new ArHorizontalRoutePoint((float)start.X, (float)start.Z, 0),
+                    new ArHorizontalRoutePoint((float)end.X, (float)end.Z, 0)));
             }
         }
         return lines;

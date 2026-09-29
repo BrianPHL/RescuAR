@@ -1,3 +1,4 @@
+using RescuAR.MAUI.Services.Navigation;
 using RescuAR.AR;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.Navigation.Models;
@@ -16,6 +17,9 @@ public partial class CameraPage
     private RoadApproachCue? roadApproachCue;
     private DateTimeOffset nextRoadApproachRetryAt;
     private bool initialRoadApproachPending;
+    private readonly RoadEntryConfirmationPolicy roadEntryConfirmation = new();
+    private Task? roadApproachUpdateTask;
+    private long roadApproachEpoch;
     private sealed record RoadApproachCue(LocationReading Reading, GeoCoordinate Target,
         GeoCoordinate Destination, double Yaw, long Session, bool ReturningToRoute,
         bool ConnectsToDestination);
@@ -26,7 +30,11 @@ public partial class CameraPage
 
     private void ClearRoadApproachCue()
     {
-        lock (routeProgressFusionSync) roadApproachCue = null;
+        lock (routeProgressFusionSync)
+        {
+            roadApproachEpoch++;
+            roadApproachCue = null;
+        }
         ARRoadApproachBridge.Clear();
     }
 
@@ -43,49 +51,86 @@ public partial class CameraPage
             .FindRoadApproachTarget(reading.Coordinate, destination);
     }
 
-    private async Task UpdateRoadApproachAsync(LocationReading? reading,
+    // Heading sampling must not hold up fresh GPS acquisition. One observed
+    // task owns calibration; a valid existing cue remains until its fix expires.
+    private void BeginRoadApproachUpdate(LocationReading? reading, RoadGraph graph,
+        CancellationToken token)
+    {
+        if (roadApproachUpdateTask is { IsCompleted: false }) return;
+        roadApproachUpdateTask = ObserveRoadApproachUpdateAsync(reading, graph, token);
+    }
+
+    private async Task ObserveRoadApproachUpdateAsync(LocationReading? reading,
         RoadGraph graph, CancellationToken token)
     {
-        ClearRoadApproachCue();
-        var destination = NavigationDestinationBridge.Current;
-        if (!destination.IsAvailable || !IsRoadApproachFixUsable(reading) ||
-            currentCameraModuleView != CameraModuleViewMode.ArCamera) return;
-        var target = FindRoadAccess(reading!, graph, destination.Coordinate);
-        if (!target.HasValue)
+        try { await UpdateRoadApproachAsync(reading, graph, token); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception exception)
         {
-            routeStartupFailureMessage = "No accessible mapped road within 50 m — inspect the road data";
-            AndroidLog.Info("RescuAR-Routing", "ROAD APPROACH: no barrier-free pedestrian edge within 50m.");
+            AndroidLog.Warn("RescuAR-Routing", "Road approach update deferred: " +
+                DiagnosticPrivacyPolicy.FormatException(exception));
+        }
+    }
+
+    private async Task UpdateRoadApproachAsync(LocationReading? reading,
+        RoadGraph graph, CancellationToken token,
+        ArHeadingAlignmentService.HeadingAlignmentResult? existingHeading = null,
+        bool captureHeading = true)
+    {
+        token.ThrowIfCancellationRequested();
+        var destination = NavigationDestinationBridge.Current;
+        if (!destination.IsAvailable || currentCameraModuleView != CameraModuleViewMode.ArCamera)
+        {
+            ClearRoadApproachCue();
             return;
         }
+        if (!IsRoadApproachFixUsable(reading)) return;
         long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+        long epoch;
+        lock (routeProgressFusionSync) epoch = roadApproachEpoch;
+        bool noRouteAtStart = activeRoute is null;
         if (session <= 0) return;
-        var heading = await _headingAlignmentService.CaptureAsync(
-            reading!.Coordinate, reading.AltitudeMeters, token);
-        if (!IsRoadApproachFixUsable(reading))
-        {
-            reading = await TryGetRouteLocationAsync(token);
-            if (!IsRoadApproachFixUsable(reading)) return;
-            target = FindRoadAccess(reading!, graph, destination.Coordinate);
-            if (!target.HasValue) return;
-        }
+        var heading = existingHeading ?? (captureHeading
+            ? await _headingAlignmentService.CaptureAsync(reading!.Coordinate,
+                reading.AltitudeMeters, token) : null);
         token.ThrowIfCancellationRequested();
         if (!heading.HasValue || !heading.Value.IsAvailable || !heading.Value.IsStable ||
+            heading.Value.SessionGeneration != session ||
             !pageIsVisible || _arCoreService.IsSessionPaused ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != session ||
             !NavigationDestinationBridge.Current.IsAvailable ||
-            NavigationDestinationBridge.Current.Coordinate != destination.Coordinate) return;
+            NavigationDestinationBridge.Current.Coordinate != destination.Coordinate ||
+            (noRouteAtStart && activeRoute is not null)) return;
+        // The GPS loop can produce a newer fix while the heading is sampling.
         lock (routeProgressFusionSync)
         {
+            if (epoch != roadApproachEpoch) return;
+            if (IsRoadApproachFixUsable(latestRouteStartupReading) &&
+                latestRouteStartupReading!.Timestamp > reading!.Timestamp)
+                reading = latestRouteStartupReading;
+        }
+        if (!IsRoadApproachFixUsable(reading)) return;
+        var target = FindRoadAccess(reading!, graph, destination.Coordinate);
+        if (!target.HasValue)
+        {
+            ClearRoadApproachCue();
+            routeStartupFailureMessage = "No accessible mapped road within 50 m - inspect the road data";
+            AndroidLog.Info("RescuAR-Routing", "ROAD APPROACH: no barrier-free pedestrian edge within 50m.");
+            return;
+        }
+        lock (routeProgressFusionSync)
+        {
+            if (epoch != roadApproachEpoch) return;
             latestRouteStartupReading = reading;
             roadApproachCue = new(reading!, target.Value.Coordinate, destination.Coordinate,
                 heading.Value.MapToArYawDegrees, session, false, target.Value.ConnectsToDestination);
         }
         routeStartupFailureMessage = target.Value.ConnectsToDestination
-            ? "Approach the mapped road — check access"
-            : "Approach the nearest mapped road — route connection pending";
+            ? "Approach the mapped road - check access"
+            : "Approach the nearest mapped road - route connection pending";
         AndroidLog.Info("RescuAR-Routing",
-            $"ROAD APPROACH: distance={reading!.Coordinate.DistanceTo(target.Value.Coordinate):F1}m, connected={target.Value.ConnectsToDestination}.");
+            $"ROAD APPROACH: distance={reading!.Coordinate.DistanceTo(target.Value.Coordinate):F1}m, connected={target.Value.ConnectsToDestination}, roadComponentNodes={target.Value.RoadComponentNodeCount}, destinationComponents={target.Value.DestinationComponentCount}.");
     }
 
     private bool TrySetRouteRoadApproachCue(RouteProgressTracker.RouteProgressUpdate update,
@@ -97,13 +142,14 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
             reading = new(update.GpsCoordinate, update.AccuracyMeters, null, null, null,
                 latestGpsTimestampForRouting ?? DateTimeOffset.MinValue);
-        if ((returningToRoute && (!recoveryConnectorVerified ||
-                !RouteCorridorPolicy.CanPublishRecoveryConnector(update.AccuracyMeters,
-                    update.CrossTrackErrorMeters, update.CorridorRadiusMeters, update.MatchConfidence))) ||
+        // A verified return arrow remains useful inside the GPS uncertainty
+        // corridor until road entry is confirmed. It is never a walking connector.
+        if ((returningToRoute && !recoveryConnectorVerified) ||
             !destination.IsAvailable || update.MatchConfidence < RouteMatchConfidence.Medium ||
             !IsRoadApproachFixUsable(reading) || !update.SnappedCoordinate.IsValid ||
             !_headingAlignmentService.HasSessionCalibration ||
             lastHeadingAlignment is not { IsAvailable: true, IsStable: true } ||
+            lastHeadingAlignment.Value.SessionGeneration != frame.Generation.SessionGeneration ||
             !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
             arrivalRoadGraph is null ||
             arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate) ||
@@ -159,10 +205,13 @@ public partial class CameraPage
     {
         RoadApproachCue? cue;
         lock (routeProgressFusionSync) cue = roadApproachCue;
-        if (cue is null || pendingInitialRoute is not null ||
-            !IsRoadApproachFixUsable(cue.Reading) ||
-            cue.Reading.Coordinate.DistanceTo(cue.Target) > 20 ||
-            DateTimeOffset.UtcNow < nextRoadApproachRetryAt) return;
+        bool computedRouteReady = pendingInitialRoute is not null &&
+            pendingInitialDestination == cue?.Destination &&
+            _headingAlignmentService.LastResult is { IsAvailable: true, IsStable: true };
+        if (cue is null || !IsRoadApproachFixUsable(cue.Reading) ||
+            (pendingInitialRoute is not null && !computedRouteReady) ||
+            (!computedRouteReady && cue.Reading.Coordinate.DistanceTo(cue.Target) > 20) ||
+            DateTimeOffset.UtcNow < (computedRouteReady ? nextHeadingRetryAt : nextRoadApproachRetryAt)) return;
         nextRoadApproachRetryAt = DateTimeOffset.UtcNow.AddSeconds(10);
         Dispatcher.Dispatch(() =>
         {
