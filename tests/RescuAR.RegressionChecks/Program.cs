@@ -182,6 +182,91 @@ Check(!BundledEvacuationCenterCatalog.TryParseCoordinate("invalid", "121.1", out
     !BundledEvacuationCenterCatalog.TryParseCoordinate("91", "121.1", out _) &&
     !BundledEvacuationCenterCatalog.TryParseCoordinate("0", "0", out _),
     "malformed center coordinates cannot manufacture a destination pin");
+// Field-test follow-up: planning quality must not bypass precise AR placement.
+bool Plan(double? accuracy, double age, bool cached = false) =>
+    RouteStartupLocationPolicy.CanPlan(C(0), accuracy, now.AddSeconds(-age), now, cached);
+bool Place(double? accuracy, double age) =>
+    RouteStartupLocationPolicy.CanPlace(C(0), accuracy, now.AddSeconds(-age), now);
+Check(Plan(30, 0) && !Place(30, 0), "30 m fix plans a route but cannot place cyan geometry");
+Check(Plan(30, 7, cached: true) && !Plan(30, 7), "recent cache supports planning without being a current fix");
+Check(Place(20, 5) && !Place(20.1, 0), "AR placement retains the 20 m limit");
+Check(!Plan(10, 9, cached: true) && !Plan(10, 107, cached: true), "stale field-test cache cannot start a route");
+Check(Plan(11.5, -1.7) && !Plan(11.5, -2.1), "observed phone clock skew accepted within two seconds");
+Check(!Plan(null, 0) && !Plan(double.NaN, 0) && !Plan(-1, 0) && !Plan(100, 0), "unknown and poor planning accuracy rejected");
+Check(!RouteStartupLocationPolicy.CanPlan(new GeoCoordinate(91,0),5,now,now,false), "invalid planning coordinate rejected");
+
+var approachPlanner = new AStarRoutingService(new RoadGraph(nodes, edges));
+GeoCoordinate? approach = approachPlanner.FindApproachCoordinate(C(0,-30),C(100,8));
+Check(approach.HasValue && approach.Value.DistanceTo(C(0,8)) < 1 &&
+    await approachPlanner.FindRouteAsync(C(0,-30),C(100,8)) is null,
+    "38 m approach selects a connected road without relaxing route snapping");
+Check(approachPlanner.FindApproachCoordinate(C(0,-100),C(100,8)) is null,
+    "approach arrow cannot exceed 50 m");
+Check(new AStarRoutingService(new RoadGraph(nodes,edges,(_,_)=>true))
+    .FindApproachCoordinate(C(0,-30),C(100,8)) is null,
+    "approach cannot cross a major-road barrier");
+Check(approachPlanner.FindApproachCoordinate(C(0,-30),C(1000,8)) is null,
+    "approach cannot claim a disconnected facility");
+
+var onlineSpy = new CountingRoutingService(Route(C(0),C(100,8)));
+var hybridOnline = new HybridRoutingService(onlineSpy,
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await hybridOnline.FindRouteAsync(C(0),C(100,8)) is not null && onlineSpy.Calls == 1,
+    "online MLD provider is selected when internet is available");
+var offlineSpy = new CountingRoutingService(Route(C(0),C(100,8)));
+var hybridOffline = new HybridRoutingService(offlineSpy,
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => false);
+Check(await hybridOffline.FindRouteAsync(C(0,1),C(100,8)) is not null && offlineSpy.Calls == 0,
+    "offline route skips the online provider");
+
+bool Angle(GeoCoordinate target, System.Numerics.Quaternion rotation, double expected) =>
+    RoadApproachCuePolicy.TryGetAngle(C(0),target,0,rotation,out double angle,out _) &&
+    Math.Abs(angle - expected) < 0.01;
+Check(Angle(C(10),System.Numerics.Quaternion.Identity,90) &&
+    Angle(C(-10),System.Numerics.Quaternion.Identity,-90), "approach arrows use camera-relative left and right");
+Check(Angle(C(0,-10),System.Numerics.Quaternion.Identity,0) &&
+    Angle(C(0,10),System.Numerics.Quaternion.Identity,180), "approach front and behind are distinct");
+Check(Angle(C(-10),System.Numerics.Quaternion.CreateFromAxisAngle(
+    System.Numerics.Vector3.UnitY,MathF.PI/2),0), "rotating the phone changes the screen arrow");
+Check(!RoadApproachCuePolicy.TryGetAngle(C(0),C(10),0,default,out _,out _) &&
+    !RoadApproachCuePolicy.TryGetAngle(C(0),C(51),0,System.Numerics.Quaternion.Identity,out _,out _),
+    "invalid pose and distant approach directions are withheld");
+
+var floodService = new RescuAR.App.Services.Flood.FloodDepthVisualizationService();
+var simulation = floodService.FromSimulation(0.6);
+Check(simulation.HasRenderableHeight && simulation.Mode ==
+    RescuAR.App.Services.Flood.FloodDepthVisualizationService.FloodVisualizationMode.Simulation &&
+    simulation.PrimaryText.Contains("Simulated") && simulation.ReportedRiverLevelMeters is null,
+    "user-selected flood height is explicitly a simulation");
+Check(!floodService.FromSimulation(double.NaN).IsAvailable &&
+    !floodService.FromSimulation(-0.1).IsAvailable &&
+    !floodService.FromSimulation(0).HasRenderableHeight &&
+    floodService.FromSimulation(20).LocalDepthMeters == 3,
+    "invalid and out-of-range simulated flood heights are bounded");
+var river = floodService.FromAdvisory(new RescuAR.App.Models.DisasterAdvisory
+    { Category="Flood", WaterLevel=16.5 });
+Check(river.IsAvailable && !river.HasRenderableHeight && river.LocalDepthMeters is null,
+    "river gauge readings never become local flood geometry");
+
+var projection = new ARCameraPoseBridge.ProjectionSnapshot(true,
+    1,0,0,0, 0,1,0,0, 0,0,-1.002002f,-0.2002002f, 0,0,-1,0, 0.1f,100);
+bool Project(System.Numerics.Vector3 a, System.Numerics.Vector3 b,
+    out System.Numerics.Vector2 sa, out System.Numerics.Vector2 sb) =>
+    FloodSimulationProjection.TryProjectSegment(a,b,System.Numerics.Vector3.Zero,
+        System.Numerics.Quaternion.Identity,projection,out sa,out sb);
+Check(Project(new(-1,0,-2),new(1,0,-2),out var sa,out var sb) &&
+    Math.Abs(sa.X-0.25)<0.001 && Math.Abs(sb.X-0.75)<0.001 && Math.Abs(sa.Y-0.5)<0.001,
+    "ARCore projection places a metric outline at correct screen coordinates");
+Check(!Project(new(-1,0,2),new(1,0,2),out _,out _), "behind-camera flood outlines are clipped");
+Check(Project(new(-10,0,-2),new(10,0,-2),out sa,out sb) &&
+    Math.Abs(sa.X)<0.001 && Math.Abs(sb.X-1)<0.001,
+    "flood outline clips to viewport rather than overflowing");
+Check(Project(new(0,0,1),new(0,0,-2),out sa,out sb) && float.IsFinite(sa.X),
+    "near-plane crossing has no division by zero or inverted outline");
+Check(FloodSimulationProjection.TryProjectSegment(new(4,1,8),new(6,1,8),new(5,1,10),
+    System.Numerics.Quaternion.Identity,projection,out sa,out sb) && Math.Abs(sa.X-0.25)<0.001,
+    "outline remains correct after translating the camera world origin");
+
 Console.WriteLine($"{passed} regression checks passed.");
 
 sealed class FixedRoutingService(RouteResult route) : IRoutingService
@@ -190,4 +275,16 @@ sealed class FixedRoutingService(RouteResult route) : IRoutingService
     public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin,
         GeoCoordinate destination, CancellationToken cancellationToken = default) =>
         Task.FromResult<RouteResult?>(route);
+}
+
+sealed class CountingRoutingService(RouteResult route) : IRoutingService
+{
+    public int Calls { get; private set; }
+    public string AlgorithmName => "MLD";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default)
+    {
+        Calls++;
+        return Task.FromResult<RouteResult?>(route);
+    }
 }

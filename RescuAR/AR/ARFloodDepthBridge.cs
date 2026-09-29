@@ -68,7 +68,8 @@ public static class ARFloodDepthBridge
         double localDepthMeters,
         bool modeActive,
         string source = "local flood depth",
-        float horizontalExtentMeters = DefaultHorizontalExtentMeters)
+        float horizontalExtentMeters = DefaultHorizontalExtentMeters,
+        bool isSimulation = false)
     {
         if (!modeActive)
         {
@@ -125,7 +126,8 @@ public static class ARFloodDepthBridge
                 true,
                 depth,
                 extent,
-                normalizedSource);
+                normalizedSource,
+                isSimulation);
 
             current = next;
         }
@@ -261,7 +263,8 @@ public static class ARFloodDepthBridge
             bool modeActive,
             float localDepthMeters,
             float horizontalExtentMeters,
-            string source)
+            string source,
+            bool isSimulation = false)
         {
             Version = version;
             Metadata = metadata;
@@ -272,6 +275,7 @@ public static class ARFloodDepthBridge
             LocalDepthMeters = localDepthMeters;
             HorizontalExtentMeters = horizontalExtentMeters;
             Source = source;
+            IsSimulation = isSimulation;
         }
 
         public long Version { get; }
@@ -287,5 +291,6 @@ public static class ARFloodDepthBridge
         public float LocalDepthMeters { get; }
         public float HorizontalExtentMeters { get; }
         public string Source { get; }
+        public bool IsSimulation { get; }
     }
 }

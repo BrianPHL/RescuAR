@@ -507,8 +507,24 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         return components;
     }
 
+    /// <summary>
+    /// Finds a nearby road connected to the facility for an arrow-only approach
+    /// cue. Does not relax origin snapping or add any walking-route geometry.
+    /// </summary>
+    public GeoCoordinate? FindApproachCoordinate(GeoCoordinate origin, GeoCoordinate destination)
+    {
+        if (!origin.IsValid || !destination.IsValid) return null;
+        var components = graph.Nodes.Values
+            .Where(node => node.Coordinate.DistanceTo(destination) <= MaximumDestinationSnapMeters &&
+                !graph.AccessCrossesMajorRoad(node.Coordinate, destination))
+            .Select(node => componentByNode[node.Id]).ToHashSet();
+        var projection = FindNearestEdgeProjection(origin, components, 50.0);
+        return projection.IsAvailable ? projection.SnappedCoordinate : null;
+    }
+
     private EdgeProjection FindNearestEdgeProjection(
-        GeoCoordinate point, IReadOnlySet<int> destinationComponents)
+        GeoCoordinate point, IReadOnlySet<int> destinationComponents,
+        double maximumSnapMeters = MaximumOriginSnapMeters)
     {
         EdgeProjection nearest =
             EdgeProjection.Unavailable;
@@ -524,7 +540,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                     edge);
 
             if (!candidate.IsAvailable ||
-                candidate.CrossTrackMeters > MaximumOriginSnapMeters ||
+                candidate.CrossTrackMeters > maximumSnapMeters ||
                 (nearest.IsAvailable &&
                  candidate.CrossTrackMeters >=
                     nearest.CrossTrackMeters) ||

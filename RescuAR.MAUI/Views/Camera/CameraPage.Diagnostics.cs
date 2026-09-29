@@ -15,9 +15,6 @@ namespace RescuAR.App.Views.Camera;
 /// </summary>
 public partial class CameraPage
 {
-    private Button developerFloodDepthTestButton =
-        null!;
-
     private Button developerSafeZoneTestButton =
         null!;
 
@@ -34,15 +31,6 @@ public partial class CameraPage
 
     private const double RoadLineDiagnosticRadiusMeters = 40.0;
 
-    private Grid floodSimulationConfigurationSheet =
-        null!;
-
-    private Slider floodSimulationDepthSlider =
-        null!;
-
-    private Label floodSimulationDepthValueLabel =
-        null!;
-
     private bool diagnosticConsentPromptShown;
 
     private static readonly bool EnableDeveloperOffRouteSimulation =
@@ -54,23 +42,11 @@ public partial class CameraPage
     private static readonly bool EnableDeveloperSafeZoneValidation =
         true;
 
-    private static readonly bool EnableDeveloperFloodDepthValidation =
-        true;
-
     private static readonly bool EnableDeveloperDynamicHazardValidation =
         true;
 
     private const double DeveloperSafeZoneTargetAheadMeters =
         20.0;
-
-    private static readonly double?[] DeveloperFloodDepthSequenceMeters =
-    {
-        0.30,
-        0.60,
-        1.00,
-        1.50,
-        null
-    };
 
     private const double DeveloperHazardAheadMeters =
         45.0;
@@ -84,7 +60,6 @@ public partial class CameraPage
     private const double DeveloperSimulatedGpsAccuracyMeters =
         5.0;
 
-    private int developerFloodDepthSequenceIndex;
     private bool developerHazardValidationArmed;
     private bool developerSafeZoneValidationArmed;
 
@@ -96,40 +71,6 @@ public partial class CameraPage
 
     private void ConfigureDiagnosticControls()
     {
-        diagnosticCameraActionHost.IsVisible =
-            true;
-
-        diagnosticCameraActionHost.InputTransparent =
-            false;
-
-        developerFloodDepthTestButton =
-            CreateDiagnosticButton(
-                "Simulate Flood Depth",
-                "#0A929C",
-                "#08757D");
-
-        developerFloodDepthTestButton.WidthRequest =
-            204;
-
-        developerFloodDepthTestButton.Margin =
-            new Thickness(
-                0,
-                0,
-                0,
-                12);
-
-        developerFloodDepthTestButton.HorizontalOptions =
-            LayoutOptions.Center;
-
-        developerFloodDepthTestButton.VerticalOptions =
-            LayoutOptions.End;
-
-        developerFloodDepthTestButton.Clicked +=
-            OnFloodSimulationConfigureClicked;
-
-        diagnosticCameraActionHost.Children.Add(
-            developerFloodDepthTestButton);
-
         developerSafeZoneTestButton =
             CreateDiagnosticButton(
                 "DEV: Arm Safe Zone Test",
@@ -181,263 +122,108 @@ public partial class CameraPage
             developerHazardRerouteTestButton);
         diagnosticNavigationControlsHost.Children.Add(developerRoadLinesButton);
 
-        ConfigureFloodSimulationSheet();
+    }
+
+    private CancellationTokenSource? roadDiagnosticCancellation;
+
+    private void CancelRoadDiagnosticWork()
+    {
+        roadDiagnosticCancellation?.Cancel();
+        ARRouteRenderer.HideRoadDiagnostics();
     }
 
     private async void OnDeveloperRoadLinesClicked(object? sender, EventArgs e)
     {
         if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
         {
-            ARRouteRenderer.HideRoadDiagnostics();
+            CancelRoadDiagnosticWork();
             developerRoadLinesButton.Text = "DEV: Show GeoJSON roads (not directions)";
             RefreshArTrackingStatusBanner();
             UpdateTurnGuidance();
             return;
         }
 
+        using var work = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        roadDiagnosticCancellation?.Cancel();
+        roadDiagnosticCancellation = work;
         developerRoadLinesButton.IsEnabled = false;
+        long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
         try
         {
-            if (!pageIsVisible ||
-                currentCameraModuleView != CameraModuleViewMode.ArCamera)
-                return;
-
-            var reading = await _locationService.GetCurrentLocationAsync();
-            if (reading is null || !reading.Coordinate.IsValid ||
-                reading.AccuracyMeters is not double accuracy ||
-                !double.IsFinite(accuracy) || accuracy > 15.0)
+            if (!CanInspectRoads(session)) return;
+            var reading = await TryGetRouteLocationAsync(work.Token);
+            if (!IsCurrentRouteStartupLocationAcceptable(reading))
             {
                 await DisplayAlert("GeoJSON roads",
-                    "Wait for a GPS fix with accuracy of 15 m or better.", "OK");
+                    "Wait for a recent GPS fix with accuracy of 30 m or better.", "OK");
                 return;
             }
-
             var heading = await _headingAlignmentService.CaptureAsync(
-                reading.Coordinate, reading.AltitudeMeters,
-                CancellationToken.None);
-            if (!heading.HasValue || !heading.Value.IsAvailable ||
-                !heading.Value.IsStable)
+                reading!.Coordinate, reading.AltitudeMeters, work.Token);
+            if (!heading.HasValue || !heading.Value.IsAvailable || !heading.Value.IsStable)
             {
-                await DisplayAlert("GeoJSON roads",
-                    "Stable heading is required to align road data with the camera.", "OK");
+                if (CanInspectRoads(session))
+                    await DisplayAlert("GeoJSON roads", "Hold the phone steady to align road data.", "OK");
                 return;
             }
-
-            if (reading.Timestamp > DateTimeOffset.UtcNow ||
-                DateTimeOffset.UtcNow - reading.Timestamp >
-                    TimeSpan.FromSeconds(5))
+            var roads = await NavigationDataBootstrap.GetRoadFeaturesAsync(work.Token);
+            if (!IsCurrentRouteStartupLocationAcceptable(reading))
+                reading = await TryGetRouteLocationAsync(work.Token);
+            work.Token.ThrowIfCancellationRequested();
+            if (!CanInspectRoads(session)) return;
+            if (!IsCurrentRouteStartupLocationAcceptable(reading))
             {
-                await DisplayAlert("GeoJSON roads",
-                    "The GPS fix expired while aligning the camera. Try again.", "OK");
+                await DisplayAlert("GeoJSON roads", "A recent GPS fix is required to place the overlay.", "OK");
                 return;
             }
-
-            IReadOnlyList<GeoJsonRoadFeature> roads =
-                await NavigationDataBootstrap.GetRoadFeaturesAsync();
-            IReadOnlyList<NearbyRoadLineProjector.RoadLineSegment> lines =
-                NearbyRoadLineProjector.Project(roads, reading.Coordinate,
-                    RoadLineDiagnosticRadiusMeters,
-                    heading.Value.MapToArYawDegrees);
-
-            if (lines.Count == 0 ||
-                lines.Count > ARRouteRenderer.MaximumDiagnosticSegments)
+            var lines = NearbyRoadLineProjector.Project(roads, reading!.Coordinate,
+                RoadLineDiagnosticRadiusMeters, heading.Value.MapToArYawDegrees);
+            if (lines.Count == 0 || lines.Count > ARRouteRenderer.MaximumDiagnosticSegments)
             {
-                await DisplayAlert("GeoJSON roads",
-                    lines.Count == 0
-                        ? "No GeoJSON lines are within 40 m of this location."
-                        : $"Found {lines.Count} lines; this exceeds the diagnostic display limit. None were hidden or displayed.",
-                    "OK");
+                await DisplayAlert("GeoJSON roads", lines.Count == 0
+                    ? "No GeoJSON lines are within 40 m of this location."
+                    : $"Found {lines.Count} lines; the display limit was exceeded. No partial overlay was shown.", "OK");
                 return;
             }
-
-            ARCameraPoseBridge.SpatialSnapshot frame =
-                ARCameraPoseBridge.CurrentFrame;
-            if (!pageIsVisible ||
-                currentCameraModuleView != CameraModuleViewMode.ArCamera ||
-                !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
-                !frame.Anchor.IsAvailable ||
-                frame.Anchor.ReferenceGeneration <= 0 ||
-                frame.Generation.SessionGeneration <= 0)
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            if (!CanInspectRoads(session) || !frame.IsFresh || !frame.IsTracking ||
+                !frame.Pose.IsTracking || !frame.Anchor.IsAvailable ||
+                frame.Anchor.ReferenceGeneration <= 0)
             {
-                await DisplayAlert("GeoJSON roads",
-                    "Wait for camera tracking and a ground reference.", "OK");
+                await DisplayAlert("GeoJSON roads", "Wait for camera tracking and a ground reference.", "OK");
                 return;
             }
-
-            ARRouteRenderer.ShowRoadDiagnostics(lines,
-                frame.Pose.PositionX, frame.Pose.PositionZ,
-                frame.Anchor.ReferenceGeneration,
-                frame.Generation.SessionGeneration);
+            ARRouteRenderer.ShowRoadDiagnostics(lines, frame.Pose.PositionX, frame.Pose.PositionZ,
+                frame.Anchor.ReferenceGeneration, frame.Generation.SessionGeneration);
             developerRoadLinesButton.Text = "DEV: Hide GeoJSON roads";
             turnGuidancePanel.IsVisible = false;
+            routeLocatorPanel.IsVisible = false;
             navigationAwarenessSheet.IsVisible = false;
             RefreshArTrackingStatusBanner();
             await DisplayAlert("GeoJSON roads",
-                $"Showing all {lines.Count} raw GeoJSON line segments within 40 m. Cyan lines are map data, not a walking route. Tap the same button to restore navigation.",
-                "OK");
+                $"Showing all {lines.Count} raw line segments within 40 m. " +
+                $"GPS accuracy: ±{reading.AccuracyMeters:0} m. " +
+                "Cyan lines are map data, not directions. GPS and heading errors can shift this overlay. " +
+                "Tap the same button to restore navigation.", "OK");
         }
+        catch (OperationCanceledException) { }
         catch (Exception exception)
         {
             ARRouteRenderer.HideRoadDiagnostics();
             developerRoadLinesButton.Text = "DEV: Show GeoJSON roads (not directions)";
-            await DisplayAlert("GeoJSON roads", exception.Message, "OK");
+            if (CanInspectRoads(session)) await DisplayAlert("GeoJSON roads", exception.Message, "OK");
         }
         finally
         {
+            if (ReferenceEquals(roadDiagnosticCancellation, work)) roadDiagnosticCancellation = null;
             developerRoadLinesButton.IsEnabled = true;
         }
     }
 
-    private void ConfigureFloodSimulationSheet()
-    {
-        diagnosticConfigurationHost.IsVisible =
-            true;
-
-        diagnosticConfigurationHost.InputTransparent =
-            false;
-
-        floodSimulationConfigurationSheet =
-            new Grid
-            {
-                IsVisible = false,
-                VerticalOptions = LayoutOptions.End
-            };
-
-        Border panel =
-            new()
-            {
-                Padding =
-                    new Thickness(
-                        14,
-                        12,
-                        14,
-                        14),
-                BackgroundColor =
-                    Colors.White,
-                Stroke =
-                    new SolidColorBrush(
-                        Color.FromArgb("#E5E7E9")),
-                StrokeThickness =
-                    1,
-                StrokeShape =
-                    new Microsoft.Maui.Controls.Shapes.RoundRectangle
-                    {
-                        CornerRadius =
-                            new CornerRadius(
-                                10)
-                    }
-            };
-
-        VerticalStackLayout content =
-            new()
-            {
-                Spacing = 13
-            };
-
-        content.Children.Add(
-            new Label
-            {
-                Text = "Diagnostic Flood Depth Simulation",
-                TextColor = Color.FromArgb("#858585"),
-                FontSize = 12,
-                FontAttributes = FontAttributes.Bold
-            });
-
-        content.Children.Add(
-            new Label
-            {
-                Text = "Synthetic local depth in meters",
-                TextColor = Color.FromArgb("#171717"),
-                FontSize = 12
-            });
-
-        Grid sliderRow =
-            new()
-            {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition
-                    {
-                        Width = GridLength.Star
-                    },
-                    new ColumnDefinition
-                    {
-                        Width = new GridLength(
-                            52)
-                    }
-                },
-                ColumnSpacing = 10
-            };
-
-        floodSimulationDepthSlider =
-            new Slider
-            {
-                Minimum = 0.1,
-                Maximum = 3.0,
-                Value = 0.6,
-                MinimumTrackColor = Color.FromArgb("#0A929C"),
-                MaximumTrackColor = Color.FromArgb("#D9D9D9"),
-                ThumbColor = Color.FromArgb("#0A929C")
-            };
-
-        floodSimulationDepthSlider.ValueChanged +=
-            OnFloodSimulationSliderChanged;
-
-        floodSimulationDepthValueLabel =
-            new Label
-            {
-                Text = "0.6",
-                TextColor = Color.FromArgb("#111111"),
-                FontSize = 14,
-                FontAttributes = FontAttributes.Bold,
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center
-            };
-
-        Grid.SetColumn(
-            floodSimulationDepthValueLabel,
-            1);
-
-        sliderRow.Children.Add(
-            floodSimulationDepthSlider);
-
-        sliderRow.Children.Add(
-            floodSimulationDepthValueLabel);
-
-        content.Children.Add(
-            sliderRow);
-
-        Button apply =
-            CreateDiagnosticButton(
-                "Apply Synthetic Depth",
-                "#0A929C",
-                "#08757D");
-
-        apply.Clicked +=
-            OnSaveFloodSimulationClicked;
-
-        content.Children.Add(
-            apply);
-
-        Button close =
-            CreateDiagnosticButton(
-                "Close");
-
-        close.Clicked +=
-            OnFloodSimulationSheetCloseButtonClicked;
-
-        content.Children.Add(
-            close);
-
-        panel.Content =
-            content;
-
-        floodSimulationConfigurationSheet.Children.Add(
-            panel);
-
-        diagnosticConfigurationHost.Children.Add(
-            floodSimulationConfigurationSheet);
-    }
+    private bool CanInspectRoads(long session) =>
+        session > 0 && pageIsVisible && !_arCoreService.IsSessionPaused &&
+        currentCameraModuleView == CameraModuleViewMode.ArCamera &&
+        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration == session;
 
     private static Button CreateDiagnosticButton(
         string text,
@@ -457,13 +243,7 @@ public partial class CameraPage
             CornerRadius = 6
         };
 
-    private void OnFloodSimulationSheetCloseButtonClicked(
-        object? sender,
-        EventArgs e)
-    {
-        floodSimulationConfigurationSheet.IsVisible =
-            false;
-    }
+
 
     private async void RequestDiagnosticLocationConsent()
     {
