@@ -36,57 +36,38 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     {
         _advisoryService = new AdvisoryService();
         _ = LoadAdvisoriesAsync();
-        _ = LoadInitialWaterLevelAsync();
         StartClockTicker();
 
-        // Real-time listener for new admin advisories
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+        // Real-time listener for new admin advisories only
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.StartRealtimeListener();
+    }
+
+    private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
         {
             SelectedAdvisory = newAdvisory;
             IsPopupVisible = true;
             _ = LoadAdvisoriesAsync();
-        };
-        RealtimeAdvisoryManager.StartRealtimeListener();
-
-        // Real-time listener for Sto. Nino Water Level
-        RealtimeWaterLevelManager.OnWaterLevelUpdated += UpdateWaterLevelUI;
-        RealtimeWaterLevelManager.StartRealtimeListener();
+        });
     }
 
-    private async Task LoadInitialWaterLevelAsync()
-    {
-        var latestLog = await RealtimeWaterLevelManager.GetLatestWaterLevelAsync();
-        if (latestLog != null)
-        {
-            UpdateWaterLevelUI(latestLog);
-        }
-    }
-
-    private void UpdateWaterLevelUI(MonitoringStation station)
-    {
-        LatestWaterLevelText = $"{station.Level:F1} m";
-        
-        if (station.Level >= 18.0)
-            CurrentAlertStatus = "Level 3 — Critical";
-        else if (station.Level >= 16.0)
-            CurrentAlertStatus = "Level 2 — Warning";
-        else if (station.Level >= 15.0)
-            CurrentAlertStatus = "Level 1 — Standby";
-        else
-            CurrentAlertStatus = "Low Alert";
-    }
+    private IDispatcherTimer? _clockTimer;
 
     private void StartClockTicker()
     {
-        var timer = Application.Current?.Dispatcher.CreateTimer();
-        if (timer != null)
+        if (_clockTimer != null) return;
+        _clockTimer = Application.Current?.Dispatcher.CreateTimer();
+        if (_clockTimer != null)
         {
-            timer.Interval = TimeSpan.FromSeconds(1);
-            timer.Tick += (s, e) =>
+            _clockTimer.Interval = TimeSpan.FromSeconds(1);
+            _clockTimer.Tick += (s, e) =>
             {
                 CurrentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
             };
-            timer.Start();
+            _clockTimer.Start();
         }
     }
 
@@ -113,18 +94,26 @@ public partial class AdvisoryFeedViewModel : ObservableObject
 
     private void ApplyFilter()
     {
-        Advisories.Clear();
-        var filtered = SelectedFilter switch
+        MainThread.BeginInvokeOnMainThread(() =>
         {
-            "Critical" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Critical", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Warning", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("High", StringComparison.OrdinalIgnoreCase)),
-            "Standby" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Standby", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Low", StringComparison.OrdinalIgnoreCase)),
-            _ => _allAdvisories
-        };
+            var filtered = SelectedFilter switch
+            {
+                "Critical" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Critical", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Warning", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("High", StringComparison.OrdinalIgnoreCase)).ToList(),
+                "Standby" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Standby", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Low", StringComparison.OrdinalIgnoreCase)).ToList(),
+                _ => _allAdvisories.ToList()
+            };
 
-        foreach (var item in filtered)
-        {
-            Advisories.Add(item);
-        }
+            if (Advisories.Count == filtered.Count && Advisories.SequenceEqual(filtered))
+            {
+                return;
+            }
+
+            Advisories.Clear();
+            foreach (var item in filtered)
+            {
+                Advisories.Add(item);
+            }
+        });
     }
 
     [RelayCommand]
@@ -177,6 +166,19 @@ public partial class AdvisoryFeedViewModel : ObservableObject
         {
             var param = string.IsNullOrWhiteSpace(emergencyType) ? "flood" : emergencyType;
             await Shell.Current.GoToAsync($"Prepare/EvacuationCenterInfo?type={Uri.EscapeDataString(param)}");
+        }
+    }
+
+    [ObservableProperty]
+    private int unreadNotificationsCount = 2;
+
+    [RelayCommand]
+    private async Task OpenNotificationsAsync()
+    {
+        UnreadNotificationsCount = 0;
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("NotificationsPage");
         }
     }
 
