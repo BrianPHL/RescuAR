@@ -71,6 +71,8 @@ namespace RescuAR
 
             this.Managers.EntityManager.Add(
                 routeEntity);
+            this.Managers.EntityManager.Add(
+                ARRoadApproachRenderer.Create(capsuleMaterialComponent.Material));
 
             /*
              * Stage 7B - AR-space Flood Depth Visualization

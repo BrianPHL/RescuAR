@@ -77,7 +77,8 @@ if ($observedAbis.Count -ne 1 -or $observedAbis[0] -ne $ExpectedAbi) {
 if ($buildProfile -notmatch "(?m)^diagnosticBuild=$([regex]::Escape($ExpectedDiagnosticBuild))\r?$") {
     throw "Packaged diagnostic-build profile does not match expected value '$ExpectedDiagnosticBuild'."
 }
-if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-12\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
+if ($buildProfile -notmatch '(?m)^diagnosticRouteOverride=false\r?$') { throw "Road diagnostics must retain navigation confidence checks." }
+if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-13\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
 if ($buildProfile -notmatch '(?m)^validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1\r?$') { throw "Packaged validation profile is missing or incorrect." }
 
 if ($extension -eq '.apk') {

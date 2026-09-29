@@ -17,8 +17,9 @@ public static class DiagnosticPrivacyPolicy
     public const bool IsDiagnosticBuild =
         true;
 
+    // Road inspection must exercise the same confidence gates as navigation.
     public const bool DiagnosticRouteVisibilityOverrideEnabled =
-        true;
+        false;
 #else
     public const bool IsDiagnosticBuild =
         false;

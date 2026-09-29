@@ -164,6 +164,27 @@ public sealed class MLDARIntegrationService
     }
 
     /// <summary>
+    /// Uses the same provider for a bounded mapped-road start when a direct
+    /// origin request cannot route. AR still aligns to the actual GPS reading.
+    /// </summary>
+    public async Task<RouteResult?> RequestRouteWithRoadApproachAsync(
+        GeoCoordinate origin, GeoCoordinate destination,
+        AStarRoutingService.RoadApproachTarget? roadAccess,
+        CancellationToken cancellationToken = default)
+    {
+        RouteResult? route = await RequestRouteAsync(origin, destination, cancellationToken);
+        if (route is { Points.Count: >= 2 } ||
+            roadAccess is not { ConnectsToDestination: true } access ||
+            !access.Coordinate.IsValid) return route;
+        double distance = origin.DistanceTo(access.Coordinate);
+        if (!double.IsFinite(distance) || distance <= 1 || distance > 50) return route;
+        cancellationToken.ThrowIfCancellationRequested();
+        AndroidLog.Info(LogTag,
+            $"ROAD APPROACH ROUTE RETRY: provider='{routingService.AlgorithmName}', distance={distance:F1}m.");
+        return await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
+    }
+
+    /// <summary>
     /// Republishes a short AR window from the retained full route.
     ///
     /// arOriginOffsetX/Z are expressed relative to the existing AR route root

@@ -545,6 +545,7 @@ public static class ARCameraSpatialController
             graphicsGeneration);
         ARFloodDepthRenderer.TeardownGraphicsGeneration(
             graphicsGeneration);
+        ARRoadApproachRenderer.TeardownGraphicsGeneration(graphicsGeneration);
     }
 
     public static void SetRouteRenderingEnabled(
@@ -1148,6 +1149,12 @@ public static class ARCameraSpatialController
                     roadDiagnostic.Z);
             hasValidRouteSpatialPlacement = false;
         }
+
+        // Approach arrows have their own trust gates and do not need an
+        // already-published evacuation route. Raw-road diagnostics take priority.
+        if (ARRoadApproachRenderer.ProcessDrawThreadWork(frame,
+                routeGroundHeightPlausible, roadDiagnostic.Active))
+            route.IsEnabled = false;
 
         bool routeHeldFromLastValidPlacement =
             route.IsEnabled &&

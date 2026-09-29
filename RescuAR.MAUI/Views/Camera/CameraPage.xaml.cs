@@ -698,6 +698,7 @@ namespace RescuAR.App.Views.Camera
             if (mode != CameraModuleViewMode.ArCamera)
                 CancelRoadDiagnosticWork();
 #endif
+            if (mode != CameraModuleViewMode.ArCamera) ARRoadApproachBridge.Clear();
             currentCameraModuleView =
                 mode;
 
@@ -1769,6 +1770,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
+                ARRoadApproachBridge.Clear();
                 routeLocatorPanel.IsVisible = false;
                 return;
             }
@@ -3590,8 +3592,9 @@ namespace RescuAR.App.Views.Camera
                         TimeSpan.FromMinutes(1);
                 Task<RouteResult?> routeWork = reuseComputedRoute
                     ? Task.FromResult(pendingInitialRoute)
-                    : _mldArIntegrationService.RequestRouteAsync(
-                        origin, destination.Coordinate, startupWork.Token);
+                    : _mldArIntegrationService.RequestRouteWithRoadApproachAsync(
+                        origin, destination.Coordinate,
+                        FindRoadAccess(locationReading, arrivalGraph, destination.Coordinate), startupWork.Token);
 
                 if (reuseComputedRoute)
                     Log.Info(RoutingLogTag,
@@ -3641,7 +3644,7 @@ namespace RescuAR.App.Views.Camera
                     Log.Warn(
                         RoutingLogTag,
                         "No connected pedestrian route was found; " +
-                        "AR guidance remains unavailable.");
+                        "Mapped route guidance remains unavailable; road access is evaluated separately.");
 
                     return false;
                 }
@@ -3786,6 +3789,9 @@ namespace RescuAR.App.Views.Camera
                     initialFused = _routeProgressTracker.ApplyFusionCorrection(
                         initialFusion.TargetProgressMeters, initialMatch,
                         $"GPS_PDR_{initialFusion.Action}");
+                initialRoadApproachPending = initialMatch.IsOffRoute;
+                if (initialRoadApproachPending)
+                    TrySetRouteRoadApproachCue(initialMatch, returningToRoute: false);
                 lastRouteMatchConfidence = initialMatch.MatchConfidence;
                 lastGpsConfidence = initialFusion.Confidence;
 
@@ -10022,6 +10028,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 false;
+            initialRoadApproachPending = false;
             ClearRoadApproachCue();
 
 #if ANDROID
@@ -10131,6 +10138,8 @@ namespace RescuAR.App.Views.Camera
 
             arRouteVisualMode =
                 ArRouteVisualMode.RoadFollowingLong;
+            initialRoadApproachPending = false;
+            ClearRoadApproachCue();
 
             roadFollowingReentryConfirmationCount =
                 0;
@@ -10152,7 +10161,7 @@ namespace RescuAR.App.Views.Camera
 
         /// <summary>
         /// Keeps mapped route geometry while confirming corridor membership.
-        /// Confirmed off-route observations use a separate screen arrow;
+        /// Confirmed off-route observations use a floor arrow and screen cue;
         /// they never create a straight GPS-to-road cyan connector.
         /// </summary>
         private bool TryPublishApproachToRouteVisual(
@@ -10161,12 +10170,20 @@ namespace RescuAR.App.Views.Camera
             string progressSource = "GPS")
         {
 #if ANDROID
+            if (initialRoadApproachPending &&
+                arRouteVisualMode == ArRouteVisualMode.ApproachOrOffCourseShort &&
+                TrySetRouteRoadApproachCue(update, returningToRoute: false))
+            {
+                ARRouteBridge.Clear();
+                return false;
+            }
             if (update.IsAccepted && !update.IsOffRoute)
             {
+                initialRoadApproachPending = false;
                 ClearRoadApproachCue();
                 return TryPublishMovingRouteWindow(route, update, $"{progressSource}/GRAPH-CORRIDOR");
             }
-            if (TrySetRoadRecoveryCue(update))
+            if (TrySetRouteRoadApproachCue(update, returningToRoute: true))
             {
                 ARRouteBridge.Clear();
                 UpdateTurnGuidance();

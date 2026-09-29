@@ -63,7 +63,7 @@
 		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
 		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
 		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
-		<RescuArCorrectiveBatch>ARCore-12</RescuArCorrectiveBatch>
+		<RescuArCorrectiveBatch>ARCore-13</RescuArCorrectiveBatch>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
 
@@ -147,7 +147,7 @@
 		<AssemblyMetadata Include="RescuAR.CorrectiveBatch" Value="$(RescuArCorrectiveBatch)" />
 		<AssemblyMetadata Include="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
 		<AssemblyMetadata Include="RescuAR.DiagnosticBuild" Value="$(RescuArDiagnosticBuild)" />
-		<AssemblyMetadata Include="RescuAR.DiagnosticRouteOverride" Value="$(RescuArDiagnosticBuild)" />
+		<AssemblyMetadata Include="RescuAR.DiagnosticRouteOverride" Value="false" />
 		<AssemblyMetadata Include="RescuAR.LocationLogPolicy" Value="production-redacted;diagnostic-consent-quantized" />
 		<AssemblyMetadata Include="RescuAR.LocationLogRetentionDays" Value="30" />
 		<AssemblyMetadata Include="RescuAR.StateGlossary" Value="AR_STATE_GLOSSARY_V1" />
@@ -164,6 +164,7 @@
 		<AssemblyMetadata Include="RescuAR.ValidationProfile" Value="ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 		<AndroidAsset Include="$(IntermediateOutputPath)rescuar-build-profile.txt" Link="rescuar-build-profile.txt" />
 		<_RescuArBuildProfileLine Include="diagnosticBuild=$(RescuArDiagnosticBuild)" />
+		<_RescuArBuildProfileLine Include="diagnosticRouteOverride=false" />
 		<_RescuArBuildProfileLine Include="correctiveBatch=$(RescuArCorrectiveBatch)" />
 		<_RescuArBuildProfileLine Include="validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 	</ItemGroup>

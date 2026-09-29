@@ -267,6 +267,88 @@ Check(FloodSimulationProjection.TryProjectSegment(new(4,1,8),new(6,1,8),new(5,1,
     System.Numerics.Quaternion.Identity,projection,out sa,out sb) && Math.Abs(sa.X-0.25)<0.001,
     "outline remains correct after translating the camera world origin");
 
+
+// Batch 13: both algorithms retain a road approach before route publication.
+var connectedAccess = approachPlanner.FindRoadApproachTarget(C(0,-30), C(100,8));
+Check(connectedAccess is { ConnectsToDestination: true }, "road entry retains verified destination connectivity");
+var pendingAccess = approachPlanner.FindRoadApproachTarget(C(0,-30), C(1000,8));
+Check(pendingAccess is { ConnectsToDestination: false } &&
+    pendingAccess.Value.Coordinate.DistanceTo(C(0,0)) < 1,
+    "nearest road access remains available without claiming a connected facility route");
+Check(new AStarRoutingService(new RoadGraph(nodes,edges,(_,_)=>true))
+    .FindRoadApproachTarget(C(0,-30),C(1000,8)) is null,
+    "disconnected road approach still rejects a major-road barrier");
+var roadEntryRoute = await new MLDARIntegrationService(approachPlanner)
+    .RequestRouteWithRoadApproachAsync(C(0,-30),C(100,8),connectedAccess);
+Check(roadEntryRoute is { Points.Count: >= 2 } &&
+    roadEntryRoute.Points[0].Coordinate.DistanceTo(C(0,8)) < 1,
+    "AStar plans from a mapped road when the actual GPS origin is outside 20 m");
+Check(!new MLDARIntegrationService(approachPlanner).PublishInitialRoute(roadEntryRoute,0,
+    userCoordinate:C(0,-30)), "planning from the road never snaps the AR camera onto that road");
+var entryOnline = new RoadEntryRoutingService(C(0,8), Route(C(0,8),C(100,8)));
+Check(await new MLDARIntegrationService(entryOnline).RequestRouteWithRoadApproachAsync(
+    C(0,-30),C(100,8),connectedAccess) is not null && entryOnline.Origins.Count == 2 &&
+    entryOnline.Origins[0] == C(0,-30) && entryOnline.Origins[1].DistanceTo(C(0,8)) < 1,
+    "online provider uses the same road-entry retry as offline AStar");
+var entryUnconnected = new RoadEntryRoutingService(C(0,8), Route(C(0,8),C(100,8)));
+Check(await new MLDARIntegrationService(entryUnconnected).RequestRouteWithRoadApproachAsync(
+    C(0,-30),C(1000,8),pendingAccess) is null && entryUnconnected.Origins.Count == 1,
+    "unconnected nearest road does not manufacture a full route");
+var directOnline = new CountingRoutingService(Route(C(0),C(100,8)));
+Check(await new MLDARIntegrationService(directOnline).RequestRouteWithRoadApproachAsync(
+    C(0,-30),C(100,8),connectedAccess) is not null && directOnline.Calls == 1,
+    "a valid direct route is not requested again from the road");
+
+Check(RoadApproachCuePolicy.TryGetDirection(C(0),C(10),90,out var forwardDirection,out _) &&
+    Math.Abs(forwardDirection.X)<0.001 && Math.Abs(forwardDirection.Y+1)<0.001,
+    "floor arrow uses the same geographic-to-AR yaw as the screen cue");
+var arrowGeometry = RoadApproachArrowGeometry.Create(new(0,-1));
+Check(arrowGeometry.Length == 3 && arrowGeometry.All(part =>
+    part.End == new System.Numerics.Vector2(0,-2)) &&
+    Math.Abs(arrowGeometry[1].Start.X + arrowGeometry[2].Start.X)<0.001,
+    "ground arrow has one shaft and two symmetric wings aimed at the road");
+Check(RoadApproachArrowGeometry.Create(new(float.NaN,0)).Length == 0 &&
+    RoadApproachArrowGeometry.Create(default).Length == 0,
+    "invalid floor arrow directions create no geometry");
+Check(RoadApproachArrowGeometry.Create(new(8,0)).All(part => part.End.X == 2 &&
+    part.End.Y == 0), "direction magnitude cannot stretch the floor arrow into a connector line");
+
+Check(arrowGeometry.All(part =>
+{
+    var transform = new Evergine.Framework.Graphics.Transform3D
+    {
+        LocalRotation = new Evergine.Mathematics.Vector3(0, part.YawRadians, 0)
+    };
+    var forward = Evergine.Mathematics.Vector3.Transform(
+        Evergine.Mathematics.Vector3.UnitZ, transform.LocalOrientation);
+    var expected = System.Numerics.Vector2.Normalize(part.End - part.Start);
+    return Math.Abs(forward.X - expected.X) < 0.001 &&
+        Math.Abs(forward.Z - expected.Y) < 0.001;
+}), "Evergine arrow parts point toward their endpoints using radians");
+
+var arrowGeneration = new ARRenderGenerationToken(1,2,3);
+var arrowState = new ARRoadApproachBridge.Snapshot(true,new(0,-1),C(0),12,now,
+    arrowGeneration,7,ARGroundTrust.Verified,1000);
+bool CanRenderArrow(ARRoadApproachBridge.Snapshot state, ARRenderGenerationToken generation,
+    long ground = 7, ARGroundTrust trust = ARGroundTrust.Verified, bool tracking = true,
+    long at = 1000) => ARRoadApproachBridge.CanRender(state,generation,ground,trust,tracking,now,at);
+Check(CanRenderArrow(arrowState,arrowGeneration), "current tracked floor can render the independent approach arrow");
+Check(!CanRenderArrow(arrowState,new(2,2,3)) && !CanRenderArrow(arrowState,new(1,3,3)) &&
+    !CanRenderArrow(arrowState,new(1,2,4)), "session, graphics and display changes hide the previous floor arrow");
+Check(!CanRenderArrow(arrowState,arrowGeneration,ground:8) &&
+    !CanRenderArrow(arrowState,arrowGeneration,trust:ARGroundTrust.None) &&
+    !CanRenderArrow(arrowState,arrowGeneration,tracking:false),
+    "floor replacement and tracking loss hide stale approach geometry");
+Check(!CanRenderArrow(arrowState,arrowGeneration,at:3501) &&
+    !CanRenderArrow(arrowState with { FixTimestamp=now.AddSeconds(-6) },arrowGeneration) &&
+    !CanRenderArrow(arrowState with { Accuracy=30 },arrowGeneration),
+    "expired and inaccurate GPS cannot keep a floor arrow visible");
+Check(!CanRenderArrow(arrowState with { Active=false },arrowGeneration) &&
+    !CanRenderArrow(arrowState with { Direction=new(float.NaN,0) },arrowGeneration),
+    "cleared or invalid arrow publications are hidden");
+Check(!RescuAR.Diagnostics.DiagnosticPrivacyPolicy.DiagnosticRouteVisibilityOverrideEnabled,
+    "road diagnostics do not bypass normal route confidence gates");
+
 Console.WriteLine($"{passed} regression checks passed.");
 
 sealed class FixedRoutingService(RouteResult route) : IRoutingService
@@ -286,5 +368,19 @@ sealed class CountingRoutingService(RouteResult route) : IRoutingService
     {
         Calls++;
         return Task.FromResult<RouteResult?>(route);
+    }
+}
+
+
+sealed class RoadEntryRoutingService(GeoCoordinate road, RouteResult route) : IRoutingService
+{
+    public List<GeoCoordinate> Origins { get; } = [];
+    public string AlgorithmName => "MLD test provider";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Origins.Add(origin);
+        return Task.FromResult<RouteResult?>(origin.DistanceTo(road) < 1 ? route : null);
     }
 }

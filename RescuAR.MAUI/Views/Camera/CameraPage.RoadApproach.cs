@@ -5,6 +5,7 @@ using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
 using RescuAR.Navigation.State;
+using RescuAR.Diagnostics;
 using System.Numerics;
 
 namespace RescuAR.App.Views.Camera;
@@ -14,8 +15,10 @@ public partial class CameraPage
     private AStarRoutingService? roadApproachPlanner;
     private RoadApproachCue? roadApproachCue;
     private DateTimeOffset nextRoadApproachRetryAt;
+    private bool initialRoadApproachPending;
     private sealed record RoadApproachCue(LocationReading Reading, GeoCoordinate Target,
-        GeoCoordinate Destination, double Yaw, long Session, bool ReturningToRoute);
+        GeoCoordinate Destination, double Yaw, long Session, bool ReturningToRoute,
+        bool ConnectsToDestination);
 
     private static bool IsRoadApproachFixUsable(LocationReading? reading) =>
         reading is not null && RouteStartupLocationPolicy.CanPlace(reading.Coordinate,
@@ -24,6 +27,20 @@ public partial class CameraPage
     private void ClearRoadApproachCue()
     {
         lock (routeProgressFusionSync) roadApproachCue = null;
+        ARRoadApproachBridge.Clear();
+    }
+
+    private AStarRoutingService.RoadApproachTarget? FindRoadAccess(
+        LocationReading reading, RoadGraph graph, GeoCoordinate destination)
+    {
+        if (pendingInitialRoute is { Points.Count: >= 2 } && pendingInitialDestination == destination)
+        {
+            GeoCoordinate first = pendingInitialRoute.Points[0].Coordinate;
+            if (reading.Coordinate.DistanceTo(first) <= 50 &&
+                !graph.AccessCrossesMajorRoad(reading.Coordinate, first)) return new(first, true);
+        }
+        return (roadApproachPlanner ??= new AStarRoutingService(graph))
+            .FindRoadApproachTarget(reading.Coordinate, destination);
     }
 
     private async Task UpdateRoadApproachAsync(LocationReading? reading,
@@ -33,38 +50,46 @@ public partial class CameraPage
         var destination = NavigationDestinationBridge.Current;
         if (!destination.IsAvailable || !IsRoadApproachFixUsable(reading) ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera) return;
-
-        GeoCoordinate? target = null;
-        if (pendingInitialRoute is { Points.Count: >= 2 } &&
-            pendingInitialDestination == destination.Coordinate)
+        var target = FindRoadAccess(reading!, graph, destination.Coordinate);
+        if (!target.HasValue)
         {
-            GeoCoordinate candidate = pendingInitialRoute.Points[0].Coordinate;
-            if (reading!.Coordinate.DistanceTo(candidate) <= 50 &&
-                !graph.AccessCrossesMajorRoad(reading.Coordinate, candidate)) target = candidate;
+            routeStartupFailureMessage = "No accessible mapped road within 50 m — inspect the road data";
+            AndroidLog.Info("RescuAR-Routing", "ROAD APPROACH: no barrier-free pedestrian edge within 50m.");
+            return;
         }
-        target ??= (roadApproachPlanner ??= new AStarRoutingService(graph))
-            .FindApproachCoordinate(reading!.Coordinate, destination.Coordinate);
-        if (!target.HasValue) return;
-
         long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
         if (session <= 0) return;
         var heading = await _headingAlignmentService.CaptureAsync(
             reading!.Coordinate, reading.AltitudeMeters, token);
+        if (!IsRoadApproachFixUsable(reading))
+        {
+            reading = await TryGetRouteLocationAsync(token);
+            if (!IsRoadApproachFixUsable(reading)) return;
+            target = FindRoadAccess(reading!, graph, destination.Coordinate);
+            if (!target.HasValue) return;
+        }
         token.ThrowIfCancellationRequested();
         if (!heading.HasValue || !heading.Value.IsAvailable || !heading.Value.IsStable ||
-            !IsRoadApproachFixUsable(reading) || !pageIsVisible || _arCoreService.IsSessionPaused ||
+            !pageIsVisible || _arCoreService.IsSessionPaused ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != session ||
             !NavigationDestinationBridge.Current.IsAvailable ||
             NavigationDestinationBridge.Current.Coordinate != destination.Coordinate) return;
-
         lock (routeProgressFusionSync)
-            roadApproachCue = new(reading, target.Value, destination.Coordinate,
-                heading.Value.MapToArYawDegrees, session, false);
-        routeStartupFailureMessage = "Approach the mapped road — check access";
+        {
+            latestRouteStartupReading = reading;
+            roadApproachCue = new(reading!, target.Value.Coordinate, destination.Coordinate,
+                heading.Value.MapToArYawDegrees, session, false, target.Value.ConnectsToDestination);
+        }
+        routeStartupFailureMessage = target.Value.ConnectsToDestination
+            ? "Approach the mapped road — check access"
+            : "Approach the nearest mapped road — route connection pending";
+        AndroidLog.Info("RescuAR-Routing",
+            $"ROAD APPROACH: distance={reading!.Coordinate.DistanceTo(target.Value.Coordinate):F1}m, connected={target.Value.ConnectsToDestination}.");
     }
 
-    private bool TrySetRoadRecoveryCue(RouteProgressTracker.RouteProgressUpdate update)
+    private bool TrySetRouteRoadApproachCue(RouteProgressTracker.RouteProgressUpdate update,
+        bool returningToRoute)
     {
         var frame = ARCameraPoseBridge.CurrentFrame;
         var destination = NavigationDestinationBridge.Current;
@@ -72,20 +97,21 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
             reading = new(update.GpsCoordinate, update.AccuracyMeters, null, null, null,
                 latestGpsTimestampForRouting ?? DateTimeOffset.MinValue);
-        if (!recoveryConnectorVerified || !destination.IsAvailable ||
-            !RouteCorridorPolicy.CanPublishRecoveryConnector(update.AccuracyMeters,
-                update.CrossTrackErrorMeters, update.CorridorRadiusMeters, update.MatchConfidence) ||
+        if ((returningToRoute && (!recoveryConnectorVerified ||
+                !RouteCorridorPolicy.CanPublishRecoveryConnector(update.AccuracyMeters,
+                    update.CrossTrackErrorMeters, update.CorridorRadiusMeters, update.MatchConfidence))) ||
+            !destination.IsAvailable || update.MatchConfidence < RouteMatchConfidence.Medium ||
             !IsRoadApproachFixUsable(reading) || !update.SnappedCoordinate.IsValid ||
             !_headingAlignmentService.HasSessionCalibration ||
             lastHeadingAlignment is not { IsAvailable: true, IsStable: true } ||
             !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
             arrivalRoadGraph is null ||
-            arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate))
-            return false;
+            arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate) ||
+            !RoadApproachCuePolicy.TryGetDirection(reading.Coordinate, update.SnappedCoordinate,
+                activeMapToArYawDegrees, out _, out _)) return false;
         lock (routeProgressFusionSync)
             roadApproachCue = new(reading, update.SnappedCoordinate, destination.Coordinate,
-                activeMapToArYawDegrees, frame.Generation.SessionGeneration, true);
-        routeStartupFailureMessage = "Return to the mapped route — check access";
+                activeMapToArYawDegrees, frame.Generation.SessionGeneration, returningToRoute, true);
         return true;
     }
 
@@ -99,20 +125,31 @@ public partial class CameraPage
             dynamicRerouteInProgress || _arCoreService.IsSessionPaused ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             !destination.IsAvailable || destination.Coordinate != cue.Destination ||
-            (activeRoute is not null && (!cue.ReturningToRoute || !recoveryConnectorVerified)) ||
+            (cue.ReturningToRoute && !recoveryConnectorVerified) ||
             !IsRoadApproachFixUsable(cue.Reading) || !frame.IsFresh ||
             !frame.IsTracking || !frame.Pose.IsTracking ||
-            frame.Generation.SessionGeneration != cue.Session) return false;
-
+            frame.Generation.SessionGeneration != cue.Session)
+        {
+            ARRoadApproachBridge.Clear();
+            return false;
+        }
         var rotation = new Quaternion(frame.Pose.RotationX, frame.Pose.RotationY,
             frame.Pose.RotationZ, frame.Pose.RotationW);
         if (!RoadApproachCuePolicy.TryGetAngle(cue.Reading.Coordinate, cue.Target,
-                cue.Yaw, rotation, out double angle, out double distance)) return false;
+                cue.Yaw, rotation, out double angle, out double distance))
+        {
+            ARRoadApproachBridge.Clear();
+            return false;
+        }
+        ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
+            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session);
         routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
         routeLocatorIcon.Rotation = angle;
         routeLocatorLabel.Text = cue.ReturningToRoute
             ? $"Return to mapped route (~{distance:0} m). Check access."
-            : $"Approach mapped road (~{distance:0} m). Check access.";
+            : cue.ConnectsToDestination
+                ? $"Approach mapped road (~{distance:0} m). Check access."
+                : $"Nearest mapped road (~{distance:0} m). Route connection pending.";
         routeLocatorPanel.IsVisible = true;
         turnGuidancePanel.IsVisible = false;
         return true;

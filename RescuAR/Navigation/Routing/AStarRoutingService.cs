@@ -522,8 +522,20 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         return projection.IsAvailable ? projection.SnappedCoordinate : null;
     }
 
+    public readonly record struct RoadApproachTarget(GeoCoordinate Coordinate, bool ConnectsToDestination);
+
+    /// <summary>Road access can be shown before facility connectivity is known.</summary>
+    public RoadApproachTarget? FindRoadApproachTarget(GeoCoordinate origin, GeoCoordinate destination)
+    {
+        GeoCoordinate? connected = FindApproachCoordinate(origin, destination);
+        if (connected.HasValue) return new(connected.Value, true);
+        if (!origin.IsValid || !destination.IsValid) return null;
+        var nearest = FindNearestEdgeProjection(origin, null, 50.0);
+        return nearest.IsAvailable ? new(nearest.SnappedCoordinate, false) : null;
+    }
+
     private EdgeProjection FindNearestEdgeProjection(
-        GeoCoordinate point, IReadOnlySet<int> destinationComponents,
+        GeoCoordinate point, IReadOnlySet<int>? destinationComponents,
         double maximumSnapMeters = MaximumOriginSnapMeters)
     {
         EdgeProjection nearest =
@@ -532,7 +544,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         foreach (RoadEdge edge in
                  graph.Edges)
         {
-            if (!destinationComponents.Contains(componentByNode[edge.From.Id]))
+            if (destinationComponents is not null &&
+                !destinationComponents.Contains(componentByNode[edge.From.Id]))
                 continue;
             EdgeProjection candidate =
                 ProjectOntoEdge(

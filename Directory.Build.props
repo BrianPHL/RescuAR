@@ -3,9 +3,10 @@
 		<!-- The property AdditionalDefineConstants is used by Evergine Editor to add 'EVERGINE_EDITOR' build constant. -->
 		<DefineConstants Condition="'$(AdditionalDefineConstants)' != ''">$(DefineConstants);$(AdditionalDefineConstants)</DefineConstants>
 		<!--
-			Production is the default. Diagnostic behavior must be requested
-			explicitly with /p:RescuArDiagnosticBuild=true.
+			Local builds enable the requested AR field-test controls. CI stays
+			production by default; /p:RescuArDiagnosticBuild=false disables them.
 		-->
+		<RescuArDiagnosticBuild Condition="'$(RescuArDiagnosticBuild)' == '' and '$(ContinuousIntegrationBuild)' != 'true'">true</RescuArDiagnosticBuild>
 		<RescuArDiagnosticBuild Condition="'$(RescuArDiagnosticBuild)' == ''">false</RescuArDiagnosticBuild>
 		<DefineConstants Condition="'$(RescuArDiagnosticBuild)' == 'true'">$(DefineConstants);RESCUAR_DIAGNOSTICS</DefineConstants>
 	</PropertyGroup>
