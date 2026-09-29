@@ -403,7 +403,7 @@
                 StrokeShape="RoundRectangle 8">
                 <Label
                     x:Name="floodWaitingLabel"
-                    Text="No verified local flood-depth data"
+                    Text="Tap Simulate Flood Depth to choose a water height."
                     TextColor="#0876B9"
                     FontSize="13"
                     FontAttributes="Bold"
@@ -583,14 +583,13 @@
                 CornerRadius="7"
                 Clicked="OnEndNavigationClicked" />
 
-            <!-- Empty in production; populated only by CameraPage.Diagnostics.cs. -->
-            <Grid
-                x:Name="diagnosticCameraActionHost"
-                IsVisible="False"
-                InputTransparent="True"
-                ZIndex="31"
-                HorizontalOptions="Fill"
-                VerticalOptions="Fill" />
+            <Button
+                x:Name="floodSimulationButton" IsVisible="False" ZIndex="31"
+                Text="Simulate Flood Depth" HeightRequest="48" WidthRequest="204"
+                Margin="0,0,0,12" HorizontalOptions="Center" VerticalOptions="End"
+                BackgroundColor="#0A929C" BorderColor="#08757D" BorderWidth="1"
+                TextColor="White" FontSize="14" FontAttributes="Bold" CornerRadius="7"
+                Clicked="OnFloodSimulationConfigureClicked" />
 
             <!-- Navigation & Awareness selector. -->
             <Border
@@ -789,9 +788,9 @@
                 </Border>
             </Grid>
 
-            <!-- Empty in production; diagnostic builds populate it. -->
+            <!-- User-selected flood simulation settings. -->
             <Grid
-                x:Name="diagnosticConfigurationHost"
+                x:Name="floodSimulationConfigurationHost"
                 IsVisible="False"
                 InputTransparent="True"
                 ZIndex="58"

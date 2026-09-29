@@ -11,9 +11,8 @@ namespace RescuAR.App.Services.Flood;
 /// assumed to be the depth of water at the phone's exact position.
 ///
 /// A true local-depth visualization therefore uses LocalDepth mode only when a
-/// future trusted source explicitly supplies local flood depth. The developer
-/// validation method exercises that rendering path without changing production
-/// semantics.
+/// trusted source explicitly supplies local flood depth. Simulation mode uses
+/// a user-selected water height without claiming a measured flood level.
 /// </summary>
 public sealed class FloodDepthVisualizationService
 {
@@ -22,7 +21,8 @@ public sealed class FloodDepthVisualizationService
         Unavailable = 0,
         FloodAdvisory = 1,
         RiverGauge = 2,
-        LocalDepth = 3
+        LocalDepth = 3,
+        Simulation = 4
     }
 
     public readonly record struct FloodVisualizationSnapshot(
@@ -36,6 +36,11 @@ public sealed class FloodDepthVisualizationService
         double? ReportedRiverLevelMeters,
         string AdvisoryId)
     {
+        public bool HasRenderableHeight =>
+            IsAvailable &&
+            (Mode == FloodVisualizationMode.LocalDepth || Mode == FloodVisualizationMode.Simulation) &&
+            LocalDepthMeters is double height && double.IsFinite(height) && height > 0;
+
         public static FloodVisualizationSnapshot Unavailable =>
             new(
                 false,
@@ -123,6 +128,20 @@ public sealed class FloodDepthVisualizationService
             clamped,
             null,
             string.Empty);
+    }
+
+    public FloodVisualizationSnapshot FromSimulation(double heightMeters)
+    {
+        var snapshot = FromLocalDepth(heightMeters, "User-selected simulation");
+        if (!snapshot.IsAvailable) return snapshot;
+        return snapshot with
+        {
+            Mode = FloodVisualizationMode.Simulation,
+            Title = "Flood simulation",
+            PrimaryText = $"Simulated water height: {snapshot.LocalDepthMeters:0.0#} m",
+            SecondaryText = "Preview only — not a measured flood level.",
+            SourceText = "User-selected height • ARCore floor reference"
+        };
     }
 
     public static bool IsFloodAdvisory(

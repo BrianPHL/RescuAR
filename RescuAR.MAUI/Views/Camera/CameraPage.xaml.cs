@@ -163,28 +163,9 @@ namespace RescuAR.App.Views.Camera
         private GeoCoordinate pendingInitialDestination;
         private DateTimeOffset pendingInitialRouteAt;
         private DateTimeOffset nextHeadingRetryAt;
-
-        private const int RouteStartupFreshLocationBudgetMilliseconds =
-            4000;
-
-        private static readonly TimeSpan RecentRouteStartMaximumAge =
-            TimeSpan.FromSeconds(8);
-
-        private const double RecentRouteStartMaximumAccuracyMeters =
-            12.0;
-
-        private static readonly TimeSpan
-            FallbackBootstrapLocationMaximumAge =
-                TimeSpan.FromSeconds(
-                    8);
-
-        private const double
-            FallbackBootstrapLocationMaximumAccuracyMeters =
-                20.0;
-
-        private const double
-            FallbackBootstrapFreshAccuracyDisadvantageMeters =
-                15.0;
+        private bool routeStartupGpsRetryPending;
+        private GeoCoordinate routeStartupRetryDestination;
+        private LocationReading? latestRouteStartupReading;
 
         private bool destinationEventSubscribed;
         private bool emergencyAdvisoryEventSubscribed;
@@ -613,6 +594,7 @@ namespace RescuAR.App.Views.Camera
             IArCoreService arCoreService)
         {
             InitializeComponent();
+            ConfigureFloodSimulationSheet();
 
 #if RESCUAR_DIAGNOSTICS
             ConfigureDiagnosticControls();
@@ -643,7 +625,7 @@ namespace RescuAR.App.Views.Camera
                     () =>
                         Connectivity.Current.NetworkAccess ==
                             NetworkAccess.Internet,
-                    requireEmbeddedPedestrianGraph: true);
+                    requireEmbeddedPedestrianGraph: false);
 
             _mldArIntegrationService =
                 new MLDARIntegrationService(
@@ -714,7 +696,7 @@ namespace RescuAR.App.Views.Camera
         {
 #if RESCUAR_DIAGNOSTICS
             if (mode != CameraModuleViewMode.ArCamera)
-                ARRouteRenderer.HideRoadDiagnostics();
+                CancelRoadDiagnosticWork();
 #endif
             currentCameraModuleView =
                 mode;
@@ -765,7 +747,7 @@ namespace RescuAR.App.Views.Camera
                         !cameraPipelineTerminalFailureVisible &&
                         !lowLightFallbackActive &&
                         (!currentFloodVisualization.IsAvailable ||
-                         (HasLocalFloodDepth() &&
+                         (HasFloodPreviewHeight() &&
                           !HasVerifiedArGround())) &&
                         !safeZoneConfirmed;
 
@@ -790,10 +772,7 @@ namespace RescuAR.App.Views.Camera
                     navigationAwarenessSheet.IsVisible =
                         false;
 
-#if RESCUAR_DIAGNOSTICS
-                    floodSimulationConfigurationSheet.IsVisible =
-                        false;
-#endif
+                    CloseFloodSimulationSheet();
 
                     arGuidanceSelectedIcon.IsVisible =
                         arCameraMode;
@@ -934,7 +913,7 @@ namespace RescuAR.App.Views.Camera
                 HasVerifiedArGround();
 
             bool hasLocalFloodDepth =
-                HasLocalFloodDepth();
+                HasFloodPreviewHeight();
 
             bool hasDestination =
                 NavigationDestinationBridge.Current.IsAvailable;
@@ -949,12 +928,7 @@ namespace RescuAR.App.Views.Camera
                 !hasDestination &&
                 !safeZoneConfirmed;
 
-#if RESCUAR_DIAGNOSTICS
-            developerFloodDepthTestButton.IsVisible =
-                floodMode &&
-                EnableDeveloperFloodDepthValidation &&
-                !safeZoneConfirmed;
-#endif
+            floodSimulationButton.IsVisible = floodMode && !safeZoneConfirmed;
 
             cameraModeSwitcherButton.IsVisible =
                 !safeZoneConfirmed;
@@ -971,7 +945,7 @@ namespace RescuAR.App.Views.Camera
             else if (floodMode)
             {
                 floodModeDepthSummaryLabel.Text =
-                    "No verified local flood-depth data";
+                    "Tap Simulate Flood Depth to choose a water height.";
             }
 
             floodWaitingBanner.IsVisible =
@@ -1041,13 +1015,15 @@ namespace RescuAR.App.Views.Camera
                 }
                 else if (currentCameraModuleView ==
                              CameraModuleViewMode.FloodDepth &&
-                         HasLocalFloodDepth() &&
+                         HasFloodPreviewHeight() &&
                          HasVerifiedArGround())
                 {
                     ARFloodDepthBridge.PublishLocalDepth(
                         currentFloodVisualization.LocalDepthMeters!.Value,
                         IsFloodDepthArModeActive(),
-                        currentFloodVisualization.SourceText);
+                        currentFloodVisualization.SourceText,
+                    isSimulation: currentFloodVisualization.Mode ==
+                        FloodDepthVisualizationService.FloodVisualizationMode.Simulation);
                 }
             }
 
@@ -1124,31 +1100,24 @@ namespace RescuAR.App.Views.Camera
                 return "Low light — flood visualization paused.";
             }
 
-            if (HasLocalFloodDepth() &&
+            if (HasFloodPreviewHeight() &&
                 HasProvisionalArGround())
             {
-                return "Estimated flood level — calibrating floor...";
+                return "Calibrating floor for the water-height preview...";
             }
 
-            if (HasLocalFloodDepth() &&
+            if (HasFloodPreviewHeight() &&
                 !HasVerifiedArGround())
             {
-                return "Scanning for verified floor...";
+                return "Move the phone slowly to find the floor...";
             }
 
-            return "No verified local flood-depth data";
+            return "Tap Simulate Flood Depth to choose a water height.";
         }
 
-        private bool HasLocalFloodDepth()
+        private bool HasFloodPreviewHeight()
         {
-            return currentFloodVisualization.IsAvailable &&
-                currentFloodVisualization.Mode ==
-                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
-                currentFloodVisualization.LocalDepthMeters.HasValue &&
-                double.IsFinite(
-                    currentFloodVisualization.LocalDepthMeters.Value) &&
-                currentFloodVisualization.LocalDepthMeters.Value >
-                    0.0;
+            return currentFloodVisualization.HasRenderableHeight;
         }
 
         private bool IsFloodDepthArModeActive() =>
@@ -1183,14 +1152,16 @@ namespace RescuAR.App.Views.Camera
 
             bool localFloodActive =
                 IsFloodDepthArModeActive() &&
-                HasLocalFloodDepth();
+                HasFloodPreviewHeight();
 
             if (localFloodActive && groundAvailable)
             {
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
                     true,
-                    currentFloodVisualization.SourceText);
+                    currentFloodVisualization.SourceText,
+                    isSimulation: currentFloodVisualization.Mode ==
+                        FloodDepthVisualizationService.FloodVisualizationMode.Simulation);
             }
             else if (pageIsVisible &&
                      currentCameraModuleView == CameraModuleViewMode.FloodDepth)
@@ -1795,6 +1766,15 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshRouteLocatorCue()
         {
+#if RESCUAR_DIAGNOSTICS
+            if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
+            {
+                routeLocatorPanel.IsVisible = false;
+                return;
+            }
+#endif
+            if (TryShowRoadApproachCue()) return;
+            routeLocatorIcon.Rotation = 0;
             RouteLocatorDirection candidateDirection =
                 RouteLocatorDirection.Hidden;
 
@@ -2647,93 +2627,6 @@ namespace RescuAR.App.Views.Camera
             }
         }
 
-#if RESCUAR_DIAGNOSTICS
-        private void OnFloodSimulationConfigureClicked(
-            object? sender,
-            EventArgs e)
-        {
-            if (!EnableDeveloperFloodDepthValidation)
-            {
-                return;
-            }
-
-            navigationAwarenessSheet.IsVisible =
-                false;
-
-            if (currentFloodVisualization.LocalDepthMeters.HasValue)
-            {
-                floodSimulationDepthSlider.Value =
-                    Math.Clamp(
-                        currentFloodVisualization.LocalDepthMeters.Value,
-                        floodSimulationDepthSlider.Minimum,
-                        floodSimulationDepthSlider.Maximum);
-            }
-
-            floodSimulationDepthValueLabel.Text =
-                floodSimulationDepthSlider.Value.ToString("0.0");
-
-            floodSimulationConfigurationSheet.IsVisible =
-                true;
-        }
-
-        private void OnFloodSimulationSliderChanged(
-            object? sender,
-            ValueChangedEventArgs e)
-        {
-            if (floodSimulationDepthValueLabel is null)
-            {
-                return;
-            }
-
-            floodSimulationDepthValueLabel.Text =
-                e.NewValue.ToString("0.0");
-        }
-
-        private void OnFloodSimulationSheetCloseClicked(
-            object? sender,
-            TappedEventArgs e)
-        {
-            floodSimulationConfigurationSheet.IsVisible =
-                false;
-        }
-
-        private void OnSaveFloodSimulationClicked(
-            object? sender,
-            EventArgs e)
-        {
-            if (!EnableDeveloperFloodDepthValidation)
-            {
-                return;
-            }
-
-            double depth =
-                Math.Clamp(
-                    floodSimulationDepthSlider.Value,
-                    0.1,
-                    3.0);
-
-            FloodDepthVisualizationService.FloodVisualizationSnapshot snapshot =
-                _floodDepthVisualizationService.FromLocalDepth(
-                    depth,
-                    "DEV synthetic local depth",
-                    "Camera simulation");
-
-            ApplyFloodVisualization(
-                snapshot,
-                "Figma flood-depth simulation configuration");
-
-            floodSimulationConfigurationSheet.IsVisible =
-                false;
-
-#if ANDROID
-            Log.Info(
-                FloodDepthLogTag,
-                "[DEV FLOOD] FIGMA CONFIGURATION APPLIED: " +
-                $"depth={depth:F2}m, groundRelative=True.");
-#endif
-        }
-#endif
-
         private async void OnCameraHeaderBackClicked(
             object? sender,
             TappedEventArgs e)
@@ -2931,9 +2824,10 @@ namespace RescuAR.App.Views.Camera
             navigationAwarenessSheet.IsVisible =
                 false;
 
+            CloseFloodSimulationSheet();
+            ClearRoadApproachCue();
 #if RESCUAR_DIAGNOSTICS
-            floodSimulationConfigurationSheet.IsVisible =
-                false;
+            CancelRoadDiagnosticWork();
 #endif
 
             SetFloodVisualizationVisibility(
@@ -3532,6 +3426,7 @@ namespace RescuAR.App.Views.Camera
 
             routeRequestInProgress =
                 true;
+            routeStartupGpsRetryPending = false;
 
             routeStartupStartedAt = DateTimeOffset.UtcNow;
             routeStartupFirstVisibleLogged = false;
@@ -3579,6 +3474,9 @@ namespace RescuAR.App.Views.Camera
 
                 if (locationReading is null)
                 {
+                    routeStartupGpsRetryPending = true;
+                    routeStartupRetryDestination = destination.Coordinate;
+                    nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(3);
                     routeStartupFailureMessage =
                         "Waiting for a recent accurate GPS fix — use the 2D map";
                     Log.Error(
@@ -3604,6 +3502,7 @@ namespace RescuAR.App.Views.Camera
 
                 lock (routeProgressFusionSync)
                 {
+                    latestRouteStartupReading = locationReading;
                     latestGpsCoordinateForRouting =
                         locationReading.Coordinate;
 
@@ -3737,6 +3636,7 @@ namespace RescuAR.App.Views.Camera
                         0.0);
                     routeStartupFailureMessage =
                         "No connected pedestrian route — use the 2D map";
+                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken);
 
                     Log.Warn(
                         RoutingLogTag,
@@ -3798,6 +3698,7 @@ namespace RescuAR.App.Views.Camera
                     startupPose.IsTracking && startupPose.Anchor.IsAvailable
                     ? startupPose.Pose.PositionZ - startupPose.Anchor.PositionZ : 0.0f;
                 bool initialRoutePublished =
+                    IsRoadApproachFixUsable(locationReading) &&
                     _mldArIntegrationService.PublishInitialRoute(
                         route,
                         mapToArYawDegrees,
@@ -3827,10 +3728,12 @@ namespace RescuAR.App.Views.Camera
                     Log.Warn(
                         RoutingLogTag,
                         "Route calculation completed but AR publication failed.");
+                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken);
 
                     return false;
                 }
 
+                ClearRoadApproachCue();
                 ARRouteBridge.RouteSnapshot routeSnapshot =
                     ARRouteBridge.Current;
 
@@ -3984,278 +3887,51 @@ namespace RescuAR.App.Views.Camera
             }
         }
 
-        private async Task<(
-            LocationReading? Reading,
-            string Source,
-            bool UsedFallbackBootstrap)>
-            ResolveRouteStartupLocationAsync(
-                CancellationToken cancellationToken)
+        private async Task<(LocationReading? Reading, string Source, bool UsedFallbackBootstrap)>
+            ResolveRouteStartupLocationAsync(CancellationToken cancellationToken)
         {
-            LocationReading? cached =
-                null;
-
-            bool cachedAccepted =
-                false;
-
-            TimeSpan cachedAge =
-                TimeSpan.MaxValue;
+            LocationReading? cached;
+            lock (routeProgressFusionSync) cached = latestRouteStartupReading;
+            if (IsRecentRouteStartupLocationAcceptable(cached, out _))
+                return (cached, "CAMERA_RECENT", true);
 
             try
             {
-                cached = await _locationService.GetLastKnownLocationAsync(
-                    cancellationToken);
+                cached = await _locationService.GetLastKnownLocationAsync(cancellationToken);
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
+            catch (OperationCanceledException) { throw; }
             catch (Exception exception)
             {
+                cached = null;
 #if ANDROID
-                Log.Warn(
-                    RoutingLogTag,
-                    "Cached GPS lookup failed; requesting a fresh fix: " +
-                    exception.Message);
+                Log.Warn(RoutingLogTag, "Cached GPS lookup failed; requesting a current fix: " +
+                    DiagnosticPrivacyPolicy.FormatException(exception));
 #endif
             }
 
-            bool veryRecentAndAccurate =
-                IsRecentRouteStartupLocationAcceptable(
-                    cached,
-                    out cachedAge);
-
-            if (veryRecentAndAccurate)
-            {
-                // This is an initial graph origin, not a route-progress fix.
-                // The cyan line still requires fresh GPS route matching.
+            if (IsRecentRouteStartupLocationAcceptable(cached, out _))
                 return (cached, "RECENT_CACHED", true);
-            }
 
-            if (EnableDiagnosticRouteVisibilityOverride)
-            {
-                cachedAccepted =
-                    IsFallbackBootstrapLocationAcceptable(
-                        cached,
-                        out cachedAge);
-
-#if ANDROID
-                if (cached is not null)
-                {
-                    LogDetailedDebug(
-                        RoutingLogTag,
-                        "Diagnostic route-start cache evaluated: " +
-                        $"accepted={cachedAccepted}, " +
-                        $"accuracy=" +
-                        $"{(cached.AccuracyMeters.HasValue ? cached.AccuracyMeters.Value.ToString("F1") : "<unknown>")}m, " +
-                        $"age={Math.Max(0.0, cachedAge.TotalSeconds):F1}s, " +
-                        $"limits={FallbackBootstrapLocationMaximumAccuracyMeters:F0}m/" +
-                        $"{FallbackBootstrapLocationMaximumAge.TotalSeconds:F0}s.");
-                }
-#endif
-            }
-
-            using CancellationTokenSource freshLocationCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken);
-
-            Task<LocationReading?> freshLocationTask =
-                TryGetRouteLocationAsync(
-                    freshLocationCancellation.Token);
-
-            Task startupBudget =
-                Task.Delay(
-                    RouteStartupFreshLocationBudgetMilliseconds,
-                    cancellationToken);
-
-            Task completed =
-                await Task.WhenAny(
-                    freshLocationTask,
-                    startupBudget);
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (completed ==
-                freshLocationTask)
-            {
-                LocationReading? fresh =
-                    await freshLocationTask;
-
-                bool freshAccuracyAcceptable =
-                    IsCurrentRouteStartupLocationAcceptable(fresh);
-
-                bool strictCacheSaferThanFresh =
-                    cachedAccepted &&
-                    IsDiagnosticFallbackCacheSaferThanFresh(
-                        cached!,
-                        fresh);
-
-                if (!strictCacheSaferThanFresh && freshAccuracyAcceptable)
-                    return (fresh, "CURRENT", false);
-
-                if (!cachedAccepted)
-                    return (null, "CURRENT_REJECTED", false);
-
-#if ANDROID
-                if (strictCacheSaferThanFresh)
-                {
-                    string freshAccuracyText =
-                        fresh?.AccuracyMeters is double freshAccuracy
-                            ? freshAccuracy.ToString(
-                                "F1")
-                            : "<unknown>";
-
-                    Log.Warn(
-                        RoutingLogTag,
-                        "DIAGNOSTIC ROUTE STARTUP QUALITY FALLBACK: " +
-                        $"strictCacheAccuracy={cached!.AccuracyMeters!.Value:F1}m, " +
-                        $"freshAccuracy={freshAccuracyText}m. " +
-                        "Using the materially safer cached origin for initial " +
-                        "geometry only; route-progress safety remains unchanged.");
-                }
-#endif
-
-                return (
-                    cached,
-                    "LAST_KNOWN_STRICT",
-                    true);
-            }
-
-            if (!cachedAccepted)
-            {
-#if ANDROID
-                LogDetailedDebug(
-                    RoutingLogTag,
-                    "Fresh GPS exceeded the diagnostic startup budget, " +
-                    "but no safe cached fix exists. Preserving the original " +
-                    "fresh-location wait.");
-#endif
-
-                LocationReading? fresh =
-                    await freshLocationTask;
-
-                return IsCurrentRouteStartupLocationAcceptable(fresh)
-                    ? (fresh, "CURRENT_DELAYED", false)
-                    : (null, "CURRENT_DELAYED_REJECTED", false);
-            }
-
-            freshLocationCancellation.Cancel();
-
-            try
-            {
-                await freshLocationTask;
-            }
-            catch (OperationCanceledException)
-                when (!cancellationToken.IsCancellationRequested)
-            {
-                // Expected: the strict cached fix won the bounded startup race.
-            }
-
-#if ANDROID
-            Log.Warn(
-                RoutingLogTag,
-                "DIAGNOSTIC ROUTE STARTUP FALLBACK: fresh GPS exceeded " +
-                $"{RouteStartupFreshLocationBudgetMilliseconds}ms; using a " +
-                "strict recent cached fix for initial route geometry. GPS/PDR " +
-                "progress, connector, and reroute validation remain unchanged.");
-#endif
-
-            return (
-                cached,
-                "LAST_KNOWN_STRICT",
-                true);
+            LocationReading? fresh = await TryGetRouteLocationAsync(cancellationToken);
+            return IsCurrentRouteStartupLocationAcceptable(fresh)
+                ? (fresh, "CURRENT", false)
+                : (null, "CURRENT_REJECTED", false);
         }
 
-        private static bool IsCurrentRouteStartupLocationAcceptable(
-            LocationReading? reading)
+        private static bool IsCurrentRouteStartupLocationAcceptable(LocationReading? reading)
         {
-            if (reading is null || !reading.Coordinate.IsValid ||
-                reading.AccuracyMeters is not double accuracy ||
-                !double.IsFinite(accuracy) || accuracy < 0.0 ||
-                accuracy > 20.0)
-                return false;
-
-            TimeSpan age = DateTimeOffset.UtcNow - reading.Timestamp;
-            return age >= TimeSpan.FromSeconds(-2) &&
-                age <= TimeSpan.FromSeconds(5);
-        }
-
-        private static bool IsFallbackBootstrapLocationAcceptable(
-            LocationReading? reading,
-            out TimeSpan age)
-        {
-            age =
-                TimeSpan.MaxValue;
-
-            if (reading is null ||
-                !reading.Coordinate.IsValid ||
-                !reading.AccuracyMeters.HasValue ||
-                !double.IsFinite(
-                    reading.AccuracyMeters.Value) ||
-                reading.AccuracyMeters.Value <
-                    0.0 ||
-                reading.AccuracyMeters.Value >
-                    FallbackBootstrapLocationMaximumAccuracyMeters)
-            {
-                return false;
-            }
-
-            age =
-                DateTimeOffset.UtcNow -
-                    reading.Timestamp;
-
-            return age >=
-                    TimeSpan.FromSeconds(
-                        -2) &&
-                age <=
-                    FallbackBootstrapLocationMaximumAge;
+            return reading is not null && RouteStartupLocationPolicy.CanPlan(
+                reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
+                DateTimeOffset.UtcNow, cached: false);
         }
 
         private static bool IsRecentRouteStartupLocationAcceptable(
-            LocationReading? reading,
-            out TimeSpan age)
+            LocationReading? reading, out TimeSpan age)
         {
-            age = TimeSpan.MaxValue;
-
-            if (reading is null ||
-                !reading.Coordinate.IsValid ||
-                !reading.AccuracyMeters.HasValue ||
-                !double.IsFinite(reading.AccuracyMeters.Value) ||
-                reading.AccuracyMeters.Value < 0.0 ||
-                reading.AccuracyMeters.Value >
-                    RecentRouteStartMaximumAccuracyMeters)
-            {
-                return false;
-            }
-
-            age = DateTimeOffset.UtcNow - reading.Timestamp;
-
-            return age >= TimeSpan.FromSeconds(-2) &&
-                age <= RecentRouteStartMaximumAge;
-        }
-
-        private static bool IsDiagnosticFallbackCacheSaferThanFresh(
-            LocationReading cached,
-            LocationReading? fresh)
-        {
-            if (!cached.AccuracyMeters.HasValue)
-            {
-                return false;
-            }
-
-            if (fresh is null ||
-                !fresh.Coordinate.IsValid ||
-                !fresh.AccuracyMeters.HasValue ||
-                !double.IsFinite(
-                    fresh.AccuracyMeters.Value) ||
-                fresh.AccuracyMeters.Value <
-                    0.0)
-            {
-                return true;
-            }
-
-            return fresh.AccuracyMeters.Value -
-                    cached.AccuracyMeters.Value >=
-                FallbackBootstrapFreshAccuracyDisadvantageMeters;
+            age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+            return reading is not null && RouteStartupLocationPolicy.CanPlan(
+                reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
+                DateTimeOffset.UtcNow, cached: true);
         }
 
         /// <summary>
@@ -4320,6 +3996,7 @@ namespace RescuAR.App.Views.Camera
         private void CancelRouteRequest(
             string reason)
         {
+            routeStartupGpsRetryPending = false;
             CancellationTokenSource? cancellation =
                 routeRequestCancellation;
 
@@ -5183,6 +4860,13 @@ namespace RescuAR.App.Views.Camera
                                     arrivalReading.Coordinate,
                                     activeDestinationCoordinate.Value));
                             HandleSafeZoneDecision(arrival);
+                            lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
+                            if (!arrival.IsCandidate && !arrival.IsConfirmed)
+                            {
+                                await UpdateRoadApproachAsync(arrivalReading, arrivalGraph, cancellationToken);
+                                RetryRouteFromRoadApproachIfReady(cancellationToken);
+                            }
+                            else ClearRoadApproachCue();
                             if (!arrival.IsCandidate && !arrival.IsConfirmed &&
                                 routeStartupFailureMessage ==
                                     ArrivalConfirmationMessage &&
@@ -5224,6 +4908,7 @@ namespace RescuAR.App.Views.Camera
                     {
                         lock (routeProgressFusionSync)
                         {
+                            latestRouteStartupReading = reading;
                             latestGpsCoordinateForRouting =
                                 reading.Coordinate;
 
@@ -8409,8 +8094,8 @@ namespace RescuAR.App.Views.Camera
                 snapshot;
 
             /*
-             * Stage 7B: only an explicitly LOCAL flood depth is allowed to
-             * become world-space water geometry. River gauge levels and generic
+             * Local depths and explicitly labelled user simulations can
+             * become floor-relative water previews. River gauge levels and generic
              * advisories remain informational because they do not describe the
              * water depth at the phone.
              *
@@ -8419,14 +8104,7 @@ namespace RescuAR.App.Views.Camera
              * anchor and meter scale; the MAUI layer no longer fakes water
              * height using screen pixels.
              */
-            bool hasLocalArDepth =
-                snapshot.Mode ==
-                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
-                snapshot.LocalDepthMeters.HasValue &&
-                double.IsFinite(
-                    snapshot.LocalDepthMeters.Value) &&
-                snapshot.LocalDepthMeters.Value >
-                    0.0;
+            bool hasLocalArDepth = snapshot.HasRenderableHeight;
 
             bool renderLocalDepthInAr =
                 hasLocalArDepth &&
@@ -8441,7 +8119,9 @@ namespace RescuAR.App.Views.Camera
                 ARFloodDepthBridge.PublishLocalDepth(
                     snapshot.LocalDepthMeters!.Value,
                     IsFloodDepthArModeActive(),
-                    snapshot.SourceText);
+                    snapshot.SourceText,
+                    isSimulation: snapshot.Mode ==
+                        FloodDepthVisualizationService.FloodVisualizationMode.Simulation);
             }
             else
             {
@@ -8457,10 +8137,7 @@ namespace RescuAR.App.Views.Camera
                     floodVisualizationTitleLabel.Text =
                         snapshot.Title;
 
-                    floodVisualizationPrimaryLabel.Text =
-                        hasLocalArDepth
-                            ? $"Estimated local flood depth: {snapshot.LocalDepthMeters!.Value:0.0#} m"
-                            : snapshot.PrimaryText;
+                    floodVisualizationPrimaryLabel.Text = snapshot.PrimaryText;
 
                     floodVisualizationSecondaryLabel.Text =
                         snapshot.SecondaryText;
@@ -8473,7 +8150,7 @@ namespace RescuAR.App.Views.Camera
 
                     /*
                      * Only the compact information card remains in MAUI. The
-                     * actual flood body is rendered in Evergine AR space.
+                     * water preview uses the tracked AR floor and meter scale.
                      */
                     floodVisualizationLayer.IsVisible =
                         pageIsVisible &&
@@ -8521,13 +8198,7 @@ namespace RescuAR.App.Views.Camera
             bool visible,
             string reason)
         {
-            bool hasLocalArDepth =
-                currentFloodVisualization.IsAvailable &&
-                currentFloodVisualization.Mode ==
-                    FloodDepthVisualizationService.FloodVisualizationMode.LocalDepth &&
-                currentFloodVisualization.LocalDepthMeters.HasValue &&
-                currentFloodVisualization.LocalDepthMeters.Value >
-                    0.0;
+            bool hasLocalArDepth = currentFloodVisualization.HasRenderableHeight;
 
             bool floodModeActive =
                 currentCameraModuleView ==
@@ -8559,7 +8230,9 @@ namespace RescuAR.App.Views.Camera
                 ARFloodDepthBridge.PublishLocalDepth(
                     currentFloodVisualization.LocalDepthMeters!.Value,
                     IsFloodDepthArModeActive(),
-                    currentFloodVisualization.SourceText);
+                    currentFloodVisualization.SourceText,
+                    isSimulation: currentFloodVisualization.Mode ==
+                        FloodDepthVisualizationService.FloodVisualizationMode.Simulation);
             }
             else
             {
@@ -8646,70 +8319,6 @@ namespace RescuAR.App.Views.Camera
 #endif
         }
 
-#if RESCUAR_DIAGNOSTICS
-        private void OnDeveloperFloodDepthTestClicked(
-            object? sender,
-            EventArgs e)
-        {
-            if (!EnableDeveloperFloodDepthValidation)
-            {
-                return;
-            }
-
-            double? nextDepth =
-                DeveloperFloodDepthSequenceMeters[
-                    developerFloodDepthSequenceIndex];
-
-            developerFloodDepthSequenceIndex =
-                (developerFloodDepthSequenceIndex + 1) %
-                DeveloperFloodDepthSequenceMeters.Length;
-
-            if (!nextDepth.HasValue)
-            {
-                ClearFloodVisualization(
-                    "developer flood-depth validation cycled OFF");
-
-                developerFloodDepthTestButton.Text =
-                    "DEV: AR Flood Depth 0.30 m";
-
-#if ANDROID
-                Log.Info(
-                    FloodDepthLogTag,
-                    "[DEV FLOOD] visualization OFF.");
-#endif
-                return;
-            }
-
-            FloodDepthVisualizationService.FloodVisualizationSnapshot snapshot =
-                _floodDepthVisualizationService.FromLocalDepth(
-                    nextDepth.Value,
-                    "DEV synthetic local depth",
-                    "Camera validation");
-
-            ApplyFloodVisualization(
-                snapshot,
-                "developer local-depth validation");
-
-            double? followingDepth =
-                DeveloperFloodDepthSequenceMeters[
-                    developerFloodDepthSequenceIndex];
-
-            developerFloodDepthTestButton.Text =
-                followingDepth.HasValue
-                    ? $"DEV: AR Flood Depth {followingDepth.Value:F2} m"
-                    : "DEV: AR Flood Depth OFF";
-
-#if ANDROID
-            Log.Info(
-                FloodDepthLogTag,
-                "[DEV FLOOD] AR-SPACE LOCAL DEPTH VISUALIZED: " +
-                $"depth={nextDepth.Value:F2}m, " +
-                $"groundRelative=True, " +
-                $"next='{developerFloodDepthTestButton.Text}'.");
-#endif
-        }
-#endif
-
         private void SubscribeEmergencyAdvisories()
         {
             if (emergencyAdvisoryEventSubscribed)
@@ -8770,7 +8379,9 @@ namespace RescuAR.App.Views.Camera
                 _floodDepthVisualizationService.FromAdvisory(
                     advisory);
 
-            if (floodSnapshot.IsAvailable)
+            if (floodSnapshot.IsAvailable &&
+                currentFloodVisualization.Mode !=
+                    FloodDepthVisualizationService.FloodVisualizationMode.Simulation)
             {
                 ApplyFloodVisualization(
                     floodSnapshot,
@@ -10411,6 +10022,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 false;
+            ClearRoadApproachCue();
 
 #if ANDROID
             LogDetailedDebug(
@@ -10539,10 +10151,9 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
-        /// Keeps a short route-following cue while the device is still proving
-        /// route-corridor membership. A direct connector is published only
-        /// after repeated off-route confirmation and only when GPS accuracy and
-        /// segment identity make that recovery direction trustworthy.
+        /// Keeps mapped route geometry while confirming corridor membership.
+        /// Confirmed off-route observations use a separate screen arrow;
+        /// they never create a straight GPS-to-road cyan connector.
         /// </summary>
         private bool TryPublishApproachToRouteVisual(
             RouteResult route,
@@ -10550,16 +10161,18 @@ namespace RescuAR.App.Views.Camera
             string progressSource = "GPS")
         {
 #if ANDROID
-            // No straight GPS-to-route line: it can cross buildings or roads.
-            // Show only the accepted path's own GeoJSON-backed geometry.
-            return update.IsAccepted &&
-                TryPublishMovingRouteWindow(
-                    route,
-                    update,
-                    $"{progressSource}/GRAPH-CORRIDOR");
-#else
-            return false;
+            if (update.IsAccepted && !update.IsOffRoute)
+            {
+                ClearRoadApproachCue();
+                return TryPublishMovingRouteWindow(route, update, $"{progressSource}/GRAPH-CORRIDOR");
+            }
+            if (TrySetRoadRecoveryCue(update))
+            {
+                ARRouteBridge.Clear();
+                UpdateTurnGuidance();
+            }
 #endif
+            return false;
         }
 
         private bool TryPublishMovingRouteWindow(
@@ -11247,15 +10860,16 @@ namespace RescuAR.App.Views.Camera
             EventArgs e)
         {
 #if ANDROID
-            if (pendingInitialRoute is not null && activeRoute is null &&
-                !routeRequestInProgress && pageIsVisible &&
+            if ((routeStartupGpsRetryPending || pendingInitialRoute is not null) &&
+                activeRoute is null && !routeRequestInProgress && pageIsVisible &&
+                currentCameraModuleView == CameraModuleViewMode.ArCamera &&
                 _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
                 NavigationDestinationBridge.Current.IsAvailable &&
                 NavigationDestinationBridge.Current.Coordinate ==
-                    pendingInitialDestination &&
+                    (routeStartupGpsRetryPending ? routeStartupRetryDestination : pendingInitialDestination) &&
                 DateTimeOffset.UtcNow >= nextHeadingRetryAt)
             {
-                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(6);
+                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(10);
                 StartRouteRequestIfPossible();
             }
 

@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../../RescuAR/RescuAR.csproj" AdditionalProperties="GenerateEvergineContent=False;GenerateEvergineScenesCode=False" />
     <Compile Include="../../RescuAR.MAUI/Services/ArCoreRunIntent.cs" Link="ArCoreRunIntent.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Flood/FloodDepthVisualizationService.cs" Link="FloodDepthVisualizationService.cs" />
   </ItemGroup>
 </Project>
