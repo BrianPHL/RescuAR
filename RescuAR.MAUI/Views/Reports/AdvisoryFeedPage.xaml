@@ -20,13 +20,60 @@
                     <VerticalStackLayout Spacing="6">
                         <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                             <Label Grid.Column="0" Text="Reports / Advisories" TextColor="#64748B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
-                            <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4" VerticalOptions="Center">
-                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                    <Ellipse WidthRequest="6" HeightRequest="6" Fill="#EF4444" VerticalOptions="Center" />
-                                    <Label Text="LIVE" TextColor="#EF4444" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
-                                    <Label Text="{Binding CurrentDateTimeText}" TextColor="#334155" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
-                                </HorizontalStackLayout>
-                            </Border>
+                            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4" VerticalOptions="Center">
+                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                        <Ellipse WidthRequest="6" HeightRequest="6" Fill="#EF4444" VerticalOptions="Center" />
+                                        <Label Text="LIVE" TextColor="#EF4444" FontSize="10" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Label Text="{Binding CurrentDateTimeText}" TextColor="#334155" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                </Border>
+
+                                <!-- Notification Bell Button with Badge -->
+                                <Grid WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                    <Border StrokeThickness="0"
+                                            BackgroundColor="#F1F5F9"
+                                            StrokeShape="RoundRectangle 10"
+                                            WidthRequest="36"
+                                            HeightRequest="36"
+                                            HorizontalOptions="Center"
+                                            VerticalOptions="Center">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                                        </Border.GestureRecognizers>
+                                        <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                                              Fill="#0A8491"
+                                              WidthRequest="18"
+                                              HeightRequest="18"
+                                              Aspect="Uniform"
+                                              HorizontalOptions="Center"
+                                              VerticalOptions="Center"
+                                              InputTransparent="True" />
+                                    </Border>
+                                    <Border BackgroundColor="#EF4444"
+                                            StrokeThickness="1.5"
+                                            Stroke="#FFFFFF"
+                                            StrokeShape="RoundRectangle 8"
+                                            WidthRequest="16"
+                                            HeightRequest="16"
+                                            HorizontalOptions="End"
+                                            VerticalOptions="Start"
+                                            Margin="0,-2,-2,0"
+                                            InputTransparent="True">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding UnreadNotificationsCount}" Value="0">
+                                                <Setter Property="IsVisible" Value="False" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Label Text="{Binding UnreadNotificationsCount}"
+                                               TextColor="#FFFFFF"
+                                               FontSize="9"
+                                               FontAttributes="Bold"
+                                               HorizontalOptions="Center"
+                                               VerticalOptions="Center" />
+                                    </Border>
+                                </Grid>
+                            </HorizontalStackLayout>
                         </Grid>
                         <Label Text="Emergency Summary &amp; Advisories" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" CharacterSpacing="-0.5" />
                         <Label Text="Real-time broadcasts from Marikina LGU &amp; Water Level Monitoring." TextColor="#475569" FontSize="13" />
@@ -250,6 +297,11 @@
 
         <!-- Pop-Up Advisory Overlay Modal Sheet -->
         <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <Grid.Triggers>
+                <DataTrigger TargetType="Grid" Binding="{Binding SelectedAdvisory}" Value="{x:Null}">
+                    <Setter Property="IsVisible" Value="False" />
+                </DataTrigger>
+            </Grid.Triggers>
             <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
                 <VerticalStackLayout Spacing="0">
                    
