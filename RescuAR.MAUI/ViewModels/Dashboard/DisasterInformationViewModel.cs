@@ -54,15 +54,7 @@ public partial class DisasterInformationViewModel : ObservableObject
         {
             if (Shell.Current != null)
             {
-                try
-                {
-                    await Shell.Current.Navigation.PushAsync(new Views.Dashboard.AdvisoryFeedPage());
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"AdvisoryFeed Nav Error: {ex.Message}");
-                    await Shell.Current.GoToAsync("AdvisoryFeedPage");
-                }
+                await Shell.Current.GoToAsync("AdvisoryFeedPage");
             }
         });
     }
