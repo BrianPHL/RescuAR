@@ -91,8 +91,90 @@
                         <VerticalStackLayout Spacing="4">
                             <Label Text="Home / Community" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
                             <Label Text="Community Reports" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
-                            <Label Text="See real-time disaster reports and safety updates from others." TextColor="#475569" FontSize="14" />
+                            <Label Text="Real-time disaster reports, hazard alerts, and vicinity monitoring." TextColor="#475569" FontSize="14" />
                         </VerticalStackLayout>
+
+                        <!-- Vicinity Hazard & Affected Area Monitoring Alert Card -->
+                        <Border BackgroundColor="{Binding VicinityAlertBadgeColor}"
+                                Stroke="{Binding VicinityAlertBorderColor}"
+                                StrokeThickness="1.5"
+                                StrokeShape="RoundRectangle 16"
+                                Padding="14"
+                                IsVisible="{Binding HasVicinityAlerts}">
+                            <Border.Shadow>
+                                <Shadow Brush="#000000" Offset="0,2" Radius="6" Opacity="0.05" />
+                            </Border.Shadow>
+
+                            <Grid RowDefinitions="Auto, Auto, Auto" RowSpacing="8">
+                                <!-- Top Row: Icon, Title & Live Status Pill -->
+                                <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Path Grid.Column="0"
+                                          Data="{Binding VicinityAlertIcon}"
+                                          Fill="{Binding VicinityAlertTextColor}"
+                                          WidthRequest="22"
+                                          HeightRequest="22"
+                                          Aspect="Uniform"
+                                          VerticalOptions="Center" />
+
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding VicinityStatusTitle}"
+                                               TextColor="{Binding VicinityAlertTextColor}"
+                                               FontSize="15"
+                                               FontAttributes="Bold" />
+                                        <Label Text="{Binding VicinityStatusSubtitle}"
+                                               TextColor="{Binding VicinityAlertTextColor}"
+                                               Opacity="0.9"
+                                               FontSize="12" />
+                                    </VerticalStackLayout>
+
+                                    <!-- Active Hazard Badge Pill -->
+                                    <Border Grid.Column="2"
+                                            BackgroundColor="{Binding VicinityAlertTextColor}"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 12"
+                                            Padding="10,4"
+                                            VerticalOptions="Center">
+                                        <Label Text="{Binding VicinityActiveCountText}"
+                                               TextColor="#FFFFFF"
+                                               FontSize="11"
+                                               FontAttributes="Bold" />
+                                    </Border>
+                                </Grid>
+
+                                <!-- Divider -->
+                                <BoxView Grid.Row="1" HeightRequest="1" BackgroundColor="{Binding VicinityAlertBorderColor}" Opacity="0.6" Margin="0,2" />
+
+                                <!-- Bottom Row: Affected Areas & Refresh Button -->
+                                <Grid Grid.Row="2" ColumnDefinitions="*, Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                    <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                                        <!-- Location Pin Icon -->
+                                        <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z"
+                                              Fill="{Binding VicinityAlertTextColor}"
+                                              WidthRequest="14"
+                                              HeightRequest="14"
+                                              Aspect="Uniform"
+                                              VerticalOptions="Center" />
+                                        <Label Text="{Binding VicinityAffectedAreas}"
+                                               TextColor="{Binding VicinityAlertTextColor}"
+                                               FontSize="12"
+                                               FontAttributes="Bold"
+                                               LineBreakMode="TailTruncation"
+                                               VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                    <Button Grid.Column="1"
+                                            Text="GPS Sync"
+                                            Command="{Binding RefreshVicinityLocationCommand}"
+                                            BackgroundColor="Transparent"
+                                            TextColor="{Binding VicinityAlertTextColor}"
+                                            FontSize="11"
+                                            FontAttributes="Bold"
+                                            Padding="6,2"
+                                            HeightRequest="28"
+                                            VerticalOptions="Center" />
+                                </Grid>
+                            </Grid>
+                        </Border>
 
                         <!-- Search & Filter Controls Bar -->
                         <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10" Margin="0,2,0,4">
