@@ -2,249 +2,368 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { calculateAlertStatus, getStationThresholds } from '../utils/waterLevelUtils';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
-import { RefreshCw, Waves, Clock3, Database, AlertTriangle } from 'lucide-react';
+import {
+  RefreshCw,
+  ArrowUpRight,
+  ChevronRight,
+  AlertTriangle,
+  ShieldAlert,
+  Megaphone,
+  Bell,
+  Compass,
+  Waves,
+  Clock,
+  Activity,
+  Zap,
+  Info
+} from 'lucide-react';
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ReferenceLine
+  ReferenceLine,
+  ReferenceArea
 } from 'recharts';
 
-const DEFAULT_STATION = 'Sto. Niño Station';
-const HISTORY_HOURS = 24;
+const RANGE_OPTIONS = {
+  '24h': { label: '24-Hour', ms: 24 * 60 * 60 * 1000 },
+  '7d': { label: '7-Day', ms: 7 * 24 * 60 * 60 * 1000 },
+  '30d': { label: '30-Day', ms: 30 * 24 * 60 * 60 * 1000 },
+  '6mo': { label: '6-Month', ms: 183 * 24 * 60 * 60 * 1000 }
+};
 
-function formatObservedTime(value) {
-  if (!value) return '--';
+function formatLastUpdated(value) {
+  if (!value) return 'No verified timestamp';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '--';
+  if (Number.isNaN(date.getTime())) return 'Invalid timestamp';
   return date.toLocaleString('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 }
 
-function chartTime(value) {
+function formatChartLabel(value, range) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('en-PH', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  if (range === '24h') {
+    return date.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  }
+  if (range === '7d') {
+    return date.toLocaleDateString('en-PH', { weekday: 'short', hour: '2-digit' });
+  }
+  if (range === '30d') {
+    return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+  }
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 }
 
-export default function RiverLevel() {
-  const [stationName, setStationName] = useState(DEFAULT_STATION);
-  const [stations, setStations] = useState([]);
-  const [latest, setLatest] = useState(null);
+function aggregateDaily(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const date = new Date(row.observed_at);
+    if (Number.isNaN(date.getTime())) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const level = Number(row.level);
+    if (!Number.isFinite(level)) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(level);
+  });
+  return [...groups.entries()].map(([day, values]) => ({
+    observed_at: `${day}T12:00:00`,
+    level: values.reduce((a, b) => a + b, 0) / values.length,
+    sampleCount: values.length
+  }));
+}
+
+export default function RiverLevel({ onActionClick }) {
+  const [timeRange, setTimeRange] = useState('6mo');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [stationsList, setStationsList] = useState([]);
+  const [selectedStationId, setSelectedStationId] = useState(null);
+  const [selectedStation, setSelectedStation] = useState(null);
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [historyError, setHistoryError] = useState('');
   const [nowMs, setNowMs] = useState(Date.now());
 
-  const fetchTelemetry = useCallback(async () => {
-    setLoading(true);
+  const stationDisplayName = selectedStation?.station_name || 'Sto. Niño Station';
+  const currentLevel = Number(selectedStation?.level) || 0;
+  const currentAlert = calculateAlertStatus(currentLevel, stationDisplayName);
+  const currentStationThresholds = getStationThresholds(stationDisplayName);
+  const freshness = getTelemetryFreshness(selectedStation?.updated_at, nowMs);
+
+  const fetchAllStations = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('monitoring_stations')
+      .select('*')
+      .order('station_name', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  }, []);
+
+  const fetchHistory = useCallback(async (stationName, range) => {
+    if (!stationName) return [];
+    const since = new Date(Date.now() - RANGE_OPTIONS[range].ms).toISOString();
+    const { data, error } = await supabase
+      .from('river_level_history')
+      .select('station_name, level, status, source, observed_at')
+      .eq('station_name', stationName)
+      .gte('observed_at', since)
+      .order('observed_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  }, []);
+
+  const loadData = useCallback(async (targetId = null, range = timeRange) => {
+    setIsRefreshing(true);
     setHistoryError('');
-
-    const since = new Date(Date.now() - HISTORY_HOURS * 60 * 60 * 1000).toISOString();
-
     try {
-      const [latestResult, historyResult] = await Promise.all([
-        supabase
-          .from('monitoring_stations')
-          .select('station_name, level, status, updated_at')
-          .order('station_name', { ascending: true }),
-        supabase
-          .from('river_level_history')
-          .select('station_name, level, status, source, observed_at')
-          .eq('station_name', stationName)
-          .gte('observed_at', since)
-          .order('observed_at', { ascending: true })
-      ]);
+      const list = await fetchAllStations();
+      setStationsList(list);
 
-      if (latestResult.error) {
-        console.error('Failed to load latest monitoring stations:', latestResult.error.message);
-      } else {
-        const rows = latestResult.data || [];
-        setStations(rows.map(row => row.station_name).filter(Boolean));
-        setLatest(rows.find(row => row.station_name === stationName) || null);
+      let target = null;
+      const desiredId = targetId ?? selectedStationId;
+      if (desiredId !== null) {
+        target = list.find((s) => String(s.id) === String(desiredId));
+      }
+      if (!target) {
+        target = list.find((s) => s.station_name?.toLowerCase().includes('sto')) || list[0] || null;
       }
 
-      if (historyResult.error) {
-        console.error('Failed to load river telemetry history:', historyResult.error.message);
+      if (!target) {
+        setSelectedStation(null);
         setHistory([]);
-        setHistoryError(
-          historyResult.error.message.includes('river_level_history')
-            ? 'Historical telemetry is not available yet. Run the supplied Supabase migration and deploy the updated scraper.'
-            : `Historical telemetry could not be loaded: ${historyResult.error.message}`
-        );
-      } else {
-        setHistory(historyResult.data || []);
+        return;
+      }
+
+      setSelectedStationId(target.id);
+      setSelectedStation(target);
+
+      try {
+        const historyRows = await fetchHistory(target.station_name, range);
+        setHistory(historyRows);
+      } catch (error) {
+        console.error('Historical telemetry query failed:', error);
+        setHistory([]);
+        setHistoryError('Historical telemetry could not be loaded. Verify river_level_history and the scraper worker.');
       }
     } catch (error) {
-      console.error('Unexpected telemetry error:', error);
-      setHistoryError('Historical telemetry could not be loaded.');
+      console.error('River telemetry load failed:', error);
+      setHistoryError('Live telemetry could not be loaded.');
     } finally {
-      setLoading(false);
+      setIsRefreshing(false);
     }
-  }, [stationName]);
+  }, [fetchAllStations, fetchHistory, selectedStationId, timeRange]);
 
   useEffect(() => {
-    fetchTelemetry();
+    loadData(null, timeRange);
+    const freshnessTimer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
 
-    const ageTimer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
-
-    const latestChannel = supabase
-      .channel(`river-level-latest-${stationName}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, fetchTelemetry)
-      .subscribe();
-
-    const historyChannel = supabase
-      .channel(`river-level-history-${stationName}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'river_level_history' }, payload => {
-        if (payload.new?.station_name === stationName) fetchTelemetry();
-      })
+    const channel = supabase
+      .channel('river-level-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => loadData(null, timeRange))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'river_level_history' }, () => loadData(null, timeRange))
       .subscribe();
 
     return () => {
-      clearInterval(ageTimer);
-      supabase.removeChannel(latestChannel);
-      supabase.removeChannel(historyChannel);
+      clearInterval(freshnessTimer);
+      supabase.removeChannel(channel);
     };
-  }, [fetchTelemetry, stationName]);
+  }, [timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const freshness = getTelemetryFreshness(latest?.updated_at, nowMs);
-  const numericLevel = latest?.level !== null && Number.isFinite(Number(latest?.level))
-    ? Number(latest.level)
-    : null;
-  const alertInfo = numericLevel === null
-    ? { label: 'Unavailable', color: '#b91c1c' }
-    : calculateAlertStatus(numericLevel, stationName);
-  const thresholds = getStationThresholds(stationName);
+  const handleStationChange = async (e) => {
+    const newId = e.target.value;
+    setSelectedStationId(newId);
+    const target = stationsList.find((s) => String(s.id) === String(newId));
+    if (target) {
+      setSelectedStation(target);
+      setHistoryError('');
+      try {
+        setHistory(await fetchHistory(target.station_name, timeRange));
+      } catch (error) {
+        console.error(error);
+        setHistory([]);
+        setHistoryError('Historical telemetry could not be loaded.');
+      }
+    }
+  };
 
-  const chartData = useMemo(() => history.map(row => ({
-    observedAt: row.observed_at,
-    time: chartTime(row.observed_at),
-    level: Number(row.level),
-    status: row.status,
-    source: row.source
-  })).filter(row => Number.isFinite(row.level)), [history]);
+  const handleRangeChange = async (range) => {
+    setTimeRange(range);
+    if (!selectedStation?.station_name) return;
+    setIsRefreshing(true);
+    setHistoryError('');
+    try {
+      setHistory(await fetchHistory(selectedStation.station_name, range));
+    } catch (error) {
+      console.error(error);
+      setHistory([]);
+      setHistoryError('Historical telemetry could not be loaded.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
-  const minLevel = chartData.length ? Math.min(...chartData.map(row => row.level), thresholds.ALARM_1) : 0;
-  const maxLevel = chartData.length ? Math.max(...chartData.map(row => row.level), thresholds.ALARM_3) : thresholds.ALARM_3;
-  const yMin = Math.max(0, Math.floor(minLevel - 1));
-  const yMax = Math.ceil(maxLevel + 1);
+  const chartData = useMemo(() => {
+    const sourceRows = timeRange === '30d' || timeRange === '6mo' ? aggregateDaily(history) : history;
+    return sourceRows.map((row) => ({
+      time: formatChartLabel(row.observed_at, timeRange),
+      observedAt: row.observed_at,
+      observed: Number(Number(row.level).toFixed(2)),
+      source: row.source || 'Verified telemetry',
+      sampleCount: row.sampleCount || 1
+    }));
+  }, [history, timeRange]);
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const point = payload[0]?.payload;
+    const value = Number(point?.observed);
+    const alert = calculateAlertStatus(value, stationDisplayName);
+    return (
+      <div className="river-chart-glass-tooltip">
+        <div className="tooltip-header"><Clock size={12} /><span>{formatLastUpdated(point?.observedAt)}</span></div>
+        <div className="tooltip-metrics">
+          <div className="tooltip-row observed">
+            <span className="tooltip-dot blue"></span>
+            <span className="tooltip-label">Observed Level:</span>
+            <span className="tooltip-value">{Number.isFinite(value) ? value.toFixed(2) : '--'} m</span>
+          </div>
+          <div className="tooltip-row observed">
+            <span className="tooltip-label">Source:</span>
+            <span className="tooltip-value">{point?.source || 'Verified telemetry'}</span>
+          </div>
+          {point?.sampleCount > 1 && (
+            <div className="tooltip-row observed">
+              <span className="tooltip-label">Daily samples:</span>
+              <span className="tooltip-value">{point.sampleCount}</span>
+            </div>
+          )}
+        </div>
+        <div className="tooltip-footer-badge" style={{ color: alert.color, backgroundColor: `${alert.color}15`, borderColor: `${alert.color}30` }}>
+          {alert.label}
+        </div>
+      </div>
+    );
+  };
+
+  const yDomain = useMemo(() => {
+    const values = chartData.map((d) => d.observed).filter(Number.isFinite);
+    const thresholds = [currentStationThresholds.ALARM_1, currentStationThresholds.ALARM_2, currentStationThresholds.ALARM_3];
+    const all = [...values, ...thresholds].filter(Number.isFinite);
+    if (!all.length) return ['auto', 'auto'];
+    const min = Math.max(0, Math.floor(Math.min(...all) - 2));
+    const max = Math.ceil(Math.max(...all) + 2);
+    return [min, max];
+  }, [chartData, currentStationThresholds]);
 
   return (
-    <main className="main-content" style={{ paddingBottom: 32 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Waves size={24} /> River Level History
-          </h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--text-muted)' }}>
-            Verified timestamped measurements from the telemetry scraper. No synthetic observed or forecast values are plotted.
-          </p>
+    <div className="river-level-view">
+      <div className="river-header">
+        <div className="title-group">
+          <div className="title-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h1 className="river-title">{stationDisplayName} Level</h1>
+            <span className="live-telemetry-badge" style={{ color: freshness.color, borderColor: freshness.borderColor, backgroundColor: freshness.backgroundColor }}>
+              <span className="pulse-dot-green" style={{ backgroundColor: freshness.dotColor }}></span>
+              {freshness.label} Telemetry
+            </span>
+          </div>
+          <p className="river-subtitle">Last verified: {formatLastUpdated(selectedStation?.updated_at)} • {freshness.ageText}</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select
-            value={stationName}
-            onChange={event => setStationName(event.target.value)}
-            style={{ padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 8, background: '#fff' }}
-          >
-            {(stations.length ? stations : [DEFAULT_STATION]).map(name => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={fetchTelemetry}
-            disabled={loading}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 8, background: '#fff', cursor: 'pointer' }}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="station-selector-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label htmlFor="station-select" style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted, #64748b)' }}>Station:</label>
+            <select id="station-select" value={selectedStationId || ''} onChange={handleStationChange} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: '0.875rem', fontWeight: '600', color: '#1e293b', cursor: 'pointer', outline: 'none', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)' }}>
+              {stationsList.length === 0 ? <option value="">Sto. Niño Station</option> : stationsList.map((st) => <option key={st.id} value={st.id}>{st.station_name} ({st.level}m)</option>)}
+            </select>
+          </div>
+          <button className="refresh-btn" onClick={() => loadData(selectedStationId, timeRange)} disabled={isRefreshing}>
+            <RefreshCw size={14} className={isRefreshing ? 'spin-icon' : ''} /><span>Refresh Telemetry</span>
           </button>
         </div>
       </div>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>LATEST VERIFIED LEVEL</div>
-          <div style={{ fontSize: 30, fontWeight: 700 }}>{numericLevel === null ? '--' : `${numericLevel.toFixed(2)} m`}</div>
-          <div style={{ marginTop: 7, color: alertInfo.color, fontWeight: 600 }}>{alertInfo.label}</div>
-        </div>
-
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>TELEMETRY FRESHNESS</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, fontWeight: 700, color: freshness.color }}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: freshness.dotColor }} />
-            {freshness.label}
+      <div className="river-metrics-grid">
+        <div className="river-card current-level-card">
+          <div className="card-top-label"><Waves size={16} className="text-brand" /><span>CURRENT WATER LEVEL</span></div>
+          <div className="level-hero-group">
+            <div className="hero-number-wrapper"><span className="hero-number">{currentLevel ? currentLevel.toFixed(2) : '--'}</span><span className="hero-unit">meters</span></div>
+            <div className="trend-chip rising"><ArrowUpRight size={16} /><span>{stationDisplayName}</span></div>
           </div>
-          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>{freshness.ageText}</div>
-        </div>
-
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>LAST OBSERVED</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
-            <Clock3 size={16} /> {formatObservedTime(latest?.updated_at)}
-          </div>
-          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>Based on monitoring_stations.updated_at</div>
-        </div>
-
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>24-HOUR OBSERVATIONS</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 26, fontWeight: 700 }}>
-            <Database size={20} /> {chartData.length}
-          </div>
-          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>Stored measurements, not generated points</div>
-        </div>
-      </section>
-
-      <section className="card" style={{ padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 17 }}>Historical water level — last {HISTORY_HOURS} hours</h2>
-            <p style={{ margin: '5px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              Each point is one row from <code>river_level_history</code>.
-            </p>
+          <div className="level-status-pill" style={{ backgroundColor: `${currentAlert.color}15`, color: currentAlert.color, borderColor: `${currentAlert.color}40`, fontWeight: '700' }}>
+            <AlertTriangle size={14} /><span>{currentAlert.label.toUpperCase()}</span>
           </div>
         </div>
 
-        {historyError ? (
-          <div style={{ display: 'flex', gap: 10, padding: 16, border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', borderRadius: 8 }}>
-            <AlertTriangle size={18} style={{ flex: '0 0 auto' }} />
-            <span>{historyError}</span>
+        <div className="river-card thresholds-card">
+          <div className="card-top-label"><ShieldAlert size={16} className="text-brand" /><span>{stationDisplayName.toUpperCase()} ALERT THRESHOLDS</span></div>
+          <div className="thresholds-progress-stack">
+            {[['1st Alarm', 'Alert Level 1 (Alarm)', currentStationThresholds.ALARM_1, 'level-1', 'fill-level-1'], ['2nd Alarm', 'Alert Level 2 (Prepare)', currentStationThresholds.ALARM_2, 'level-2', 'fill-level-2'], ['3rd Alarm', 'Alert Level 3 (Evacuate)', currentStationThresholds.ALARM_3, 'level-3', 'fill-level-3']].map(([status, name, threshold, levelClass, fillClass], idx, arr) => {
+              const prev = idx === 0 ? 0 : arr[idx - 1][2];
+              const width = currentLevel >= threshold ? 100 : Math.max(0, ((currentLevel - prev) / Math.max(0.01, threshold - prev)) * 100);
+              return (
+                <div key={status} className={`threshold-bar-item ${levelClass} ${currentAlert.status === status ? 'active' : ''}`}>
+                  <div className="threshold-info"><span className="thresh-name">{name}{currentAlert.status === status && <span className="active-tag">CURRENT</span>}</span><span className="thresh-val">{threshold.toFixed(2)} meters</span></div>
+                  <div className="thresh-track"><div className={`thresh-fill ${fillClass}`} style={{ width: `${Math.min(100, width)}%` }}></div></div>
+                </div>
+              );
+            })}
           </div>
-        ) : chartData.length === 0 ? (
-          <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)' }}>
-            No historical observations have been stored for this station in the last {HISTORY_HOURS} hours yet.
+        </div>
+
+        <div className="river-card actions-card">
+          <div className="card-top-label"><Zap size={16} className="text-brand" /><span>DISPATCH & ACTIONS</span></div>
+          <div className="action-buttons-stack">
+            <button className="action-tile advisory" onClick={() => onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}><div className="tile-icon-box blue"><Megaphone size={16} /></div><div className="tile-text"><span className="tile-title">Generate Advisory</span><span className="tile-sub">Draft public flood warning</span></div><ChevronRight size={16} className="tile-arrow" /></button>
+            <button className="action-tile notify" onClick={() => onActionClick?.('notify')}><div className="tile-icon-box amber"><Bell size={16} /></div><div className="tile-text"><span className="tile-title">Notify Residents</span><span className="tile-sub">Send SMS & push broadcast</span></div><ChevronRight size={16} className="tile-arrow" /></button>
+            <button className="action-tile predict" onClick={() => onActionClick?.('predict')}><div className="tile-icon-box teal"><Compass size={16} /></div><div className="tile-text"><span className="tile-title">Run Inundation Sim</span><span className="tile-sub">Model affected barangays</span></div><ChevronRight size={16} className="tile-arrow" /></button>
           </div>
-        ) : (
-          <div style={{ width: '100%', height: 410 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 25, left: 5, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" minTickGap={28} tick={{ fontSize: 11 }} />
-                <YAxis domain={[yMin, yMax]} unit=" m" tick={{ fontSize: 11 }} />
-                <Tooltip
-                  labelFormatter={(_, payload) => payload?.[0]?.payload?.observedAt ? formatObservedTime(payload[0].payload.observedAt) : ''}
-                  formatter={(value, name, item) => [`${Number(value).toFixed(2)} m`, `${item?.payload?.source || 'Verified source'} · ${item?.payload?.status || ''}`]}
-                />
-                <ReferenceLine y={thresholds.ALARM_1} strokeDasharray="4 4" label={{ value: '1st Alarm', position: 'insideTopRight', fontSize: 10 }} />
-                <ReferenceLine y={thresholds.ALARM_2} strokeDasharray="4 4" label={{ value: '2nd Alarm', position: 'insideTopRight', fontSize: 10 }} />
-                <ReferenceLine y={thresholds.ALARM_3} strokeDasharray="4 4" label={{ value: '3rd Alarm', position: 'insideTopRight', fontSize: 10 }} />
-                <Line type="monotone" dataKey="level" name="Observed level" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} connectNulls={false} />
-              </LineChart>
+        </div>
+      </div>
+
+      <div className="river-card chart-main-card">
+        <div className="chart-header-row">
+          <div className="chart-title-group"><Activity size={18} className="text-brand" /><div><h2 className="chart-heading">Verified River Level History</h2><span className="chart-subheading">{stationDisplayName} • Timestamped measurements only</span></div></div>
+          <div className="chart-controls"><div className="pill-selector">
+            {Object.entries(RANGE_OPTIONS).map(([key, option]) => <button key={key} className={`pill-btn ${timeRange === key ? 'active' : ''}`} onClick={() => handleRangeChange(key)}>{option.label}</button>)}
+          </div></div>
+        </div>
+
+        {historyError && <div style={{ margin: '12px 20px 0', padding: '10px 12px', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c', fontSize: '0.85rem' }}>{historyError}</div>}
+
+        <div className="chart-canvas-container">
+          {chartData.length === 0 ? (
+            <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', textAlign: 'center', padding: 24 }}>
+              No verified historical observations are available for this station in the selected {RANGE_OPTIONS[timeRange].label.toLowerCase()} range yet.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={380}>
+              <AreaChart data={chartData} margin={{ top: 20, right: 65, left: 0, bottom: 10 }}>
+                <defs><linearGradient id="gradientObserved" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} /><stop offset="95%" stopColor="#0284c7" stopOpacity={0.02} /></linearGradient></defs>
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="time" tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} dy={8} minTickGap={20} />
+                <YAxis domain={yDomain} tickFormatter={(val) => `${val}m`} tickLine={false} axisLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} dx={-6} />
+                <Tooltip content={<CustomTooltip />} />
+                <ReferenceArea y1={currentStationThresholds.ALARM_3} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.04} />
+                <ReferenceLine y={currentStationThresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `ALERT 1 (${currentStationThresholds.ALARM_1.toFixed(1)}m)`, position: 'right', fill: '#ca8a04', fontSize: 10, fontWeight: '800' }} />
+                <ReferenceLine y={currentStationThresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" strokeWidth={2} label={{ value: `ALARM 2 (${currentStationThresholds.ALARM_2.toFixed(1)}m)`, position: 'right', fill: '#ea580c', fontSize: 10, fontWeight: '800' }} />
+                <ReferenceLine y={currentStationThresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" strokeWidth={2} label={{ value: `CRITICAL (${currentStationThresholds.ALARM_3.toFixed(1)}m)`, position: 'right', fill: '#dc2626', fontSize: 10, fontWeight: '800' }} />
+                <Area type="monotone" dataKey="observed" stroke="#0284c7" strokeWidth={3} fillOpacity={1} fill="url(#gradientObserved)" dot={timeRange === '24h' || timeRange === '7d' ? { r: 4, fill: '#0284c7', stroke: '#ffffff', strokeWidth: 2 } : false} activeDot={{ r: 6, fill: '#0284c7', stroke: '#ffffff', strokeWidth: 3 }} connectNulls />
+              </AreaChart>
             </ResponsiveContainer>
-          </div>
-        )}
-      </section>
-    </main>
+          )}
+        </div>
+
+        <div className="chart-footer-bar">
+          <div className="chart-legend-items"><div className="legend-chip"><span className="chip-indicator solid-blue"></span><span className="chip-text">Verified Observed Water Level</span></div></div>
+          <div className="chart-info-note"><Info size={13} /><span>{timeRange === '6mo' ? 'Six-month view uses daily averages of stored measurements; no synthetic values are generated.' : 'Every plotted point comes from river_level_history.'}</span></div>
+        </div>
+      </div>
+    </div>
   );
 }
