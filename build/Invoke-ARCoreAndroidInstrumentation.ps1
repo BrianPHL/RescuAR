@@ -130,7 +130,7 @@ $fatal = @('FATAL EXCEPTION', 'Fatal signal', 'ANR in com\.rescuar\.app', 'BUILD
 $hits = @($fatal | Where-Object { $log -match $_ })
 if ($hits.Count) { throw "Fatal markers: $($hits -join ', '). Evidence: $logFile" }
 $required = @(
-    'BUILD_MANIFEST batch=ARCore-10',
+    'BUILD_MANIFEST batch=ARCore-11',
     'validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1',
     'ARCORE_NATIVE_BRIDGE_SELF_TEST result=PASS'
 )

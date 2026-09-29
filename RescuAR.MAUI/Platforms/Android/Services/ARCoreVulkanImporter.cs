@@ -49,7 +49,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
     private readonly VKGraphicsContext graphicsContext;
     private readonly ResourceFactory resourceFactory;
     private readonly VulkanExternalFrameImporter externalFrameImporter;
-    private readonly int drawThreadId;
+    private int drawThreadId;
     private readonly float[] lastLoggedCameraUv = new float[8];
 
     private VulkanYcbcrResources? ycbcrResources;
@@ -1104,6 +1104,12 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
             throw new ObjectDisposedException(
                 nameof(ARCoreVulkanImporter));
         }
+    }
+
+    internal void RebindDrawThread()
+    {
+        ThrowIfDisposed();
+        drawThreadId = Environment.CurrentManagedThreadId;
     }
 
     private void ThrowIfNotDrawThread()

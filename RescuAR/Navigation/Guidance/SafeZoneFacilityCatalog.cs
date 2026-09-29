@@ -20,8 +20,8 @@ namespace RescuAR.Navigation.Guidance;
 public static class SafeZoneFacilityCatalog
 {
     /// <summary>
-    /// Legacy/default radius for destinations that are not yet explicitly
-    /// profiled. This preserves the previous Stage 5 behavior.
+    /// Default vicinity radius for destinations that are not yet explicitly
+    /// profiled. This is an arrival approximation, not verified entrance access.
     /// </summary>
     public const double DefaultSafeZoneRadiusMeters =
         SafeZoneConfirmationService.ArrivalRadiusMeters;

@@ -80,6 +80,8 @@ public static class ARRouteRenderer
     private const int MaxRouteSegments =
         64;
 
+    public static int MaximumRouteSegments => MaxRouteSegments;
+
     // Diagnostic mode either displays every local line or declines to start.
     private const int MaxDiagnosticSegments = 512;
 
@@ -550,6 +552,20 @@ public static class ARRouteRenderer
                 false;
         }
 
+        if (renderedSegmentCount != requestedSegmentCount)
+        {
+            // A broken span must never leave a disconnected line or a
+            // forward arrow that appears to skip the missing road geometry.
+            DisableAll(slots);
+            DisableAll(arrows);
+            activeSegmentCount = 0;
+            ARRouteBridge.PublishGeometryQuality(
+                snapshot, prepared, 0, MaxRouteSegments);
+            AndroidLog.Warn(LogTag,
+                $"Incomplete route geometry rejected: {renderedSegmentCount}/{requestedSegmentCount} spans.");
+            return false;
+        }
+
         bool arrowVisible =
             ApplyForwardArrow(
                 arrows,
@@ -670,8 +686,10 @@ public static class ARRouteRenderer
             ARFrameCoherencePolicy.GetDepthForSpatialFrame(
                 frame);
 
+        int routeSlotCount = Math.Min(slots.Length, MaxRouteSegments);
         ApplyCameraVisualPolicy(
             slots,
+            routeSlotCount,
             routeRootWorldPosition,
             frame,
             depth,
@@ -681,8 +699,9 @@ public static class ARRouteRenderer
         // zebra crossing or a path through an obstacle. Display only the
         // uninterrupted, visible prefix until the obstruction clears.
         bool blocked = false;
-        foreach (SegmentSlot slot in slots)
+        for (int i = 0; i < routeSlotCount; i++)
         {
+            SegmentSlot slot = slots[i];
             if (!slot.GeometryAvailable) continue;
             if (!slot.Entity.IsEnabled) blocked = true;
             if (blocked) slot.Entity.IsEnabled = false;
@@ -690,6 +709,7 @@ public static class ARRouteRenderer
 
         ApplyCameraVisualPolicy(
             arrows,
+            arrows.Length,
             routeRootWorldPosition,
             frame,
             depth,
@@ -702,6 +722,7 @@ public static class ARRouteRenderer
 
     private static void ApplyCameraVisualPolicy(
         SegmentSlot[] slots,
+        int slotCount,
         Vector3 routeRootWorldPosition,
         ARCameraPoseBridge.SpatialSnapshot frame,
         ARDepthOcclusionBridge.DepthSnapshot depth,
@@ -714,7 +735,7 @@ public static class ARRouteRenderer
             frame.Pose.PositionZ;
 
         for (int i = 0;
-             i < slots.Length;
+             i < slotCount;
              i++)
         {
             SegmentSlot slot =
@@ -952,8 +973,10 @@ public static class ARRouteRenderer
                 delta.X * delta.X +
                 delta.Z * delta.Z);
 
-        if (horizontalLength <=
-            0.05f)
+        // The sanitizer retains every source span of at least 1 cm. A wider
+        // renderer cutoff silently left gaps between otherwise valid pieces.
+        if (horizontalLength <
+            0.009f)
         {
             return false;
         }

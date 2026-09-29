@@ -39,9 +39,7 @@ public sealed partial class ArCoreService
     private long capabilityVersion;
     private long graphicsGeneration;
     private volatile bool installRequestPending;
-    private bool resumeAfterActivityPause;
-    private bool resumeAfterGraphicsRecreation;
-    private volatile bool activityIsResumed = true;
+    private readonly ArCoreRunIntent runIntent = new();
     private ArCoreCapabilitySnapshot capabilitySnapshot = new(
         0,
         DateTimeOffset.MinValue,
@@ -84,12 +82,21 @@ public sealed partial class ArCoreService
     public ARTrackingStateBridge.TrackingSnapshot TrackingSnapshot =>
         ARTrackingStateBridge.Current;
 
-    public async Task<ArCoreLifecycleResult> EnsureRunningAsync(
+    public Task<ArCoreLifecycleResult> EnsureRunningAsync(
         CancellationToken cancellationToken = default)
     {
-        long requestGeneration = BeginLifecycleRequest(
-            ArCoreLifecycleTarget.Running,
-            "ARCore running requested");
+        lock (lifecycleStateLock)
+        {
+            runIntent.Request(true);
+            return EnsureRunningCoreAsync(
+                BeginLifecycleRequest(ArCoreLifecycleTarget.Running,
+                    "ARCore running requested"), cancellationToken);
+        }
+    }
+
+    private async Task<ArCoreLifecycleResult> EnsureRunningCoreAsync(
+        long requestGeneration, CancellationToken cancellationToken)
+    {
         bool gateEntered = false;
 
         try
@@ -112,12 +119,20 @@ public sealed partial class ArCoreService
                 return SupersededLifecycleRequest(requestGeneration);
             }
 
-            if (!activityIsResumed)
+            if (!runIntent.ActivityResumed)
             {
                 return FailLifecycleRequest(
                     ArCoreFailureCode.ActivityUnavailable,
                     ArCoreFailureClassification.Recoverable,
                     "The Android Activity is not resumed.");
+            }
+
+            if (!runIntent.SurfaceReady)
+            {
+                return FailLifecycleRequest(
+                    ArCoreFailureCode.GraphicsUnavailable,
+                    ArCoreFailureClassification.Recoverable,
+                    "The Android AR surface is not ready yet.");
             }
 
             if (lifecycleState is ArCoreLifecycleState.Disposed or ArCoreLifecycleState.Disposing)
@@ -139,6 +154,52 @@ public sealed partial class ArCoreService
 
             if (session is not null && !sessionPaused && IsFrameLoopRunning)
             {
+                ActivateRenderGenerationIfReady();
+                SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
+                return CurrentLifecycleResult(true);
+            }
+
+            // An existing Session already passed installation, support, and
+            // native-bridge checks. Resume it without repeating first-start work.
+            if (session is not null)
+            {
+                if (!HasCameraPermission())
+                {
+                    return FailLifecycleRequest(
+                        ArCoreFailureCode.CameraPermissionDenied,
+                        ArCoreFailureClassification.Recoverable,
+                        "Camera permission is required before ARCore can resume.");
+                }
+
+                bool resumed = await ResumeSessionCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!IsLatestLifecycleRequest(requestGeneration,
+                        ArCoreLifecycleTarget.Running))
+                    return SupersededLifecycleRequest(requestGeneration);
+                if (!resumed)
+                    return FailLifecycleRequest(
+                        ArCoreLifecyclePolicy.ClassifyFailureCode(
+                            lastSessionOperationException,
+                            ArCoreFailureCode.SessionResumeFailed),
+                        ArCoreFailureClassification.Recoverable,
+                        lastSessionOperationException?.Message ??
+                            "The retained ARCore session could not resume.");
+
+                lock (lifecycleStateLock)
+                {
+                    capabilitySnapshot = capabilitySnapshot with
+                    {
+                        Version = ++capabilityVersion,
+                        CapturedAtUtc = DateTimeOffset.UtcNow,
+                        IsCurrent = true,
+                        ActivityAvailable = true,
+                        CameraPermissionGranted = true,
+                        CameraAvailable = true,
+                        GraphicsReady = true,
+                        GraphicsGeneration = graphicsGeneration,
+                        Reason = "Retained ARCore session resumed.",
+                    };
+                }
                 SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
                 return CurrentLifecycleResult(true);
             }
@@ -149,6 +210,9 @@ public sealed partial class ArCoreService
 
             ArCoreApk.Availability availability =
                 await WaitForStableAvailabilityAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
+                return SupersededLifecycleRequest(requestGeneration);
 
             if (availability.IsTransient || availability.IsUnknown)
             {
@@ -245,6 +309,8 @@ public sealed partial class ArCoreService
                 }
 
                 installRequestPending = false;
+                if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
+                    return SupersededLifecycleRequest(requestGeneration);
                 PublishCapabilities(availability, true,
                     "ARCore prerequisites are ready for session creation.");
 
@@ -307,6 +373,8 @@ public sealed partial class ArCoreService
         }
         catch (OperationCanceledException)
         {
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
+                return SupersededLifecycleRequest(requestGeneration);
             return FailLifecycleRequest(
                 ArCoreFailureCode.Cancelled,
                 ArCoreFailureClassification.Recoverable,
@@ -314,6 +382,8 @@ public sealed partial class ArCoreService
         }
         catch (Exception exception)
         {
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
+                return SupersededLifecycleRequest(requestGeneration);
             Log.Error(Tag, $"ARCore running transition failed: {exception}");
             return FailLifecycleRequest(
                 ArCoreLifecyclePolicy.ClassifyFailureCode(exception, ArCoreFailureCode.Unknown),
@@ -329,7 +399,17 @@ public sealed partial class ArCoreService
         }
     }
 
-    public async Task<ArCoreLifecycleResult> PauseAsync(
+    public Task<ArCoreLifecycleResult> PauseAsync(
+        CancellationToken cancellationToken = default)
+    {
+        lock (lifecycleStateLock)
+        {
+            runIntent.Request(false);
+            return PauseForLifecycleAsync(cancellationToken);
+        }
+    }
+
+    private async Task<ArCoreLifecycleResult> PauseForLifecycleAsync(
         CancellationToken cancellationToken = default)
     {
         long requestGeneration = BeginLifecycleRequest(
@@ -384,6 +464,9 @@ public sealed partial class ArCoreService
             SetLifecycleState(ArCoreLifecycleState.Pausing, ArCoreFailure.None);
             bool paused = await PauseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
 
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Paused))
+                return SupersededLifecycleRequest(requestGeneration);
+
             if (!paused)
             {
                 return FailLifecycleRequest(
@@ -398,6 +481,8 @@ public sealed partial class ArCoreService
         }
         catch (OperationCanceledException)
         {
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Paused))
+                return SupersededLifecycleRequest(requestGeneration);
             return FailLifecycleRequest(
                 ArCoreFailureCode.Cancelled,
                 ArCoreFailureClassification.Recoverable,
@@ -405,6 +490,8 @@ public sealed partial class ArCoreService
         }
         catch (Exception exception)
         {
+            if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Paused))
+                return SupersededLifecycleRequest(requestGeneration);
             Log.Error(Tag, $"ARCore pause transition failed: {exception}");
             return FailLifecycleRequest(
                 ArCoreFailureCode.SessionPauseFailed,
@@ -423,7 +510,11 @@ public sealed partial class ArCoreService
     public async Task<ArCoreLifecycleResult> ShutdownAsync(
         CancellationToken cancellationToken = default)
     {
-        BeginLifecycleRequest(ArCoreLifecycleTarget.Disposed, "ARCore shutdown requested");
+        lock (lifecycleStateLock)
+        {
+            runIntent.Shutdown();
+            BeginLifecycleRequest(ArCoreLifecycleTarget.Disposed, "ARCore shutdown requested");
+        }
         bool gateEntered = false;
 
         try
@@ -622,15 +713,44 @@ public sealed partial class ArCoreService
         GC.SuppressFinalize(this);
     }
 
-    public void RequestPause(string reason)
+    public void RequestPause(string reason) =>
+        TrackTransition(PauseAsync(), reason);
+
+    /// <summary>Transient surface loss retains the Session and view intent.</summary>
+    public void NotifyGraphicsSurfaceLost()
+    {
+        Task<ArCoreLifecycleResult> transition;
+        lock (lifecycleStateLock)
+        {
+            runIntent.SetSurfaceReady(false);
+            transition = PauseForLifecycleAsync();
+        }
+        TrackTransition(transition, "Android AR surface lost");
+    }
+
+    /// <summary>Called after the graphics owner restores the swap chain.</summary>
+    public void NotifyGraphicsSurfaceReady()
     {
         lock (lifecycleStateLock)
         {
-            resumeAfterActivityPause = false;
-            resumeAfterGraphicsRecreation = false;
+            runIntent.SetSurfaceReady(true);
+            ResumeWhenReadyLocked("Android AR surface resized and ready");
         }
+    }
 
-        TrackTransition(PauseAsync(), reason);
+    // Keep registration and request generation under the same lock so a
+    // late automatic resume cannot supersede an explicit Camera-tab exit.
+    private void ResumeWhenReadyLocked(string reason)
+    {
+        if (!runIntent.ShouldRun || graphicsContext is null ||
+            lifecycleState is ArCoreLifecycleState.Disposing or ArCoreLifecycleState.Disposed)
+            return;
+
+        TrackTransition(
+            EnsureRunningCoreAsync(
+                BeginLifecycleRequest(ArCoreLifecycleTarget.Running, reason),
+                CancellationToken.None),
+            reason);
     }
 
     public void RequestShutdown(string reason) =>
@@ -638,74 +758,27 @@ public sealed partial class ArCoreService
 
     public void NotifyActivityPaused()
     {
+        Task<ArCoreLifecycleResult> transition;
         lock (lifecycleStateLock)
         {
-            activityIsResumed = false;
-            resumeAfterActivityPause =
-                desiredLifecycleState == ArCoreLifecycleTarget.Running ||
-                installRequestPending ||
-                resumeAfterGraphicsRecreation;
+            runIntent.SetActivityResumed(false);
+            InvalidateCapabilitySnapshot("Android Activity paused.");
+            transition = PauseForLifecycleAsync();
         }
-
-        InvalidateCapabilitySnapshot("Android Activity paused.");
-        InvalidatePublishedFrameState();
-        TrackTransition(PauseAsync(), "Android Activity paused");
+        TrackTransition(transition, "Android Activity paused");
     }
 
     public void NotifyActivityResumed()
     {
-        bool shouldResume;
-        bool waitingForGraphics;
-
         lock (lifecycleStateLock)
         {
-            activityIsResumed = true;
-
-            bool resumeRequested =
-                resumeAfterActivityPause ||
-                resumeAfterGraphicsRecreation;
-
-            shouldResume =
-                resumeRequested &&
-                graphicsContext is not null;
-
-            waitingForGraphics =
-                resumeRequested &&
-                graphicsContext is null;
-
-            resumeAfterActivityPause = false;
-
-            if (shouldResume)
-            {
-                resumeAfterGraphicsRecreation = false;
-            }
-            else if (waitingForGraphics)
-            {
-                /*
-                 * Android can resume the Activity before its SurfaceView has
-                 * recreated the Vulkan surface. Keep the request pending;
-                 * SetGraphicsContext resumes ARCore after registration.
-                 */
-                resumeAfterGraphicsRecreation = true;
-            }
-        }
-
-        InvalidateCapabilitySnapshot(
-            "Android Activity resumed; capabilities require a fresh check.");
-        if (shouldResume)
-        {
-            TrackTransition(
-                EnsureRunningAsync(),
+            runIntent.SetActivityResumed(true);
+            InvalidateCapabilitySnapshot(
+                "Android Activity resumed; capabilities require a fresh check.");
+            ResumeWhenReadyLocked(
                 installRequestPending
                     ? "Resuming pending ARCore installation"
                     : "Android Activity resumed");
-        }
-        else if (waitingForGraphics)
-        {
-            Log.Debug(
-                Tag,
-                "ARCore resume deferred until the recreated Evergine " +
-                "graphics context is registered.");
         }
     }
 
@@ -826,6 +899,12 @@ public sealed partial class ArCoreService
         try
         {
             ApplyDisplayGeometryIfNeeded(currentSession);
+            if (!runIntent.ShouldRun)
+            {
+                lastSessionOperationException = new OperationCanceledException(
+                    "The camera view or Android surface is no longer active.");
+                return false;
+            }
             currentSession.Resume();
             sessionPaused = false;
             InvalidatePendingRecoveryCountdown();
@@ -981,9 +1060,10 @@ public sealed partial class ArCoreService
         ArCoreLifecycleTarget target,
         string reason)
     {
-        long generation = Interlocked.Increment(ref lifecycleRequestGeneration);
+        long generation;
         lock (lifecycleStateLock)
         {
+            generation = ++lifecycleRequestGeneration;
             desiredLifecycleState = target;
             lifecycleChangedAtUtc = DateTimeOffset.UtcNow;
         }

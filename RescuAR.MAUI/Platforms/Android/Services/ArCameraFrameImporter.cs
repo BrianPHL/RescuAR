@@ -11,6 +11,9 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 /// </summary>
 internal interface IArCameraFrameImporter : IDisposable
 {
+    // Called only while the handler excludes every old/new render callback.
+    void RebindDrawThread();
+
     Texture Import(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
@@ -48,6 +51,8 @@ internal sealed class EvergineArCameraFrameImporter : IArCameraFrameImporter
 
     public void Dispose() =>
         inner.Dispose();
+
+    public void RebindDrawThread() => inner.RebindDrawThread();
 
     public static void WaitForGraphicsDeviceIdle(
         VKGraphicsContext graphicsContext) =>
