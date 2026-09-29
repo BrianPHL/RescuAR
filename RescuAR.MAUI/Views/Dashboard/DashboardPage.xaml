@@ -402,7 +402,7 @@
                     <!-- 2. Active Advisories Card (Top Right - Warm Gold) -->
                     <Border Grid.Row="0" Grid.Column="1" BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 20" Padding="14" HeightRequest="145">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding OpenAdvisoriesCommand}" />
+                            <TapGestureRecognizer Command="{Binding OpenActiveAdvisoriesPopupCommand}" />
                         </Border.GestureRecognizers>
                         <Grid RowDefinitions="Auto,*,Auto">
                             <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
@@ -546,14 +546,19 @@
 
         <!-- Real-time Alert Pop-Up Modal Overlay -->
         <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <Grid.Triggers>
+                <DataTrigger TargetType="Grid" Binding="{Binding SelectedAdvisory}" Value="{x:Null}">
+                    <Setter Property="IsVisible" Value="False" />
+                </DataTrigger>
+            </Grid.Triggers>
             <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
                 <VerticalStackLayout Spacing="0">
                    
                     <!-- Pop-up Header Banner -->
-                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 24 24 0 0" Padding="16,14">
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg, FallbackValue='#FEF3C7', TargetNullValue='#FEF3C7'}" StrokeThickness="0" StrokeShape="RoundRectangle 24 24 0 0" Padding="16,14">
                         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
-                            <Path Data="M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z" Fill="{Binding SelectedAdvisory.AlertBadgeText}" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
-                            <Label Grid.Column="1" Text="CRITICAL EMERGENCY ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Path Data="M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z" Fill="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#92400E', TargetNullValue='#92400E'}" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="CRITICAL EMERGENCY ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#92400E', TargetNullValue='#92400E'}" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
                            
                             <!-- Translation Button -->
                             <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="8,3" VerticalOptions="Center">
@@ -563,7 +568,7 @@
                                 <Label Text="Translate" TextColor="#0F172A" FontSize="10" FontAttributes="Bold" />
                             </Border>
 
-                            <Label Grid.Column="3" Text="✕" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="16" FontAttributes="Bold" VerticalOptions="Center">
+                            <Label Grid.Column="3" Text="✕" TextColor="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#92400E', TargetNullValue='#92400E'}" FontSize="16" FontAttributes="Bold" VerticalOptions="Center">
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
                                 </Label.GestureRecognizers>
@@ -573,14 +578,14 @@
 
                     <!-- Pop-up Content -->
                     <VerticalStackLayout Padding="20" Spacing="14">
-                        <Label Text="{Binding SelectedAdvisory.Title}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                        <Label Text="{Binding SelectedAdvisory.Title, FallbackValue='Emergency Advisory', TargetNullValue='Emergency Advisory'}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
                        
-                        <Label Text="{Binding SelectedAdvisory.DisplayMessageText}" TextColor="#334155" FontSize="14" LineBreakMode="WordWrap" />
+                        <Label Text="{Binding SelectedAdvisory.DisplayMessageText, FallbackValue='Please stay tuned for official emergency announcements.', TargetNullValue='Please stay tuned for official emergency announcements.'}" TextColor="#334155" FontSize="14" LineBreakMode="WordWrap" />
 
                         <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12">
                             <VerticalStackLayout Spacing="4">
                                 <Label Text="INSTRUCTIONS FOR RESIDENTS:" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
-                                <Label Text="{Binding SelectedAdvisory.DisplayActionPlanText}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                <Label Text="{Binding SelectedAdvisory.DisplayActionPlanText, FallbackValue='Follow local disaster response team guidance.', TargetNullValue='Follow local disaster response team guidance.'}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="WordWrap" />
                             </VerticalStackLayout>
                         </Border>
 
