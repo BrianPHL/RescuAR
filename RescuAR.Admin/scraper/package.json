@@ -4,7 +4,8 @@
   "type": "module",
   "main": "syncWorker.js",
   "scripts": {
-    "start": "node syncWorker.js"
+    "start": "node syncWorker.js",
+    "verify-history": "node verifyHistory.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
