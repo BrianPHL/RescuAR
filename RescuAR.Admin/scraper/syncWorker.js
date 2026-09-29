@@ -7,8 +7,14 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://itxjqcnvxlgzeqkivhhc.supabase.co';
-const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('[Telemetry] SUPABASE_SERVICE_ROLE_KEY is not configured. Latest-reading sync may continue under existing permissions, but river_level_history inserts are expected to fail until the server-only service role key is set.');
+}
 
 const MAX_REASONABLE_LEVEL_METERS = 50;
 
@@ -74,7 +80,8 @@ async function fetchPagasaDirectly() {
               alert_threshold: alertThreshold || null,
               alarm_threshold: alarmThreshold || null,
               critical_threshold: criticalThreshold || null,
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
+              source: 'PAGASA'
             });
             break;
           }
@@ -115,7 +122,8 @@ async function fetchPagasaDirectly() {
           station_name: 'Sto. Niño Station',
           level: levelNum,
           status: calculateStatus('Sto. Niño Station', levelNum),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          source: 'BantayBaha'
         });
       }
     }
@@ -137,7 +145,8 @@ async function fetchPagasaDirectly() {
           station_name: item.name,
           level: levelVal,
           status: calculateStatus(item.name, levelVal),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          source: 'BantayBaha'
         });
       }
     }
@@ -155,7 +164,8 @@ async function fetchPagasaDirectly() {
                 station_name: mappedName,
                 level: levelVal,
                 status: calculateStatus(mappedName, levelVal),
-                updated_at: new Date().toISOString()
+                updated_at: new Date().toISOString(),
+                source: 'BantayBaha'
               });
             }
           }
@@ -218,9 +228,31 @@ async function syncToSupabase() {
       );
 
     if (error) {
-      console.error(`❌ Failed ${st.station_name}:`, error.message);
+      console.error(`❌ Failed latest-reading update for ${st.station_name}:`, error.message);
+      continue;
+    }
+
+    console.log(`✅ Synced latest ${st.station_name}: ${st.level}m -> ${st.status}`);
+
+    // Append every verified observation to immutable telemetry history instead of
+    // relying only on the latest row in monitoring_stations. This provides the
+    // timestamped measurements used by the historical chart and later validation.
+    const historyRow = {
+      station_name: st.station_name,
+      level: st.level,
+      status: st.status,
+      source: st.source || 'PAGASA',
+      observed_at: st.updated_at
+    };
+
+    const { error: historyError } = await supabase
+      .from('river_level_history')
+      .insert(historyRow);
+
+    if (historyError) {
+      console.error(`❌ Failed history insert for ${st.station_name}:`, historyError.message);
     } else {
-      console.log(`✅ Synced ${st.station_name}: ${st.level}m -> ${st.status}`);
+      console.log(`🕒 Stored history ${st.station_name}: ${st.level}m @ ${st.updated_at}`);
     }
   }
 }

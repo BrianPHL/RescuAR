@@ -1,496 +1,250 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { calculateAlertStatus } from '../utils/waterLevelUtils';
+import { calculateAlertStatus, getStationThresholds } from '../utils/waterLevelUtils';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
-import {  
-  RefreshCw, 
-  Droplet, 
-  Waves, 
-  AlertTriangle, 
-  Info, 
-  BarChart2, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown
-} from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip 
+import { RefreshCw, Waves, Clock3, Database, AlertTriangle } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine
 } from 'recharts';
 
-// Do not seed the frontend with synthetic telemetry. Until Supabase returns a verified reading,
-// the monitoring view remains explicitly unavailable.
-const INITIAL_STATIONS = [];
+const DEFAULT_STATION = 'Sto. Niño Station';
+const HISTORY_HOURS = 24;
 
-export default function MonitoringStations() {
-  const [stations, setStations] = useState(INITIAL_STATIONS);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState('Loading live data...');
-  const [showSummary, setShowSummary] = useState(true);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
-  const [freshnessNow, setFreshnessNow] = useState(Date.now());
+function formatObservedTime(value) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
 
-  // Fetch stations from Supabase table 'monitoring_stations'
-  const fetchStationsFromSupabase = async () => {
-    setIsRefreshing(true);
+function chartTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-PH', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+export default function RiverLevel() {
+  const [stationName, setStationName] = useState(DEFAULT_STATION);
+  const [stations, setStations] = useState([]);
+  const [latest, setLatest] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [historyError, setHistoryError] = useState('');
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  const fetchTelemetry = useCallback(async () => {
+    setLoading(true);
+    setHistoryError('');
+
+    const since = new Date(Date.now() - HISTORY_HOURS * 60 * 60 * 1000).toISOString();
+
     try {
-      const { data, error } = await supabase
-        .from('monitoring_stations')
-        .select('*')
-        .order('level', { ascending: false });
+      const [latestResult, historyResult] = await Promise.all([
+        supabase
+          .from('monitoring_stations')
+          .select('station_name, level, status, updated_at')
+          .order('station_name', { ascending: true }),
+        supabase
+          .from('river_level_history')
+          .select('station_name, level, status, source, observed_at')
+          .eq('station_name', stationName)
+          .gte('observed_at', since)
+          .order('observed_at', { ascending: true })
+      ]);
 
-      if (error) {
-        console.error('Error fetching monitoring stations from Supabase:', error.message);
-      } else if (data && data.length > 0) {
-        // Calculate status dynamically using calculateAlertStatus
-        const formattedStations = data.map((item, idx) => {
-          const numericLevel = Number(item.level);
-          const hasValidLevel = item.level !== null && Number.isFinite(numericLevel);
-          const alertInfo = hasValidLevel
-            ? calculateAlertStatus(numericLevel, item.station_name)
-            : { status: 'Unavailable', label: 'Unavailable', color: '#b91c1c' };
-
-          return {
-            id: item.id || idx + 1,
-            name: item.station_name,
-            level: hasValidLevel ? numericLevel : null,
-            status: alertInfo.status,
-            alertInfo,
-            updated_at: item.updated_at
-          };
-        });
-        setStations(formattedStations);
-
-        // Find the maximum updated_at timestamp from all stations
-        const latestTimestamp = data.reduce((latest, item) => {
-          if (!item.updated_at) return latest;
-          const itemTime = new Date(item.updated_at).getTime();
-          return itemTime > latest ? itemTime : latest;
-        }, 0);
-
-        if (latestTimestamp > 0) {
-          const dateObj = new Date(latestTimestamp);
-          const dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-          const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-          setLastUpdated(`${dateStr} • ${timeStr}`);
-        } else {
-          setLastUpdated('No verified timestamp');
-        }
+      if (latestResult.error) {
+        console.error('Failed to load latest monitoring stations:', latestResult.error.message);
       } else {
-        setStations([]);
-        setLastUpdated('No verified telemetry available');
+        const rows = latestResult.data || [];
+        setStations(rows.map(row => row.station_name).filter(Boolean));
+        setLatest(rows.find(row => row.station_name === stationName) || null);
       }
-    } catch (err) {
-      console.error('Unexpected error fetching stations:', err);
+
+      if (historyResult.error) {
+        console.error('Failed to load river telemetry history:', historyResult.error.message);
+        setHistory([]);
+        setHistoryError(
+          historyResult.error.message.includes('river_level_history')
+            ? 'Historical telemetry is not available yet. Run the supplied Supabase migration and deploy the updated scraper.'
+            : `Historical telemetry could not be loaded: ${historyResult.error.message}`
+        );
+      } else {
+        setHistory(historyResult.data || []);
+      }
+    } catch (error) {
+      console.error('Unexpected telemetry error:', error);
+      setHistoryError('Historical telemetry could not be loaded.');
     } finally {
-      setIsRefreshing(false);
+      setLoading(false);
     }
-  };
+  }, [stationName]);
 
   useEffect(() => {
-    fetchStationsFromSupabase();
+    fetchTelemetry();
 
-    const freshnessTimer = setInterval(() => {
-      setFreshnessNow(Date.now());
-    }, 60 * 1000);
+    const ageTimer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
 
-    // Subscribe to real-time changes on the 'monitoring_stations' table
-    const channel = supabase
-      .channel('monitoring-stations-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => {
-        fetchStationsFromSupabase();
+    const latestChannel = supabase
+      .channel(`river-level-latest-${stationName}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, fetchTelemetry)
+      .subscribe();
+
+    const historyChannel = supabase
+      .channel(`river-level-history-${stationName}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'river_level_history' }, payload => {
+        if (payload.new?.station_name === stationName) fetchTelemetry();
       })
       .subscribe();
 
     return () => {
-      clearInterval(freshnessTimer);
-      supabase.removeChannel(channel);
+      clearInterval(ageTimer);
+      supabase.removeChannel(latestChannel);
+      supabase.removeChannel(historyChannel);
     };
-  }, []);
+  }, [fetchTelemetry, stationName]);
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await fetchStationsFromSupabase();
-    } finally {
-      // Ensure minimum spinning animation duration so user gets immediate visual feedback
-      setTimeout(() => setIsRefreshing(false), 500);
-    }
-  };
+  const freshness = getTelemetryFreshness(latest?.updated_at, nowMs);
+  const numericLevel = latest?.level !== null && Number.isFinite(Number(latest?.level))
+    ? Number(latest.level)
+    : null;
+  const alertInfo = numericLevel === null
+    ? { label: 'Unavailable', color: '#b91c1c' }
+    : calculateAlertStatus(numericLevel, stationName);
+  const thresholds = getStationThresholds(stationName);
 
-  // Sorting Handler
-  const handleSort = (key) => {
-    let direction = 'ascending';
-    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
-      direction = null; // Reset to default order
-    }
-    setSortConfig({ key, direction });
-  };
+  const chartData = useMemo(() => history.map(row => ({
+    observedAt: row.observed_at,
+    time: chartTime(row.observed_at),
+    level: Number(row.level),
+    status: row.status,
+    source: row.source
+  })).filter(row => Number.isFinite(row.level)), [history]);
 
-  // Get Sorted Stations
-  const getSortedStations = () => {
-    if (!sortConfig.key || !sortConfig.direction) {
-      return [...stations];
-    }
-    return [...stations].sort((a, b) => {
-      let valA = a[sortConfig.key];
-      let valB = b[sortConfig.key];
-
-      if (typeof valA === 'string') {
-        valA = valA.toLowerCase();
-        valB = valB.toLowerCase();
-      }
-
-      if (valA < valB) {
-        return sortConfig.direction === 'ascending' ? -1 : 1;
-      }
-      if (valA > valB) {
-        return sortConfig.direction === 'ascending' ? 1 : -1;
-      }
-      return 0;
-    });
-  };
-
-  const getSortIcon = (key) => {
-    if (sortConfig.key !== key) {
-      return <ArrowUpDown size={12} className="sort-icon-inactive" />;
-    }
-    if (sortConfig.direction === 'ascending') {
-      return <ArrowUp size={12} className="sort-icon-active" />;
-    }
-    return <ArrowDown size={12} className="sort-icon-active" />;
-  };
-
-  // Sort bar chart data by level descending as shown in the screenshot
-  const barChartData = [...stations]
-    .filter(station => station.level !== null && Number.isFinite(Number(station.level)))
-    .sort((a, b) => Number(b.level) - Number(a.level));
-  const sortedStations = getSortedStations();
-  const freshnessSummary = stations.map(station => getTelemetryFreshness(station.updated_at, freshnessNow));
-  const unavailableCount = freshnessSummary.filter(item => item.status === 'unavailable').length;
-  const staleCount = freshnessSummary.filter(item => item.status === 'stale').length;
-  const alarmCount = stations.filter(station => station.alertInfo && station.alertInfo.status !== 'Normal' && station.alertInfo.status !== 'Unavailable').length;
-
-  const getHydrologicalSummary = () => {
-    if (stations.length === 0 || unavailableCount === stations.length) {
-      return 'Hydrological summary unavailable because there is no sufficiently recent verified telemetry. Refresh the feed or wait for the next successful source update.';
-    }
-    if (unavailableCount > 0 || staleCount > 0) {
-      return `Current conditions cannot be fully confirmed: ${staleCount} stale and ${unavailableCount} unavailable station reading${staleCount + unavailableCount === 1 ? '' : 's'}. Values shown are last verified readings and must not be treated as fully live.`;
-    }
-    if (alarmCount > 0) {
-      return `Fresh telemetry is available, and ${alarmCount} station${alarmCount === 1 ? '' : 's'} currently meet a warning or alarm threshold. Review the station statuses before issuing operational guidance.`;
-    }
-    return 'Fresh telemetry is available across the monitoring network. Current readings are within their configured normal thresholds.';
-  };
+  const minLevel = chartData.length ? Math.min(...chartData.map(row => row.level), thresholds.ALARM_1) : 0;
+  const maxLevel = chartData.length ? Math.max(...chartData.map(row => row.level), thresholds.ALARM_3) : thresholds.ALARM_3;
+  const yMin = Math.max(0, Math.floor(minLevel - 1));
+  const yMax = Math.ceil(maxLevel + 1);
 
   return (
-    <div className="main-view">
-      {/* View Header */}
-      <div className="view-header">
-        <div className="view-title-container">
-          <h1>Monitoring Stations</h1>
-          <span className="view-subtitle">Last updated: {lastUpdated}</span>
+    <main className="main-content" style={{ paddingBottom: 32 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Waves size={24} /> River Level History
+          </h1>
+          <p style={{ margin: '6px 0 0', color: 'var(--text-muted)' }}>
+            Verified timestamped measurements from the telemetry scraper. No synthetic observed or forecast values are plotted.
+          </p>
         </div>
-        <button 
-          className="btn-refresh" 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-          <span>Refresh</span>
-        </button>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            value={stationName}
+            onChange={event => setStationName(event.target.value)}
+            style={{ padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 8, background: '#fff' }}
+          >
+            {(stations.length ? stations : [DEFAULT_STATION]).map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={fetchTelemetry}
+            disabled={loading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 8, background: '#fff', cursor: 'pointer' }}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Point Cards Grid */}
-      {(() => {
-        const getStationData = (namePart) => {
-          const found = stations.find(s => s.name.toLowerCase().includes(namePart.toLowerCase()));
-          const stationObj = found || { level: null, status: 'Unavailable', name: namePart, updated_at: null };
-          const numericLevel = Number(stationObj.level);
-          const hasLevel = stationObj.level !== null && Number.isFinite(numericLevel);
-          const alertInfo = hasLevel ? calculateAlertStatus(numericLevel, stationObj.name) : calculateAlertStatus(0, stationObj.name);
-          const freshness = getTelemetryFreshness(stationObj.updated_at, freshnessNow);
-          return { ...stationObj, level: hasLevel ? numericLevel : null, alertInfo, freshness };
-        };
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>LATEST VERIFIED LEVEL</div>
+          <div style={{ fontSize: 30, fontWeight: 700 }}>{numericLevel === null ? '--' : `${numericLevel.toFixed(2)} m`}</div>
+          <div style={{ marginTop: 7, color: alertInfo.color, fontWeight: 600 }}>{alertInfo.label}</div>
+        </div>
 
-        const renderPointCard = (title, stationData, defaultIcon) => {
-          const { level, alertInfo, freshness = getTelemetryFreshness(stationData.updated_at, freshnessNow) } = stationData;
-          const hasLevel = level !== null && Number.isFinite(Number(level));
-          const numericLevel = hasLevel ? Number(level) : 0;
-          const is3rdAlarm = alertInfo.status === '3rd Alarm' || numericLevel >= 18;
-          const is2ndAlarm = alertInfo.status === '2nd Alarm';
-          const is1stAlarm = alertInfo.status === '1st Alarm';
-
-          // Card distinction styles
-          let cardStyle = {};
-          let iconBg = '#e8f7ed';
-          let iconColor = '#10b981';
-          let badgeStyle = { backgroundColor: '#dcfce7', color: '#15803d' };
-          let IconComponent = defaultIcon;
-
-          if (!hasLevel || freshness.status === 'unavailable') {
-            cardStyle = { backgroundColor: '#f8fafc' };
-            badgeStyle = { backgroundColor: '#fee2e2', color: '#b91c1c', fontWeight: '700' };
-            iconBg = '#f1f5f9';
-            iconColor = '#64748b';
-            IconComponent = AlertTriangle;
-          } else if (is3rdAlarm) {
-            cardStyle = {
-              backgroundColor: '#fef2f2',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.12)',
-              position: 'relative'
-            };
-            badgeStyle = {
-              backgroundColor: '#dc2626',
-              color: '#ffffff',
-              fontWeight: '800',
-              boxShadow: '0 2px 4px rgba(220, 38, 38, 0.3)'
-            };
-            iconBg = '#fee2e2';
-            iconColor = '#dc2626';
-            IconComponent = AlertTriangle;
-          } else if (is2ndAlarm) {
-            cardStyle = { backgroundColor: '#fff7ed' };
-            badgeStyle = { backgroundColor: '#ea580c', color: '#ffffff', fontWeight: '700' };
-            iconBg = '#ffedd5';
-            iconColor = '#ea580c';
-            IconComponent = AlertTriangle;
-          } else if (is1stAlarm) {
-            cardStyle = { backgroundColor: '#fefce8' };
-            badgeStyle = { backgroundColor: '#ca8a04', color: '#ffffff', fontWeight: '700' };
-            iconBg = '#fef9c3';
-            iconColor = '#ca8a04';
-          }
-
-          return (
-            <div className="point-card" style={cardStyle}>
-              <div className="point-card-left">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="point-card-title">{title}</span>
-                </div>
-                <span className="point-card-value" style={{ color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>
-                  {hasLevel ? `${numericLevel.toFixed(2)} m` : '--'}
-                </span>
-                <div className="point-card-badge-row">
-                  <span className="status-badge-pill" style={badgeStyle}>
-                    {!hasLevel ? 'Unavailable' : (is3rdAlarm ? '3rd Alarm' : alertInfo.label)}
-                  </span>
-                  <span
-                    className={`telemetry-state-badge compact ${freshness.status}`}
-                    title={freshness.description}
-                  >
-                    <span className={`telemetry-state-dot ${freshness.status}`}></span>
-                    {freshness.label} • {freshness.ageText}
-                  </span>
-                </div>
-              </div>
-              <div className="point-card-right">
-                <div 
-                  className="point-card-icon-wrapper" 
-                  style={{ backgroundColor: iconBg, color: iconColor }}
-                >
-                  <IconComponent size={22} style={{ animation: is3rdAlarm ? 'pulse 1.5s infinite' : 'none' }} />
-                </div>
-              </div>
-            </div>
-          );
-        };
-
-        const tumana = getStationData('Tumana');
-        const nangka = getStationData('Nangka');
-        const stoNino = getStationData('Sto. Niño');
-
-        return (
-          <div className="station-points-grid">
-            {renderPointCard('TUMANA MONITORING POINT', tumana, Droplet)}
-            {renderPointCard('NANGKA MONITORING POINT', nangka, Waves)}
-            {renderPointCard('STO. NIÑO (MAIN NODE)', stoNino, AlertTriangle)}
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>TELEMETRY FRESHNESS</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, fontWeight: 700, color: freshness.color }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: freshness.dotColor }} />
+            {freshness.label}
           </div>
-        );
-      })()}
+          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>{freshness.ageText}</div>
+        </div>
 
-      {/* Main Split Layout */}
-      <div className="stations-split-layout">
-        {/* Left Side: Levels Bar Chart */}
-        <div className="stations-card">
-          <h2 className="stations-card-title">Station Levels vs warning Thresholds</h2>
-          
-          <div className="chart-container-wrapper" style={{ height: '300px', marginTop: '16px' }}>
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>LAST OBSERVED</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
+            <Clock3 size={16} /> {formatObservedTime(latest?.updated_at)}
+          </div>
+          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>Based on monitoring_stations.updated_at</div>
+        </div>
+
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>24-HOUR OBSERVATIONS</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 26, fontWeight: 700 }}>
+            <Database size={20} /> {chartData.length}
+          </div>
+          <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 13 }}>Stored measurements, not generated points</div>
+        </div>
+      </section>
+
+      <section className="card" style={{ padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17 }}>Historical water level — last {HISTORY_HOURS} hours</h2>
+            <p style={{ margin: '5px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
+              Each point is one row from <code>river_level_history</code>.
+            </p>
+          </div>
+        </div>
+
+        {historyError ? (
+          <div style={{ display: 'flex', gap: 10, padding: 16, border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', borderRadius: 8 }}>
+            <AlertTriangle size={18} style={{ flex: '0 0 auto' }} />
+            <span>{historyError}</span>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)' }}>
+            No historical observations have been stored for this station in the last {HISTORY_HOURS} hours yet.
+          </div>
+        ) : (
+          <div style={{ width: '100%', height: 410 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={barChartData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tick={{ fill: 'var(--text-muted)', fontSize: 10, fontWeight: '500' }}
+              <LineChart data={chartData} margin={{ top: 10, right: 25, left: 5, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" minTickGap={28} tick={{ fontSize: 11 }} />
+                <YAxis domain={[yMin, yMax]} unit=" m" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.observedAt ? formatObservedTime(payload[0].payload.observedAt) : ''}
+                  formatter={(value, name, item) => [`${Number(value).toFixed(2)} m`, `${item?.payload?.source || 'Verified source'} · ${item?.payload?.status || ''}`]}
                 />
-                <YAxis 
-                  domain={[0, 30]}
-                  ticks={[0, 10, 20]}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: 'var(--text-light)', fontSize: 11 }}
-                  label={{ 
-                    value: 'Water Gauge Level (meters)', 
-                    angle: -90, 
-                    position: 'insideLeft', 
-                    style: { textAnchor: 'middle', fill: 'var(--text-muted)', fontSize: 11, fontWeight: '500' },
-                    offset: 0
-                  }}
-                />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div style={{
-                          backgroundColor: '#ffffff',
-                          border: '1px solid var(--color-border)',
-                          padding: '8px 12px',
-                          borderRadius: 'var(--radius-md)',
-                          boxShadow: 'var(--shadow-lg)',
-                          fontSize: '12px'
-                        }}>
-                          <p style={{ fontWeight: '700', color: 'var(--text-main)' }}>{payload[0].payload.name}</p>
-                          <p style={{ color: '#3b82f6', fontWeight: '600', marginTop: '4px' }}>
-                            Level: {Number(payload[0].value).toFixed(2)} m
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar 
-                  dataKey="level" 
-                  fill="#3b82f6" 
-                  barSize={36}
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
+                <ReferenceLine y={thresholds.ALARM_1} strokeDasharray="4 4" label={{ value: '1st Alarm', position: 'insideTopRight', fontSize: 10 }} />
+                <ReferenceLine y={thresholds.ALARM_2} strokeDasharray="4 4" label={{ value: '2nd Alarm', position: 'insideTopRight', fontSize: 10 }} />
+                <ReferenceLine y={thresholds.ALARM_3} strokeDasharray="4 4" label={{ value: '3rd Alarm', position: 'insideTopRight', fontSize: 10 }} />
+                <Line type="monotone" dataKey="level" name="Observed level" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} connectNulls={false} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
-
-          <div className="x-axis-title-centered">
-            Gaging Network Station Node Location
-          </div>
-
-          <div className="graph-type-label">
-            <BarChart2 size={14} />
-            <span>Graph Type: Bar Chart</span>
-          </div>
-
-          <div className="checkbox-wrapper">
-            <input 
-              type="checkbox" 
-              id="show-summary" 
-              checked={showSummary} 
-              onChange={(e) => setShowSummary(e.target.checked)} 
-            />
-            <label htmlFor="show-summary">Show Hydrological Summary</label>
-          </div>
-
-          {showSummary && (
-            <div className="hydrological-summary-box">
-              <Info size={16} className="summary-icon" />
-              <div>
-                <div className="summary-title">Hydrological Summary</div>
-                <div className="summary-text">
-                  {getHydrologicalSummary()}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Side: Telemetry Node Database */}
-        <div className="stations-card">
-          <h2 className="stations-card-title">Telemetry Node Database</h2>
-          
-          <div className="table-container" style={{ marginTop: '16px' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th onClick={() => handleSort('name')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>RIVER</span>
-                      {getSortIcon('name')}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('level')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>LEVEL</span>
-                      {getSortIcon('level')}
-                    </div>
-                  </th>
-                  <th>DATA FRESHNESS</th>
-                  <th onClick={() => handleSort('status')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>STATUS</span>
-                      {getSortIcon('status')}
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedStations.map((station) => {
-                  const alertInfo = station.alertInfo || calculateAlertStatus(station.level, station.name);
-                  const is3rdAlarm = alertInfo.status === '3rd Alarm';
-                  return (
-                    <tr 
-                      key={station.id} 
-                      className="table-row-hover"
-                      style={is3rdAlarm ? { backgroundColor: '#fef2f2' } : {}}
-                    >
-                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>{station.name}</td>
-                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#dc2626' : 'inherit' }}>{station.level !== null && Number.isFinite(Number(station.level)) ? `${Number(station.level).toFixed(2)} m` : '--'}</td>
-                      <td>
-                        {(() => {
-                          const freshness = getTelemetryFreshness(station.updated_at, freshnessNow);
-                          return (
-                            <span
-                              className={`telemetry-state-badge compact ${freshness.status}`}
-                              title={freshness.description}
-                            >
-                              <span className={`telemetry-state-dot ${freshness.status}`}></span>
-                              {freshness.label} • {freshness.ageText}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td>
-                        <span 
-                          className="status-badge-pill"
-                          style={{
-                            backgroundColor: `${alertInfo.color}20`,
-                            color: alertInfo.color,
-                            border: `1px solid ${alertInfo.color}40`,
-                            fontWeight: '700'
-                          }}
-                        >
-                          {alertInfo.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
+        )}
+      </section>
+    </main>
   );
 }

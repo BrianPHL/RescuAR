@@ -1,7 +1,7 @@
 // Telemetry freshness policy is aligned with the scraper cadence and project documentation:
 // - scraper runs every 5 minutes
 // - two missed/late cycles (10 minutes) => Stale
-// - three consecutive missed cycles (30 minutes) => Unavailable
+// - prolonged absence of verified telemetry (30 minutes) => Unavailable
 export const TELEMETRY_FRESH_MAX_MS = 10 * 60 * 1000;
 export const TELEMETRY_UNAVAILABLE_AFTER_MS = 30 * 60 * 1000;
 
