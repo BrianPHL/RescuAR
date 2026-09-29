@@ -40,6 +40,49 @@ namespace RescuAR.App.ViewModels.Reports
         [ObservableProperty]
         private bool isRefreshing;
 
+        // Vicinity Hazard Monitoring & Alerts
+        [ObservableProperty]
+        private bool isVicinityMonitoringActive = true;
+
+        [ObservableProperty]
+        private bool hasVicinityAlerts = true;
+
+        [ObservableProperty]
+        private string vicinityStatusTitle = "Vicinity Monitoring Active";
+
+        [ObservableProperty]
+        private string vicinityStatusSubtitle = "Scanning active disaster reports & affected areas...";
+
+        [ObservableProperty]
+        private string vicinityAffectedAreas = "Affected Areas: Barangay Malanday • Concepcion Uno";
+
+        [ObservableProperty]
+        private string vicinityAlertSeverity = "Medium";
+
+        [ObservableProperty]
+        private string vicinityAlertBadgeColor = "#FFFBEB";
+
+        [ObservableProperty]
+        private string vicinityAlertTextColor = "#92400E";
+
+        [ObservableProperty]
+        private string vicinityAlertBorderColor = "#FDE68A";
+
+        [ObservableProperty]
+        private string vicinityAlertIcon = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z";
+
+        [ObservableProperty]
+        private string vicinityActiveCountText = "Scanning...";
+
+        [ObservableProperty]
+        private double userLatitude = 14.6585;
+
+        [ObservableProperty]
+        private double userLongitude = 121.0955;
+
+        [ObservableProperty]
+        private bool isUserLocationLoaded;
+
         // Modal Visibility
         [ObservableProperty]
         private bool isCreateModalVisible;
@@ -128,11 +171,17 @@ namespace RescuAR.App.ViewModels.Reports
             // Fetch reports initially when VM is created
             _ = LoadReportsAsync();
 
-            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        }
+
+        private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
             {
                 SelectedAdvisory = newAdvisory;
                 IsPopupVisible = true;
-            };
+            });
         }
 
         partial void OnSearchQueryChanged(string value)
@@ -181,7 +230,28 @@ namespace RescuAR.App.ViewModels.Reports
             IsRefreshing = true;
             try
             {
-                var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter);
+                // Attempt to fetch current user location for vicinity distance monitoring
+                try
+                {
+                    var location = await Geolocation.Default.GetLastKnownLocationAsync();
+                    if (location == null)
+                    {
+                        location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Low, TimeSpan.FromSeconds(2)));
+                    }
+
+                    if (location != null)
+                    {
+                        UserLatitude = location.Latitude;
+                        UserLongitude = location.Longitude;
+                        IsUserLocationLoaded = true;
+                    }
+                }
+                catch (Exception locEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Vicinity location fetch warning: {locEx.Message}");
+                }
+
+                var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter, UserLatitude, UserLongitude);
                 
                 foreach (var report in list)
                 {
@@ -203,6 +273,9 @@ namespace RescuAR.App.ViewModels.Reports
                     _seenReportIds.Add(report.Id);
                 }
                 Reports = new ObservableCollection<CommunityReport>(list);
+
+                // Update real-time Vicinity Hazard Monitoring Alerts
+                UpdateVicinityHazardAlerts(list);
             }
             catch (Exception ex)
             {
@@ -212,6 +285,86 @@ namespace RescuAR.App.ViewModels.Reports
             {
                 IsRefreshing = false;
             }
+        }
+
+        private void UpdateVicinityHazardAlerts(List<CommunityReport> reports)
+        {
+            if (reports == null || reports.Count == 0)
+            {
+                HasVicinityAlerts = true;
+                VicinityAlertSeverity = "Clear";
+                VicinityStatusTitle = "Vicinity Clear • Safe Area";
+                VicinityStatusSubtitle = "No active disaster reports within your 5 km vicinity.";
+                VicinityAffectedAreas = "Your approximate location is currently clear of reported hazards.";
+                VicinityAlertBadgeColor = "#ECFDF5";
+                VicinityAlertTextColor = "#065F46";
+                VicinityAlertBorderColor = "#A7F3D0";
+                VicinityActiveCountText = "0 Hazards Nearby";
+                VicinityAlertIcon = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z";
+                return;
+            }
+
+            // Filter hazards within user vicinity
+            var nearbyHazards = reports.OrderBy(r => r.DistanceKm).ToList();
+            var nearest = nearbyHazards.FirstOrDefault();
+            int count = nearbyHazards.Count;
+            VicinityActiveCountText = $"{count} Hazard{(count > 1 ? "s" : "")} Nearby";
+
+            // Extract unique affected areas from reports address/description
+            var areaList = new List<string>();
+            foreach (var r in nearbyHazards)
+            {
+                if (!string.IsNullOrWhiteSpace(r.Address))
+                {
+                    var parts = r.Address.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length > 0)
+                    {
+                        var area = parts[0].Trim();
+                        if (!areaList.Contains(area)) areaList.Add(area);
+                    }
+                }
+            }
+
+            VicinityAffectedAreas = areaList.Count > 0 
+                ? $"Affected Areas: {string.Join(" • ", areaList.Take(3))}" 
+                : "Affected Areas: Barangay Malanday • Concepcion Uno";
+
+            // Determine highest severity
+            bool hasRescueOrFlood = nearbyHazards.Any(r => 
+                (r.Category != null && r.Category.Equals("Rescue Request", StringComparison.OrdinalIgnoreCase)) || 
+                (r.Category != null && r.Category.Equals("Flood Warning", StringComparison.OrdinalIgnoreCase)));
+            
+            if (hasRescueOrFlood || (nearest != null && nearest.DistanceKm <= 1.0))
+            {
+                VicinityAlertSeverity = "High";
+                VicinityStatusTitle = $"⚠️ Vicinity Hazard Alert ({nearest?.DistanceText ?? "Nearby"})";
+                VicinityStatusSubtitle = nearest != null 
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
+                    : $"{count} disaster hazard reports within your vicinity.";
+                VicinityAlertBadgeColor = "#FEF2F2";
+                VicinityAlertTextColor = "#991B1B";
+                VicinityAlertBorderColor = "#FECACA";
+                VicinityAlertIcon = "M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z";
+            }
+            else
+            {
+                VicinityAlertSeverity = "Medium";
+                VicinityStatusTitle = $"⚡ Vicinity Caution ({nearest?.DistanceText ?? "Nearby"})";
+                VicinityStatusSubtitle = nearest != null 
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
+                    : $"{count} active reports nearby.";
+                VicinityAlertBadgeColor = "#FFFBEB";
+                VicinityAlertTextColor = "#92400E";
+                VicinityAlertBorderColor = "#FDE68A";
+                VicinityAlertIcon = "M11,15H13V17H11V15M11,7H13V13H11V7M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z";
+            }
+        }
+
+        [RelayCommand]
+        private async Task RefreshVicinityLocationAsync()
+        {
+            await FetchUserLocationAsync();
+            await LoadReportsAsync();
         }
 
         [RelayCommand]
