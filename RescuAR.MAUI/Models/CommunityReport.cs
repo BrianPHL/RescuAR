@@ -65,6 +65,9 @@ public class CommunityReport : BaseModel
     public string DistanceText { get; set; } = "320 meters away";
 
     [JsonIgnore]
+    public double DistanceKm { get; set; } = double.MaxValue;
+
+    [JsonIgnore]
     public bool IsLikedByCurrentUser { get; set; }
 
     [JsonIgnore]
