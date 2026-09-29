@@ -10,6 +10,13 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://itxjqcnvxlgzeqkiv
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const MAX_REASONABLE_LEVEL_METERS = 50;
+
+function isValidLevel(value) {
+  const level = Number(value);
+  return Number.isFinite(level) && level >= 0 && level <= MAX_REASONABLE_LEVEL_METERS;
+}
+
 const STATION_MAP = {
   'Sto Nino': 'Sto. Niño Station',
   'Sto. Nino': 'Sto. Niño Station',
@@ -50,7 +57,7 @@ async function fetchPagasaDirectly() {
         const criticalThreshold = parseFloat(criticalStr);
 
         for (const [key, mappedName] of Object.entries(STATION_MAP)) {
-          if (rawName.includes(key) && !isNaN(currentLevel)) {
+          if (rawName.includes(key) && isValidLevel(currentLevel)) {
             let status = 'Normal';
             if (!isNaN(criticalThreshold) && currentLevel >= criticalThreshold) {
               status = '3rd Alarm';
@@ -103,7 +110,7 @@ async function fetchPagasaDirectly() {
     const stoNinoMatch = pageText.match(/(\d+\.\d+)\s*meters/i) || pageText.match(/River Water Level\s*(\d+\.\d+)/i);
     if (stoNinoMatch) {
       const levelNum = parseFloat(stoNinoMatch[1]);
-      if (!isNaN(levelNum)) {
+      if (isValidLevel(levelNum)) {
         scrapedStations.push({
           station_name: 'Sto. Niño Station',
           level: levelNum,
@@ -124,7 +131,7 @@ async function fetchPagasaDirectly() {
 
     for (const item of upstreamStations) {
       const match = pageText.match(item.pattern);
-      if (match && match[1] && !isNaN(parseFloat(match[1]))) {
+      if (match && match[1] && isValidLevel(parseFloat(match[1]))) {
         const levelVal = parseFloat(match[1]);
         scrapedStations.push({
           station_name: item.name,
@@ -143,7 +150,7 @@ async function fetchPagasaDirectly() {
           const numbers = text.match(/(\d+\.\d+|\d+)/g);
           if (numbers && numbers.length > 0) {
             const levelVal = parseFloat(numbers[0]);
-            if (!scrapedStations.some(s => s.station_name === mappedName)) {
+            if (isValidLevel(levelVal) && !scrapedStations.some(s => s.station_name === mappedName)) {
               scrapedStations.push({
                 station_name: mappedName,
                 level: levelVal,
@@ -158,18 +165,16 @@ async function fetchPagasaDirectly() {
 
     if (scrapedStations.length > 0) {
       console.log(`[Scraper] Successfully parsed ${scrapedStations.length} stations from BantayBaha fallback!`);
-    } else {
-      console.warn('[Scraper] BantayBaha response received but could not find matching patterns. Using live preset backup.');
-      // Fail-safe live PAGASA ground-truth preset if network blocks both HTML bodies
-      scrapedStations.push(
-        { station_name: 'Sto. Niño Station', level: 15.5, status: '1st Alarm', updated_at: new Date().toISOString() },
-        { station_name: 'Rodriguez Station', level: 29.8, status: '2nd Alarm', updated_at: new Date().toISOString() },
-        { station_name: 'San Jose Station', level: 25.0, status: 'Normal', updated_at: new Date().toISOString() },
-        { station_name: 'Nangka Station', level: 22.2, status: '3rd Alarm', updated_at: new Date().toISOString() },
-        { station_name: 'Tumana Station', level: 12.0, status: 'Normal', updated_at: new Date().toISOString() }
-      );
+      return scrapedStations;
     }
-    return scrapedStations;
+
+    // Never manufacture telemetry. If both live sources fail to yield a valid
+    // reading, return no updates so Supabase retains the last verified value
+    // and, importantly, its original updated_at timestamp. The UI can then
+    // identify the record as stale instead of presenting a fabricated value
+    // as if it were live.
+    console.warn('[Scraper] BantayBaha responded, but no valid live readings were parsed. Keeping last verified Supabase values unchanged.');
+    return [];
   } catch (bbErr) {
     console.error('[Scraper] BantayBaha fallback scrape error:', bbErr.message);
     return [];
@@ -193,7 +198,10 @@ function calculateStatus(stationName, level) {
 
 async function syncToSupabase() {
   const stations = await fetchPagasaDirectly();
-  if (stations.length === 0) return;
+  if (stations.length === 0) {
+    console.warn('[PAGASA Scraper] No verified live readings available. Skipping Supabase update; existing records and timestamps are preserved.');
+    return;
+  }
 
   console.log(`[PAGASA Scraper] Updating ${stations.length} stations in Supabase...`);
   for (const st of stations) {
