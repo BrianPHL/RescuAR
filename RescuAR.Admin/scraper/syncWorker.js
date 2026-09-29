@@ -46,14 +46,17 @@ const STATION_MAP = {
 
 async function fetchPagasaDirectly() {
   // Primary URL (PAGASA) and Fallback URL (BantayBaha Marikina)
-  const pagasaUrl = 'http://pasig-marikina-tullahanftws.pagasa.dost.gov.ph/water/map.do';
-  const bantayBahaUrl = 'https://bantaybaha.com/marikina';
+  const PAGASA_BASE_URL =
+    'https://pasig-marikina-tullahanffws.pagasa.dost.gov.ph';
+  const PAGASA_WATER_URL =
+    `${PAGASA_BASE_URL}/water/table.do`;
+  const bantayBahaUrl = 'https://bantaybaha.com/gauges/1';
 
   // 1. Try Scraping PAGASA
   try {
-    console.log('[Scraper] Scraping PAGASA live water level map...');
-    const response = await axios.get(pagasaUrl, { 
-      timeout: 8000,
+    console.log(`[Scraper] PAGASA URL: ${PAGASA_WATER_URL}`);
+    const response = await axios.get(PAGASA_WATER_URL, {
+      timeout: 15000,
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
     });
     const $ = cheerio.load(response.data);
@@ -111,9 +114,9 @@ async function fetchPagasaDirectly() {
   // 2. Fallback Scraper: BantayBaha
   try {
     console.log('[Scraper] Scraping BantayBaha live feed...');
-    const response = await axios.get(bantayBahaUrl, { 
+    const response = await axios.get(bantayBahaUrl, {
       timeout: 10000,
-      headers: { 
+      headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
       }
@@ -123,7 +126,7 @@ async function fetchPagasaDirectly() {
 
     // 2a. Parse main river water level (Sto. Niño)
     const pageText = $('body').text();
-    
+
     // Look for numbers before "meters" (e.g. 15.5 meters)
     const stoNinoMatch = pageText.match(/(\d+\.\d+)\s*meters/i) || pageText.match(/River Water Level\s*(\d+\.\d+)/i);
     if (stoNinoMatch) {
