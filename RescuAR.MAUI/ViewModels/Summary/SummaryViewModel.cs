@@ -100,14 +100,17 @@ public partial class SummaryViewModel : ObservableObject
         // Load real live summary data from Supabase
         _ = LoadLiveSummaryAsync();
 
-        // Subscribe to real-time admin advisory updates from Supabase
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+        // Subscribe to real-time admin advisory updates from Supabase (unsubscribe first to prevent listener leaks)
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+    }
+
+    private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
         {
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                await LoadLiveSummaryAsync();
-            });
-        };
+            await LoadLiveSummaryAsync();
+        });
     }
 
     [RelayCommand]
@@ -281,15 +284,16 @@ public partial class SummaryViewModel : ObservableObject
         }
     }
 
+    [ObservableProperty]
+    private int unreadNotificationsCount = 2;
+
     [RelayCommand]
     private async Task OpenNotificationsAsync()
     {
+        UnreadNotificationsCount = 0;
         if (Shell.Current != null)
         {
-            await Shell.Current.DisplayAlert(
-                "Emergency Broadcasts",
-                "Real-time notifications are active for Marikina River water levels and LGU advisories.",
-                "OK");
+            await Shell.Current.GoToAsync("NotificationsPage");
         }
     }
 
