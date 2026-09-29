@@ -34,6 +34,20 @@ public static class ARRouteGeometrySanitizer
                 nameof(maximumPoints));
         }
 
+        // Dropping an invalid interior vertex would join its two neighbors
+        // with a new, unsurveyed segment. Reject the complete window instead.
+        for (int i = 0; i < source.Count; i++)
+        {
+            if (IsFinite(source[i]) &&
+                (i == 0 || source[i].DistanceFromWindowStartMeters >=
+                    source[i - 1].DistanceFromWindowStartMeters))
+                continue;
+
+            return new GeometryPreparationResult(
+                [], source.Count, 0, source.Count, 0, 0,
+                false, false, false, 0.0f, 0.0f, 0.0f);
+        }
+
         List<ArHorizontalRoutePoint> cleaned =
             new(source.Count);
 

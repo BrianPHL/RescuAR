@@ -794,6 +794,7 @@ public sealed partial class ArCoreService : IArCoreService
             }
 
             this.graphicsContext = graphicsContext;
+            runIntent.SetSurfaceReady(false);
 
             registeredGraphicsGeneration =
                 RegisterGraphicsContextGeneration();
@@ -811,18 +812,6 @@ public sealed partial class ArCoreService : IArCoreService
 
         ActivateRenderGenerationIfReady();
 
-        bool shouldResume;
-        lock (lifecycleStateLock)
-        {
-            shouldResume =
-                activityIsResumed &&
-                (resumeAfterGraphicsRecreation ||
-                 desiredLifecycleState == ArCoreLifecycleTarget.Running);
-            if (shouldResume)
-            {
-                resumeAfterGraphicsRecreation = false;
-            }
-        }
 
         Log.Debug(
             Tag,
@@ -840,13 +829,7 @@ public sealed partial class ArCoreService : IArCoreService
             Tag,
             $"VkDevice = 0x{graphicsContext.VkDevice.Handle:X}");
 
-        if (shouldResume)
-        {
-            TrackTransition(
-                EnsureRunningAsync(),
-                "Evergine graphics context became available");
-        }
-
+        // The caller announces readiness after the swap chain is initialized.
         return registeredGraphicsGeneration;
     }
 
@@ -877,14 +860,9 @@ public sealed partial class ArCoreService : IArCoreService
                 return Task.CompletedTask;
             }
 
-            lock (lifecycleStateLock)
-            {
-                resumeAfterGraphicsRecreation =
-                    desiredLifecycleState == ArCoreLifecycleTarget.Running ||
-                    lifecycleState == ArCoreLifecycleState.Running;
-            }
 
             graphicsContext = null;
+            runIntent.SetSurfaceReady(false);
             graphicsTeardownGeneration = unavailableGraphicsGeneration;
             graphicsTeardownContext = unavailableContext;
 
@@ -915,10 +893,20 @@ public sealed partial class ArCoreService : IArCoreService
     }
 
     /// <summary>
-    /// Synchronous terminal path for AndroidSurface.Closing when that event is
-    /// raised on the Evergine graphics-owner thread. It does not depend on a
-    /// future DrawFrame callback, because the closing surface may not provide
-    /// one.
+    /// Explicit owner transfer after the handler drains and excludes all
+    /// render callbacks. Android starts a new worker for a recreated surface.
+    /// Vulkan resources remain valid on the retained device.
+    /// </summary>
+    public void RebindGraphicsDrawThread()
+    {
+        if (!ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero))
+            throw new InvalidOperationException("Camera conversion is still active.");
+        importer?.RebindDrawThread();
+    }
+
+    /// <summary>
+    /// Terminal handler-disconnect path. The caller excludes render callbacks;
+    /// no future draw is required to acknowledge the queued GPU cleanup.
     /// </summary>
     public void QuiesceGraphicsContextAtSurfaceBoundary(
         VKGraphicsContext unavailableContext,
@@ -929,7 +917,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         lock (graphicsTeardownLock)
         {
-            if (!ReferenceEquals(graphicsContext, unavailableContext) ||
+            if (!ReferenceEquals(graphicsContext ?? graphicsTeardownContext, unavailableContext) ||
                 Interlocked.Read(ref graphicsGeneration) !=
                     unavailableGraphicsGeneration)
             {
@@ -943,14 +931,9 @@ public sealed partial class ArCoreService : IArCoreService
                     "An asynchronous Vulkan teardown is already in progress.");
             }
 
-            lock (lifecycleStateLock)
-            {
-                resumeAfterGraphicsRecreation =
-                    desiredLifecycleState == ArCoreLifecycleTarget.Running ||
-                    lifecycleState == ArCoreLifecycleState.Running;
-            }
 
             graphicsContext = null;
+            runIntent.SetSurfaceReady(false);
             graphicsTeardownGeneration = unavailableGraphicsGeneration;
             graphicsTeardownContext = unavailableContext;
         }
@@ -973,18 +956,12 @@ public sealed partial class ArCoreService : IArCoreService
 
         try
         {
-            ArCoreLifecycleResult pauseResult =
-                PauseAsync(CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(12))
-                    .GetAwaiter()
-                    .GetResult();
-
-            if (!pauseResult.Success)
-            {
-                throw new InvalidOperationException(
-                    "ARCore could not be paused before owner-thread Vulkan " +
-                    $"teardown: {pauseResult.Failure.Message}");
-            }
+            // The producer cannot publish into a suspended generation. GPU
+            // cleanup only needs the excluded/drained draw callbacks, and
+            // must also acknowledge a shutdown already holding lifecycleGate.
+            RebindGraphicsDrawThread();
+            if (LifecycleSnapshot.DesiredState != ArCoreLifecycleTarget.Disposed)
+                TrackTransition(PauseForLifecycleAsync(), reason);
 
             ARCameraTextureBridge
                 .ExecuteDrawThreadTeardownAtSurfaceBoundary(
@@ -1011,7 +988,7 @@ public sealed partial class ArCoreService : IArCoreService
         try
         {
             ArCoreLifecycleResult pauseResult =
-                await PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                await PauseForLifecycleAsync(CancellationToken.None).ConfigureAwait(false);
 
             if (!pauseResult.Success)
             {
@@ -1115,7 +1092,7 @@ public sealed partial class ArCoreService : IArCoreService
             return;
         }
 
-        if (sessionPaused)
+        if (sessionPaused || !runIntent.ShouldRun)
         {
             Log.Debug(
                 Tag,
@@ -1223,6 +1200,11 @@ public sealed partial class ArCoreService : IArCoreService
         long sessionGeneration,
         CancellationToken cancellationToken)
     {
+        // Keep the worker alive until the serialized pause drains it. A brief
+        // surface loss followed by a superseding resume must not leave a
+        // retiring worker mistaken for an active camera producer.
+        if (!runIntent.ShouldRun) return null;
+
         if (sessionGeneration !=
             Interlocked.Read(
                 ref currentSessionGeneration))
@@ -3974,6 +3956,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (!token.IsValid ||
             graphicsContext is null ||
+            !runIntent.ShouldRun ||
             session is null ||
             sessionPaused)
         {

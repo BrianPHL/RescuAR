@@ -81,7 +81,7 @@ Assert-Equal "ArCoreBindingVersion" (Get-ProjectValue $project "ArCoreBindingVer
 Assert-Equal "NativeBridgeNdkVersion" (Get-ProjectValue $project "NativeBridgeNdkVersion") "28.2.13676358"
 Assert-Equal "NativeBridgeCMakeVersion" (Get-ProjectValue $project "NativeBridgeCMakeVersion") "3.22.1"
 Assert-Equal "CompatibilityProfile" (Get-ProjectValue $project "RescuArCompatibilityProfile") "net9-maui9.0.120-evergine2025.10-arcore1.47.1"
-Assert-Equal "CorrectiveBatch" (Get-ProjectValue $project "RescuArCorrectiveBatch") "ARCore-10"
+Assert-Equal "CorrectiveBatch" (Get-ProjectValue $project "RescuArCorrectiveBatch") "ARCore-11"
 
 $arCoreMetadata = @(
     $manifest.SelectNodes("/manifest/application/meta-data") |

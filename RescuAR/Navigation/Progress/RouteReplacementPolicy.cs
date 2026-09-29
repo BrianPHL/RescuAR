@@ -213,6 +213,10 @@ public sealed class RouteReplacementPolicy
                 pendingCandidate.Value.Algorithm,
                 replacementRoute.Algorithm,
                 StringComparison.Ordinal) &&
+            pendingCandidate.Value.RouteStart.DistanceTo(
+                firstPoint.Coordinate) <= 15.0 &&
+            pendingCandidate.Value.RouteEnd.DistanceTo(
+                lastPoint.Coordinate) <= 10.0 &&
             Math.Abs(
                 pendingCandidate.Value.DistanceMeters -
                 replacementRoute.TotalDistanceMeters) <=
@@ -236,6 +240,8 @@ public sealed class RouteReplacementPolicy
                 requestedDestination,
                 replacementRoute.Algorithm,
                 replacementRoute.TotalDistanceMeters,
+                firstPoint.Coordinate,
+                lastPoint.Coordinate,
                 timestampUtc);
 
         return new RouteReplacementDecision(
@@ -278,6 +284,8 @@ public sealed class RouteReplacementPolicy
         GeoCoordinate Destination,
         string Algorithm,
         double DistanceMeters,
+        GeoCoordinate RouteStart,
+        GeoCoordinate RouteEnd,
         DateTimeOffset TimestampUtc);
 }
 

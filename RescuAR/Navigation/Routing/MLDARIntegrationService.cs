@@ -339,85 +339,59 @@ public sealed class MLDARIntegrationService
                 $"applied={boundedWindowMeters:F1} m.");
         }
 
-        IReadOnlyList<LocalRoutePoint> localPoints =
-            LocalRouteProjector.ProjectWindow(
-                route,
-                startDistanceMeters,
-                reference,
-                boundedWindowMeters);
-
-        AndroidLog.Debug(
-            logTag,
-            "Local route window projected: " +
-            $"sourcePoints={route.Points.Count}, " +
-            $"windowPoints={localPoints.Count}, " +
-            $"window={boundedWindowMeters:F1} m, " +
-            $"startDistance={startDistanceMeters:F1} m, " +
-            $"reference={DiagnosticPrivacyPolicy.FormatCoordinate(reference.Latitude, reference.Longitude)}");
-
-        if (localPoints.Count <
-            2)
+        ArHorizontalRoutePoint[]? shifted = null;
+        double attemptedWindowMeters = boundedWindowMeters;
+        while (true)
         {
-            AndroidLog.Warn(
-                logTag,
-                "Local route window has fewer than two points. " +
-                "The user may be at the end of the geometry.");
+            IReadOnlyList<LocalRoutePoint> localPoints =
+                LocalRouteProjector.ProjectWindow(
+                    route, startDistanceMeters, reference,
+                    attemptedWindowMeters);
+            if (localPoints.Count < 2) break;
 
-            if (clearRouteOnFailure)
+            IReadOnlyList<ArHorizontalRoutePoint> aligned =
+                ArRouteAlignment.Rotate(localPoints, mapToArYawDegrees);
+            if (aligned.Count < 2) break;
+
+            ArHorizontalRoutePoint[] candidate = new ArHorizontalRoutePoint[aligned.Count];
+            for (int i = 0; i < aligned.Count; i++)
             {
-                ARRouteBridge.Clear();
-            }
-            else
-            {
-                AndroidLog.Warn(
-                    logTag,
-                    "Replacement route window was not publishable; retaining existing AR route.");
-            }
-
-            return false;
-        }
-
-        IReadOnlyList<ArHorizontalRoutePoint> aligned =
-            ArRouteAlignment.Rotate(
-                localPoints,
-                mapToArYawDegrees);
-
-        if (aligned.Count <
-            2)
-        {
-            if (clearRouteOnFailure)
-            {
-                ARRouteBridge.Clear();
-            }
-            else
-            {
-                AndroidLog.Warn(
-                    logTag,
-                    "Replacement route window was not publishable; retaining existing AR route.");
-            }
-
-            return false;
-        }
-
-        ArHorizontalRoutePoint[] shifted =
-            new ArHorizontalRoutePoint[
-                aligned.Count];
-
-        for (int i = 0;
-             i < aligned.Count;
-             i++)
-        {
-            ArHorizontalRoutePoint point =
-                aligned[i];
-
-            shifted[i] =
-                new ArHorizontalRoutePoint(
-                    point.X +
-                        arOriginOffsetX,
-                    point.Z +
-                        arOriginOffsetZ,
+                ArHorizontalRoutePoint point = aligned[i];
+                candidate[i] = new ArHorizontalRoutePoint(
+                    point.X + arOriginOffsetX,
+                    point.Z + arOriginOffsetZ,
                     point.DistanceFromWindowStartMeters);
+            }
+
+            var prepared = ARRouteGeometrySanitizer.Prepare(
+                candidate, ARRouteRenderer.MaximumRouteSegments + 1);
+            if (prepared.Points.Count >= 2 &&
+                prepared.Points.Count <= ARRouteRenderer.MaximumRouteSegments + 1 &&
+                prepared.FirstPointPreserved && prepared.FinalPointPreserved)
+            {
+                shifted = candidate;
+                break;
+            }
+
+            if (attemptedWindowMeters <=
+                LocalArNavigationPolicy.ApproachWindowMeters + 0.01)
+                break;
+            attemptedWindowMeters = Math.Max(
+                LocalArNavigationPolicy.ApproachWindowMeters,
+                attemptedWindowMeters / 2.0);
         }
+
+        if (shifted is null)
+        {
+            AndroidLog.Warn(logTag,
+                "No source-preserving route window fits the AR renderer; use the 2D map.");
+            if (clearRouteOnFailure) ARRouteBridge.Clear();
+            return false;
+        }
+
+        if (attemptedWindowMeters < boundedWindowMeters)
+            AndroidLog.Warn(logTag,
+                $"Dense mapped route shortened to {attemptedWindowMeters:F1} m to preserve every corner.");
 
         AndroidLog.Debug(
             logTag,

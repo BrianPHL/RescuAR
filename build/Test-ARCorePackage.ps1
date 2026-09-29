@@ -77,7 +77,7 @@ if ($observedAbis.Count -ne 1 -or $observedAbis[0] -ne $ExpectedAbi) {
 if ($buildProfile -notmatch "(?m)^diagnosticBuild=$([regex]::Escape($ExpectedDiagnosticBuild))\r?$") {
     throw "Packaged diagnostic-build profile does not match expected value '$ExpectedDiagnosticBuild'."
 }
-if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-10\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
+if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-11\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
 if ($buildProfile -notmatch '(?m)^validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1\r?$') { throw "Packaged validation profile is missing or incorrect." }
 
 if ($extension -eq '.apk') {
@@ -97,7 +97,8 @@ Assert-ManifestElement $manifest "uses-feature" "android.hardware.camera" "andro
 Assert-ManifestElement $manifest "uses-feature" "android.hardware.camera.ar" "android:required=[`"']true[`"']"
 Assert-ManifestElement $manifest "uses-feature" "android.hardware.vulkan.version" "android:required=[`"']true[`"']"
 Assert-ManifestElement $manifest "uses-feature" "android.hardware.vulkan.level" "android:required=[`"']true[`"']"
-if ($manifest -notmatch '<uses-feature(?=[^>]*android:name=["'']android\.hardware\.vulkan\.version["''])(?=[^>]*android:version=["''](?:0x00400003|4194307)["''])[^>]*>') { throw "Vulkan 1.0 declaration mismatch." }
+# Android's package inspector removes hexadecimal zero padding (0x400003).
+if ($manifest -notmatch '<uses-feature(?=[^>]*android:name=["'']android\.hardware\.vulkan\.version["''])(?=[^>]*android:version=["''](?:(?i:0x0*400003)|4194307)["''])[^>]*>') { throw "Vulkan 1.0 declaration mismatch." }
 if ($manifest -notmatch '<uses-feature(?=[^>]*android:name=["'']android\.hardware\.vulkan\.level["''])(?=[^>]*android:version=["''](?:0x0+|0)["''])[^>]*>') { throw "Vulkan level declaration mismatch." }
 
 $buildProps = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) "Directory.Build.props") -Raw

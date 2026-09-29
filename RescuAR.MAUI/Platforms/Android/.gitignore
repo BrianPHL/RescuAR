@@ -1,2 +1,3 @@
-lib/arm64-v8a/
+lib/arm64-v8a/*
+!lib/arm64-v8a/libnative_bridge.so
 Native/build/arm64-v8a/
