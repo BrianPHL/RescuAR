@@ -38,6 +38,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
 
     private readonly RoadGraph graph;
     private readonly Dictionary<int, int> componentByNode;
+    private readonly Dictionary<int, int> componentSizes;
 
     public string AlgorithmName => "AStar";
 
@@ -45,6 +46,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
     {
         this.graph = graph ?? throw new ArgumentNullException(nameof(graph));
         componentByNode = BuildComponents(graph);
+        componentSizes = componentByNode.Values.GroupBy(id => id)
+            .ToDictionary(group => group.Key, group => group.Count());
     }
 
     public Task<RouteResult?> FindRouteAsync(
@@ -522,16 +525,29 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         return projection.IsAvailable ? projection.SnappedCoordinate : null;
     }
 
-    public readonly record struct RoadApproachTarget(GeoCoordinate Coordinate, bool ConnectsToDestination);
+    public readonly record struct RoadApproachTarget(GeoCoordinate Coordinate, bool ConnectsToDestination)
+    {
+        public int RoadComponentNodeCount { get; init; }
+        public int DestinationComponentCount { get; init; }
+    }
 
     /// <summary>Road access can be shown before facility connectivity is known.</summary>
     public RoadApproachTarget? FindRoadApproachTarget(GeoCoordinate origin, GeoCoordinate destination)
     {
-        GeoCoordinate? connected = FindApproachCoordinate(origin, destination);
-        if (connected.HasValue) return new(connected.Value, true);
         if (!origin.IsValid || !destination.IsValid) return null;
-        var nearest = FindNearestEdgeProjection(origin, null, 50.0);
-        return nearest.IsAvailable ? new(nearest.SnappedCoordinate, false) : null;
+        var destinations = graph.Nodes.Values
+            .Where(node => node.Coordinate.DistanceTo(destination) <= MaximumDestinationSnapMeters &&
+                !graph.AccessCrossesMajorRoad(node.Coordinate, destination))
+            .Select(node => componentByNode[node.Id]).ToHashSet();
+        var projection = FindNearestEdgeProjection(origin, destinations, 50.0);
+        bool connected = projection.IsAvailable;
+        if (!connected) projection = FindNearestEdgeProjection(origin, null, 50.0);
+        if (!projection.IsAvailable || projection.Edge is null) return null;
+        return new(projection.SnappedCoordinate, connected)
+        {
+            RoadComponentNodeCount = componentSizes[componentByNode[projection.Edge.From.Id]],
+            DestinationComponentCount = destinations.Count
+        };
     }
 
     private EdgeProjection FindNearestEdgeProjection(

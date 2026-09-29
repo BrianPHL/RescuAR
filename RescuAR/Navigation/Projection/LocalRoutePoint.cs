@@ -9,7 +9,7 @@ namespace RescuAR.Navigation.Projection;
 ///   +X-like navigation direction toward geographic east.
 ///
 /// NorthMeters:
-///   +Z-like navigation direction toward geographic north.
+///   Positive geographic north; projected to -Z at zero AR alignment yaw.
 ///
 /// This type deliberately does not depend on Evergine. A separate AR alignment
 /// step can rotate East/North into the active ARCore world frame.

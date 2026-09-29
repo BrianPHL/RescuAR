@@ -28,6 +28,7 @@ public partial class CameraPage
         null!;
 
     private Button developerRoadLinesButton = null!;
+    private double? roadDiagnosticAccuracyMeters;
 
     private const double RoadLineDiagnosticRadiusMeters = 40.0;
 
@@ -130,6 +131,7 @@ public partial class CameraPage
     {
         roadDiagnosticCancellation?.Cancel();
         ARRouteRenderer.HideRoadDiagnostics();
+        roadDiagnosticAccuracyMeters = null;
     }
 
     private async void OnDeveloperRoadLinesClicked(object? sender, EventArgs e)
@@ -188,11 +190,19 @@ public partial class CameraPage
             var frame = ARCameraPoseBridge.CurrentFrame;
             if (!CanInspectRoads(session) || !frame.IsFresh || !frame.IsTracking ||
                 !frame.Pose.IsTracking || !frame.Anchor.IsAvailable ||
+                heading.Value.SessionGeneration != frame.Generation.SessionGeneration ||
                 frame.Anchor.ReferenceGeneration <= 0)
             {
                 await DisplayAlert("GeoJSON roads", "Wait for camera tracking and a ground reference.", "OK");
                 return;
             }
+            roadDiagnosticAccuracyMeters = reading.AccuracyMeters;
+            RescuAR.Diagnostics.AndroidLog.Info("RescuAR-Routing",
+                $"ROAD DIAGNOSTICS PLACEMENT: session={frame.Generation.SessionGeneration}, " +
+                $"gpsAccuracy={reading.AccuracyMeters:F1}m, " +
+                $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds):F1}s, " +
+                $"headingRepeatability={heading.Value.MaxSampleDeviationDegrees:F2}deg, " +
+                $"segments={lines.Count}, radius={RoadLineDiagnosticRadiusMeters:0}m, basis=EUS.");
             ARRouteRenderer.ShowRoadDiagnostics(lines, frame.Pose.PositionX, frame.Pose.PositionZ,
                 frame.Anchor.ReferenceGeneration, frame.Generation.SessionGeneration);
             developerRoadLinesButton.Text = "DEV: Hide GeoJSON roads";
@@ -203,7 +213,8 @@ public partial class CameraPage
             await DisplayAlert("GeoJSON roads",
                 $"Showing all {lines.Count} raw line segments within 40 m. " +
                 $"GPS accuracy: ±{reading.AccuracyMeters:0} m. " +
-                "Cyan lines are map data, not directions. GPS and heading errors can shift this overlay. " +
+                "Cyan lines are an estimated map overlay. A steady compass can still be wrong. " +
+                "GPS and heading errors can shift the lines away from the real road. " +
                 "Tap the same button to restore navigation.", "OK");
         }
         catch (OperationCanceledException) { }

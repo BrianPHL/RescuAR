@@ -21,6 +21,7 @@
 |---|---|
 | Primary development phone | Build, install, native self-test, camera passthrough, Depth, route, flood, and repeated Camera-page entry/exit. |
 | Samsung SM-A156E | Repeat the full test with Depth off and Depth automatic; verify tracking, native loading, JNI warnings, and teardown. |
+| Samsung SM-A546E / Android API 34 | Plane-only default for the field-confirmed native depth abort; repeat lifecycle, approach arrows, road diagnostics, and flood simulation. See [batch 14 field validation](ARCORE_BATCH_14_FIELD_VALIDATION.md). |
 | Additional ARM64 ARCore/Vulkan device | Repeat the full test on a different GPU/vendor when available. |
 
 ## Finding 38 decision

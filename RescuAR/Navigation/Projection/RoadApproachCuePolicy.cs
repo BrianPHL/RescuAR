@@ -18,9 +18,8 @@ public static class RoadApproachCuePolicy
         double east = (target.Longitude - origin.Longitude) * Math.PI / 180 * radius *
             Math.Cos(origin.Latitude * Math.PI / 180);
         double north = (target.Latitude - origin.Latitude) * Math.PI / 180 * radius;
-        double yaw = mapToArYawDegrees * Math.PI / 180;
-        direction = new((float)(east * Math.Cos(yaw) + north * Math.Sin(yaw)),
-            (float)(-east * Math.Sin(yaw) + north * Math.Cos(yaw)));
+        var projected = MapToArCoordinates.Rotate(east, north, mapToArYawDegrees);
+        direction = new((float)projected.X, (float)projected.Z);
         float length = direction.LengthSquared();
         if (!float.IsFinite(length) || length < 0.0001f) return false;
         direction = Vector2.Normalize(direction);

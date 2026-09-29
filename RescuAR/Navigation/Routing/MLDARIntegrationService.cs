@@ -294,9 +294,9 @@ public sealed class MLDARIntegrationService
             Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude);
         double north = (routePoint.Latitude - user.Latitude) *
             Math.PI / 180.0 * 6371008.8;
-        double yaw = yawDegrees * Math.PI / 180.0;
-        arOffsetX += (float)(east * Math.Cos(yaw) + north * Math.Sin(yaw));
-        arOffsetZ += (float)(-east * Math.Sin(yaw) + north * Math.Cos(yaw));
+        var offset = MapToArCoordinates.Rotate(east, north, yawDegrees);
+        arOffsetX += (float)offset.X;
+        arOffsetZ += (float)offset.Z;
         return LocalArNavigationPolicy.IsRouteOriginOffsetAcceptable(
             arOffsetX, arOffsetZ, out _);
     }

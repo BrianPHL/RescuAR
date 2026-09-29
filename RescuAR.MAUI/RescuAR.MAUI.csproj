@@ -63,7 +63,7 @@
 		<NativeBridgeNdkVersion>28.2.13676358</NativeBridgeNdkVersion>
 		<NativeBridgeCMakeVersion>3.22.1</NativeBridgeCMakeVersion>
 		<NativeBridgeAndroidApi>26</NativeBridgeAndroidApi>
-		<RescuArCorrectiveBatch>ARCore-13</RescuArCorrectiveBatch>
+		<RescuArCorrectiveBatch>ARCore-14</RescuArCorrectiveBatch>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == ''">unavailable</RescuArSourceRevision>
 
