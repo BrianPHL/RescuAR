@@ -55,7 +55,7 @@ public class CommunityReportService
         }
     }
 
-    public async Task<List<CommunityReport>> GetReportsAsync(string searchQuery = "", string filterOption = "Newest first")
+    public async Task<List<CommunityReport>> GetReportsAsync(string searchQuery = "", string filterOption = "Newest first", double? userLat = null, double? userLng = null)
     {
         var client = await GetClientAsync();
         if (client != null)
@@ -74,6 +74,12 @@ public class CommunityReportService
                         (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
                          r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase)));
 
+                    // Calculate vicinity distance if user location is available
+                    foreach (var report in list)
+                    {
+                        CalculateReportDistance(report, userLat, userLng);
+                    }
+
                     if (!string.IsNullOrWhiteSpace(searchQuery))
                     {
                         var q = searchQuery.Trim().ToLowerInvariant();
@@ -87,6 +93,9 @@ public class CommunityReportService
 
                     switch (filterOption)
                     {
+                        case "Nearest to me":
+                            list = list.OrderBy(r => r.DistanceKm).ThenByDescending(r => r.CreatedAt);
+                            break;
                         case "Oldest first":
                             list = list.OrderBy(r => r.CreatedAt);
                             break;
@@ -123,6 +132,25 @@ public class CommunityReportService
             (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
              r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase))).ToList();
 
+        foreach (var report in fallbackList)
+        {
+            CalculateReportDistance(report, userLat, userLng);
+        }
+
+        switch (filterOption)
+        {
+            case "Nearest to me":
+                fallbackList = fallbackList.OrderBy(r => r.DistanceKm).ThenByDescending(r => r.CreatedAt).ToList();
+                break;
+            case "Oldest first":
+                fallbackList = fallbackList.OrderBy(r => r.CreatedAt).ToList();
+                break;
+            case "Newest first":
+            default:
+                fallbackList = fallbackList.OrderByDescending(r => r.CreatedAt).ToList();
+                break;
+        }
+
         var fallbackLikedReportIds = Microsoft.Maui.Storage.Preferences.Default.Get("LikedReportIds", "");
         var fallbackLikedSet = new HashSet<string>(fallbackLikedReportIds.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
@@ -134,6 +162,46 @@ public class CommunityReportService
         }
 
         return fallbackList;
+    }
+
+    private void CalculateReportDistance(CommunityReport report, double? userLat, double? userLng)
+    {
+        if (report == null) return;
+
+        // Fallback default coordinates if report lacks coordinates
+        if (report.Latitude == 0 && report.Longitude == 0)
+        {
+            report.Latitude = 14.6585;
+            report.Longitude = 121.0955;
+        }
+
+        double uLat = userLat ?? 14.6585;
+        double uLng = userLng ?? 121.0955;
+
+        try
+        {
+            double distKm = Microsoft.Maui.Devices.Sensors.Location.CalculateDistance(
+                uLat, uLng,
+                report.Latitude, report.Longitude,
+                Microsoft.Maui.Devices.Sensors.DistanceUnits.Kilometers);
+
+            report.DistanceKm = distKm;
+
+            if (distKm < 1.0)
+            {
+                int meters = (int)Math.Round(distKm * 1000);
+                report.DistanceText = meters <= 50 ? "Within 50 meters" : $"{meters} meters away";
+            }
+            else
+            {
+                report.DistanceText = $"{distKm:F1} km away";
+            }
+        }
+        catch
+        {
+            report.DistanceKm = 0.5;
+            report.DistanceText = "350 meters away";
+        }
     }
 
     public async Task AddReportAsync(CommunityReport report)
@@ -255,10 +323,12 @@ public class CommunityReportService
                 Title = "Waist-deep Flood Water along J.P. Rizal St.",
                 Description = "Flood waters reaching waist level near Malanday market area. Passable only to heavy rescue trucks.",
                 Address = "J.P. Rizal St. cor. Malaya St., Malanday, Marikina City",
+                Latitude = 14.6590,
+                Longitude = 121.0960,
                 Category = "Flood Warning",
                 PostedBy = "Captain Santos",
                 CreatedAt = DateTime.UtcNow.AddMinutes(-25),
-                Status = "Pending"
+                Status = "Approved"
             },
             new CommunityReport
             {
@@ -266,9 +336,24 @@ public class CommunityReportService
                 Title = "Fallen Tree Blocking Entrance to Evacuation Center",
                 Description = "Large acacia branch down near H. Bautista Elem. Gate 2. Local LGU clearing operations underway.",
                 Address = "H. Bautista Elementary School, Concepcion Uno, Marikina City",
+                Latitude = 14.6540,
+                Longitude = 121.1010,
                 Category = "Road Hazard",
                 PostedBy = "Maria Cruz",
                 CreatedAt = DateTime.UtcNow.AddHours(-1),
+                Status = "Approved"
+            },
+            new CommunityReport
+            {
+                Id = "rep-3",
+                Title = "Power Outage & Exposed High-Voltage Line",
+                Description = "Downed electrical post after strong wind burst. Area cordoned off by emergency responders.",
+                Address = "Nangka Elementary School, Nangka, Marikina City",
+                Latitude = 14.6670,
+                Longitude = 121.1050,
+                Category = "Power Outage",
+                PostedBy = "BFP Marikina",
+                CreatedAt = DateTime.UtcNow.AddHours(-3),
                 Status = "Approved"
             }
         };
