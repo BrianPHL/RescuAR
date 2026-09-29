@@ -75,8 +75,10 @@ public static class NavigationDataBootstrap
     {
         lock (sync)
         {
+            // Parsing 7,198 road features and building their graph must not
+            // resume on the MAUI UI thread after an awaited stream read.
             validationTask ??=
-                ValidateWithDiagnosticsAsync();
+                Task.Run(ValidateWithDiagnosticsAsync);
 
             return validationTask;
         }

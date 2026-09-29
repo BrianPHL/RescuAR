@@ -94,7 +94,8 @@ public sealed class SafeZoneConfirmationService
         double arrivalRadiusMeters,
         double? accuracyMeters,
         double remainingRouteMeters,
-        DateTimeOffset observedAt)
+        DateTimeOffset observedAt,
+        bool majorRoadBarrier = false)
     {
         double effectiveArrivalRadiusMeters =
             NormalizeArrivalRadius(
@@ -153,6 +154,7 @@ public sealed class SafeZoneConfirmationService
         // confirming a facility on the opposite side of that boundary.
         bool withinArrivalRadius =
             accuracyIsAcceptable &&
+            !majorRoadBarrier &&
             double.IsFinite(distanceToDestinationMeters) &&
             distanceToDestinationMeters + accuracyMeters!.Value <=
                 effectiveArrivalRadiusMeters;
@@ -228,7 +230,7 @@ public sealed class SafeZoneConfirmationService
             distanceToDestinationMeters >
                 effectiveCandidateResetDistanceMeters;
 
-        if (clearlyOutsideDestination)
+        if (clearlyOutsideDestination || majorRoadBarrier)
         {
             confirmationCount =
                 0;
@@ -238,7 +240,9 @@ public sealed class SafeZoneConfirmationService
         }
 
         string reason =
-            !accuracyIsFinite
+            majorRoadBarrier
+                ? "A mapped major road separates this position from the evacuation center."
+                : !accuracyIsFinite
                 ? "GPS accuracy is unavailable."
                 : !accuracyIsAcceptable
                     ? $"GPS accuracy exceeds {MaximumAcceptedAccuracyMeters:F0} m."

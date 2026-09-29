@@ -127,14 +127,10 @@ public static class ARGuidanceConfidencePolicy
         if (verifiedRecovery)
         {
             return new GuidanceConfidenceSnapshot(
-                headingTrusted
-                    ? GuidanceConfidenceState.Recovery
-                    : GuidanceConfidenceState.Degraded,
+                GuidanceConfidenceState.Recovery,
                 score,
                 true,
-                headingTrusted
-                    ? "Returning to the route — follow the short cyan arrow"
-                    : "Direction accuracy reduced — confirm the short cyan arrow with the 2D map");
+                "Returning to the route — follow the short cyan arrow");
         }
 
         bool fullGuidance =
@@ -149,14 +145,10 @@ public static class ARGuidanceConfidencePolicy
         if (fullGuidance)
         {
             return new GuidanceConfidenceSnapshot(
-                headingTrusted
-                    ? GuidanceConfidenceState.Full
-                    : GuidanceConfidenceState.Degraded,
+                GuidanceConfidenceState.Full,
                 score,
                 true,
-                headingTrusted
-                    ? "AR guidance readiness: Full"
-                    : "Direction accuracy reduced — confirm the cyan route with the 2D map");
+                "AR guidance readiness: Full");
         }
 
         bool degradedGuidance =

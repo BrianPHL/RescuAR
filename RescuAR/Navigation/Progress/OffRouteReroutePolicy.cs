@@ -7,7 +7,7 @@ namespace RescuAR.Navigation.Progress;
 ///
 /// RouteProgressTracker remains responsible for geometric route matching.
 /// This policy only decides when several trustworthy off-route matches are
-/// strong enough to justify another Railway MLD request.
+/// strong enough to justify another route request.
 /// </summary>
 public sealed class OffRouteReroutePolicy
 {
@@ -21,16 +21,22 @@ public sealed class OffRouteReroutePolicy
         TimeSpan.FromSeconds(
             45);
 
+    private static readonly TimeSpan FailedAttemptCooldown =
+        TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan ConfirmationRetryCooldown =
+        TimeSpan.FromSeconds(3);
+
     private int consecutiveOffRouteSamples;
 
-    private DateTimeOffset? lastRerouteUtc;
+    private DateTimeOffset? nextRerouteAllowedUtc;
 
     public void Reset()
     {
         consecutiveOffRouteSamples =
             0;
 
-        lastRerouteUtc =
+        nextRerouteAllowedUtc =
             null;
     }
 
@@ -46,8 +52,17 @@ public sealed class OffRouteReroutePolicy
         consecutiveOffRouteSamples =
             0;
 
-        lastRerouteUtc =
-            timestampUtc;
+        nextRerouteAllowedUtc = timestampUtc + RerouteCooldown;
+    }
+
+    public void MarkRerouteFailed(DateTimeOffset timestampUtc,
+        bool awaitingConfirmation = false)
+    {
+        consecutiveOffRouteSamples = 0;
+        nextRerouteAllowedUtc = timestampUtc +
+            (awaitingConfirmation
+                ? ConfirmationRetryCooldown
+                : FailedAttemptCooldown);
     }
 
     public OffRouteDecision Evaluate(
@@ -142,21 +157,14 @@ public sealed class OffRouteReroutePolicy
                     : "GPS match is not off-route");
         }
 
-        if (lastRerouteUtc.HasValue &&
-            timestampUtc -
-                lastRerouteUtc.Value <
-                RerouteCooldown)
+        if (nextRerouteAllowedUtc.HasValue &&
+            timestampUtc < nextRerouteAllowedUtc.Value)
         {
             consecutiveOffRouteSamples =
                 0;
 
-            double remainingSeconds =
-                Math.Max(
-                    0.0,
-                    (RerouteCooldown -
-                     (timestampUtc -
-                      lastRerouteUtc.Value))
-                        .TotalSeconds);
+            double remainingSeconds = Math.Max(0.0,
+                (nextRerouteAllowedUtc.Value - timestampUtc).TotalSeconds);
 
             return new OffRouteDecision(
                 true,
@@ -184,8 +192,7 @@ public sealed class OffRouteReroutePolicy
              * Mark the trigger time immediately so another GPS poll cannot
              * start a duplicate reroute while the network request is active.
              */
-            lastRerouteUtc =
-                timestampUtc;
+            nextRerouteAllowedUtc = timestampUtc + FailedAttemptCooldown;
 
             consecutiveOffRouteSamples =
                 0;

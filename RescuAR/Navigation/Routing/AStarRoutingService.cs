@@ -143,6 +143,26 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
             return null;
         }
 
+        // A nearby dead-end fragment must not win the origin snap when a
+        // second, comparably nearby pedestrian edge reaches the facility.
+        // Compute viable destination components before selecting that edge.
+        var facilityAccess = graph.Nodes.Values
+            .Select(node => (Node: node,
+                Distance: node.Coordinate.DistanceTo(destination)))
+            .Where(item => item.Distance <= MaximumDestinationSnapMeters &&
+                !graph.AccessCrossesMajorRoad(item.Node.Coordinate, destination))
+            .ToArray();
+        if (facilityAccess.Length == 0)
+        {
+            AndroidLog.Warn(LogTag,
+                "No pedestrian graph endpoint within 50 m of the facility without a major-road barrier.");
+            return null;
+        }
+
+        HashSet<int> destinationComponents = facilityAccess
+            .Select(item => componentByNode[item.Node.Id])
+            .ToHashSet();
+
         Dictionary<int, double> startSeedCosts =
             new();
 
@@ -157,7 +177,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
              */
             RoadNode? startNode =
                 FindNearestNode(
-                    origin);
+                    origin, destinationComponents);
 
             double originSnapMeters =
                 startNode?.Coordinate.DistanceTo(origin) ??
@@ -189,7 +209,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         {
             EdgeProjection startProjection =
                 FindNearestEdgeProjection(
-                    origin);
+                    origin, destinationComponents);
 
             if (!startProjection.IsAvailable ||
                 startProjection.Edge is null ||
@@ -243,12 +263,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         // Search only access points on the origin's connected network, and
         // reject an unmapped major-road crossing in the gap to the pin.
         int originComponent = componentByNode[startSeedCosts.Keys.First()];
-        var accessibleTargets = graph.Nodes.Values
-            .Where(node => componentByNode[node.Id] == originComponent)
-            .Select(node => (Node: node,
-                Distance: node.Coordinate.DistanceTo(destination)))
-            .Where(item => item.Distance <= MaximumDestinationSnapMeters &&
-                !graph.AccessCrossesMajorRoad(item.Node.Coordinate, destination))
+        var accessibleTargets = facilityAccess
+            .Where(item => componentByNode[item.Node.Id] == originComponent)
             .OrderBy(item => item.Distance)
             .ToArray();
         if (accessibleTargets.Length == 0)
@@ -447,7 +463,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         return false;
     }
 
-    private RoadNode? FindNearestNode(GeoCoordinate point)
+    private RoadNode? FindNearestNode(GeoCoordinate point,
+        IReadOnlySet<int> destinationComponents)
     {
         RoadNode? nearest = null;
         double minDistance = double.MaxValue;
@@ -456,6 +473,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         {
             double dist = node.Coordinate.DistanceTo(point);
             if (dist < minDistance && dist <= MaximumOriginSnapMeters &&
+                destinationComponents.Contains(componentByNode[node.Id]) &&
                 !graph.AccessCrossesMajorRoad(point, node.Coordinate))
             {
                 minDistance = dist;
@@ -476,8 +494,9 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
             if (components.ContainsKey(node.Id)) continue;
             components[node.Id] = ++nextComponent;
             pending.Enqueue(node);
-            while (pending.TryDequeue(out RoadNode current))
+            while (pending.TryDequeue(out RoadNode? current))
             {
+                if (current is null) continue;
                 foreach (RoadEdge edge in current.Edges)
                 {
                     if (!components.TryAdd(edge.To.Id, nextComponent)) continue;
@@ -489,7 +508,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
     }
 
     private EdgeProjection FindNearestEdgeProjection(
-        GeoCoordinate point)
+        GeoCoordinate point, IReadOnlySet<int> destinationComponents)
     {
         EdgeProjection nearest =
             EdgeProjection.Unavailable;
@@ -497,6 +516,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         foreach (RoadEdge edge in
                  graph.Edges)
         {
+            if (!destinationComponents.Contains(componentByNode[edge.From.Id]))
+                continue;
             EdgeProjection candidate =
                 ProjectOntoEdge(
                     point,
