@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { calculateAlertStatus } from '../utils/waterLevelUtils';
+import { getTelemetryFreshness } from '../utils/telemetryFreshness';
 import {  
   RefreshCw, 
   Droplet, 
@@ -22,15 +23,9 @@ import {
   Tooltip 
 } from 'recharts';
 
-// Default initial station data matching P.R.E.P Marikina telemetry node format
-const INITIAL_STATIONS = [
-  { id: 1, name: 'Rodriguez Station', level: 28.2, status: 'Normal' },
-  { id: 2, name: 'San Jose Station', level: 22.3, status: 'Normal' },
-  { id: 3, name: 'Batasan Station', level: 14.6, status: 'Normal' },
-  { id: 4, name: 'Nangka Station', level: 22.2, status: '3rd Alarm' },
-  { id: 5, name: 'Tumana Station', level: 12.0, status: 'Normal' },
-  { id: 6, name: 'Sto. Niño Station', level: 12.1, status: 'Normal' }
-];
+// Do not seed the frontend with synthetic telemetry. Until Supabase returns a verified reading,
+// the monitoring view remains explicitly unavailable.
+const INITIAL_STATIONS = [];
 
 export default function MonitoringStations() {
   const [stations, setStations] = useState(INITIAL_STATIONS);
@@ -38,6 +33,7 @@ export default function MonitoringStations() {
   const [lastUpdated, setLastUpdated] = useState('Loading live data...');
   const [showSummary, setShowSummary] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+  const [freshnessNow, setFreshnessNow] = useState(Date.now());
 
   // Fetch stations from Supabase table 'monitoring_stations'
   const fetchStationsFromSupabase = async () => {
@@ -53,14 +49,19 @@ export default function MonitoringStations() {
       } else if (data && data.length > 0) {
         // Calculate status dynamically using calculateAlertStatus
         const formattedStations = data.map((item, idx) => {
-          const level = Number(item.level);
-          const alertInfo = calculateAlertStatus(level, item.station_name);
+          const numericLevel = Number(item.level);
+          const hasValidLevel = item.level !== null && Number.isFinite(numericLevel);
+          const alertInfo = hasValidLevel
+            ? calculateAlertStatus(numericLevel, item.station_name)
+            : { status: 'Unavailable', label: 'Unavailable', color: '#b91c1c' };
+
           return {
             id: item.id || idx + 1,
             name: item.station_name,
-            level: level,
-            status: alertInfo.status, // Calculated dynamically!
-            alertInfo: alertInfo
+            level: hasValidLevel ? numericLevel : null,
+            status: alertInfo.status,
+            alertInfo,
+            updated_at: item.updated_at
           };
         });
         setStations(formattedStations);
@@ -72,10 +73,17 @@ export default function MonitoringStations() {
           return itemTime > latest ? itemTime : latest;
         }, 0);
 
-        const dateObj = latestTimestamp > 0 ? new Date(latestTimestamp) : new Date();
-        const dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        setLastUpdated(`${dateStr} • ${timeStr}`);
+        if (latestTimestamp > 0) {
+          const dateObj = new Date(latestTimestamp);
+          const dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+          const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          setLastUpdated(`${dateStr} • ${timeStr}`);
+        } else {
+          setLastUpdated('No verified timestamp');
+        }
+      } else {
+        setStations([]);
+        setLastUpdated('No verified telemetry available');
       }
     } catch (err) {
       console.error('Unexpected error fetching stations:', err);
@@ -87,6 +95,10 @@ export default function MonitoringStations() {
   useEffect(() => {
     fetchStationsFromSupabase();
 
+    const freshnessTimer = setInterval(() => {
+      setFreshnessNow(Date.now());
+    }, 60 * 1000);
+
     // Subscribe to real-time changes on the 'monitoring_stations' table
     const channel = supabase
       .channel('monitoring-stations-db-changes')
@@ -96,6 +108,7 @@ export default function MonitoringStations() {
       .subscribe();
 
     return () => {
+      clearInterval(freshnessTimer);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -156,8 +169,27 @@ export default function MonitoringStations() {
   };
 
   // Sort bar chart data by level descending as shown in the screenshot
-  const barChartData = [...stations].sort((a, b) => b.level - a.level);
+  const barChartData = [...stations]
+    .filter(station => station.level !== null && Number.isFinite(Number(station.level)))
+    .sort((a, b) => Number(b.level) - Number(a.level));
   const sortedStations = getSortedStations();
+  const freshnessSummary = stations.map(station => getTelemetryFreshness(station.updated_at, freshnessNow));
+  const unavailableCount = freshnessSummary.filter(item => item.status === 'unavailable').length;
+  const staleCount = freshnessSummary.filter(item => item.status === 'stale').length;
+  const alarmCount = stations.filter(station => station.alertInfo && station.alertInfo.status !== 'Normal' && station.alertInfo.status !== 'Unavailable').length;
+
+  const getHydrologicalSummary = () => {
+    if (stations.length === 0 || unavailableCount === stations.length) {
+      return 'Hydrological summary unavailable because there is no sufficiently recent verified telemetry. Refresh the feed or wait for the next successful source update.';
+    }
+    if (unavailableCount > 0 || staleCount > 0) {
+      return `Current conditions cannot be fully confirmed: ${staleCount} stale and ${unavailableCount} unavailable station reading${staleCount + unavailableCount === 1 ? '' : 's'}. Values shown are last verified readings and must not be treated as fully live.`;
+    }
+    if (alarmCount > 0) {
+      return `Fresh telemetry is available, and ${alarmCount} station${alarmCount === 1 ? '' : 's'} currently meet a warning or alarm threshold. Review the station statuses before issuing operational guidance.`;
+    }
+    return 'Fresh telemetry is available across the monitoring network. Current readings are within their configured normal thresholds.';
+  };
 
   return (
     <div className="main-view">
@@ -181,14 +213,19 @@ export default function MonitoringStations() {
       {(() => {
         const getStationData = (namePart) => {
           const found = stations.find(s => s.name.toLowerCase().includes(namePart.toLowerCase()));
-          const stationObj = found || { level: 0, status: 'Normal', name: namePart };
-          const alertInfo = calculateAlertStatus(stationObj.level, stationObj.name);
-          return { ...stationObj, alertInfo };
+          const stationObj = found || { level: null, status: 'Unavailable', name: namePart, updated_at: null };
+          const numericLevel = Number(stationObj.level);
+          const hasLevel = stationObj.level !== null && Number.isFinite(numericLevel);
+          const alertInfo = hasLevel ? calculateAlertStatus(numericLevel, stationObj.name) : calculateAlertStatus(0, stationObj.name);
+          const freshness = getTelemetryFreshness(stationObj.updated_at, freshnessNow);
+          return { ...stationObj, level: hasLevel ? numericLevel : null, alertInfo, freshness };
         };
 
         const renderPointCard = (title, stationData, defaultIcon) => {
-          const { level, alertInfo } = stationData;
-          const is3rdAlarm = alertInfo.status === '3rd Alarm' || level >= 18;
+          const { level, alertInfo, freshness = getTelemetryFreshness(stationData.updated_at, freshnessNow) } = stationData;
+          const hasLevel = level !== null && Number.isFinite(Number(level));
+          const numericLevel = hasLevel ? Number(level) : 0;
+          const is3rdAlarm = alertInfo.status === '3rd Alarm' || numericLevel >= 18;
           const is2ndAlarm = alertInfo.status === '2nd Alarm';
           const is1stAlarm = alertInfo.status === '1st Alarm';
 
@@ -199,7 +236,13 @@ export default function MonitoringStations() {
           let badgeStyle = { backgroundColor: '#dcfce7', color: '#15803d' };
           let IconComponent = defaultIcon;
 
-          if (is3rdAlarm) {
+          if (!hasLevel || freshness.status === 'unavailable') {
+            cardStyle = { backgroundColor: '#f8fafc' };
+            badgeStyle = { backgroundColor: '#fee2e2', color: '#b91c1c', fontWeight: '700' };
+            iconBg = '#f1f5f9';
+            iconColor = '#64748b';
+            IconComponent = AlertTriangle;
+          } else if (is3rdAlarm) {
             cardStyle = {
               backgroundColor: '#fef2f2',
               boxShadow: '0 4px 12px rgba(239, 68, 68, 0.12)',
@@ -234,15 +277,18 @@ export default function MonitoringStations() {
                   <span className="point-card-title">{title}</span>
                 </div>
                 <span className="point-card-value" style={{ color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>
-                  {level.toFixed(2)} m
+                  {hasLevel ? `${numericLevel.toFixed(2)} m` : '--'}
                 </span>
                 <div className="point-card-badge-row">
                   <span className="status-badge-pill" style={badgeStyle}>
-                    {is3rdAlarm ? '3rd Alarm' : alertInfo.label}
+                    {!hasLevel ? 'Unavailable' : (is3rdAlarm ? '3rd Alarm' : alertInfo.label)}
                   </span>
-                  <span className="live-feed-text">
-                    <span className="live-feed-dot" style={{ backgroundColor: is3rdAlarm ? '#dc2626' : '#10b981' }}></span>
-                    Live Feed
+                  <span
+                    className={`telemetry-state-badge compact ${freshness.status}`}
+                    title={freshness.description}
+                  >
+                    <span className={`telemetry-state-dot ${freshness.status}`}></span>
+                    {freshness.label} • {freshness.ageText}
                   </span>
                 </div>
               </div>
@@ -362,7 +408,7 @@ export default function MonitoringStations() {
               <div>
                 <div className="summary-title">Hydrological Summary</div>
                 <div className="summary-text">
-                  The river channels are within safe operational bounds. Water flow is running normally and there is no active threat of overflow.
+                  {getHydrologicalSummary()}
                 </div>
               </div>
             </div>
@@ -389,6 +435,7 @@ export default function MonitoringStations() {
                       {getSortIcon('level')}
                     </div>
                   </th>
+                  <th>DATA FRESHNESS</th>
                   <th onClick={() => handleSort('status')} className="sortable-header">
                     <div className="header-cell-content">
                       <span>STATUS</span>
@@ -408,7 +455,21 @@ export default function MonitoringStations() {
                       style={is3rdAlarm ? { backgroundColor: '#fef2f2' } : {}}
                     >
                       <td style={{ fontWeight: '600', color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>{station.name}</td>
-                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#dc2626' : 'inherit' }}>{Number(station.level).toFixed(2)} m</td>
+                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#dc2626' : 'inherit' }}>{station.level !== null && Number.isFinite(Number(station.level)) ? `${Number(station.level).toFixed(2)} m` : '--'}</td>
+                      <td>
+                        {(() => {
+                          const freshness = getTelemetryFreshness(station.updated_at, freshnessNow);
+                          return (
+                            <span
+                              className={`telemetry-state-badge compact ${freshness.status}`}
+                              title={freshness.description}
+                            >
+                              <span className={`telemetry-state-dot ${freshness.status}`}></span>
+                              {freshness.label} • {freshness.ageText}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <span 
                           className="status-badge-pill"
