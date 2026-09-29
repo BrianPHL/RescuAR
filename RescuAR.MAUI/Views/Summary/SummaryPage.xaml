@@ -48,25 +48,54 @@
                        HorizontalOptions="Center"
                        VerticalOptions="Center" />
 
-                <!-- Bell / Alerts Icon -->
-                <Border Grid.Column="2"
-                        StrokeThickness="0"
-                        BackgroundColor="#F1F5F9"
-                        StrokeShape="RoundRectangle 10"
-                        WidthRequest="36"
-                        HeightRequest="36"
-                        VerticalOptions="Center">
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
-                    </Border.GestureRecognizers>
-                    <Path Data="M12,2A2,2 0 0,0 10,4A7,7 0 0,0 3,11V16L1,18V19H23V18L21,16V11A7,7 0 0,0 14,4A2,2 0 0,0 12,2M10,20A2,2 0 0,0 12,22A2,2 0 0,0 14,20H10Z"
-                          Fill="#0F766E"
-                          WidthRequest="18"
-                          HeightRequest="18"
-                          Aspect="Uniform"
-                          HorizontalOptions="Center"
-                          VerticalOptions="Center" />
-                </Border>
+                <!-- Presentable & Functional Notification Bell with Badge -->
+                <Grid Grid.Column="2" WidthRequest="38" HeightRequest="38" VerticalOptions="Center">
+                    <Border StrokeThickness="0"
+                            BackgroundColor="#F1F5F9"
+                            StrokeShape="RoundRectangle 12"
+                            WidthRequest="38"
+                            HeightRequest="38"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                        </Border.GestureRecognizers>
+                        
+                        <!-- Vector Bell Icon -->
+                        <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                              Fill="#0A8491"
+                              WidthRequest="20"
+                              HeightRequest="20"
+                              Aspect="Uniform"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center"
+                              InputTransparent="True" />
+                    </Border>
+
+                    <!-- Unread Count Badge (Visible when Count > 0) -->
+                    <Border BackgroundColor="#EF4444"
+                            StrokeThickness="1.5"
+                            Stroke="#FFFFFF"
+                            StrokeShape="RoundRectangle 9"
+                            WidthRequest="18"
+                            HeightRequest="18"
+                            HorizontalOptions="End"
+                            VerticalOptions="Start"
+                            Margin="0,-2,-2,0"
+                            InputTransparent="True">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding UnreadNotificationsCount}" Value="0">
+                                <Setter Property="IsVisible" Value="False" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Label Text="{Binding UnreadNotificationsCount}"
+                               TextColor="#FFFFFF"
+                               FontSize="9"
+                               FontAttributes="Bold"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+                    </Border>
+                </Grid>
             </Grid>
         </Border>
 
