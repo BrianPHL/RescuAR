@@ -15,14 +15,7 @@ public partial class DisasterInformationPage : ContentView
     {
         if (Shell.Current != null)
         {
-            try
-            {
-                await Shell.Current.Navigation.PushAsync(new Views.Reports.AdvisoryFeedPage());
-            }
-            catch
-            {
-                await Shell.Current.GoToAsync("AdvisoryFeedPage");
-            }
+            await Shell.Current.GoToAsync("AdvisoryFeedPage");
         }
     }
 }
