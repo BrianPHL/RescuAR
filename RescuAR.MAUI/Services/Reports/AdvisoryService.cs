@@ -56,16 +56,19 @@ public class AdvisoryService
 
         try
         {
-            var response =
-                await client
-                    .From<DisasterAdvisory>()
-                    .Order(
-                        "created_at",
-                        Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Get();
+            var fetchTask = client
+                .From<DisasterAdvisory>()
+                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+                .Get();
 
-            return response.Models?.ToList() ??
-                   new List<DisasterAdvisory>();
+            var completedTask = await Task.WhenAny(fetchTask, Task.Delay(2500));
+            if (completedTask != fetchTask)
+            {
+                return null;
+            }
+
+            var response = await fetchTask;
+            return response.Models?.ToList() ?? new List<DisasterAdvisory>();
         }
         catch (Exception exception)
         {
@@ -249,7 +252,7 @@ public static class RealtimeAdvisoryManager
         }
 
         _timer.Interval =
-            TimeSpan.FromSeconds(3);
+            TimeSpan.FromSeconds(15);
 
         _timer.Tick +=
             async (_, _) =>
