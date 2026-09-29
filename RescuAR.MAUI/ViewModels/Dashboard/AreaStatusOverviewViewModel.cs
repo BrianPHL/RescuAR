@@ -65,19 +65,22 @@ public partial class AreaStatusOverviewViewModel : ObservableObject
         _statusService = statusService;
         _advisoryService = new AdvisoryService();
 
-        // Subscribe to real-time admin advisory updates from Supabase
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
-        {
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                await LoadRealDataAsync();
-            });
-        };
-        
+        // Subscribe to real-time admin advisory updates from Supabase (unsubscribe first to prevent listener leaks)
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+
         // Load data on startup
         MainThread.BeginInvokeOnMainThread(async () =>
         {
             await Task.Delay(200);
+            await LoadRealDataAsync();
+        });
+    }
+
+    private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
             await LoadRealDataAsync();
         });
     }
