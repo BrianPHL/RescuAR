@@ -6,15 +6,26 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: '../.env' });
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://itxjqcnvxlgzeqkivhhc.supabase.co';
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F';
+// Server-side Supabase credentials only. Never use VITE_* variables or an anon key
+// in this worker: VITE_* values are browser-facing, while telemetry persistence must
+// authenticate with the server-only service-role key.
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('[Telemetry] SUPABASE_SERVICE_ROLE_KEY is not configured. Latest-reading sync may continue under existing permissions, but river_level_history inserts are expected to fail until the server-only service role key is set.');
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error(
+    '[Telemetry] Missing required server configuration. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the Railway scraper service.'
+  );
 }
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
+
+console.log('[Telemetry] Server-side Supabase client initialized for latest + historical telemetry persistence.');
 
 const MAX_REASONABLE_LEVEL_METERS = 50;
 
@@ -229,14 +240,13 @@ async function syncToSupabase() {
 
     if (error) {
       console.error(`❌ Failed latest-reading update for ${st.station_name}:`, error.message);
-      continue;
+    } else {
+      console.log(`✅ Synced latest ${st.station_name}: ${st.level}m -> ${st.status}`);
     }
 
-    console.log(`✅ Synced latest ${st.station_name}: ${st.level}m -> ${st.status}`);
-
-    // Append every verified observation to immutable telemetry history instead of
-    // relying only on the latest row in monitoring_stations. This provides the
-    // timestamped measurements used by the historical chart and later validation.
+    // Append every verified observation to telemetry history even if the latest-row
+    // upsert fails. The two writes serve different purposes and one should not block
+    // the other. The history table is the source for timestamped charts/validation.
     const historyRow = {
       station_name: st.station_name,
       level: st.level,
@@ -245,14 +255,19 @@ async function syncToSupabase() {
       observed_at: st.updated_at
     };
 
-    const { error: historyError } = await supabase
+    const { data: historyData, error: historyError } = await supabase
       .from('river_level_history')
-      .insert(historyRow);
+      .insert(historyRow)
+      .select('id, station_name, level, source, observed_at');
 
     if (historyError) {
       console.error(`❌ Failed history insert for ${st.station_name}:`, historyError.message);
     } else {
-      console.log(`🕒 Stored history ${st.station_name}: ${st.level}m @ ${st.updated_at}`);
+      const stored = historyData?.[0];
+      console.log(
+        `🕒 Stored history ${stored?.station_name ?? st.station_name}: ${stored?.level ?? st.level}m ` +
+        `(${stored?.source ?? historyRow.source}) @ ${stored?.observed_at ?? st.updated_at}`
+      );
     }
   }
 }
