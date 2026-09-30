@@ -4,9 +4,8 @@ using RescuAR.Navigation.Models;
 namespace RescuAR.Navigation.Data;
 
 /// <summary>
-/// Parsed OSM point feature. The routing graph does not depend on these points,
-/// but retaining a typed loader gives RescuAR a clean basis for later POI,
-/// crossing, landmark, and evacuation-center matching.
+/// Parsed OSM point feature. Explicit marked crossing points can authorize
+/// connections between otherwise separated sides of a major-road junction.
 /// </summary>
 public sealed class GeoJsonPointFeature
 {
@@ -17,6 +16,8 @@ public sealed class GeoJsonPointFeature
     public string? Name { get; init; }
 
     public string? Highway { get; init; }
+
+    public string? Barrier { get; init; }
 
     public GeoCoordinate Coordinate { get; init; }
 

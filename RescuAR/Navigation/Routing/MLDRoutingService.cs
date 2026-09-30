@@ -72,11 +72,14 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         "MLD (Railway OSRM)";
 
     public MLDRoutingService()
-        : this(
-            PrimaryBaseUrl,
-            FallbackBaseUrl)
+        : this(DefaultBaseUrls())
     {
     }
+
+    // The primary server must be rebuilt with every active regional PBF.
+    // Do not silently fall back to a server with older regional coverage.
+    private static string[] DefaultBaseUrls() =>
+        [PrimaryBaseUrl];
 
     public MLDRoutingService(
         params string[] baseUrls)

@@ -12,6 +12,7 @@ using Mapsui.Nts;
 using Mapsui.Styles;
 using System.Linq;
 using NetTopologySuite.Geometries;
+using RescuAR.Navigation.Data;
 
 namespace RescuAR.App.ViewModels.Map;
 
@@ -53,11 +54,31 @@ public partial class MapViewModel : ObservableObject
             // We will skip loading 2D_MAP.mbtiles because it contains vector tiles (PBF)
             // Mapsui 4 TileLayer only supports raster image tiles (PNG/JPG).
 
-            // Load GeoJSON Roads
-            await LoadGeoJsonLayerAsync(map, "ROADS.geojson", "Roads", new VectorStyle { Line = new Pen(Mapsui.Styles.Color.Gray, 1.5) });
+            // Map display and routing share the same embedded datasets.
+            foreach (string resourceName in
+                     NavigationDataBootstrap.GetGeoJsonResourceNames("ROADS"))
+            {
+                string fileName = resourceName[NavigationDataBootstrap.GeoJsonResourcePrefix.Length..];
+                var color = fileName == "ROADS.geojson"
+                    ? Mapsui.Styles.Color.Gray
+                    : Mapsui.Styles.Color.Blue;
+                await LoadGeoJsonLayerAsync(map, resourceName, fileName,
+                    new VectorStyle { Line = new Pen(color, 1.5) });
+            }
 
-            // Load GeoJSON Points
-            await LoadGeoJsonLayerAsync(map, "POINTS.geojson", "Points", new SymbolStyle { Fill = new Mapsui.Styles.Brush(Mapsui.Styles.Color.Teal), SymbolScale = 0.5 });
+            foreach (string resourceName in
+                     NavigationDataBootstrap.GetGeoJsonResourceNames("POINTS"))
+            {
+                string fileName = resourceName[NavigationDataBootstrap.GeoJsonResourcePrefix.Length..];
+                var color = fileName == "POINTS.geojson"
+                    ? Mapsui.Styles.Color.Teal
+                    : Mapsui.Styles.Color.Blue;
+                await LoadGeoJsonLayerAsync(map, resourceName, fileName,
+                    new SymbolStyle
+                    {
+                        Fill = new Mapsui.Styles.Brush(color), SymbolScale = 0.5
+                    });
+            }
 
             // Center and Zoom to Map Data (Marikina)
             var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
@@ -75,19 +96,13 @@ public partial class MapViewModel : ObservableObject
         }
     }
 
-    private async Task LoadGeoJsonLayerAsync(Mapsui.Map map, string fileName, string layerName, IStyle style)
+    private async Task LoadGeoJsonLayerAsync(Mapsui.Map map, string resourceName, string layerName, IStyle style)
     {
         try
         {
-            string localPath = Path.Combine(Microsoft.Maui.Storage.FileSystem.AppDataDirectory, fileName);
-            if (!File.Exists(localPath))
-            {
-                using var stream = await Microsoft.Maui.Storage.FileSystem.OpenAppPackageFileAsync(fileName);
-                using var newStream = File.Create(localPath);
-                await stream.CopyToAsync(newStream);
-            }
-
-            string geoJson = await File.ReadAllTextAsync(localPath);
+            using var stream = NavigationDataBootstrap.OpenGeoJsonResource(resourceName);
+            using var reader = new StreamReader(stream);
+            string geoJson = await reader.ReadToEndAsync();
             
             var features = await Task.Run(() => 
             {
@@ -116,8 +131,8 @@ public partial class MapViewModel : ObservableObject
         catch (Exception ex)
         {
             if (Shell.Current != null)
-                await Shell.Current.DisplayAlert("Map Error", $"Failed to load {fileName}: {ex.Message}", "OK");
-            Console.WriteLine($"Error loading {fileName}: {ex.Message}");
+                await Shell.Current.DisplayAlert("Map Error", $"Failed to load {layerName}: {ex.Message}", "OK");
+            Console.WriteLine($"Error loading {layerName}: {ex.Message}");
         }
     }
 

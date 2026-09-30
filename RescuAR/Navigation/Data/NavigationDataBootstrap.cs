@@ -13,19 +13,16 @@ namespace RescuAR.Navigation.Data;
 /// <summary>
 /// One-time Milestone 4 runtime validator.
 ///
-/// It loads the embedded ROADS.geojson and POINTS.geojson files from the
-/// RescuAR assembly, parses them with the real loader, builds the pedestrian
+/// It loads all embedded primary and regional road/point GeoJSON files from
+/// the RescuAR assembly, parses them with the real loader, builds the pedestrian
 /// road graph, and publishes a compact diagnostic result.
 ///
 /// This does not modify any AR camera/rendering state.
 /// </summary>
 public static class NavigationDataBootstrap
 {
-    private const string RoadsResourceSuffix =
-        ".Navigation.Data.Resources.ROADS.geojson";
-
-    private const string PointsResourceSuffix =
-        ".Navigation.Data.Resources.POINTS.geojson";
+    public const string GeoJsonResourcePrefix =
+        "RescuAR.Navigation.Data.Resources.";
 
     private static readonly object sync =
         new();
@@ -37,9 +34,36 @@ public static class NavigationDataBootstrap
 
     public static NavigationRuntimeValidationResult? LastResult { get; private set; }
 
+    /// <summary>Primary data first, then every named regional dataset.</summary>
+    public static string[] GetGeoJsonResourceNames(string kind)
+    {
+        if (kind is not ("ROADS" or "POINTS"))
+            throw new ArgumentException("Expected ROADS or POINTS.", nameof(kind));
+
+        string primary = GeoJsonResourcePrefix + kind + ".geojson";
+        string regionalSuffix = "_" + kind + ".geojson";
+
+        return typeof(NavigationDataBootstrap).Assembly
+            .GetManifestResourceNames()
+            .Where(name =>
+                name.StartsWith(GeoJsonResourcePrefix, StringComparison.Ordinal) &&
+                (name.Equals(primary, StringComparison.OrdinalIgnoreCase) ||
+                 name.EndsWith(regionalSuffix, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(name =>
+                name.Equals(primary, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public static Stream OpenGeoJsonResource(string resourceName) =>
+        typeof(NavigationDataBootstrap).Assembly
+            .GetManifestResourceStream(resourceName)
+        ?? throw new InvalidOperationException(
+            $"Embedded GeoJSON not found: {resourceName}");
+
     /// <summary>
     /// Returns the one in-memory pedestrian RoadGraph built from the embedded
-    /// ROADS.geojson dataset. The existing one-time validation task owns graph
+    /// primary and regional datasets. The one-time validation task owns graph
     /// creation, so offline routing never reparses or rebuilds the dataset.
     /// </summary>
     public static async Task<RoadGraph> GetRoadGraphAsync(
@@ -67,7 +91,7 @@ public static class NavigationDataBootstrap
         lock (sync)
         {
             return cachedRoadFeatures ??
-                throw new InvalidOperationException("ROADS.geojson was not loaded.");
+                throw new InvalidOperationException("Road GeoJSON datasets were not loaded.");
         }
     }
 
@@ -75,7 +99,7 @@ public static class NavigationDataBootstrap
     {
         lock (sync)
         {
-            // Parsing 7,198 road features and building their graph must not
+            // Parsing the road datasets and building their graph must not
             // resume on the MAUI UI thread after an awaited stream read.
             validationTask ??=
                 Task.Run(ValidateWithDiagnosticsAsync);
@@ -116,50 +140,28 @@ public static class NavigationDataBootstrap
         Stopwatch stopwatch =
             Stopwatch.StartNew();
 
-        Assembly assembly =
-            typeof(NavigationDataBootstrap)
-                .Assembly;
-
-        string roadsResourceName =
-            FindResourceName(
-                assembly,
-                RoadsResourceSuffix);
-
-        string pointsResourceName =
-            FindResourceName(
-                assembly,
-                PointsResourceSuffix);
-
         GeoJsonRoadLoader loader =
             new();
+        List<GeoJsonRoadFeature> roads = new();
+        List<GeoJsonPointFeature> points = new();
 
-        IReadOnlyList<GeoJsonRoadFeature> roads;
-
-        IReadOnlyList<GeoJsonPointFeature> points;
-
-        using (Stream roadsStream =
-               assembly.GetManifestResourceStream(
-                   roadsResourceName)
-               ?? throw new InvalidOperationException(
-                   $"Embedded resource not found: {roadsResourceName}"))
+        foreach (string resourceName in GetGeoJsonResourceNames("ROADS"))
         {
-            roads =
-                await loader.LoadRoadsAsync(
-                    roadsStream);
+            using Stream stream = OpenGeoJsonResource(resourceName);
+            roads.AddRange(await loader.LoadRoadsAsync(stream));
         }
+
+        if (roads.Count == 0)
+            throw new InvalidOperationException(
+                "No usable road GeoJSON datasets were included.");
 
         long roadsParsedMilliseconds =
             stopwatch.ElapsedMilliseconds;
 
-        using (Stream pointsStream =
-               assembly.GetManifestResourceStream(
-                   pointsResourceName)
-               ?? throw new InvalidOperationException(
-                   $"Embedded resource not found: {pointsResourceName}"))
+        foreach (string resourceName in GetGeoJsonResourceNames("POINTS"))
         {
-            points =
-                await loader.LoadPointsAsync(
-                    pointsStream);
+            using Stream stream = OpenGeoJsonResource(resourceName);
+            points.AddRange(await loader.LoadPointsAsync(stream));
         }
 
         long pointsParsedMilliseconds =
@@ -182,7 +184,8 @@ public static class NavigationDataBootstrap
 
         RoadGraph graph =
             graphBuilder.Build(
-                roads);
+                roads,
+                points);
 
         graphStopwatch.Stop();
 
@@ -214,37 +217,6 @@ public static class NavigationDataBootstrap
         return result;
     }
 
-    private static string FindResourceName(
-        Assembly assembly,
-        string suffix)
-    {
-        string? name =
-            assembly
-                .GetManifestResourceNames()
-                .FirstOrDefault(
-                    candidate =>
-                        candidate.EndsWith(
-                            suffix,
-                            StringComparison.Ordinal));
-
-        if (name is null)
-        {
-            string available =
-                string.Join(
-                    Environment.NewLine,
-                    assembly.GetManifestResourceNames());
-
-            throw new InvalidOperationException(
-                $"Could not find embedded resource ending in '{suffix}'." +
-                Environment.NewLine +
-                "Available resources:" +
-                Environment.NewLine +
-                available);
-        }
-
-        return name;
-    }
-
     private static void WriteDiagnostic(
         NavigationRuntimeValidationResult result)
     {
@@ -269,9 +241,6 @@ public static class NavigationDataBootstrap
             $"Graph build time         = {result.GraphBuildMilliseconds} ms" +
             Environment.NewLine +
             $"Total validation time    = {result.TotalMilliseconds} ms" +
-            Environment.NewLine +
-            "Expected reference counts = roads 7198, accepted 5432, " +
-            "points 8995, nodes 17408, directed edges 39402" +
             Environment.NewLine +
             "========================================================";
 

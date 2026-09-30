@@ -5,14 +5,9 @@ using RescuAR.Navigation.Models;
 namespace RescuAR.Navigation.Data;
 
 /// <summary>
-/// Builds an initial pedestrian graph from walkable LineStrings.
-///
-/// IMPORTANT:
-/// This first foundation nodes the graph at coordinates already present in the
-/// source LineStrings. It does not yet calculate arbitrary geometric
-/// intersections between two lines that cross without sharing a source
-/// vertex. That topology validation belongs before routing-algorithm
-/// integration, not before establishing the common data model.
+/// Builds a pedestrian graph from walkable LineStrings and explicit crossing
+/// evidence. Lines connect at shared source coordinates; a visual crossing
+/// without a shared source vertex does not create a routing connection.
 /// </summary>
 public sealed class RoadGraphBuilder
 {
@@ -35,21 +30,29 @@ public sealed class RoadGraphBuilder
     }
 
     public RoadGraph Build(
-        IReadOnlyList<GeoJsonRoadFeature> features)
+        IReadOnlyList<GeoJsonRoadFeature> features) =>
+        Build(features, Array.Empty<GeoJsonPointFeature>());
+
+    public RoadGraph Build(
+        IReadOnlyList<GeoJsonRoadFeature> features,
+        IReadOnlyList<GeoJsonPointFeature> points)
     {
         ArgumentNullException.ThrowIfNull(
             features);
+        ArgumentNullException.ThrowIfNull(points);
 
         Dictionary<CoordinateKey, RoadNode> byCoordinate =
             new();
-        var crossingPolicy = new MajorRoadCrossingPolicy(features);
+        var crossingPolicy = new MajorRoadCrossingPolicy(features, points);
         int rejectedCrossingEdges = 0;
+        int retainedJunctionEdges = 0;
 
         Dictionary<int, RoadNode> nodes =
             new();
 
         List<RoadEdge> edges =
             new();
+        HashSet<SegmentIdentity> seenSourceSegments = new();
 
         int nextNodeId =
             1;
@@ -78,7 +81,11 @@ public sealed class RoadGraphBuilder
 
                 if (fromCoordinate == toCoordinate)
                     continue;
-                if (crossingPolicy.IsUnverifiedCrossing(feature,
+                if (!string.IsNullOrWhiteSpace(feature.OsmId) &&
+                    !seenSourceSegments.Add(SegmentIdentity.From(
+                        feature.OsmId, fromCoordinate, toCoordinate)))
+                    continue;
+                if (crossingPolicy.BlocksSegment(feature,
                         fromCoordinate, toCoordinate))
                 {
                     rejectedCrossingEdges++;
@@ -89,10 +96,20 @@ public sealed class RoadGraphBuilder
                 // rejoins the ground network; intermediate crossings remain
                 // separated by grade.
                 int featureLayer = MajorRoadCrossingPolicy.LayerOf(feature);
+                int fromLayer = i == 0 ? 0 : featureLayer;
+                int toLayer = i + 1 == feature.Coordinates.Count - 1
+                    ? 0 : featureLayer;
+                string fromSide = crossingPolicy.EndpointSide(
+                    fromCoordinate, toCoordinate, fromLayer);
+                string toSide = crossingPolicy.EndpointSide(
+                    toCoordinate, fromCoordinate, toLayer);
+                if (fromSide.Length > 0 || toSide.Length > 0)
+                    retainedJunctionEdges++;
                 RoadNode from =
                     GetOrCreateNode(
                         fromCoordinate,
-                        i == 0 ? 0 : featureLayer,
+                        fromLayer,
+                        fromSide,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -100,8 +117,8 @@ public sealed class RoadGraphBuilder
                 RoadNode to =
                     GetOrCreateNode(
                         toCoordinate,
-                        i + 1 == feature.Coordinates.Count - 1
-                            ? 0 : featureLayer,
+                        toLayer,
+                        toSide,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -153,7 +170,8 @@ public sealed class RoadGraphBuilder
         }
 
         RescuAR.Diagnostics.AndroidLog.Warn("RescuAR-RoadGraph",
-            $"Unverified major-road crossing segments excluded: {rejectedCrossingEdges}.");
+            $"Walkable junction segments retained: {retainedJunctionEdges}; " +
+            $"interior/overlap major-road crossings excluded: {rejectedCrossingEdges}.");
         return new RoadGraph(
             nodes,
             edges,
@@ -182,13 +200,14 @@ public sealed class RoadGraphBuilder
     private static RoadNode GetOrCreateNode(
         GeoCoordinate coordinate,
         int layer,
+        string side,
         Dictionary<CoordinateKey, RoadNode> byCoordinate,
         Dictionary<int, RoadNode> nodes,
         ref int nextNodeId)
     {
         CoordinateKey key =
             CoordinateKey.From(
-                coordinate, layer);
+                coordinate, layer, side);
 
         if (byCoordinate.TryGetValue(
                 key,
@@ -216,11 +235,13 @@ public sealed class RoadGraphBuilder
     private readonly record struct CoordinateKey(
         double Latitude,
         double Longitude,
-        int Layer)
+        int Layer,
+        string Side)
     {
         public static CoordinateKey From(
             GeoCoordinate coordinate,
-            int layer)
+            int layer,
+            string side)
         {
             return new CoordinateKey(
                 Math.Round(
@@ -229,7 +250,24 @@ public sealed class RoadGraphBuilder
                 Math.Round(
                     coordinate.Longitude,
                     CoordinatePrecision),
-                layer);
+                layer,
+                side);
+        }
+    }
+
+    private readonly record struct SegmentIdentity(
+        string OsmId, double ALat, double ALon, double BLat, double BLon)
+    {
+        public static SegmentIdentity From(string osmId,
+            GeoCoordinate a, GeoCoordinate b)
+        {
+            double aLat = Math.Round(a.Latitude, CoordinatePrecision);
+            double aLon = Math.Round(a.Longitude, CoordinatePrecision);
+            double bLat = Math.Round(b.Latitude, CoordinatePrecision);
+            double bLon = Math.Round(b.Longitude, CoordinatePrecision);
+            if (aLat > bLat || (aLat == bLat && aLon > bLon))
+                (aLat, aLon, bLat, bLon) = (bLat, bLon, aLat, aLon);
+            return new SegmentIdentity(osmId, aLat, aLon, bLat, bLon);
         }
     }
 }

@@ -245,6 +245,11 @@ public sealed class GeoJsonRoadLoader
                             properties,
                             "highway"),
 
+                    Barrier =
+                        TryGetString(
+                            properties,
+                            "barrier"),
+
                     Coordinate =
                         coordinate,
 
