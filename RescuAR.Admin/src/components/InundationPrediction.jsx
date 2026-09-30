@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { supabase } from '../supabaseClient';
+import { getTelemetryFreshness } from '../utils/telemetryFreshness';
 
 // Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -36,8 +38,12 @@ const TILE_SERVERS = {
 };
 
 export default function InundationPrediction() {
-  const [riverDepth, setRiverDepth] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState('June 18, 2026 • 08:42 AM');
+  const [mode, setMode] = useState('live');
+  const [simulationDepth, setSimulationDepth] = useState(0);
+  const [liveTelemetry, setLiveTelemetry] = useState(null);
+  const [telemetryError, setTelemetryError] = useState('');
+  const [telemetryLoading, setTelemetryLoading] = useState(true);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [isSpinning, setIsSpinning] = useState(false);
   const [mapTileStyle, setMapTileStyle] = useState('osm');
 
@@ -46,6 +52,92 @@ export default function InundationPrediction() {
   const tileLayerRef = useRef(null);
   const polygonRef = useRef(null);
   const outerPolygonRef = useRef(null);
+
+  const liveLevel = Number(liveTelemetry?.level);
+  const telemetryFreshness = getTelemetryFreshness(liveTelemetry?.updated_at, nowMs);
+  const isLiveTelemetryActive = telemetryFreshness.isUsableAsLive && Number.isFinite(liveLevel);
+  const isLiveMode = mode === 'live';
+  const riverDepth = isLiveMode && isLiveTelemetryActive ? liveLevel : simulationDepth;
+
+  const formatObservedAt = (value) => {
+    if (!value) return 'No verified PAGASA observation';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return 'Invalid observation timestamp';
+    return date.toLocaleString('en-PH', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const fetchStoNinoTelemetry = async () => {
+    setTelemetryLoading(true);
+    setTelemetryError('');
+
+    try {
+      const { data, error } = await supabase
+        .from('monitoring_stations')
+        .select('id, station_name, level, status, updated_at')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      const station = (data || []).find((row) => {
+        const name = String(row?.station_name || '').toLowerCase();
+        return name.includes('sto') && (name.includes('niño') || name.includes('nino'));
+      });
+
+      if (!station) {
+        setLiveTelemetry(null);
+        setTelemetryError('Sto. Niño PAGASA telemetry is not available in monitoring_stations.');
+        return;
+      }
+
+      setLiveTelemetry(station);
+      setNowMs(Date.now());
+    } catch (error) {
+      console.error('Unable to load Sto. Niño telemetry for inundation:', error);
+      setTelemetryError('Verified PAGASA telemetry could not be loaded.');
+    } finally {
+      setTelemetryLoading(false);
+    }
+  };
+
+  // Audits #13/#14: the existing PREP inundation model has one effective
+  // river-level input. Live Mode uses only fresh verified PAGASA telemetry;
+  // Simulation Mode uses only the local manual scenario value. Simulation
+  // values are never written to monitoring_stations or river_level_history.
+  useEffect(() => {
+    fetchStoNinoTelemetry();
+
+    const freshnessTimer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    const pollTimer = setInterval(() => {
+      void fetchStoNinoTelemetry();
+    }, 5 * 60 * 1000);
+
+    const channel = supabase
+      .channel('inundation-sto-nino-telemetry')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'monitoring_stations' },
+        () => void fetchStoNinoTelemetry()
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(freshnessTimer);
+      clearInterval(pollTimer);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!telemetryLoading && mode === 'live' && !isLiveTelemetryActive) {
+      setMode('simulation');
+    }
+  }, [telemetryLoading, mode, isLiveTelemetryActive]);
 
   // Initialize Map
   useEffect(() => {
@@ -200,16 +292,10 @@ export default function InundationPrediction() {
     }
   }, [riverDepth]);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsSpinning(true);
-    setTimeout(() => {
-      const now = new Date();
-      const options = { month: 'long', day: 'numeric', year: 'numeric' };
-      const dateStr = now.toLocaleDateString('en-US', options);
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-      setLastUpdated(`${dateStr} • ${timeStr}`);
-      setIsSpinning(false);
-    }, 600);
+    await fetchStoNinoTelemetry();
+    setIsSpinning(false);
   };
 
   const getImpactSummary = () => {
@@ -268,13 +354,20 @@ export default function InundationPrediction() {
         <div className="title-group">
           <div className="title-row">
             <h1 className="inundation-title">Inundation Prediction</h1>
-            <span className="live-badge">
+            <span
+              className={`live-badge ${isLiveMode && isLiveTelemetryActive ? '' : isLiveMode ? 'telemetry-not-live' : 'simulation-mode-badge'}`}
+              title={isLiveMode ? telemetryFreshness.description : 'Manual scenario testing; PAGASA telemetry is not driving the model.'}
+            >
               <span className="pulse-dot"></span>
-              Hydrodynamic Sim Engine v2.4
+              {isLiveMode && isLiveTelemetryActive ? 'Live Mode • PAGASA' : 'Simulation Mode'}
             </span>
           </div>
           <p className="inundation-subtitle">
-            <span>Last updated: {lastUpdated}</span>
+            <span>
+              {isLiveMode && isLiveTelemetryActive
+                ? `Sto. Niño live input: ${liveLevel.toFixed(2)} m • ${formatObservedAt(liveTelemetry?.updated_at)} • ${telemetryFreshness.ageText}`
+                : `Simulation input: ${simulationDepth.toFixed(0)} m • PAGASA ${telemetryFreshness.label}${liveTelemetry?.updated_at ? ` • ${telemetryFreshness.ageText}` : ''}`}
+            </span>
           </p>
         </div>
 
@@ -359,7 +452,54 @@ export default function InundationPrediction() {
               </div>
             </div>
 
-            <label className="slider-label">Marikina River Depth (in meters)</label>
+            <div className="inundation-mode-selector" role="group" aria-label="Inundation input mode">
+              <button
+                type="button"
+                className={`inundation-mode-btn ${isLiveMode ? 'active live' : ''}`}
+                onClick={() => setMode('live')}
+                disabled={!isLiveTelemetryActive || telemetryLoading}
+                title={isLiveTelemetryActive ? 'Use the latest fresh verified PAGASA Sto. Niño observation.' : 'Live Mode requires fresh verified PAGASA telemetry.'}
+              >
+                <span className="mode-btn-title">Live Mode</span>
+                <span className="mode-btn-subtitle">Verified PAGASA telemetry</span>
+              </button>
+              <button
+                type="button"
+                className={`inundation-mode-btn ${!isLiveMode ? 'active simulation' : ''}`}
+                onClick={() => setMode('simulation')}
+              >
+                <span className="mode-btn-title">Simulation Mode</span>
+                <span className="mode-btn-subtitle">Manual scenario testing</span>
+              </button>
+            </div>
+
+            <div
+              className={`inundation-telemetry-status ${telemetryFreshness.status}`}
+              title={telemetryFreshness.description}
+            >
+              <div className="inundation-telemetry-status-main">
+                <span
+                  className="inundation-telemetry-dot"
+                  style={{ backgroundColor: telemetryFreshness.dotColor }}
+                ></span>
+                <strong>{telemetryLoading ? 'Checking PAGASA telemetry…' : `PAGASA ${telemetryFreshness.label}`}</strong>
+              </div>
+              <div className="inundation-telemetry-status-details">
+                {telemetryError || (
+                  isLiveMode && isLiveTelemetryActive
+                    ? `Sto. Niño ${liveLevel.toFixed(2)} m is actively driving the existing PREP inundation model.`
+                    : isLiveTelemetryActive
+                      ? `Fresh Sto. Niño telemetry (${liveLevel.toFixed(2)} m) is available, but Simulation Mode is active and does not use or modify live telemetry.`
+                      : 'Live Mode is unavailable because PAGASA telemetry is not fresh. Simulation Mode remains available for scenario testing.'
+                )}
+              </div>
+            </div>
+
+            <label className="slider-label">
+              {isLiveMode ? 'Verified Sto. Niño River Level' : 'Simulated Marikina River Depth'} (in meters)
+              {isLiveMode && isLiveTelemetryActive && <span className="live-input-note"> • linked to PAGASA</span>}
+              {!isLiveMode && <span className="simulation-input-note"> • manual scenario only</span>}
+            </label>
             
             {/* Main Interactive Slider */}
             <div className="slider-controls-row">
@@ -368,13 +508,15 @@ export default function InundationPrediction() {
                 min="0"
                 max="30"
                 step="1"
-                value={riverDepth}
-                onChange={(e) => setRiverDepth(Number(e.target.value))}
-                className="depth-range-input"
+                value={isLiveMode ? riverDepth : simulationDepth}
+                onChange={(e) => setSimulationDepth(Number(e.target.value))}
+                disabled={isLiveMode}
+                aria-label={isLiveMode ? 'River depth controlled by verified PAGASA telemetry' : 'Manual simulation river depth input'}
+                className={`depth-range-input ${isLiveMode ? 'live-locked' : ''}`}
                 style={{ '--slider-pct': `${sliderPercentage}%` }}
               />
               <div className="depth-display-box">
-                {riverDepth}
+                {isLiveMode ? riverDepth.toFixed(2) : simulationDepth}
               </div>
             </div>
 
@@ -382,29 +524,39 @@ export default function InundationPrediction() {
             <div className="preset-buttons-row">
               <span className="preset-title">Quick Presets:</span>
               <button 
-                className={`preset-chip ${riverDepth === 0 ? 'active' : ''}`}
-                onClick={() => setRiverDepth(0)}
+                className={`preset-chip ${!isLiveMode && simulationDepth === 0 ? 'active' : ''}`}
+                onClick={() => setSimulationDepth(0)}
+                disabled={isLiveMode}
               >
                 0m Normal
               </button>
               <button 
-                className={`preset-chip ${riverDepth === 15 ? 'active' : ''}`}
-                onClick={() => setRiverDepth(15)}
+                className={`preset-chip ${!isLiveMode && simulationDepth === 15 ? 'active' : ''}`}
+                onClick={() => setSimulationDepth(15)}
+                disabled={isLiveMode}
               >
                 15m Level 1
               </button>
               <button 
-                className={`preset-chip ${riverDepth === 16 ? 'active' : ''}`}
-                onClick={() => setRiverDepth(16)}
+                className={`preset-chip ${!isLiveMode && simulationDepth === 16 ? 'active' : ''}`}
+                onClick={() => setSimulationDepth(16)}
+                disabled={isLiveMode}
               >
                 16m Level 2
               </button>
               <button 
-                className={`preset-chip ${riverDepth === 18 ? 'active' : ''}`}
-                onClick={() => setRiverDepth(18)}
+                className={`preset-chip ${!isLiveMode && simulationDepth === 18 ? 'active' : ''}`}
+                onClick={() => setSimulationDepth(18)}
+                disabled={isLiveMode}
               >
                 18m Level 3
               </button>
+            </div>
+
+            <div className={`inundation-mode-note ${isLiveMode ? 'live' : 'simulation'}`}>
+              {isLiveMode
+                ? 'Live Mode is read-only: the verified PAGASA observation drives the model and manual controls are locked.'
+                : 'Simulation Mode is isolated from telemetry: manual values are local scenario inputs and are never written to monitoring_stations or river_level_history.'}
             </div>
           </div>
 
@@ -424,7 +576,7 @@ export default function InundationPrediction() {
                 </div>
                 <h3 className="empty-title">No Inundation Threat</h3>
                 <p>No inundation predicted currently.</p>
-                <p className="empty-subtext">Adjust river depth to simulate flood impact.</p>
+                <p className="empty-subtext">{isLiveMode && isLiveTelemetryActive ? 'Result is driven by the current verified PAGASA observation.' : 'Simulation Mode is active; adjust the manual river depth to test the existing inundation logic.'}</p>
               </div>
             ) : (
               <div className="impact-content-wrapper">
