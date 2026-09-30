@@ -111,6 +111,7 @@ export default function RiverLevel({ onActionClick }) {
       .from('river_level_history')
       .select('station_name, level, status, source, observed_at')
       .eq('station_name', stationName)
+      .eq('source', 'PAGASA')
       .gte('observed_at', since)
       .order('observed_at', { ascending: true });
 
@@ -214,7 +215,7 @@ export default function RiverLevel({ onActionClick }) {
       time: formatChartLabel(row.observed_at, timeRange),
       observedAt: row.observed_at,
       observed: Number(Number(row.level).toFixed(2)),
-      source: row.source || 'Verified telemetry',
+      source: 'PAGASA',
       sampleCount: row.sampleCount || 1
     }));
   }, [history, timeRange]);
@@ -235,7 +236,7 @@ export default function RiverLevel({ onActionClick }) {
           </div>
           <div className="tooltip-row observed">
             <span className="tooltip-label">Source:</span>
-            <span className="tooltip-value">{point?.source || 'Verified telemetry'}</span>
+            <span className="tooltip-value">PAGASA</span>
           </div>
           {point?.sampleCount > 1 && (
             <div className="tooltip-row observed">
@@ -361,7 +362,7 @@ export default function RiverLevel({ onActionClick }) {
 
         <div className="chart-footer-bar">
           <div className="chart-legend-items"><div className="legend-chip"><span className="chip-indicator solid-blue"></span><span className="chip-text">Verified Observed Water Level</span></div></div>
-          <div className="chart-info-note"><Info size={13} /><span>{timeRange === '6mo' ? 'Six-month view uses daily averages of stored measurements; no synthetic values are generated.' : 'Every plotted point comes from river_level_history.'}</span></div>
+          <div className="chart-info-note"><Info size={13} /><span>{timeRange === '6mo' ? 'Six-month view uses daily averages of stored PAGASA measurements; no synthetic values are generated.' : 'Every plotted point is a verified PAGASA observation from river_level_history.'}</span></div>
         </div>
       </div>
     </div>

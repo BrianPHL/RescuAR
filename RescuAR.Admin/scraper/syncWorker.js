@@ -9,8 +9,8 @@ import path from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Local development loads the parent .env reliably regardless of the shell cwd.
-// Railway injects process.env directly, so this is harmless in production.
+// Local development loads the parent .env regardless of shell cwd.
+// Railway injects process.env directly.
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -30,22 +30,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 });
 
-console.log('[Telemetry] Server-side Supabase client initialized for latest + historical telemetry persistence.');
+console.log('[Telemetry] PAGASA-only server-side Supabase client initialized.');
 
 const MAX_REASONABLE_LEVEL_METERS = 50;
 const PAGASA_WATER_URL =
   'https://pasig-marikina-tullahanffws.pagasa.dost.gov.ph/water/table.do';
-
-const BANTAYBAHA_GAUGES = [
-  {
-    url: 'https://bantaybaha.com/gauges/1',
-    stationName: 'Sto. Niño Station'
-  },
-  {
-    url: 'https://bantaybaha.com/gauges/6',
-    stationName: 'Rodriguez Station'
-  }
-];
 
 const HTTP_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36',
@@ -102,21 +91,6 @@ function mapStationName(rawName) {
   return null;
 }
 
-function manilaDateParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(date);
-
-  return Object.fromEntries(
-    parts
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value])
-  );
-}
-
 function toManilaIso(year, month, day, hour24, minute) {
   const y = String(year).padStart(4, '0');
   const m = String(month).padStart(2, '0');
@@ -127,67 +101,34 @@ function toManilaIso(year, month, day, hour24, minute) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function parseClockOnManilaDate(timeText, date = new Date()) {
-  const match = String(timeText).trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (!match) return null;
-
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const meridiem = match[3].toUpperCase();
-
-  if (hour === 12) hour = 0;
-  if (meridiem === 'PM') hour += 12;
-
-  const { year, month, day } = manilaDateParts(date);
-  return toManilaIso(year, month, day, hour, minute);
-}
-
-function parseBantayBahaTimestamp(label, latestObservedAt = null, now = new Date()) {
-  const text = String(label || '').replace(/\s+/g, ' ').trim();
-  if (!text) return null;
-
-  // Current rows are typically like "11:00 AM today".
-  if (/\btoday\b/i.test(text)) {
-    return parseClockOnManilaDate(text, now);
-  }
-
-  if (/\byesterday\b/i.test(text)) {
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    return parseClockOnManilaDate(text, yesterday);
-  }
-
-  // Historical rows are usually relative to the latest observation.
-  const hoursAgo = text.match(/(\d+(?:\.\d+)?)\s*hours?\s*ago/i);
-  if (hoursAgo) {
-    const base = latestObservedAt ? new Date(latestObservedAt) : now;
-    return new Date(base.getTime() - Number(hoursAgo[1]) * 60 * 60 * 1000).toISOString();
-  }
-
-  const minutesAgo = text.match(/(\d+)\s*minutes?\s*ago/i);
-  if (minutesAgo) {
-    const base = latestObservedAt ? new Date(latestObservedAt) : now;
-    return new Date(base.getTime() - Number(minutesAgo[1]) * 60 * 1000).toISOString();
-  }
-
-  // Defensive fallback for a fully qualified date/time label.
-  const parsed = Date.parse(text);
-  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
-
-  return null;
-}
-
 function parsePagasaPageTimestamp($) {
   const pageText = $('body').text().replace(/\s+/g, ' ');
-  const match = pageText.match(/Time\s*:\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/i);
-  if (!match) return null;
 
-  return toManilaIso(
-    Number(match[1]),
-    Number(match[2]),
-    Number(match[3]),
-    Number(match[4]),
-    Number(match[5])
-  );
+  // Known PAGASA presentation: Time: YYYY-MM-DD HH:mm
+  let match = pageText.match(/Time\s*:\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/i);
+  if (match) {
+    return toManilaIso(
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5])
+    );
+  }
+
+  // Defensive alternate presentation: YYYY/MM/DD HH:mm or YYYY-MM-DD HH:mm.
+  match = pageText.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})\s+(\d{1,2}):(\d{2})/);
+  if (match) {
+    return toManilaIso(
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5])
+    );
+  }
+
+  return null;
 }
 
 function uniqueObservations(observations) {
@@ -204,178 +145,85 @@ function uniqueObservations(observations) {
   );
 }
 
-async function fetchPagasaDirectly() {
+async function fetchPagasaTelemetry() {
   console.log(`[Scraper] PAGASA URL: ${PAGASA_WATER_URL}`);
 
   try {
     const response = await axios.get(PAGASA_WATER_URL, {
-      timeout: 15000,
-      headers: HTTP_HEADERS
+      timeout: 20000,
+      headers: HTTP_HEADERS,
+      maxRedirects: 5
     });
 
     const $ = cheerio.load(response.data);
-    const pageObservedAt = parsePagasaPageTimestamp($);
+    const observedAt = parsePagasaPageTimestamp($);
+
+    if (!observedAt) {
+      console.warn(
+        '[Scraper] PAGASA responded but no official observation timestamp could be parsed. ' +
+        'The cycle is rejected rather than inventing a timestamp.'
+      );
+      return [];
+    }
+
     const observations = [];
 
     $('table tr').each((_, row) => {
       const cols = $(row).find('td');
-      if (cols.length < 5) return;
+      if (cols.length < 2) return;
 
       const rawName = $(cols[0]).text().trim();
       const stationName = mapStationName(rawName);
       if (!stationName) return;
 
-      // PAGASA table.do may expose Current/-30m/-1h/-2h before Alert/Alarm/Critical.
-      // Current is the first numeric cell after Station; thresholds are the last 3 cells.
-      const currentLevel = Number.parseFloat($(cols[1]).text().trim().replace(/\(\*\)/g, ''));
-      const alertThreshold = Number.parseFloat($(cols[cols.length - 3]).text().trim());
-      const alarmThreshold = Number.parseFloat($(cols[cols.length - 2]).text().trim());
-      const criticalThreshold = Number.parseFloat($(cols[cols.length - 1]).text().trim());
-
+      // Current water level is the first numeric cell after station name.
+      const currentText = $(cols[1]).text().trim().replace(/\(\*\)/g, '');
+      const currentLevel = Number.parseFloat(currentText.match(/-?\d+(?:\.\d+)?/)?.[0]);
       if (!isValidLevel(currentLevel)) return;
 
+      // When PAGASA provides Alert/Alarm/Critical columns, use them. Otherwise
+      // use the station threshold map already defined in RescuAR.
       let status = calculateStatus(stationName, currentLevel);
-      if (Number.isFinite(criticalThreshold) && currentLevel >= criticalThreshold) status = '3rd Alarm';
-      else if (Number.isFinite(alarmThreshold) && currentLevel >= alarmThreshold) status = '2nd Alarm';
-      else if (Number.isFinite(alertThreshold) && currentLevel >= alertThreshold) status = '1st Alarm';
+      if (cols.length >= 5) {
+        const alertThreshold = Number.parseFloat($(cols[cols.length - 3]).text().trim());
+        const alarmThreshold = Number.parseFloat($(cols[cols.length - 2]).text().trim());
+        const criticalThreshold = Number.parseFloat($(cols[cols.length - 1]).text().trim());
+
+        if (Number.isFinite(criticalThreshold) && currentLevel >= criticalThreshold) status = '3rd Alarm';
+        else if (Number.isFinite(alarmThreshold) && currentLevel >= alarmThreshold) status = '2nd Alarm';
+        else if (Number.isFinite(alertThreshold) && currentLevel >= alertThreshold) status = '1st Alarm';
+      }
 
       observations.push({
         station_name: stationName,
         level: currentLevel,
         status,
         source: 'PAGASA',
-        observed_at: pageObservedAt || new Date().toISOString()
+        observed_at: observedAt
       });
     });
 
     const verified = uniqueObservations(observations);
-    if (verified.length > 0) {
-      console.log(`[Scraper] PAGASA returned ${verified.length} verified current observation(s).`);
-      return verified;
+
+    if (verified.length === 0) {
+      console.warn(
+        '[Scraper] PAGASA responded but contained no usable current water-level rows. ' +
+        'No database values will be changed.'
+      );
+      return [];
     }
 
-    console.warn('[Scraper] PAGASA responded but contained no usable current water-level rows.');
-    return [];
+    console.log(
+      `[Scraper] PAGASA returned ${verified.length} verified observation(s) @ ${observedAt}.`
+    );
+    return verified;
   } catch (error) {
-    console.warn(`[Scraper] PAGASA unavailable (${error.message}). Falling back to BantayBaha.`);
+    console.warn(
+      `[Scraper] PAGASA request failed (${error.message}). ` +
+      'No third-party fallback is configured; existing verified values remain unchanged.'
+    );
     return [];
   }
-}
-
-function findDetailsTable($) {
-  let selected = null;
-
-  $('table').each((_, table) => {
-    if (selected) return;
-    const headers = $(table)
-      .find('th')
-      .map((__, th) => normalizeText($(th).text()))
-      .get();
-
-    const hasTime = headers.some((header) => header === 'time' || header.includes('time'));
-    const hasLevel = headers.some((header) => header.includes('level'));
-    if (hasTime && hasLevel) selected = table;
-  });
-
-  return selected;
-}
-
-function parseBantayBahaGaugeHtml(html, stationName, url) {
-  const $ = cheerio.load(html);
-  const table = findDetailsTable($);
-  const now = new Date();
-  const rows = [];
-
-  if (table) {
-    $(table).find('tbody tr, tr').each((_, row) => {
-      const cells = $(row).find('td');
-      if (cells.length < 2) return;
-
-      const timeLabel = $(cells[0]).text().replace(/\s+/g, ' ').trim();
-      const levelText = $(cells[1]).text().replace(/,/g, '').trim();
-      const level = Number.parseFloat(levelText.match(/-?\d+(?:\.\d+)?/)?.[0]);
-
-      if (!timeLabel || !isValidLevel(level)) return;
-      rows.push({ timeLabel, level });
-    });
-  }
-
-  // Fallback for a changed HTML wrapper while retaining the same visible Details text.
-  if (rows.length === 0) {
-    const text = $('body').text().replace(/\s+/g, ' ');
-    const current = text.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)\s+today)\s+(\d+(?:\.\d+)?)/i);
-    if (current && isValidLevel(Number(current[2]))) {
-      rows.push({ timeLabel: current[1], level: Number(current[2]) });
-    }
-  }
-
-  if (rows.length === 0) {
-    throw new Error(`No valid Details rows found at ${url}`);
-  }
-
-  const latestObservedAt = parseBantayBahaTimestamp(rows[0].timeLabel, null, now);
-  if (!latestObservedAt) {
-    throw new Error(`Could not parse latest source timestamp "${rows[0].timeLabel}" at ${url}`);
-  }
-
-  const observations = [];
-  for (const row of rows) {
-    const observedAt = parseBantayBahaTimestamp(row.timeLabel, latestObservedAt, now);
-    if (!observedAt) continue;
-
-    observations.push({
-      station_name: stationName,
-      level: row.level,
-      status: calculateStatus(stationName, row.level),
-      source: 'BantayBaha',
-      observed_at: observedAt
-    });
-  }
-
-  return uniqueObservations(observations);
-}
-
-async function fetchBantayBahaFallback() {
-  const observations = [];
-
-  for (const gauge of BANTAYBAHA_GAUGES) {
-    try {
-      console.log(`[Scraper] BantayBaha gauge: ${gauge.url}`);
-      const response = await axios.get(gauge.url, {
-        timeout: 15000,
-        headers: {
-          ...HTTP_HEADERS,
-          Referer: 'https://bantaybaha.com/'
-        }
-      });
-
-      const gaugeObservations = parseBantayBahaGaugeHtml(
-        response.data,
-        gauge.stationName,
-        gauge.url
-      );
-
-      const latest = gaugeObservations[gaugeObservations.length - 1];
-      console.log(
-        `[Scraper] BantayBaha ${gauge.stationName}: latest ${latest.level}m @ ${latest.observed_at}; ` +
-        `${gaugeObservations.length} source observation(s) available for history.`
-      );
-
-      observations.push(...gaugeObservations);
-    } catch (error) {
-      console.warn(`[Scraper] BantayBaha ${gauge.stationName} unavailable/unparseable: ${error.message}`);
-    }
-  }
-
-  return uniqueObservations(observations);
-}
-
-async function fetchVerifiedTelemetry() {
-  const pagasa = await fetchPagasaDirectly();
-  if (pagasa.length > 0) return pagasa;
-
-  console.log('[Scraper] Using BantayBaha fallback.');
-  return fetchBantayBahaFallback();
 }
 
 async function historyExists(observation) {
@@ -384,6 +232,7 @@ async function historyExists(observation) {
     .select('id')
     .eq('station_name', observation.station_name)
     .eq('observed_at', observation.observed_at)
+    .eq('source', 'PAGASA')
     .limit(1);
 
   if (error) throw error;
@@ -394,7 +243,7 @@ async function persistHistoryObservation(observation) {
   try {
     if (await historyExists(observation)) {
       console.log(
-        `↪ History already stored ${observation.station_name} @ ${observation.observed_at}; duplicate skipped.`
+        `↪ PAGASA history already stored ${observation.station_name} @ ${observation.observed_at}; duplicate skipped.`
       );
       return 'duplicate';
     }
@@ -405,16 +254,15 @@ async function persistHistoryObservation(observation) {
         station_name: observation.station_name,
         level: observation.level,
         status: observation.status,
-        source: observation.source,
+        source: 'PAGASA',
         observed_at: observation.observed_at
       })
       .select('id, station_name, level, source, observed_at');
 
     if (error) {
-      // Unique constraint still protects against races between overlapping instances.
       if (error.code === '23505') {
         console.log(
-          `↪ History duplicate protected by database ${observation.station_name} @ ${observation.observed_at}.`
+          `↪ PAGASA history duplicate protected by database ${observation.station_name} @ ${observation.observed_at}.`
         );
         return 'duplicate';
       }
@@ -423,13 +271,12 @@ async function persistHistoryObservation(observation) {
 
     const stored = data?.[0];
     console.log(
-      `🕒 Stored history ${stored?.station_name ?? observation.station_name}: ` +
-      `${stored?.level ?? observation.level}m (${stored?.source ?? observation.source}) @ ` +
-      `${stored?.observed_at ?? observation.observed_at}`
+      `🕒 Stored PAGASA history ${stored?.station_name ?? observation.station_name}: ` +
+      `${stored?.level ?? observation.level}m @ ${stored?.observed_at ?? observation.observed_at}`
     );
     return 'inserted';
   } catch (error) {
-    console.error(`❌ Failed history insert for ${observation.station_name}:`, error.message);
+    console.error(`❌ Failed PAGASA history insert for ${observation.station_name}:`, error.message);
     return 'error';
   }
 }
@@ -449,7 +296,7 @@ async function persistLatestObservation(observation) {
 
     if (existingTime && Number.isFinite(existingTime) && existingTime > candidateTime) {
       console.log(
-        `↪ Latest row for ${observation.station_name} is newer than source observation; latest upsert skipped.`
+        `↪ Latest row for ${observation.station_name} is newer than the PAGASA observation; latest upsert skipped.`
       );
       return 'older';
     }
@@ -461,7 +308,7 @@ async function persistLatestObservation(observation) {
           station_name: observation.station_name,
           level: observation.level,
           status: observation.status,
-          // Important: freshness is based on source observation time, not scrape time.
+          // Freshness is based on official PAGASA observation time, not scrape time.
           updated_at: observation.observed_at
         },
         { onConflict: 'station_name' }
@@ -470,7 +317,7 @@ async function persistLatestObservation(observation) {
     if (error) throw error;
 
     console.log(
-      `✅ Synced latest ${observation.station_name}: ${observation.level}m -> ${observation.status} ` +
+      `✅ Synced PAGASA latest ${observation.station_name}: ${observation.level}m -> ${observation.status} ` +
       `@ ${observation.observed_at}`
     );
     return 'updated';
@@ -484,34 +331,30 @@ let syncInProgress = false;
 
 async function syncToSupabase() {
   if (syncInProgress) {
-    console.warn('[Telemetry] Previous sync is still running; this scheduled cycle is skipped.');
+    console.warn('[Telemetry] Previous PAGASA sync is still running; this scheduled cycle is skipped.');
     return;
   }
 
   syncInProgress = true;
 
   try {
-    const observations = await fetchVerifiedTelemetry();
+    const observations = await fetchPagasaTelemetry();
 
     if (observations.length === 0) {
       console.warn(
-        '[Telemetry] No verified live/source observations available. ' +
-        'Supabase latest values and timestamps are left unchanged.'
+        '[Telemetry] No verified PAGASA observations available. ' +
+        'Supabase latest values and timestamps are left unchanged so frontend freshness can become Stale/Unavailable naturally.'
       );
       return;
     }
 
     const verified = uniqueObservations(observations);
-    console.log(`[Telemetry] Persisting ${verified.length} verified observation(s).`);
+    console.log(`[Telemetry] Persisting ${verified.length} verified PAGASA observation(s).`);
 
-    // Persist every timestamped source observation to history. This allows the
-    // BantayBaha Details rows to bootstrap up to ~24 hours of genuine history.
     for (const observation of verified) {
       await persistHistoryObservation(observation);
     }
 
-    // monitoring_stations is a latest-state table: only the newest observation
-    // for each station is allowed to update it.
     const latestByStation = new Map();
     for (const observation of verified) {
       const current = latestByStation.get(observation.station_name);
@@ -524,16 +367,16 @@ async function syncToSupabase() {
       await persistLatestObservation(latest);
     }
   } catch (error) {
-    console.error('[Telemetry] Sync cycle failed:', error);
+    console.error('[Telemetry] PAGASA sync cycle failed:', error);
   } finally {
     syncInProgress = false;
   }
 }
 
-// Run once immediately, then every five minutes.
+// Run once immediately, then poll the official PAGASA source every five minutes.
 await syncToSupabase();
 cron.schedule('*/5 * * * *', () => {
   void syncToSupabase();
 });
 
-console.log('[Telemetry] Worker scheduled: every 5 minutes.');
+console.log('[Telemetry] PAGASA-only worker scheduled: every 5 minutes.');
