@@ -17,6 +17,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
+import { predictPrepInundation, PREP_API_URL } from '../services/prepInundationApi';
 
 // Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -46,6 +47,10 @@ export default function InundationPrediction() {
   const [nowMs, setNowMs] = useState(Date.now());
   const [isSpinning, setIsSpinning] = useState(false);
   const [mapTileStyle, setMapTileStyle] = useState('osm');
+  const [prepPrediction, setPrepPrediction] = useState(null);
+  const [prepApiLoading, setPrepApiLoading] = useState(true);
+  const [prepApiError, setPrepApiError] = useState('');
+  const [prepRefreshKey, setPrepRefreshKey] = useState(0);
 
   const mapContainerRef = useRef(null);
   const leafletMapRef = useRef(null);
@@ -58,6 +63,12 @@ export default function InundationPrediction() {
   const isLiveTelemetryActive = telemetryFreshness.isUsableAsLive && Number.isFinite(liveLevel);
   const isLiveMode = mode === 'live';
   const riverDepth = isLiveMode && isLiveTelemetryActive ? liveLevel : simulationDepth;
+  const prepAffectedArea = prepPrediction?.inundation || {
+    has_triggered_rule: false,
+    affected_barangays: [],
+    triggered_thresholds: [],
+    evidence_status: 'unavailable',
+  };
 
   const formatObservedAt = (value) => {
     if (!value) return 'No verified PAGASA observation';
@@ -138,6 +149,41 @@ export default function InundationPrediction() {
       setMode('simulation');
     }
   }, [telemetryLoading, mode, isLiveTelemetryActive]);
+
+  // Audit #15 revised architecture: the PREP inundation model executes only
+  // in the separately hosted R/Plumber service. RescuAR Admin sends the
+  // effective Live/Simulation river level and renders the API response.
+  // There is deliberately no embedded JavaScript fallback copy of the model.
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setPrepApiLoading(true);
+      setPrepApiError('');
+
+      try {
+        const result = await predictPrepInundation({
+          riverLevel: riverDepth,
+          mode: isLiveMode && isLiveTelemetryActive ? 'live' : 'simulation',
+          inputSource: isLiveMode && isLiveTelemetryActive ? 'PAGASA' : 'MANUAL_SIMULATION',
+          observedAt: isLiveMode && isLiveTelemetryActive ? liveTelemetry?.updated_at : null,
+          signal: controller.signal,
+        });
+        setPrepPrediction(result);
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        console.error('PREP R inundation API request failed:', error);
+        setPrepPrediction(null);
+        setPrepApiError(error?.message || 'PREP R inundation API is unavailable.');
+      } finally {
+        if (!controller.signal.aborted) setPrepApiLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [riverDepth, isLiveMode, isLiveTelemetryActive, liveTelemetry?.updated_at, prepRefreshKey]);
 
   // Initialize Map
   useEffect(() => {
@@ -228,8 +274,10 @@ export default function InundationPrediction() {
       outerPolygonRef.current = null;
     }
 
-    if (riverDepth > 0) {
-      // Core inundation zone (Primary river basin & Tumana/Nangka)
+    if (prepAffectedArea.has_triggered_rule) {
+      // Legacy static visualization. Audit #15 ties activation to the exact
+      // PREP affected-area threshold model. Polygon geometry itself remains a
+      // legacy visualization and is handled by the later spatial-model audits.
       const coreCoords = [
         [14.6720, 121.0910],
         [14.6670, 121.0975],
@@ -260,26 +308,22 @@ export default function InundationPrediction() {
       // Color scheme based on severity level
       let fillColor = '#0ea5e9'; // Blue (Moderate)
       let strokeColor = '#0284c7';
-      if (riverDepth >= 18) {
+      const alarmLevel = Number(prepPrediction?.alarm?.level || 0);
+      if (alarmLevel >= 3) {
         fillColor = '#ef4444'; // Red (Severe)
         strokeColor = '#b91c1c';
-      } else if (riverDepth >= 15) {
+      } else if (alarmLevel >= 1) {
         fillColor = '#f97316'; // Orange (Warning)
         strokeColor = '#c2410c';
       }
 
       const opacity = Math.min(0.65, 0.22 + (riverDepth / 30) * 0.4);
 
-      if (riverDepth >= 14) {
-        const outerPoly = L.polygon(expandedCoords, {
-          color: strokeColor,
-          weight: 1,
-          dashArray: '4, 6',
-          fillColor: fillColor,
-          fillOpacity: opacity * 0.45,
-        }).addTo(map);
-        outerPolygonRef.current = outerPoly;
-      }
+      // The legacy PREP source does not define a second spatial boundary or
+      // a 14 m expansion threshold. Do not activate the old unsupported outer
+      // polygon here; Audit #17 will replace static geometry with evidence-
+      // based spatial inundation data.
+      void expandedCoords;
 
       const polygon = L.polygon(coreCoords, {
         color: strokeColor,
@@ -290,61 +334,59 @@ export default function InundationPrediction() {
 
       polygonRef.current = polygon;
     }
-  }, [riverDepth]);
+  }, [riverDepth, prepAffectedArea.has_triggered_rule, prepPrediction?.alarm?.level]);
 
   const handleRefresh = async () => {
     setIsSpinning(true);
     await fetchStoNinoTelemetry();
+    setPrepRefreshKey((value) => value + 1);
     setIsSpinning(false);
   };
 
   const getImpactSummary = () => {
-    if (riverDepth <= 0) return null;
+    if (!prepAffectedArea.has_triggered_rule) return null;
 
-    let barangays = [];
+    // These evacuation-center suggestions remain a separate RescuAR response
+    // layer and are not part of the R inundation model. Audit #25 will replace
+    // them with spatial facility exposure/intersection logic.
+    const alarmLevel = Number(prepPrediction?.alarm?.level || 0);
     let centers = [];
-    
-    if (riverDepth < 10) {
-      barangays = ['Tumana'];
+    if (alarmLevel <= 1) {
       centers = ['Concepcion Elementary School', 'Concepcion Integrated School ES'];
-    } else if (riverDepth < 15) {
-      barangays = ['Tumana', 'Nangka'];
-      centers = ['Concepcion Elementary School', 'Nangka Elementary School', 'Nangka Gym'];
-    } else if (riverDepth < 20) {
-      barangays = ['Tumana', 'Nangka', 'Malanday'];
-      centers = ['Concepcion Elementary School', 'Nangka Elementary School', 'Malanday Elementary School', 'Bulelak Gym'];
+    } else if (alarmLevel === 2) {
+      centers = ['Concepcion Elementary School', 'Nangka Elementary School', 'Nangka Gym', 'Malanday Elementary School'];
     } else {
-      barangays = ['Tumana', 'Nangka', 'Malanday', 'Tañong', 'Jesus dela Peña'];
       centers = ['Concepcion Elementary School', 'Nangka Elementary School', 'Malanday Elementary School', 'Tañong High School', 'Jesus Dela Peña NHS', 'Bulelak Gym'];
     }
 
-    let households = 4213;
-    let population = 17842;
-
-    if (riverDepth !== 16) {
-      households = Math.round(riverDepth * 263.3125);
-      population = Math.round(riverDepth * 1115.125);
-    }
+    const population = Number(prepPrediction?.exposure?.total_population_affected);
 
     return {
-      affectedBarangays: barangays,
-      householdsAffected: households.toLocaleString(),
-      populationAffected: population.toLocaleString(),
-      evacuationCenters: centers
+      affectedBarangays: prepAffectedArea.affected_barangays || [],
+      householdsAffected: 'Pending Audit #24',
+      populationAffected: Number.isFinite(population) ? population.toLocaleString('en-PH') : 'Unavailable',
+      evacuationCenters: centers,
+      affectedAreaModel: prepPrediction?.model || null,
+      triggeredThresholds: prepAffectedArea.triggered_thresholds || [],
     };
   };
 
   const impactData = getImpactSummary();
   const sliderPercentage = (riverDepth / 30) * 100;
 
-  const getAlertLevelStatus = () => {
-    if (riverDepth <= 0) return { label: 'NORMAL LEVEL', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', icon: CheckCircle2 };
-    if (riverDepth < 15) return { label: 'ALARM LEVEL 1 - MONITORING', color: '#ca8a04', bg: '#fefce8', border: '#fef08a', icon: AlertTriangle };
-    if (riverDepth < 18) return { label: 'ALARM LEVEL 2 - PREPARATION', color: '#ea580c', bg: '#fff7ed', border: '#ffedd5', icon: AlertTriangle };
-    return { label: 'ALARM LEVEL 3 - MANDATORY EVACUATION', color: '#dc2626', bg: '#fef2f2', border: '#fecaca', icon: ShieldAlert };
+  // Alarm classification is returned by the same R service. The JavaScript
+  // client only maps the returned code to presentation colors/icons.
+  const getAlertLevelPresentation = () => {
+    const code = prepPrediction?.alarm?.code;
+    const label = prepPrediction?.alarm?.label || 'PREP API RESULT UNAVAILABLE';
+
+    if (code === 'ALARM_1') return { label, color: '#ca8a04', bg: '#fefce8', border: '#fef08a', icon: AlertTriangle };
+    if (code === 'ALARM_2') return { label, color: '#ea580c', bg: '#fff7ed', border: '#ffedd5', icon: AlertTriangle };
+    if (code === 'ALARM_3') return { label, color: '#dc2626', bg: '#fef2f2', border: '#fecaca', icon: ShieldAlert };
+    return { label, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', icon: CheckCircle2 };
   };
 
-  const alertStatus = getAlertLevelStatus();
+  const alertStatus = getAlertLevelPresentation();
   const StatusIcon = alertStatus.icon;
 
   return (
@@ -353,7 +395,7 @@ export default function InundationPrediction() {
       <div className="inundation-header">
         <div className="title-group">
           <div className="title-row">
-            <h1 className="inundation-title">Inundation Prediction</h1>
+            <h1 className="inundation-title">Preliminary Inundation Estimate</h1>
             <span
               className={`live-badge ${isLiveMode && isLiveTelemetryActive ? '' : isLiveMode ? 'telemetry-not-live' : 'simulation-mode-badge'}`}
               title={isLiveMode ? telemetryFreshness.description : 'Manual scenario testing; PAGASA telemetry is not driving the model.'}
@@ -390,7 +432,7 @@ export default function InundationPrediction() {
           <div className="card-header-bar">
             <div className="card-title-container">
               <Compass size={18} className="text-brand" />
-              <h2 className="card-heading">Flood Impact Map</h2>
+              <h2 className="card-heading">Legacy PREP Impact Visualization</h2>
             </div>
             
             {/* Map Theme Control */}
@@ -428,8 +470,8 @@ export default function InundationPrediction() {
                   <span>Dry Sector</span>
                 </div>
                 <div className="legend-item">
-                  <span className={`legend-swatch ${riverDepth >= 18 ? 'severe-swatch' : riverDepth >= 15 ? 'warning-swatch' : 'flood-swatch'}`}></span>
-                  <span>Inundated Sector</span>
+                  <span className={`legend-swatch ${Number(prepPrediction?.alarm?.level || 0) >= 3 ? 'severe-swatch' : Number(prepPrediction?.alarm?.level || 0) >= 1 ? 'warning-swatch' : 'flood-swatch'}`}></span>
+                  <span>Legacy PREP Visualization</span>
                 </div>
                 <div className="legend-item">
                   <span className="legend-swatch hospital-swatch"></span>
@@ -487,7 +529,7 @@ export default function InundationPrediction() {
               <div className="inundation-telemetry-status-details">
                 {telemetryError || (
                   isLiveMode && isLiveTelemetryActive
-                    ? `Sto. Niño ${liveLevel.toFixed(2)} m is actively driving the existing PREP inundation model.`
+                    ? `Sto. Niño ${liveLevel.toFixed(2)} m is sent to the separate PREP R API. Affected-area thresholds remain unvalidated pending Audit #16.`
                     : isLiveTelemetryActive
                       ? `Fresh Sto. Niño telemetry (${liveLevel.toFixed(2)} m) is available, but Simulation Mode is active and does not use or modify live telemetry.`
                       : 'Live Mode is unavailable because PAGASA telemetry is not fresh. Simulation Mode remains available for scenario testing.'
@@ -558,6 +600,14 @@ export default function InundationPrediction() {
                 ? 'Live Mode is read-only: the verified PAGASA observation drives the model and manual controls are locked.'
                 : 'Simulation Mode is isolated from telemetry: manual values are local scenario inputs and are never written to monitoring_stations or river_level_history.'}
             </div>
+
+            <div className={`inundation-mode-note ${prepApiError ? 'simulation' : 'live'}`} role="status">
+              {prepApiLoading
+                ? 'PREP R API: evaluating inundation model…'
+                : prepApiError
+                  ? `PREP R API unavailable: ${prepApiError}. Only the inundation endpoint is unavailable; the rest of RescuAR Admin remains operational.`
+                  : `PREP R API connected${PREP_API_URL ? ` • ${PREP_API_URL}` : ''}. The affected-area model is executed outside RescuAR Admin.`}
+            </div>
           </div>
 
           {/* Impact Summary Card */}
@@ -569,14 +619,27 @@ export default function InundationPrediction() {
               </div>
             </div>
 
-            {riverDepth === 0 ? (
+            {prepApiLoading ? (
+              <div className="empty-summary-container">
+                <div className="empty-icon-halo"><Activity size={36} color="#0284c7" /></div>
+                <h3 className="empty-title">Evaluating PREP R Model</h3>
+                <p>The separate R-language inundation endpoint is processing the selected river level.</p>
+              </div>
+            ) : prepApiError ? (
+              <div className="empty-summary-container">
+                <div className="empty-icon-halo"><AlertTriangle size={36} color="#dc2626" /></div>
+                <h3 className="empty-title">PREP Inundation Endpoint Unavailable</h3>
+                <p>{prepApiError}</p>
+                <p className="empty-subtext">No embedded JavaScript fallback is used. Other RescuAR Admin modules remain independent from this endpoint.</p>
+              </div>
+            ) : !impactData ? (
               <div className="empty-summary-container">
                 <div className="empty-icon-halo">
                   <CheckCircle2 size={36} color="#16a34a" />
                 </div>
-                <h3 className="empty-title">No Inundation Threat</h3>
-                <p>No inundation predicted currently.</p>
-                <p className="empty-subtext">{isLiveMode && isLiveTelemetryActive ? 'Result is driven by the current verified PAGASA observation.' : 'Simulation Mode is active; adjust the manual river depth to test the existing inundation logic.'}</p>
+                <h3 className="empty-title">No PREP Threshold Triggered</h3>
+                <p>No legacy PREP affected-area rule is triggered at this river level.</p>
+                <p className="empty-subtext">This conclusion came from the separate PREP R API. It does not prove that flooding is impossible; it only means the legacy threshold model did not trigger.</p>
               </div>
             ) : (
               <div className="impact-content-wrapper">
@@ -593,6 +656,14 @@ export default function InundationPrediction() {
                   <span>{alertStatus.label}</span>
                 </div>
 
+                <div className="model-evidence-banner" role="note">
+                  <div className="model-evidence-title">PREP R API • Legacy unvalidated affected-area thresholds</div>
+                  <div className="model-evidence-text">
+                    Source: {impactData.affectedAreaModel?.source || 'PREP R API'}. Triggered threshold(s): {impactData.triggeredThresholds.map((level) => `${level} m`).join(', ')}.
+                    These barangay relationships are preserved from PREP for traceability and are not presented as empirically validated until Audit #16/#28 is completed.
+                  </div>
+                </div>
+
                 {/* Details List */}
                 <div className="impact-details-list">
                   
@@ -600,7 +671,7 @@ export default function InundationPrediction() {
                   <div className="impact-item-row">
                     <div className="impact-label-group">
                       <Home size={15} className="item-icon" />
-                      <span className="impact-item-label">Affected Barangays</span>
+                      <span className="impact-item-label">Modeled Affected Barangays</span>
                     </div>
                     <div className="barangay-tags-container">
                       {impactData.affectedBarangays.map(brgy => (
