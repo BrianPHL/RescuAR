@@ -115,7 +115,8 @@
 		<MauiFont Include="Resources\Fonts\*" />
 
 		<!-- Raw assets -->
-		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+		<MauiAsset Include="Resources\Raw\**" Exclude="Resources\Raw\2D_MAP.mbtiles;Resources\Raw\*ROADS.geojson;Resources\Raw\*POINTS.geojson" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+		<AndroidResource Remove="Resources\raw\2D_MAP.mbtiles" />
 	</ItemGroup>
 
 	<!-- MAUI packages -->

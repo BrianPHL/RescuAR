@@ -101,6 +101,113 @@ Check(route is not null && route.Points.Count >= 2 &&
     "origin snap avoids the nearest disconnected fragment");
 Check(await new AStarRoutingService(new RoadGraph(nodes,edges,(_,_) => true))
     .FindRouteAsync(C(0,1),C(100,8)) is null, "road barrier remains enforced");
+
+// An unmarked junction keeps walkable approaches on each side without
+// inventing a crossing over the major road.
+GeoJsonRoadFeature Way(string highway, GeoCoordinate a, GeoCoordinate b,
+    IReadOnlyDictionary<string,string>? tags = null) => new()
+{
+    Highway = highway, Coordinates = new[] { a, b },
+    Tags = tags ?? new Dictionary<string,string>()
+};
+bool CanReach(RoadGraph graph, GeoCoordinate from, GeoCoordinate to)
+{
+    RoadNode startNode = graph.Nodes.Values.Single(n => n.Coordinate == from);
+    RoadNode endNode = graph.Nodes.Values.Single(n => n.Coordinate == to);
+    var seen = new HashSet<int> { startNode.Id };
+    var queue = new Queue<RoadNode>();
+    queue.Enqueue(startNode);
+    while (queue.Count > 0)
+    {
+        RoadNode node = queue.Dequeue();
+        if (node.Id == endNode.Id) return true;
+        foreach (RoadEdge edge in node.Edges)
+            if (seen.Add(edge.To.Id)) queue.Enqueue(edge.To);
+    }
+    return false;
+}
+var junctionWays = new[]
+{
+    Way("primary", C(0,-20), C(0,20)),
+    Way("residential", C(-20,0), C(0,0)),
+    Way("residential", C(-10,10), C(0,0)),
+    Way("residential", C(0,0), C(20,0))
+};
+var junctionGraph = new RoadGraphBuilder().Build(junctionWays);
+Check(junctionGraph.Edges.Count == 6 &&
+    CanReach(junctionGraph,C(-20,0),C(-10,10)) &&
+    !CanReach(junctionGraph,C(-20,0),C(20,0)),
+    "endpoint junctions retain same-side ways without an unmarked crossing");
+GeoJsonPointFeature crossingPoint = new()
+{
+    Highway = "crossing", Coordinate = C(0,0),
+    Tags = new Dictionary<string,string> { ["crossing:markings"] = "zebra" }
+};
+Check(CanReach(new RoadGraphBuilder().Build(junctionWays,
+    new[] { crossingPoint }), C(-20,0), C(20,0)),
+    "marked crossing point joins both mapped approaches");
+Check(!CanReach(new RoadGraphBuilder().Build(junctionWays,
+    new[] { new GeoJsonPointFeature { Highway="crossing", Barrier="gate",
+        Coordinate=C(0,0), Tags=crossingPoint.Tags } }), C(-20,0), C(20,0)),
+    "barrier point cannot authorize crossing");
+Check(new RoadGraphBuilder().Build(new[]
+    { junctionWays[0], Way("residential",C(-20,5),C(20,5)) }).Edges.Count == 0,
+    "unmarked interior crossing stays blocked");
+Check(new RoadGraphBuilder().Build(new[]
+    { junctionWays[0], Way("footway",C(0,-10),C(0,10)) }).Edges.Count == 0,
+    "overlap with major-road centerline stays blocked");
+Check(new RoadGraphBuilder().Build(new[]
+    { junctionWays[0], Way("footway",C(-20,5),C(20,5),
+        new Dictionary<string,string> { ["footway"]="crossing",
+            ["crossing:markings"]="zebra" }) }).Edges.Count == 2,
+    "marked crossing way remains routable");
+Check(new RoadGraphBuilder().Build(new[]
+    { junctionWays[0], Way("footway",C(0,-10),C(0,10),
+        new Dictionary<string,string> { ["footway"]="crossing",
+            ["crossing:markings"]="zebra" }) }).Edges.Count == 0,
+    "crossing tag cannot authorize a road-aligned segment");
+var duplicatePrimary = new GeoJsonRoadFeature
+    { OsmId="qc-overlap-1", Highway="residential",
+      Coordinates=new[] { C(30,0),C(40,0) } };
+var duplicateSecondary = new GeoJsonRoadFeature
+    { OsmId="qc-overlap-1", Highway="residential",
+      Coordinates=new[] { C(40,0),C(30,0) } };
+Check(new RoadGraphBuilder().Build(new[]
+    { duplicatePrimary, duplicateSecondary }).Edges.Count == 2,
+    "overlapping QC geometry does not duplicate a Marikina road segment");
+var actualNetwork = await NavigationDataBootstrap.ValidateOnceAsync();
+Check(actualNetwork.DirectedEdgeCount > 0 &&
+    actualNetwork.AcceptedRoadFeatureCount > 0,
+    "available datasets build a usable pedestrian graph");
+async Task<int> CountEmbeddedFeatures(string kind)
+{
+    int total = 0;
+    foreach (string resourceName in NavigationDataBootstrap.GetGeoJsonResourceNames(kind))
+    {
+        using Stream stream = NavigationDataBootstrap.OpenGeoJsonResource(resourceName);
+        using var document = await System.Text.Json.JsonDocument.ParseAsync(stream);
+        total += document.RootElement.GetProperty("features").GetArrayLength();
+    }
+    return total;
+}
+Check(actualNetwork.SourceRoadFeatureCount == await CountEmbeddedFeatures("ROADS") &&
+    actualNetwork.PointFeatureCount == await CountEmbeddedFeatures("POINTS"),
+    "ordinary build loads every embedded road and point dataset");
+var serviceUrls = (string[])typeof(MLDRoutingService)
+    .GetField("baseUrls", System.Reflection.BindingFlags.NonPublic |
+        System.Reflection.BindingFlags.Instance)!
+    .GetValue(new MLDRoutingService())!;
+Check(serviceUrls.SequenceEqual(new[] { MLDRoutingService.PrimaryBaseUrl }),
+    "ordinary MLD uses the primary regional server without stale fallback");
+var separateRegions = new RoadGraphBuilder().Build(new[]
+{
+    Way("residential", C(0), C(20)),
+    Way("residential", C(10000), C(10020))
+});
+Check(CanReach(separateRegions, C(0), C(20)) &&
+    CanReach(separateRegions, C(10000), C(10020)) &&
+    !CanReach(separateRegions, C(0), C(10000)),
+    "separate regional extracts retain local connections without invented links");
 var dense = Route(Enumerable.Range(0,220)
     .Select(i => C(i*0.2, i%2 == 0 ? 0 : 0.2)).ToArray());
 ARRouteBridge.Clear();
