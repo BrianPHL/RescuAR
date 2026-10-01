@@ -1,13 +1,13 @@
 using System.Collections.Generic;
+using RescuAR.Navigation.Data;
 
 namespace RescuAR.Navigation.Models;
 
 /// <summary>
 /// Directed pedestrian graph edge.
 ///
-/// For the initial navigation foundation, cost is physical walking distance.
-/// Hazard/accessibility penalties can be layered on later without changing
-/// the route representation.
+/// Cost includes shared evacuation preferences; LengthMeters remains physical
+/// distance for route progress and AR placement.
 /// </summary>
 public sealed class RoadEdge
 {
@@ -52,7 +52,7 @@ public sealed class RoadEdge
             lengthMeters;
 
         Cost =
-            lengthMeters;
+            lengthMeters * EvacuationRoutingPolicy.CostFactor(highwayType, tags);
 
         OsmId =
             osmId;

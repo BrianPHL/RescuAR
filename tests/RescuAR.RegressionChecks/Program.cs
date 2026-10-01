@@ -6,6 +6,8 @@ using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
+using RescuAR.Navigation.Hazards;
+using System.Text.Json;
 
 int passed = 0;
 void Check(bool condition, string name)
@@ -102,14 +104,36 @@ Check(route is not null && route.Points.Count >= 2 &&
 Check(await new AStarRoutingService(new RoadGraph(nodes,edges,(_,_) => true))
     .FindRouteAsync(C(0,1),C(100,8)) is null, "road barrier remains enforced");
 
-// An unmarked junction keeps walkable approaches on each side without
-// inventing a crossing over the major road.
+// Mapped shared junctions remain usable without zebra markings. Geometric
+// intersections alone never manufacture a source vertex.
 GeoJsonRoadFeature Way(string highway, GeoCoordinate a, GeoCoordinate b,
     IReadOnlyDictionary<string,string>? tags = null) => new()
 {
     Highway = highway, Coordinates = new[] { a, b },
     Tags = tags ?? new Dictionary<string,string>()
 };
+var privateAccessTags = new Dictionary<string,string> { ["access"] = "private" };
+var pedestrianFilter = new PedestrianRoadFilter();
+Check(pedestrianFilter.IsWalkable(Way("residential", C(0), C(20), privateAccessTags)),
+    "evacuation routing accepts private residential roads");
+Check(pedestrianFilter.IsWalkable(Way("service", C(0), C(20),
+    new Dictionary<string,string> { ["access"] = "PRIVATE" })),
+    "private access matching remains case insensitive");
+foreach (var (key, value) in new[] { ("foot", "no"), ("foot", "private"), ("access", "no") })
+{
+    var deniedTags = new Dictionary<string,string>(privateAccessTags) { [key] = value };
+    Check(!pedestrianFilter.IsWalkable(Way("residential", C(0), C(20), deniedTags)),
+        $"private ownership does not override {key}={value}");
+}
+Check(pedestrianFilter.IsWalkable(Way("primary", C(0), C(20), privateAccessTags)),
+    "mapped primary roads accept evacuation walking and private access");
+var privateExitGraph = new RoadGraphBuilder().Build(new[]
+{
+    Way("residential", C(0), C(40), privateAccessTags),
+    Way("residential", C(40), C(80))
+});
+Check(await new AStarRoutingService(privateExitGraph).FindRouteAsync(C(0), C(80)) is not null,
+    "offline routing can exit a private road onto a connected public road");
 bool CanReach(RoadGraph graph, GeoCoordinate from, GeoCoordinate to)
 {
     RoadNode startNode = graph.Nodes.Values.Single(n => n.Coordinate == from);
@@ -134,10 +158,10 @@ var junctionWays = new[]
     Way("residential", C(0,0), C(20,0))
 };
 var junctionGraph = new RoadGraphBuilder().Build(junctionWays);
-Check(junctionGraph.Edges.Count == 6 &&
+Check(junctionGraph.Edges.Count == 8 &&
     CanReach(junctionGraph,C(-20,0),C(-10,10)) &&
-    !CanReach(junctionGraph,C(-20,0),C(20,0)),
-    "endpoint junctions retain same-side ways without an unmarked crossing");
+    CanReach(junctionGraph,C(-20,0),C(20,0)),
+    "mapped shared junctions do not require crossing markings");
 GeoJsonPointFeature crossingPoint = new()
 {
     Highway = "crossing", Coordinate = C(0,0),
@@ -146,26 +170,39 @@ GeoJsonPointFeature crossingPoint = new()
 Check(CanReach(new RoadGraphBuilder().Build(junctionWays,
     new[] { crossingPoint }), C(-20,0), C(20,0)),
     "marked crossing point joins both mapped approaches");
-Check(!CanReach(new RoadGraphBuilder().Build(junctionWays,
+Check(CanReach(new RoadGraphBuilder().Build(junctionWays,
     new[] { new GeoJsonPointFeature { Highway="crossing", Barrier="gate",
         Coordinate=C(0,0), Tags=crossingPoint.Tags } }), C(-20,0), C(20,0)),
-    "barrier point cannot authorize crossing");
+    "an unlocked pedestrian gate does not discard a mapped junction");
+var privateCrossingTags = new Dictionary<string,string>(crossingPoint.Tags)
+    { ["access"] = "private" };
+Check(CanReach(new RoadGraphBuilder().Build(junctionWays,
+    new[] { new GeoJsonPointFeature { Highway="crossing", Coordinate=C(0),
+        Tags=privateCrossingTags } }), C(-20), C(20)),
+    "private access does not discard an otherwise marked crossing point");
+Check(!CanReach(new RoadGraphBuilder().Build(junctionWays,
+    new[] { new GeoJsonPointFeature { Highway="crossing", Coordinate=C(0),
+        Tags=new Dictionary<string,string>(privateCrossingTags) { ["foot"]="no" } } }),
+    C(-20), C(20)), "foot=no crossing point stays blocked despite private access");
+Check(!pedestrianFilter.IsWalkable(Way("footway", C(-20), C(20),
+    new Dictionary<string,string> { ["footway"]="crossing", ["foot"]="no" })),
+    "a mapped crossing does not override an explicit pedestrian prohibition");
 Check(new RoadGraphBuilder().Build(new[]
-    { junctionWays[0], Way("residential",C(-20,5),C(20,5)) }).Edges.Count == 0,
-    "unmarked interior crossing stays blocked");
+    { junctionWays[0], Way("residential",C(-20,5),C(20,5)) }).Edges.Count == 4,
+    "geometric intersection retains both roads without inventing a junction");
 Check(new RoadGraphBuilder().Build(new[]
-    { junctionWays[0], Way("footway",C(0,-10),C(0,10)) }).Edges.Count == 0,
-    "overlap with major-road centerline stays blocked");
+    { junctionWays[0], Way("footway",C(0,-10),C(0,10)) }).Edges.Count == 4,
+    "a mapped footway is not deleted merely for overlapping a mapped street");
 Check(new RoadGraphBuilder().Build(new[]
     { junctionWays[0], Way("footway",C(-20,5),C(20,5),
         new Dictionary<string,string> { ["footway"]="crossing",
-            ["crossing:markings"]="zebra" }) }).Edges.Count == 2,
+            ["crossing:markings"]="zebra" }) }).Edges.Count == 4,
     "marked crossing way remains routable");
 Check(new RoadGraphBuilder().Build(new[]
     { junctionWays[0], Way("footway",C(0,-10),C(0,10),
         new Dictionary<string,string> { ["footway"]="crossing",
-            ["crossing:markings"]="zebra" }) }).Edges.Count == 0,
-    "crossing tag cannot authorize a road-aligned segment");
+            ["crossing:markings"]="zebra" }) }).Edges.Count == 4,
+    "shared policy preserves mapped crossing geometry");
 var duplicatePrimary = new GeoJsonRoadFeature
     { OsmId="qc-overlap-1", Highway="residential",
       Coordinates=new[] { C(30,0),C(40,0) } };
@@ -175,10 +212,120 @@ var duplicateSecondary = new GeoJsonRoadFeature
 Check(new RoadGraphBuilder().Build(new[]
     { duplicatePrimary, duplicateSecondary }).Edges.Count == 2,
     "overlapping QC geometry does not duplicate a Marikina road segment");
+using (var cases = JsonDocument.Parse(File.ReadAllText(
+    Path.Combine(AppContext.BaseDirectory, "evacuation-policy-cases.json"))))
+{
+    foreach (var test in cases.RootElement.EnumerateArray())
+    {
+        string name = test.GetProperty("name").GetString()!;
+        var tags = test.GetProperty("tags").EnumerateObject().ToDictionary(
+            item => item.Name, item => item.Value.GetString()!, StringComparer.OrdinalIgnoreCase);
+        if (test.TryGetProperty("node", out var nodeCase) && nodeCase.GetBoolean())
+        {
+            Check(EvacuationRoutingPolicy.IsBlockedPoint(tags.GetValueOrDefault("barrier"), tags) ==
+                test.GetProperty("blocked").GetBoolean(), "shared policy node: " + name);
+            continue;
+        }
+        var way = Way(tags.GetValueOrDefault("highway")!, C(0), C(100), tags);
+        Check(EvacuationRoutingPolicy.IsDirectionAllowed(way, true) == test.GetProperty("forward").GetBoolean() &&
+            EvacuationRoutingPolicy.IsDirectionAllowed(way, false) == test.GetProperty("backward").GetBoolean(),
+            "shared policy directions: " + name);
+        if (test.TryGetProperty("factor", out var factor))
+            Check(Math.Abs(EvacuationRoutingPolicy.CostFactor(way.Highway ?? "", tags) - factor.GetDouble()) < 1e-9,
+                "shared policy cost: " + name);
+    }
+}
+var reverseGraph = new RoadGraphBuilder().Build(new[] { Way("footway", C(0), C(200),
+    new Dictionary<string,string> { ["oneway:foot"]="-1" }) });
+var reverseService = new AStarRoutingService(reverseGraph);
+var reverseRoute = await reverseService.FindRouteAsync(C(100), C(0));
+Check(reverseRoute is not null && Math.Abs(reverseRoute.TotalDistanceMeters - 100) < 1,
+    "reverse-only partial edge seeds only its reachable endpoint");
+Check(await reverseService.FindRouteAsync(C(100), C(200)) is null,
+    "partial edge cannot bypass pedestrian one-way restrictions");
+var wallGraph = new RoadGraphBuilder().Build(new[] { new GeoJsonRoadFeature
+    { Highway="path", Coordinates=new[] { C(0),C(100),C(200) } } },
+    new[] { new GeoJsonPointFeature { Barrier="wall", Coordinate=C(100) } });
+Check(!CanReach(wallGraph,C(0),C(200)), "mapped wall splits approaches without deleting either side");
+var gradeGraph = new RoadGraphBuilder().Build(new[] {
+    new GeoJsonRoadFeature { Highway="residential", Coordinates=new[] { C(0,-100),C(0),C(0,100) } },
+    new GeoJsonRoadFeature { Highway="path", Coordinates=new[] { C(-100),C(0),C(100) },
+        Tags=new Dictionary<string,string> { ["bridge"]="yes" } } });
+Check(!CanReach(gradeGraph,C(-100),C(0,100)), "bridge interior does not connect to the road beneath it");
+var preferenceGraph = new RoadGraphBuilder().Build(new[] {
+    Way("primary",C(0),C(200)),
+    Way("residential",C(0),C(0,20)), Way("residential",C(0,20),C(200,20)),
+    Way("residential",C(200,20),C(200)) });
+var preferredRoute = await new AStarRoutingService(preferenceGraph).FindRouteAsync(C(0),C(200));
+Check(preferredRoute is not null && preferredRoute.Points.Any(point => point.Coordinate == C(0,20)) &&
+    Math.Abs(preferredRoute.TotalDistanceMeters - preferredRoute.Points[^1].DistanceFromStartMeters) < 0.01,
+    "street preferences preserve actual route distances for AR");
+var detourGraph = new RoadGraphBuilder().Build(new[] {
+    Way("residential",C(0),C(100)), Way("residential",C(0),C(0,400)),
+    Way("residential",C(0,400),C(100,400)), Way("residential",C(100,400),C(100)) });
+RouteHazard Hazard(string id, GeoCoordinate center, double radius) =>
+    new(id,center,radius,"test","high","test hazard","regression",DateTimeOffset.UtcNow);
+var hazard = Hazard("test-block", C(50), 25);
+var safeDetour = await new AStarRoutingService(detourGraph).FindRouteAvoidingHazardsAsync(
+    C(0),C(100),new[] { hazard });
+Check(safeDetour is not null && safeDetour.TotalDistanceMeters > 800 &&
+    RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(safeDetour,C(0),new[] { hazard }),
+    "hazard avoidance accepts a valid route longer than three times direct distance");
+var middleStartGraph = new RoadGraphBuilder().Build(new[] {
+    Way("residential",C(0),C(200)), Way("residential",C(0),C(0,400)),
+    Way("residential",C(0,400),C(200,400)), Way("residential",C(200,400),C(200)) });
+var middleHazards = new[] { Hazard("mid-road-block",C(150),10) };
+var middleDetour = await new AStarRoutingService(middleStartGraph).FindRouteAvoidingHazardsAsync(
+    C(100),C(200),middleHazards);
+Check(middleDetour is not null && middleDetour.Points[0].Coordinate.DistanceTo(C(100)) < 0.1 &&
+    RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(middleDetour,C(100),middleHazards),
+    "hazard routing can start midway along a sparse road without crossing the blocked partial segment");
+Check(!RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(Route(C(15),C(5),C(100)), C(15),
+    new[] { Hazard("escape",C(0),20) }), "both engines reject moving deeper into a starting hazard");
+Check(RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(Route(C(5),C(15),C(100)), C(5),
+    new[] { Hazard("escape",C(0),20) }), "both engines allow a mapped outward hazard escape");
+var urlMethod = typeof(MLDRoutingService).GetMethod("BuildRouteUrl",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+string endpointUrl = (string)urlMethod.Invoke(null,new object[] { "http://test", new[] { C(0),C(100) },0 })!;
+string bypassUrl = (string)urlMethod.Invoke(null,new object[] { "http://test", new[] { C(0),C(50,80),C(100) },0 })!;
+Check(endpointUrl.Contains("radiuses=20;50") && bypassUrl.Contains("radiuses=20;unlimited;50"),
+    "MLD endpoints use shared bounds while hazard bypasses remain steering hints");
+var parseRoutes = typeof(MLDRoutingService).GetMethod("ParseRoutes",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" })!).Count == 0,
+    "MLD out-of-range endpoint is a no-route result rather than an endpoint failure");
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
+    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" })!).Count == 0,
+    "MLD invalid interior geometry cannot manufacture a shortcut");
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0.001,0]]},\"properties\":{\"highway\":\"service\",\"foot\":\"yes\",\"access\":\"no\",\"tunnel\":\"building_passage\"}}]}")))
+{
+    var exportedRoads = await new GeoJsonRoadLoader().LoadRoadsAsync(json);
+    Check(exportedRoads.Count == 1 && pedestrianFilter.IsWalkable(exportedRoads[0]),
+        "flat exported tags preserve pedestrian permission and building passage access");
+}
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0,95],[0.001,0]]},\"properties\":{\"highway\":\"path\"}}]}")))
+    Check((await new GeoJsonRoadLoader().LoadRoadsAsync(json)).Count == 0,
+        "offline invalid interior geometry cannot manufacture a shortcut");
 var actualNetwork = await NavigationDataBootstrap.ValidateOnceAsync();
 Check(actualNetwork.DirectedEdgeCount > 0 &&
     actualNetwork.AcceptedRoadFeatureCount > 0,
     "available datasets build a usable pedestrian graph");
+var actualRoads = await NavigationDataBootstrap.GetRoadFeaturesAsync();
+var regionalService = new AStarRoutingService(await NavigationDataBootstrap.GetRoadGraphAsync());
+var qcLocal = await regionalService.FindRouteAsync(new(14.71374502,121.01964361),new(14.724923,121.024763));
+var marikinaLocal = await regionalService.FindRouteAsync(new(14.644776,121.094967),new(14.660172,121.118353));
+Check(qcLocal is not null && qcLocal.Points.Count > 1, "QC tester request routes on the expanded offline network");
+Check(marikinaLocal is not null && marikinaLocal.Points.Count > 1, "Marikina request routes on the expanded offline network");
+var balboaBend = actualRoads.Where(road => road.OsmId == "48381228").ToArray();
+if (balboaBend.Length > 0)
+{
+    var actualGraph = await NavigationDataBootstrap.GetRoadGraphAsync();
+    Check(balboaBend.All(pedestrianFilter.IsWalkable) &&
+        actualGraph.Edges.Any(edge => edge.OsmId == "48381228"),
+        "QC Balboa Bend private road contributes actual routing edges");
+}
 async Task<int> CountEmbeddedFeatures(string kind)
 {
     int total = 0;

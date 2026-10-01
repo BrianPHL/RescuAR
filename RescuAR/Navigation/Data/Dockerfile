@@ -1,13 +1,20 @@
-ARG OSRM_IMAGE=osrm/osrm-backend:latest
+ARG OSRM_IMAGE=ghcr.io/project-osrm/osrm-backend:v5.27.1
 
 FROM debian:bookworm-slim AS merger
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends osmium-tool \
+    && apt-get install -y --no-install-recommends osmium-tool python3 lua5.2 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /data
 COPY routing-inputs/ /input/
+COPY evacuation-policy.json /policy/evacuation-policy.json
+COPY profiles/ /policy/profiles/
+RUN python3 /policy/profiles/build-evacuation-policy.py /policy/evacuation-policy.json /policy/profiles \
+        --cases /policy/profiles/evacuation-policy-cases.json \
+    && cd /policy/profiles \
+    && luac5.2 -p evacuation-foot.lua evacuation-access.lua \
+    && lua5.2 test-evacuation-policy.lua
 
 # Each extract keeps its original OSM IDs and complete ways. Disconnected
 # regions do not require roads between them.
@@ -31,8 +38,12 @@ FROM ${OSRM_IMAGE} AS builder
 
 WORKDIR /data
 COPY --from=merger /data/map.osm.pbf /data/map.osm.pbf
+COPY profiles/evacuation-foot.lua /opt/evacuation-foot.lua
+COPY profiles/evacuation-access.lua /opt/evacuation-access.lua
+COPY --from=merger /policy/profiles/evacuation-policy.lua /opt/evacuation-policy.lua
+ENV LUA_PATH="/opt/?.lua;/opt/?/init.lua;;"
 
-RUN osrm-extract -p /opt/foot.lua /data/map.osm.pbf \
+RUN osrm-extract -p /opt/evacuation-foot.lua --small-component-size 1 /data/map.osm.pbf \
     && osrm-partition /data/map.osrm \
     && osrm-customize /data/map.osrm
 

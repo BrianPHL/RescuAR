@@ -1,0 +1,19 @@
+{
+  "allowedHighways": ["footway", "path", "pedestrian", "steps", "residential", "service", "living_street", "corridor", "unclassified", "track", "road", "cycleway", "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "platform", "pier"],
+  "explicitFootHighways": ["motorway", "motorway_link", "trunk", "trunk_link", "busway"],
+  "allowedFoot": ["yes", "designated", "permissive", "official"],
+  "deniedFoot": ["no", "private", "agricultural", "forestry", "delivery", "use_sidepath"],
+  "deniedAccess": ["no", "agricultural", "forestry", "delivery"],
+  "hardBarriers": ["yes", "wall", "fence", "retaining_wall"],
+  "gates": ["gate", "lift_gate", "swing_gate", "kissing_gate"],
+  "majorHighways": ["primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "motorway", "motorway_link", "trunk", "trunk_link", "busway"],
+  "markedCrossings": ["marked", "zebra", "traffic_signals"],
+  "surfaceFactors": {"fine_gravel": 1.3333333333333333, "gravel": 1.3333333333333333, "pebblestone": 1.3333333333333333, "mud": 2.0, "sand": 2.0},
+  "privateFactor": 1.15,
+  "majorRoadFactor": 1.35,
+  "unmarkedCrossingFactor": 1.25,
+  "walkingSpeedKmh": 5.0,
+  "maximumOriginSnapMeters": 20.0,
+  "maximumDestinationSnapMeters": 50.0,
+  "escapeProgressMeters": 0.25
+}
