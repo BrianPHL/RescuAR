@@ -138,10 +138,16 @@ server containing them all.
    other-city.osm.pbf
    ```
 
-   Use the same source snapshot for every extract and derive each area's
+   Prefer the same source snapshot for every extract and derive each area's
    GeoJSON from that source. Do not combine the old GeoJSON-derived
    `marikina-routing.osm.pbf` with current exports. Keep obsolete extracts and
    backups outside `routing-inputs/`. See [Osmium's merge rules](https://docs.osmcode.org/osmium/latest/osmium-merge.html).
+   The build excludes `type=route` and `type=route_master` relations (records
+   grouping bus, numbered-road, hiking, or other routes), which the walking
+   profile does not use. It keeps all nodes, road lines, and other relation
+   types. Different source dates can work when the retained shared objects
+   have identical versions and content. Conflicts in retained objects still
+   require matching source snapshots; do not bypass the version check.
 2. On your local computer with Docker Desktop running, open PowerShell in
    `D:\Projects\RescuAR\RescuAR\Navigation\Data\` and run (not Railway SSH):
 
@@ -150,9 +156,10 @@ server containing them all.
    docker run --rm -p 5000:5000 rescuar-mld
    ```
 
-   No region build arguments are required. The build sorts and merges all
-   `.osm.pbf` inputs, rejects conflicting object versions, checks road-node
-   references, and prepares OSRM using the evacuation foot profile and MLD algorithm.
+   No region build arguments are required. The build excludes unused route
+   groups, sorts and merges all `.osm.pbf` inputs, rejects conflicting retained
+   object versions, checks road-node references, and prepares OSRM using the
+   evacuation foot profile and MLD algorithm.
    An empty input folder fails with an instruction to add extracts.
    Policy/Lua test failures also stop the build. The extra Python/Lua build
    tools stay in the intermediate merger stage, outside the deployed image.

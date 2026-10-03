@@ -18,14 +18,19 @@ RUN python3 /policy/profiles/build-evacuation-policy.py /policy/evacuation-polic
 
 # Each extract keeps its original OSM IDs and complete ways. Disconnected
 # regions do not require roads between them.
+# The walking profile does not use route-group relations. Exclude those
+# before checking versions; keep all nodes, ways, and other relation types.
 RUN set -eu; \
-    mkdir /sorted; \
+    mkdir /filtered /sorted; \
     for file in /input/*.osm.pbf; do \
         if [ ! -f "$file" ]; then \
             echo "Add original regional .osm.pbf extracts to routing-inputs/." >&2; \
             exit 1; \
         fi; \
-        osmium sort "$file" -o "/sorted/$(basename "$file")"; \
+        osmium tags-filter "$file" -i -R \
+            'r/type=route,route_master' \
+            -o "/filtered/$(basename "$file")"; \
+        osmium sort "/filtered/$(basename "$file")" -o "/sorted/$(basename "$file")"; \
     done; \
     osmium merge /sorted/*.osm.pbf -o /data/map.osm.pbf; \
     if [ "$(osmium fileinfo -e -g data.multiple_versions /data/map.osm.pbf)" != "no" ]; then \
