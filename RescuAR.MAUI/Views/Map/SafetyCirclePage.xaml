@@ -78,6 +78,8 @@
                         </CollectionView.EmptyView>
                     </CollectionView>
                     
+                    <Button Text="Copy invite code" Command="{Binding CopyInviteCodeCommand}" />
+                    <Button Text="Manage circles" Command="{Binding ManageCirclesCommand}" />
                     <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" />
                     <Grid ColumnDefinitions="*,*" Padding="16" ColumnSpacing="12">
                         <Border Grid.Column="0" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="12,10">
@@ -227,6 +229,9 @@
                             <BindableLayout.ItemTemplate>
                                 <DataTemplate x:DataType="vm:CircleMember">
                                     <Grid ColumnDefinitions="Auto, *" Padding="24,16">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding ViewModel.CenterOnMemberCommand, Source={x:Reference SafetyCircleRoot}, x:DataType=local:SafetyCirclePage}" CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
                                         <!-- Avatar -->
                                         <Border Grid.Column="0" BackgroundColor="White" Stroke="{Binding ColorTheme}" StrokeThickness="2" WidthRequest="48" HeightRequest="48" VerticalOptions="Center">
                                             <Border.StrokeShape>
@@ -242,8 +247,8 @@
                                         <!-- Info -->
                                         <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Margin="16,0" Spacing="4">
                                             <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
+                                            <Label Text="{Binding StatusText}" TextColor="#64748B" FontSize="13" LineBreakMode="WordWrap" />
                                             <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
-                                                <Label Text="{Binding StatusText}" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
                                                 
                                                 <!-- Battery Percentage Badge -->
                                                 <Border IsVisible="{Binding HasBattery}" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" Padding="6,2" VerticalOptions="Center">
@@ -267,5 +272,17 @@
                 </Grid>
             </Border>
         </ContentView>
+        <Label Text="{Binding SyncStatus}" TextColor="#334155" BackgroundColor="White" Padding="8"
+               HorizontalOptions="Center" VerticalOptions="Start" Margin="16,8,16,0" InputTransparent="True" />
+        <Grid IsVisible="{Binding IsTutorialPopupVisible}" BackgroundColor="#99000000" ZIndex="20">
+            <Border BackgroundColor="White" StrokeShape="RoundRectangle 18" Padding="24" Margin="24" VerticalOptions="Center">
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Stay connected with Safety Circles" FontAttributes="Bold" FontSize="20" TextColor="#0F172A" />
+                    <Label Text="Create or join a circle, then share its invite code with people you trust. Switch circles from the top menu. Tap a person to view their available location." TextColor="#334155" />
+                    <Label Text="Missing locations are shown as unavailable. Last known positions may be out of date. Pending chat updates stay on this device until cloud delivery is confirmed." TextColor="#334155" />
+                    <Button Text="Got it" Command="{Binding CloseTutorialCommand}" BackgroundColor="#0F8068" TextColor="White" />
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
     </Grid>
 </ContentPage>

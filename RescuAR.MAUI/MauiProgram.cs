@@ -183,6 +183,7 @@ public static class MauiProgram
         builder.Services.AddTransient<PersonalInformationPage>();
         builder.Services.AddTransient<HealthInformationPage>();
         builder.Services.AddTransient<SafetyCircleSettingsPage>();
+        builder.Services.AddTransient<SafetyCircleSettingsViewModel>();
         builder.Services.AddTransient<EmergencyContactsPage>();
         builder.Services.AddTransient<AppSettingsPage>();
         builder.Services.AddTransient<HelpCenterPage>();

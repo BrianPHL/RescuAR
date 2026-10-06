@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:models="clr-namespace:RescuAR.App.Models"
+             xmlns:views="clr-namespace:RescuAR.App.Views.Map"
+             x:Name="CircleChatRoot"
              xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Map"
              x:Class="RescuAR.App.Views.Map.CircleChatPage"
              x:DataType="vm:CircleChatViewModel"
@@ -41,9 +44,10 @@
 
                 <!-- Circle Info -->
                 <VerticalStackLayout Grid.Column="2" VerticalOptions="Center" Spacing="2">
+                    <VerticalStackLayout.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleCirclePickerCommand}" /></VerticalStackLayout.GestureRecognizers>
                     <Label Text="{Binding CircleName}" TextColor="White" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation"/>
                     <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                        <BoxView WidthRequest="7" HeightRequest="7" CornerRadius="3.5" BackgroundColor="#4ADE80" VerticalOptions="Center"/>
+
                         <Label Text="{Binding MemberCountText}" TextColor="#E2E8F0" FontSize="11"/>
                     </HorizontalStackLayout>
                 </VerticalStackLayout>
@@ -65,16 +69,21 @@
             </Grid>
         </Border>
 
-        <!-- Uploading Indicator Banner -->
-        <Border Grid.Row="1" IsVisible="{Binding IsUploading}" BackgroundColor="#E0F2FE" Stroke="#BAE6FD" StrokeThickness="1" Padding="12,8" Margin="12,8,12,0">
-            <Border.StrokeShape>
-                <RoundRectangle CornerRadius="10" />
-            </Border.StrokeShape>
-            <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
-                <ActivityIndicator IsRunning="True" Color="#0284C7" WidthRequest="18" HeightRequest="18"/>
-                <Label Text="{Binding UploadStatusText}" TextColor="#0369A1" FontSize="12" FontAttributes="Bold" VerticalOptions="Center"/>
-            </HorizontalStackLayout>
-        </Border>
+        <VerticalStackLayout Grid.Row="1" Padding="12,8" Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+                <Label Text="{Binding SyncStatus}" FontSize="12" TextColor="#475569" VerticalOptions="Center" />
+                <Button Grid.Column="1" Text="Retry pending" Command="{Binding RetryPendingCommand}" FontSize="12" />
+            </Grid>
+            <Label IsVisible="{Binding IsUploading}" Text="{Binding UploadStatusText}" TextColor="#0369A1" />
+            <Button Text="Switch circle" Command="{Binding ToggleCirclePickerCommand}" />
+            <VerticalStackLayout IsVisible="{Binding IsCirclePickerOpen}" BindableLayout.ItemsSource="{Binding MyCircles}" Spacing="6">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:SupabaseSafetyCircle">
+                        <Button Text="{Binding Name}" Command="{Binding ViewModel.SwitchCircleCommand, Source={x:Reference CircleChatRoot}, x:DataType=views:CircleChatPage}" CommandParameter="{Binding .}" />
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+        </VerticalStackLayout>
 
         <!-- Messages Stream -->
         <CollectionView Grid.Row="2" 
@@ -132,7 +141,7 @@
                                     <!-- Time & Read status -->
                                     <HorizontalStackLayout Spacing="4" HorizontalOptions="End">
                                         <Label Text="{Binding FormattedTime}" TextColor="#B2DFDB" FontSize="10" VerticalOptions="Center"/>
-                                        <Path Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" Fill="#80CBC4" Aspect="Uniform" WidthRequest="10" HeightRequest="10" VerticalOptions="Center"/>
+                                        <Label Text="{Binding DeliveryText}" TextColor="#B2DFDB" FontSize="10" />
                                     </HorizontalStackLayout>
                                 </VerticalStackLayout>
                             </Border>

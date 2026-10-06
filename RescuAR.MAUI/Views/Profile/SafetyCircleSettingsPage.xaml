@@ -1,43 +1,62 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<ContentPage
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
-    x:Class="RescuAR.App.Views.Profile.SafetyCircleSettingsPage"
-    x:DataType="vm:ProfileViewModel"
-    Title="Safety Circle"
-    BackgroundColor="#F2F2F7">
-
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+             xmlns:models="clr-namespace:RescuAR.App.Models"
+             xmlns:views="clr-namespace:RescuAR.App.Views.Profile"
+             x:Class="RescuAR.App.Views.Profile.SafetyCircleSettingsPage"
+             x:Name="CircleSettingsRoot" x:DataType="vm:SafetyCircleSettingsViewModel"
+             Title="Safety Circle Management" BackgroundColor="#F2F2F7">
     <ScrollView>
-        <VerticalStackLayout Spacing="20" Padding="20">
-            <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="#E5F3F4" Padding="15">
-                <VerticalStackLayout Spacing="10">
-                    <Label Text="Safety Circle Management" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" />
-                    
-                    <!-- Not in circle -->
-                    <VerticalStackLayout Spacing="10" IsVisible="{Binding IsNotInCircle}">
-                        <Label Text="You are not in a Safety Circle. Create one to share your location with family and friends." TextColor="Black" />
-                        <Button Text="Create New Circle" Command="{Binding CreateCircleCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
-                        <Label Text="- OR -" HorizontalOptions="Center" TextColor="Gray" Margin="0,10" />
-                        <Button Text="Simulate Clicking Deep Invite Link" Command="{Binding ProcessDeepLinkCommand}" BackgroundColor="#5cb85c" TextColor="White" CornerRadius="8" />
+        <VerticalStackLayout Padding="20" Spacing="16">
+            <Label Text="Safety Circles" FontSize="26" FontAttributes="Bold" TextColor="#0F172A" />
+            <Label Text="Switch circles and manage the people you share updates with." TextColor="#64748B" />
+            <Label Text="{Binding SyncStatus}" TextColor="#475569" />
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#0A8491" />
+            <Button Text="Refresh from cloud" Command="{Binding RefreshCommand}" />
+            <Border BackgroundColor="White" StrokeShape="RoundRectangle 16" Padding="16" Stroke="#E2E8F0">
+                <VerticalStackLayout Spacing="12" BindableLayout.ItemsSource="{Binding MyCircles}">
+                    <BindableLayout.EmptyView><Label Text="Create or join a circle below." TextColor="#64748B" /></BindableLayout.EmptyView>
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:SupabaseSafetyCircle">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout>
+                                    <Label Text="{Binding Name}" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <Label Text="{Binding InviteCode, StringFormat='Invite code: {0}'}" TextColor="#64748B" FontSize="12" />
+                                </VerticalStackLayout>
+                                <Button Grid.Column="1" Text="Select" Command="{Binding ViewModel.SelectCircleCommand, Source={x:Reference CircleSettingsRoot}, x:DataType=views:SafetyCircleSettingsPage}" CommandParameter="{Binding .}" />
+                            </Grid>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </Border>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Button Text="Create circle" Command="{Binding CreateCircleCommand}" BackgroundColor="#0A8491" TextColor="White" />
+                <Button Grid.Column="1" Text="Join circle" Command="{Binding JoinCircleCommand}" />
+            </Grid>
+            <Border IsVisible="{Binding HasCircle}" BackgroundColor="White" StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" Padding="16">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Selected circle" TextColor="#64748B" />
+                    <Label Text="{Binding SelectedCircle.Name}" FontSize="20" FontAttributes="Bold" TextColor="#0F172A" />
+                    <Label Text="{Binding SelectedCircle.InviteCode, StringFormat='Invite code: {0}'}" TextColor="#0A8491" />
+                    <Button Text="Copy invite code" Command="{Binding CopyInviteCodeCommand}" />
+                    <Image Source="{Binding LocalPhoto}" HeightRequest="100" Aspect="AspectFit" />
+                    <Button Text="Set photo on this device" Command="{Binding SetDevicePhotoCommand}" />
+                    <Label Text="Circle photos are saved on this device. They are not shared with other members." TextColor="#64748B" FontSize="12" />
+                    <Button IsVisible="{Binding IsOwner}" Text="Rename circle" Command="{Binding RenameCircleCommand}" />
+                    <Label Text="Members" FontAttributes="Bold" TextColor="#0F172A" />
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Members}" Spacing="8">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:User">
+                                <HorizontalStackLayout Spacing="6">
+                                    <Label Text="{Binding FirstName}" TextColor="#334155" />
+                                    <Label Text="{Binding LastName}" TextColor="#334155" />
+                                </HorizontalStackLayout>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
-
-                    <!-- In a circle -->
-                    <VerticalStackLayout Spacing="15" IsVisible="{Binding IsInCircle}">
-                        <HorizontalStackLayout Spacing="5">
-                            <Label Text="Current Circle:" TextColor="Black" />
-                            <Label Text="{Binding CurrentCircle.CircleName}" FontAttributes="Bold" TextColor="Black" />
-                        </HorizontalStackLayout>
-
-                        <Label Text="Share this link to invite others:" TextColor="Gray" FontSize="12" />
-                        <Border StrokeShape="RoundRectangle 8" BackgroundColor="White" Padding="10">
-                            <Label Text="{Binding CurrentCircle.InviteLink}" TextColor="#0A8491" LineBreakMode="TailTruncation" />
-                        </Border>
-
-                        <Button Text="Copy Invite Link" Command="{Binding ShareInviteLinkCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
-                        <Button Text="Leave Circle" Command="{Binding LeaveCircleCommand}" BackgroundColor="#D9534F" TextColor="White" CornerRadius="8" Margin="0,10,0,0" />
-                    </VerticalStackLayout>
-
+                    <Button IsVisible="{Binding CanLeave}" Text="Leave circle" Command="{Binding RemoveCircleCommand}" TextColor="#B91C1C" />
+                    <Button IsVisible="{Binding IsOwner}" Text="Delete circle for all members" Command="{Binding RemoveCircleCommand}" BackgroundColor="#FEE2E2" TextColor="#B91C1C" />
                 </VerticalStackLayout>
             </Border>
         </VerticalStackLayout>

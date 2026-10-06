@@ -1,16 +1,9 @@
-using System;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Controls;
-using Microsoft.Maui.Media;
-using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Cloud;
+using RescuAR.App.Services.SafetyCircle;
 
 namespace RescuAR.App.ViewModels.Map;
 
@@ -37,6 +30,8 @@ public class ChatMessageItem
     public bool IsImage => HasMedia && MediaType.Equals("Image", StringComparison.OrdinalIgnoreCase);
     public bool IsVideo => HasMedia && MediaType.Equals("Video", StringComparison.OrdinalIgnoreCase);
     public bool HasText => !string.IsNullOrWhiteSpace(MessageText);
+    public string DeliveryText { get; set; } = string.Empty;
+    public bool IsPending { get; set; }
     public bool IsMyMessage { get; set; } = true;
     public bool IsNotMyMessage => !IsMyMessage;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -48,229 +43,202 @@ public class ChatMessageItem
 public partial class CircleChatViewModel : ObservableObject
 {
     private readonly SafetyCircleService _safetyCircleService;
-    private IDispatcherTimer? _chatTimer;
-    private string _currentUserId = string.Empty;
-
+    private readonly IDispatcherTimer? _chatTimer;
+    private string _accountId = string.Empty;
+    private int _generation;
+    private bool _active;
+    private bool _refreshing;
     public event Action<ChatMessageItem>? MessageAdded;
-
+    [ObservableProperty] private string circleId = string.Empty;
+    [ObservableProperty] private string circleName = "Select a circle";
+    [ObservableProperty] private string groupAvatarUrl = string.Empty;
     [ObservableProperty]
-    private string circleId = string.Empty;
-
-    [ObservableProperty]
-    private string circleName = "Family Circle";
-
-    [ObservableProperty]
-    private string groupAvatarUrl = string.Empty;
-
-    [ObservableProperty]
-    private bool hasGroupAvatar = false;
-
+    [NotifyPropertyChangedFor(nameof(HasNoGroupAvatar))]
+    private bool hasGroupAvatar;
     public bool HasNoGroupAvatar => !HasGroupAvatar;
-
-    [ObservableProperty]
-    private string inviteCode = string.Empty;
-
-    [ObservableProperty]
-    private string memberCountText = "Family Updates";
-
-    [ObservableProperty]
-    private string newMessageText = string.Empty;
-
-    [ObservableProperty]
-    private bool isUploading = false;
-
-    [ObservableProperty]
-    private string uploadStatusText = string.Empty;
-
+    [ObservableProperty] private string inviteCode = string.Empty;
+    [ObservableProperty] private string memberCountText = string.Empty;
+    [ObservableProperty] private string newMessageText = string.Empty;
+    [ObservableProperty] private bool isUploading;
+    [ObservableProperty] private string uploadStatusText = string.Empty;
+    [ObservableProperty] private bool isCirclePickerOpen;
+    [ObservableProperty] private string syncStatus = string.Empty;
+    public ObservableCollection<SupabaseSafetyCircle> MyCircles { get; } = new();
     public ObservableCollection<ChatMessageItem> Messages { get; } = new();
 
-    public CircleChatViewModel(SafetyCircleService safetyCircleService)
+    public CircleChatViewModel(SafetyCircleService service)
     {
-        _safetyCircleService = safetyCircleService;
-        RefreshCurrentUserId();
-
+        _safetyCircleService = service;
         _chatTimer = Application.Current?.Dispatcher?.CreateTimer();
         if (_chatTimer != null)
         {
             _chatTimer.Interval = TimeSpan.FromSeconds(3);
-            _chatTimer.Tick += async (s, e) => await RefreshMessagesSilentAsync();
-        }
-    }
-
-    private void RefreshCurrentUserId()
-    {
-        try
-        {
-            _currentUserId = _safetyCircleService.GetCurrentUserId();
-        }
-        catch
-        {
-            _currentUserId = string.Empty;
+            _chatTimer.Tick += async (_, _) => await LoadMessagesAsync();
         }
     }
 
     partial void OnCircleIdChanged(string value)
     {
-        if (!string.IsNullOrEmpty(value))
+        _generation++;
+        Messages.Clear();
+        InviteCode = GroupAvatarUrl = MemberCountText = NewMessageText = string.Empty;
+        HasGroupAvatar = false;
+        IsCirclePickerOpen = false;
+    }
+
+    public async Task StartAsync()
+    {
+        StopTimer();
+        _active = true;
+        try
         {
-            RefreshCurrentUserId();
-            _ = LoadCircleDetailsAndMessagesAsync();
-            _chatTimer?.Start();
+            var account = _safetyCircleService.GetCurrentUserId();
+            if (account != _accountId) { CircleId = string.Empty; Messages.Clear(); MyCircles.Clear(); }
+            _accountId = account;
+            var selected = await _safetyCircleService.Sync.GetSelectedCircleIdAsync();
+            if (!string.IsNullOrWhiteSpace(selected)) CircleId = selected;
+            await LoadCircleDetailsAndMessagesAsync();
+            if (_active) _chatTimer?.Start();
         }
+        catch (Exception ex) { ClearOnAccountChange(); SyncStatus = ex.Message; }
     }
 
     public async Task InitializeWithCircleAsync(string id, string name)
     {
-        CircleId = id;
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            CircleName = name;
-        }
-
-        RefreshCurrentUserId();
-        await LoadCircleDetailsAndMessagesAsync();
-        _chatTimer?.Start();
+        CircleId = id; CircleName = name;
+        await StartAsync();
     }
 
-    public void StopTimer()
+    public void StopTimer() { _active = false; _generation++; _chatTimer?.Stop(); }
+
+    private bool StillCurrent(int generation, string id) => _active && generation == _generation && id == CircleId
+        && _accountId == RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id;
+
+    private void ClearOnAccountChange()
     {
-        _chatTimer?.Stop();
+        if (_accountId == RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id) return;
+        CircleId = string.Empty;
+        MyCircles.Clear(); Messages.Clear(); StopTimer();
     }
 
     public async Task LoadCircleDetailsAndMessagesAsync()
     {
-        if (string.IsNullOrEmpty(CircleId)) return;
-
+        int generation = _generation;
+        string id = CircleId;
         try
         {
-            // Load circle metadata (group avatar, invite code, members count)
-            var circles = await _safetyCircleService.GetMyCirclesAsync();
-            var circle = circles.FirstOrDefault(c => c.Id == CircleId);
-            if (circle != null)
+            var snapshot = await _safetyCircleService.Sync.GetCirclesAsync();
+            if (!StillCurrent(generation, id)) return;
+            MyCircles.Clear();
+            foreach (var circle in snapshot.Items) MyCircles.Add(circle);
+            if (string.IsNullOrWhiteSpace(id))
             {
-                InviteCode = circle.InviteCode;
-                CircleName = circle.Name;
+                var selected = await _safetyCircleService.Sync.GetSelectedCircleIdAsync();
+                if (!StillCurrent(generation, id)) return;
+                CircleId = selected;
+                id = selected; generation = _generation;
             }
-
-            var members = await _safetyCircleService.GetCircleMembersAsync(CircleId);
-            if (members != null && members.Count > 0)
-            {
-                MemberCountText = $"{members.Count} {(members.Count == 1 ? "Member" : "Members")} Online";
-            }
-
-            // Load saved group photo from preferences if exists
-            var savedGroupPhoto = Preferences.Default.Get($"circle_avatar_{CircleId}", string.Empty);
-            if (!string.IsNullOrWhiteSpace(savedGroupPhoto))
-            {
-                GroupAvatarUrl = savedGroupPhoto;
-                HasGroupAvatar = true;
-            }
+            var activeCircle = MyCircles.FirstOrDefault(c => c.Id == id);
+            if (activeCircle == null) { CircleId = string.Empty; SyncStatus = "Select a joined circle to chat."; return; }
+            CircleName = activeCircle.Name;
+            InviteCode = activeCircle.InviteCode;
+            var photo = await _safetyCircleService.Sync.GetLocalPhotoAsync(id);
+            if (!StillCurrent(generation, id)) return;
+            GroupAvatarUrl = photo;
+            HasGroupAvatar = !string.IsNullOrWhiteSpace(GroupAvatarUrl);
+            var members = await _safetyCircleService.Sync.GetMembersAsync(id);
+            if (!StillCurrent(generation, id)) return;
+            MemberCountText = $"{members.Items.Count} members{(members.IsCached ? " · saved list" : "")}";
+            SyncStatus = snapshot.IsCached ? "Saved circles · cloud unavailable" : "Circle refreshed from cloud";
+            await LoadMessagesAsync();
         }
-        catch { }
-
-        await LoadMessagesAsync();
+        catch (Exception ex) { ClearOnAccountChange(); if (StillCurrent(generation, id)) SyncStatus = ex.Message; }
     }
 
-    public async Task LoadMessagesAsync()
-    {
-        if (string.IsNullOrEmpty(CircleId)) return;
+    public async Task LoadMessagesAsync() => await RefreshMessagesAsync(false);
 
+    private async Task RefreshMessagesAsync(bool retry)
+    {
+        if (!_active || _refreshing || string.IsNullOrWhiteSpace(CircleId)) return;
+        _refreshing = true;
+        int generation = _generation;
+        string id = CircleId;
         try
         {
-            RefreshCurrentUserId();
-            var rawMsgs = await _safetyCircleService.GetCircleMessagesAsync(CircleId);
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                UpdateMessagesCollection(rawMsgs);
-            });
+            var snapshot = await _safetyCircleService.Sync.GetMessagesAsync(id, retry);
+            if (!StillCurrent(generation, id)) return;
+            UpdateMessages(snapshot.Items);
+            int pending = snapshot.Items.Count(m => m.IsPending);
+            SyncStatus = snapshot.IsCached ? "Saved messages · cloud unavailable" : "Messages refreshed from cloud";
+            if (pending > 0) SyncStatus += $" · {pending} pending";
         }
-        catch (Exception ex)
+        catch (Exception ex) { ClearOnAccountChange(); if (StillCurrent(generation, id)) SyncStatus = ex.Message; }
+        finally
         {
-            System.Diagnostics.Debug.WriteLine($"LoadMessages error: {ex.Message}");
+            _refreshing = false;
+            if (_active && generation != _generation) _ = LoadMessagesAsync();
         }
     }
 
-    private async Task RefreshMessagesSilentAsync()
+    private void UpdateMessages(List<CircleMessageState> states)
     {
-        if (string.IsNullOrEmpty(CircleId)) return;
-
-        try
+        var updated = states.Select(s => new ChatMessageItem
         {
-            var rawMsgs = await _safetyCircleService.GetCircleMessagesAsync(CircleId);
-            if (rawMsgs.Count != Messages.Count)
-            {
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    UpdateMessagesCollection(rawMsgs);
-                });
-            }
-        }
-        catch { }
-    }
-
-    private void UpdateMessagesCollection(System.Collections.Generic.List<SupabaseCircleMessage> rawMsgs)
-    {
-        RefreshCurrentUserId();
+            Id = s.Message.Id, UserId = s.Message.UserId, SenderName = s.Message.SenderName,
+            SenderAvatarUrl = s.Message.SenderAvatarUrl, MessageText = s.Message.MessageText,
+            MediaUrl = s.Message.MediaUrl, MediaType = s.Message.MediaType,
+            IsMyMessage = s.Message.UserId == _accountId, CreatedAt = s.Message.CreatedAt,
+            DeliveryText = s.DeliveryText, IsPending = s.IsPending
+        }).ToList();
+        string Signature(ChatMessageItem m) => Newtonsoft.Json.JsonConvert.SerializeObject(m);
+        if (Messages.Select(Signature).SequenceEqual(updated.Select(Signature))) return;
+        var lastId = Messages.LastOrDefault()?.Id;
         Messages.Clear();
-        foreach (var m in rawMsgs)
+        foreach (var item in updated) Messages.Add(item);
+        if (Messages.LastOrDefault() is { } latest && latest.Id != lastId) MessageAdded?.Invoke(latest);
+    }
+
+    [RelayCommand] private void ToggleCirclePicker() => IsCirclePickerOpen = !IsCirclePickerOpen;
+    [RelayCommand] private async Task RetryPendingAsync() => await RefreshMessagesAsync(true);
+    [RelayCommand]
+    private async Task SwitchCircleAsync(SupabaseSafetyCircle circle)
+    {
+        try
         {
-            bool isMine = !string.IsNullOrEmpty(_currentUserId) ? (m.UserId == _currentUserId) : true;
-            Messages.Add(new ChatMessageItem
-            {
-                Id = m.Id,
-                UserId = m.UserId,
-                SenderName = !string.IsNullOrWhiteSpace(m.SenderName) ? m.SenderName : "Family Member",
-                SenderAvatarUrl = m.SenderAvatarUrl,
-                MessageText = m.MessageText,
-                MediaUrl = m.MediaUrl,
-                MediaType = m.MediaType,
-                IsMyMessage = isMine,
-                CreatedAt = m.CreatedAt
-            });
+            await _safetyCircleService.Sync.SelectCircleAsync(circle.Id);
+            CircleId = circle.Id;
+            CircleName = circle.Name;
+            await LoadCircleDetailsAndMessagesAsync();
         }
+        catch (Exception ex) { SyncStatus = ex.Message; }
     }
 
     [RelayCommand]
     private async Task SendMessageAsync()
     {
-        if (string.IsNullOrWhiteSpace(NewMessageText)) return;
-
-        var textToSend = NewMessageText.Trim();
-        NewMessageText = string.Empty;
-
-        RefreshCurrentUserId();
-
-        // Optimistic display immediately
-        var localItem = new ChatMessageItem
+        if (IsUploading || string.IsNullOrWhiteSpace(NewMessageText) || string.IsNullOrWhiteSpace(CircleId)) return;
+        string id = CircleId;
+        int generation = _generation;
+        var text = NewMessageText.Trim();
+        IsUploading = true; UploadStatusText = "Saving and sending update...";
+        try
         {
-            Id = Guid.NewGuid().ToString(),
-            UserId = _currentUserId,
-            SenderName = "Me",
-            MessageText = textToSend,
-            MediaType = "Text",
-            IsMyMessage = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            Messages.Add(localItem);
-            MessageAdded?.Invoke(localItem);
-        });
-
-        // Send to cloud
-        if (!string.IsNullOrEmpty(CircleId))
-        {
-            _ = Task.Run(async () =>
+            await _safetyCircleService.SendMessageAsync(id, text);
+            if (StillCurrent(generation, id))
             {
-                await _safetyCircleService.SendMessageAsync(CircleId, textToSend, null, "Text");
-            });
+                NewMessageText = string.Empty;
+                await LoadMessagesAsync();
+            }
         }
+        catch (Exception ex) { if (StillCurrent(generation, id)) SyncStatus = $"Could not save message: {ex.Message}"; }
+        finally { IsUploading = false; UploadStatusText = string.Empty; }
     }
 
     [RelayCommand]
     private async Task CapturePhotoAsync()
     {
+        var requestedCircle = CircleId;
+        var requestedGeneration = _generation;
         try
         {
             var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
@@ -294,7 +262,7 @@ public partial class CircleChatViewModel : ObservableObject
             }
 
             var photo = await MediaPicker.Default.CapturePhotoAsync();
-            if (photo != null)
+            if (photo != null && StillCurrent(requestedGeneration, requestedCircle))
             {
                 await UploadAndSendMediaAsync(photo, "Image");
             }
@@ -308,10 +276,12 @@ public partial class CircleChatViewModel : ObservableObject
     [RelayCommand]
     private async Task PickMediaAsync()
     {
+        var requestedCircle = CircleId;
+        var requestedGeneration = _generation;
         try
         {
             var file = await MediaPicker.Default.PickPhotoAsync();
-            if (file != null)
+            if (file != null && StillCurrent(requestedGeneration, requestedCircle))
             {
                 await UploadAndSendMediaAsync(file, "Image");
             }
@@ -325,10 +295,12 @@ public partial class CircleChatViewModel : ObservableObject
     [RelayCommand]
     private async Task PickVideoAsync()
     {
+        var requestedCircle = CircleId;
+        var requestedGeneration = _generation;
         try
         {
             var file = await MediaPicker.Default.PickVideoAsync();
-            if (file != null)
+            if (file != null && StillCurrent(requestedGeneration, requestedCircle))
             {
                 await UploadAndSendMediaAsync(file, "Video");
             }
@@ -342,118 +314,38 @@ public partial class CircleChatViewModel : ObservableObject
     [RelayCommand]
     private async Task PickGroupPhotoAsync()
     {
-        try
-        {
-            var file = await MediaPicker.Default.PickPhotoAsync();
-            if (file != null)
-            {
-                IsUploading = true;
-                UploadStatusText = "Updating group photo...";
-
-                using var stream = await file.OpenReadAsync();
-                var uploadedUrl = await CloudinaryService.UploadImageStreamAsync(stream, file.FileName);
-
-                if (!string.IsNullOrWhiteSpace(uploadedUrl))
-                {
-                    GroupAvatarUrl = uploadedUrl;
-                    HasGroupAvatar = true;
-                    Preferences.Default.Set($"circle_avatar_{CircleId}", uploadedUrl);
-
-                    if (Shell.Current != null)
-                        await Shell.Current.DisplayAlert("Group Photo Updated", "The Safety Circle group photo has been updated!", "OK");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"PickGroupPhoto error: {ex.Message}");
-        }
-        finally
-        {
-            IsUploading = false;
-            UploadStatusText = string.Empty;
-        }
+        await Shell.Current.DisplayAlert("Circle photo", "Set a photo for this device in Safety Circle Management. Circle photos are not shared with other members.", "OK");
+        await Shell.Current.GoToAsync("SafetyCircleSettingsPage");
     }
 
     [RelayCommand]
     private async Task CopyInviteCodeAsync()
     {
         if (string.IsNullOrWhiteSpace(InviteCode)) return;
-
         await Clipboard.Default.SetTextAsync(InviteCode);
-        if (Shell.Current != null)
-        {
-            await Shell.Current.DisplayAlert("Copied to Clipboard!", $"Invite Code: {InviteCode}\nShare this with family members so they can join and chat with you.", "OK");
-        }
+        await Shell.Current.DisplayAlert("Copied", "Invite code copied. Share it with the people you want in your circle.", "OK");
     }
 
     private async Task UploadAndSendMediaAsync(FileResult file, string mediaType)
     {
-        IsUploading = true;
-        UploadStatusText = $"Uploading {mediaType.ToLower()}...";
-
+        if (IsUploading || string.IsNullOrWhiteSpace(CircleId)) return;
+        var id = CircleId;
+        int generation = _generation;
+        var caption = NewMessageText.Trim();
+        IsUploading = true; UploadStatusText = "Uploading media...";
         try
         {
             using var stream = await file.OpenReadAsync();
-            var uploadedUrl = await CloudinaryService.UploadImageStreamAsync(stream, file.FileName);
-
-            if (!string.IsNullOrWhiteSpace(uploadedUrl))
-            {
-                var caption = !string.IsNullOrWhiteSpace(NewMessageText) ? NewMessageText.Trim() : string.Empty;
-                NewMessageText = string.Empty;
-
-                RefreshCurrentUserId();
-
-                var localItem = new ChatMessageItem
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    UserId = _currentUserId,
-                    SenderName = "Me",
-                    MessageText = caption,
-                    MediaUrl = uploadedUrl,
-                    MediaType = mediaType,
-                    IsMyMessage = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    Messages.Add(localItem);
-                    MessageAdded?.Invoke(localItem);
-                });
-
-                if (!string.IsNullOrEmpty(CircleId))
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        await _safetyCircleService.SendMessageAsync(CircleId, caption, uploadedUrl, mediaType);
-                    });
-                }
-            }
-            else
-            {
-                if (Shell.Current != null)
-                    await Shell.Current.DisplayAlert("Upload Failed", "Could not upload the media. Please try again.", "OK");
-            }
+            var url = await CloudinaryService.UploadImageStreamAsync(stream, file.FileName);
+            if (!StillCurrent(generation, id)) return;
+            if (string.IsNullOrWhiteSpace(url)) throw new InvalidOperationException("Media upload failed. Select the file again to retry.");
+            await _safetyCircleService.SendMessageAsync(id, caption, url, mediaType);
+            if (StillCurrent(generation, id)) { NewMessageText = string.Empty; await LoadMessagesAsync(); }
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"UploadAndSendMedia error: {ex.Message}");
-        }
-        finally
-        {
-            IsUploading = false;
-            UploadStatusText = string.Empty;
-        }
+        catch (Exception ex) { if (StillCurrent(generation, id)) SyncStatus = $"Could not send media: {ex.Message}"; }
+        finally { IsUploading = false; UploadStatusText = string.Empty; }
     }
 
     [RelayCommand]
-    private async Task BackAsync()
-    {
-        StopTimer();
-        if (Shell.Current != null)
-        {
-            await Shell.Current.GoToAsync("..");
-        }
-    }
+    private async Task BackAsync() { StopTimer(); await Shell.Current.GoToAsync(".."); }
 }

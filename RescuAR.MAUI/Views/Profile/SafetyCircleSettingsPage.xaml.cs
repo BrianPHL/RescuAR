@@ -5,10 +5,19 @@ namespace RescuAR.App.Views.Profile
 {
     public partial class SafetyCircleSettingsPage : ContentPage
     {
-        public SafetyCircleSettingsPage()
+        public SafetyCircleSettingsViewModel ViewModel { get; }
+
+        public SafetyCircleSettingsPage(SafetyCircleSettingsViewModel viewModel)
         {
+            ViewModel = viewModel;
             InitializeComponent();
-            BindingContext = new ProfileViewModel(); // Shared logic for Profile
+            BindingContext = ViewModel;
+        }
+
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            await ViewModel.RefreshAsync();
         }
     }
 }

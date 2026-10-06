@@ -43,16 +43,16 @@ namespace RescuAR.App.Models
         public string UserId { get; set; } = string.Empty;
 
         [Column("latitude")]
-        public double Latitude { get; set; }
+        public double? Latitude { get; set; }
 
         [Column("longitude")]
-        public double Longitude { get; set; }
+        public double? Longitude { get; set; }
 
         [Column("status_text")]
         public string StatusText { get; set; } = string.Empty;
 
         [Column("last_updated")]
-        public DateTime LastUpdated { get; set; }
+        public DateTime? LastUpdated { get; set; }
     }
 
     [Table("profiles")]
@@ -74,7 +74,7 @@ namespace RescuAR.App.Models
     [Table("safety_circle_messages")]
     public class SupabaseCircleMessage : BaseModel
     {
-        [PrimaryKey("id", false)]
+        [PrimaryKey("id", true)]
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
         [Column("circle_id")]
