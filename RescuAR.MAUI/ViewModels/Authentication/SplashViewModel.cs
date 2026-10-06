@@ -32,27 +32,25 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             await Task.Delay(2000);
 
-            bool isLoggedIn = Preferences.Default.Get("IsLoggedIn", false);
             bool hasSignedUp = Preferences.Default.Get("HasSignedUp", false);
+            try
+            {
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync();
+                if (!string.IsNullOrWhiteSpace(client?.Auth.CurrentSession?.AccessToken) &&
+                    !string.IsNullOrWhiteSpace(client.Auth.CurrentUser?.Id))
+                {
+                    await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider);
+                    return;
+                }
+            }
+            catch { StatusText = "Sign in to reconnect to your account."; }
+            RescuAR.App.Services.Profile.UserProfileService.ClearIdentity();
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (Application.Current != null)
                 {
-                    if (isLoggedIn)
-                    {
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                    else if (hasSignedUp)
+                    if (hasSignedUp)
                     {
                         var loginPage = _serviceProvider.GetRequiredService<LoginPage>();
                         AuthenticationNavigation.TrySetRootPage(new NavigationPage(loginPage));
@@ -67,6 +65,3 @@ namespace RescuAR.App.ViewModels.Authentication
         }
     }
 }
-
-
-

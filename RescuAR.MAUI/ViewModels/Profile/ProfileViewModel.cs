@@ -35,7 +35,6 @@ namespace RescuAR.App.ViewModels.Profile
 
         public ProfileViewModel()
         {
-            _ = LoadUserProfileAsync();
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
             {
@@ -44,82 +43,22 @@ namespace RescuAR.App.ViewModels.Profile
             };
         }
 
-        private async Task LoadUserProfileAsync()
+
+        public async Task LoadUserProfileAsync()
         {
             try
             {
-                var client = RescuAR.Services.SupabaseService.Instance.Client;
-                if (client != null && client.Auth.CurrentSession != null)
-                {
-                    var authUser = client.Auth.CurrentSession.User;
-                    var authUserId = authUser?.Id;
-                    if (authUser == null || string.IsNullOrWhiteSpace(authUserId))
-                    {
-                        return;
-                    }
-
-                    Models.User? dbUser = null;
-
-                    try
-                    {
-                        // Try to get the user from the custom User table
-                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUserId).Single();
-                    }
-                    catch { } // Ignore if not found, we will use Auth metadata
-
-                    if (dbUser != null)
-                    {
-                        CurrentUser = dbUser;
-                    }
-                    else
-                    {
-                        // Fallback to extracting from the Auth session metadata
-                        var user = new Models.User
-                        {
-                            Id = authUserId,
-                            Email = authUser.Email ?? string.Empty
-                        };
-
-                        if (authUser.UserMetadata != null)
-                        {
-                            if (authUser.UserMetadata.TryGetValue("first_name", out var fn))
-                                user.FirstName = fn?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("last_name", out var ln))
-                                user.LastName = ln?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("phone", out var ph))
-                                user.PhoneNumber = ph?.ToString() ?? string.Empty;
-                        }
-
-                        // If it's still completely empty, apply some defaults
-                        if (string.IsNullOrWhiteSpace(user.FirstName))
-                            user.FirstName = "RescuAR";
-                        if (string.IsNullOrWhiteSpace(user.LastName))
-                            user.LastName = "User";
-
-                        // Try to get custom user row one more time, or just insert/update it later
-                        CurrentUser = user;
-                    }
-                    
-                    // Explicitly update Observable properties for reliable MAUI binding
-                    if (!string.IsNullOrWhiteSpace(CurrentUser.Username))
-                    {
-                        FullName = CurrentUser.Username.Trim();
-                    }
-                    else
-                    {
-                        FullName = $"{CurrentUser.FirstName} {CurrentUser.LastName}".Trim();
-                    }
-                    AvatarUrl = CurrentUser.AvatarUrl;
-                    
-                    // Force complete reference refresh for nested bindings
-                    var temp = CurrentUser;
-                    CurrentUser = new User();
-                    CurrentUser = temp;
-                }
+                var profiles = Services.Profile.UserProfileService.Instance;
+                CurrentUser = await profiles.LoadAsync();
+                FullName = string.IsNullOrWhiteSpace(CurrentUser.Username)
+                    ? $"{CurrentUser.FirstName} {CurrentUser.LastName}".Trim() : CurrentUser.Username;
+                var local = profiles.GetLocal("AvatarPath");
+                AvatarUrl = File.Exists(local) ? local : CurrentUser.AvatarUrl;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading user: {ex.Message}");
+                CurrentUser = new User(); FullName = AvatarUrl = string.Empty;
+                if (Shell.Current != null) await Shell.Current.DisplayAlert("Could not load profile", ex.Message, "OK");
             }
         }
 
@@ -129,7 +68,7 @@ namespace RescuAR.App.ViewModels.Profile
             try
             {
                 if (Shell.Current == null) return;
-                
+
                 string action = await Shell.Current.DisplayActionSheet("Update Profile Picture", "Cancel", null, "Take a Picture", "Choose from Gallery");
                 if (string.IsNullOrEmpty(action) || action == "Cancel") return;
 
@@ -164,51 +103,36 @@ namespace RescuAR.App.ViewModels.Profile
                     bool confirm = await Shell.Current.DisplayAlert("Confirm Upload", "Do you want to use this image as your profile picture?", "Yes", "No");
                     if (!confirm) return;
 
-                    var client = RescuAR.Services.SupabaseService.Instance.Client;
-                    if (client != null && client.Auth.CurrentSession != null)
+
+                    var profiles = Services.Profile.UserProfileService.Instance;
+                    var client = await profiles.RequireClientAsync();
+                    var id = profiles.UserId;
+                    using var stream = await result.OpenReadAsync();
+                    using var memoryStream = new MemoryStream();
+                    await stream.CopyToAsync(memoryStream);
+                    var bytes = memoryStream.ToArray();
+                    var extension = Path.GetExtension(result.FileName).ToLowerInvariant();
+                    if (extension is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+                        throw new InvalidOperationException("Choose a JPEG, PNG or WebP image.");
+                    var fileName = $"{id}-{Guid.NewGuid():N}{extension}";
+                    var localPath = Path.Combine(FileSystem.AppDataDirectory, fileName);
+                    await File.WriteAllBytesAsync(localPath, bytes);
+                    if (id != profiles.UserId) throw new InvalidOperationException("Your account changed. Reopen this screen.");
+                    profiles.SetLocal("AvatarPath", localPath);
+                    AvatarUrl = localPath;
+                    try
                     {
-                        var stream = await result.OpenReadAsync();
-                        using var memoryStream = new MemoryStream();
-                        await stream.CopyToAsync(memoryStream);
-                        var bytes = memoryStream.ToArray();
-
-                        var currentUserId = client.Auth.CurrentSession.User?.Id;
-                        if (string.IsNullOrWhiteSpace(currentUserId))
-                        {
-                            throw new InvalidOperationException("The authenticated Supabase user is unavailable.");
-                        }
-
-                        var fileName = $"{currentUserId}-{Guid.NewGuid()}.jpg";
-                        
-                        // Save locally first so the UI works even if Supabase Storage fails
-                        var localPath = Path.Combine(FileSystem.AppDataDirectory, fileName);
-                        File.WriteAllBytes(localPath, bytes);
-                        
-                        AvatarUrl = localPath;
-                        CurrentUser.AvatarUrl = localPath;
-                        
-                        try
-                        {
-                            await client.Storage.From("avatars").Upload(bytes, fileName, new Supabase.Storage.FileOptions { Upsert = true });
-                            var publicUrl = client.Storage.From("avatars").GetPublicUrl(fileName);
-                            AvatarUrl = publicUrl;
-                            CurrentUser.AvatarUrl = publicUrl;
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Supabase storage upload failed, using local cache: {ex.Message}");
-                        }
-                        
-                        // Re-trigger bindings
-                        var tempUser = CurrentUser;
-                        CurrentUser = new User();
-                        CurrentUser = tempUser;
-                        
-                        // Try to save to DB
-                        try {
-                            await client.From<User>().Upsert(CurrentUser);
-                            await Shell.Current.DisplayAlert("Success", "Profile picture updated successfully!", "OK");
-                        } catch { }
+                        await client.Storage.From("avatars").Upload(bytes, fileName, new Supabase.Storage.FileOptions { Upsert = true });
+                        var publicUrl = client.Storage.From("avatars").GetPublicUrl(fileName);
+                        if (!Uri.TryCreate(publicUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https")
+                            throw new InvalidOperationException("The avatar service returned an invalid URL.");
+                        if (id != profiles.UserId) throw new InvalidOperationException("Your account changed. Reopen this screen.");
+                        CurrentUser = await profiles.PatchAsync((x => x.AvatarUrl, publicUrl));
+                        await Shell.Current.DisplayAlert("Saved", "Your profile picture was saved to your account.", "OK");
+                    }
+                    catch (Exception ex)
+                    {
+                        await Shell.Current.DisplayAlert("Saved on this device", $"Your picture is visible on this device, but was not saved to your account: {ex.Message}", "OK");
                     }
                 }
             }
@@ -224,26 +148,23 @@ namespace RescuAR.App.ViewModels.Profile
         [RelayCommand]
         private async Task SaveProfileAsync()
         {
-            var client = RescuAR.Services.SupabaseService.Instance.Client;
-            if (client != null)
+
+            try
             {
-                try
-                {
-                    // Use Upsert so if the user record doesn't exist in the custom table yet, it gets created.
-                    await client.From<User>().Upsert(CurrentUser);
-                }
-                catch (Exception ex)
-                {
-                    if (Shell.Current != null)
-                    {
-                        await Shell.Current.DisplayAlert("Error", $"Failed to save profile: {ex.Message}", "OK");
-                    }
-                    return;
-                }
+                var profiles = Services.Profile.UserProfileService.Instance;
+                if (CurrentUser.Id != profiles.UserId) throw new InvalidOperationException("Reopen your profile before saving.");
+                // This command serves the dev health form. Other editors own their own fields.
+                CurrentUser = await profiles.PatchAsync((x => x.HealthCardNumber, CurrentUser.HealthCardNumber),
+                    (x => x.BloodType, CurrentUser.BloodType), (x => x.Allergies, CurrentUser.Allergies),
+                    (x => x.MaintenanceMedications, CurrentUser.MaintenanceMedications),
+                    (x => x.AverageBloodPressure, CurrentUser.AverageBloodPressure),
+                    (x => x.DisabilityOrSpecialNeeds, CurrentUser.DisabilityOrSpecialNeeds),
+                    (x => x.IsOrganDonor, CurrentUser.IsOrganDonor));
+                if (Shell.Current != null) await Shell.Current.DisplayAlert("Saved", "Health information saved to your account.", "OK");
             }
-            if (Shell.Current != null)
+            catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert("Success", "Profile updated successfully!", "OK");
+                if (Shell.Current != null) await Shell.Current.DisplayAlert("Changes not saved", ex.Message, "OK");
             }
         }
 
@@ -273,7 +194,7 @@ namespace RescuAR.App.ViewModels.Profile
         private async Task ShareInviteLinkAsync()
         {
             if (CurrentCircle == null) return;
-            
+
             await Clipboard.Default.SetTextAsync(CurrentCircle.InviteLink);
             if (Shell.Current != null)
             {

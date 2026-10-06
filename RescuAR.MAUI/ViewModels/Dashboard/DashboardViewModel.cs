@@ -287,7 +287,7 @@ public partial class DashboardViewModel : ObservableObject
             IsQuickActionsExpanded = Preferences.Default.Get("IsQuickActionsExpanded", true);
             AllAvailableQuickActions.Clear();
 
-            string json = Preferences.Default.Get("CustomQuickActionsList_v18", string.Empty);
+            string json = RescuAR.App.Services.Profile.UserProfileService.Instance.GetLocal("QuickActions");
             List<QuickActionItem>? saved = null;
             if (!string.IsNullOrWhiteSpace(json))
             {
@@ -316,6 +316,9 @@ public partial class DashboardViewModel : ObservableObject
                 PopulateDefaultSolidQuickActions();
             }
 
+            var profiles = RescuAR.App.Services.Profile.UserProfileService.Instance;
+            var user = JsonConvert.DeserializeObject<Models.User>(profiles.GetLocal("User"));
+            if (user != null) profiles.SyncContacts(AllAvailableQuickActions, user);
             SyncEnabledQuickActions();
         }
         catch (Exception ex)
@@ -537,7 +540,7 @@ public partial class DashboardViewModel : ObservableObject
         try
         {
             string json = JsonConvert.SerializeObject(AllAvailableQuickActions.ToList());
-            Preferences.Default.Set("CustomQuickActionsList_v18", json);
+            RescuAR.App.Services.Profile.UserProfileService.Instance.SetLocal("QuickActions", json);
         }
         catch (Exception ex)
         {
@@ -593,6 +596,23 @@ public partial class DashboardViewModel : ObservableObject
             IsCustom = true
         };
 
+        string? profileSaveError = null;
+        try
+        {
+            var profiles = RescuAR.App.Services.Profile.UserProfileService.Instance;
+            var user = await profiles.LoadAsync();
+            if (string.IsNullOrWhiteSpace(user.EmergencyContact1Name) && string.IsNullOrWhiteSpace(user.EmergencyContact1Phone))
+            {
+                await profiles.PatchAsync((x => x.EmergencyContact1Name, newAction.Title), (x => x.EmergencyContact1Phone, newAction.PhoneNumber));
+                newAction.Id = "emergency_contact_1";
+            }
+            else if (string.IsNullOrWhiteSpace(user.EmergencyContact2Name) && string.IsNullOrWhiteSpace(user.EmergencyContact2Phone))
+            {
+                await profiles.PatchAsync((x => x.EmergencyContact2Name, newAction.Title), (x => x.EmergencyContact2Phone, newAction.PhoneNumber));
+                newAction.Id = "emergency_contact_2";
+            }
+        }
+        catch (Exception ex) { profileSaveError = ex.Message; }
         AllAvailableQuickActions.Add(newAction);
         NewContactName = string.Empty;
         NewContactPhone = string.Empty;
@@ -600,7 +620,7 @@ public partial class DashboardViewModel : ObservableObject
 
         if (Shell.Current != null)
         {
-            await Shell.Current.DisplayAlert("Quick Action Added", $"Added '{newAction.Title}' to your homescreen quick actions!", "OK");
+            await Shell.Current.DisplayAlert("Quick Action Added", profileSaveError == null ? $"Added '{newAction.Title}' to your homescreen quick actions!" : $"Added '{newAction.Title}' on this device. Your profile could not be updated: {profileSaveError}", "OK");
         }
     }
 

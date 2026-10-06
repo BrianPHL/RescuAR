@@ -15,6 +15,12 @@ namespace RescuAR.App.Views.Profile
             BindingContext = new ProfileViewModel();
         }
 
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            await ((ProfileViewModel)BindingContext).LoadUserProfileAsync();
+        }
+
         private async void OnPersonalInformationTapped(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync(nameof(PersonalInformationPage));
@@ -65,17 +71,18 @@ namespace RescuAR.App.Views.Profile
             bool confirm = await DisplayAlert("Sign Out", "Are you sure you want to sign out?", "Yes", "No");
             if (confirm)
             {
-                Preferences.Default.Set("IsLoggedIn", false);
+
 
                 try
                 {
                     var authService = Application.Current?.Handler?.MauiContext?.Services.GetService<RescuAR.App.Services.Authentication.AuthenticationService>();
-                    if (authService != null)
-                    {
-                        await authService.SignOutAsync();
-                    }
+                    if (authService == null) throw new InvalidOperationException("Authentication service is unavailable.");
+                    await authService.SignOutAsync();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    await DisplayAlert("Signed out on this device", $"The server could not be reached: {ex.Message}", "OK");
+                }
 
                 var loginPage = Application.Current?.Handler?.MauiContext?.Services.GetRequiredService<LoginPage>();
                 if (loginPage != null && Application.Current?.Windows.Count > 0)

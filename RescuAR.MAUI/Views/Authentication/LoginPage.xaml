@@ -73,17 +73,17 @@
                             </DataTrigger>
                         </Border.Triggers>
                         <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
-                            <Entry x:Name="passwordEntry" Grid.Column="0" Text="{Binding Password}" IsPassword="False" Placeholder="********" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
+                            <Entry x:Name="passwordEntry" Grid.Column="0" Text="{Binding Password}" IsPassword="{Binding IsPasswordHidden}" Placeholder="********" PlaceholderColor="#BDBDBD" TextColor="#1E1E1E" FontSize="14" FontFamily="OpenSansRegular" VerticalOptions="Center" />
                             <ContentView Grid.Column="1" WidthRequest="24" HeightRequest="24" VerticalOptions="Center" HorizontalOptions="Center">
                                 <ContentView.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding TogglePasswordVisibilityCommand}" />
                                 </ContentView.GestureRecognizers>
                                 <Grid>
                                     <!-- Eye-Off Icon (Hidden Password) -->
-                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z" 
+                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z"
                                           Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordHidden}" HorizontalOptions="Fill" VerticalOptions="Fill" />
                                     <!-- Eye Icon (Visible Password) -->
-                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z" 
+                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z"
                                           Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordVisible}" HorizontalOptions="Fill" VerticalOptions="Fill" />
                                 </Grid>
                             </ContentView>
@@ -91,17 +91,20 @@
                     </Border>
                 </VerticalStackLayout>
 
-                <!-- Remember me / Forgot Password -->
+                <!-- Remember email / Forgot Password -->
                 <Grid ColumnDefinitions="Auto, *" Margin="0, 0, 0, 10">
-                    <!-- Remember Me Placeholder -->
                     <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
-                        <CheckBox Color="#00848E" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
-                        <Label Text="Remember me" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" VerticalOptions="Center" />
+                        <CheckBox Color="#00848E" IsChecked="{Binding IsRememberMe}" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
+                        <Label Text="Remember email" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" VerticalOptions="Center">
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding ToggleRememberMeCommand, FallbackValue=null}" />
+                            </Label.GestureRecognizers>
+                        </Label>
                     </HorizontalStackLayout>
-                    
-                    <Label Grid.Column="1" Text="Forget password?" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="End" VerticalOptions="Center">
+
+                    <Label Grid.Column="1" Text="Forgot password?" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#00848E" HorizontalOptions="End" VerticalOptions="Center">
                         <Label.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding ResetPasswordCommand}" />
+                            <TapGestureRecognizer Command="{Binding OpenResetPasswordModalCommand}" />
                         </Label.GestureRecognizers>
                     </Label>
                 </Grid>
@@ -114,7 +117,7 @@
                         </Border.GestureRecognizers>
                         <Label Text="Log In" TextColor="White" FontFamily="OpenSansSemibold" FontSize="16" HorizontalOptions="Center" VerticalOptions="Center" />
                     </Border>
-                    <ActivityIndicator IsRunning="{Binding IsLoading}" Color="White" HeightRequest="50" HorizontalOptions="Center" IsVisible="{Binding IsLoading}" />
+                    <ActivityIndicator IsRunning="{Binding IsLoading}" Color="#00848E" HeightRequest="50" HorizontalOptions="Center" IsVisible="{Binding IsLoading}" />
                 </Grid>
 
                 <!-- Divider -->
@@ -151,6 +154,145 @@
 
             </VerticalStackLayout>
         </ScrollView>
+
+        <!-- ============================================================== -->
+        <!-- CUSTOM IN-APP RESET PASSWORD MODAL OVERLAY                      -->
+        <!-- ============================================================== -->
+        <Grid Grid.RowSpan="2"
+              BackgroundColor="#80000000"
+              IsVisible="{Binding IsResetPasswordModalVisible}"
+              ZIndex="100"
+              Padding="24">
+            <Border BackgroundColor="White"
+                    StrokeThickness="0"
+                    Padding="24,20"
+                    VerticalOptions="Center"
+                    HorizontalOptions="Fill"
+                    MaximumWidthRequest="420">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="20" />
+                </Border.StrokeShape>
+                <Border.Shadow>
+                    <Shadow Brush="#40000000" Offset="0,6" Radius="16" Opacity="0.3" />
+                </Border.Shadow>
+
+                <VerticalStackLayout Spacing="16">
+                    <!-- Modal Header -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                            <Border BackgroundColor="#E6F4F2" StrokeThickness="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Path Data="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"
+                                      Fill="#00848E" Aspect="Uniform" WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <Label Text="Reset Password" FontSize="18" FontFamily="OpenSansSemibold" TextColor="#0F172A" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+
+                        <Border Grid.Column="1" BackgroundColor="Transparent" StrokeThickness="0" WidthRequest="30" HeightRequest="30" VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding CloseResetPasswordModalCommand}" />
+                            </Border.GestureRecognizers>
+                            <Label Text="✕" TextColor="#64748B" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Error Alert -->
+                    <Border BackgroundColor="#FEE2E2" Stroke="#EF4444" StrokeThickness="1" Padding="10,6" IsVisible="{Binding HasResetError}">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8" />
+                        </Border.StrokeShape>
+                        <Label Text="{Binding ResetErrorMessage}" TextColor="#DC2626" FontSize="12" LineBreakMode="WordWrap" />
+                    </Border>
+
+                    <!-- STEP 1: Enter Email to Send Recovery Code -->
+                    <VerticalStackLayout Spacing="12" IsVisible="{Binding IsResetEmailStep}">
+                        <Label Text="Enter your registered email address to receive a 6-digit recovery code." FontSize="13" TextColor="#64748B" LineBreakMode="WordWrap" />
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Email Address" FontSize="12" FontFamily="OpenSansRegular" TextColor="#475569" />
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" HeightRequest="46" Padding="14, 0">
+                                <Entry Text="{Binding ResetEmail}" Placeholder="juanmigueldelacruz@gmail.com" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" Keyboard="Email" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <Grid Margin="0, 8, 0, 0">
+                            <Border BackgroundColor="#00848E" StrokeThickness="0" HeightRequest="46" IsVisible="{Binding IsResetNotLoading}">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="23" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding SendResetOtpCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Send Recovery Code" TextColor="White" FontFamily="OpenSansSemibold" FontSize="14" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <ActivityIndicator IsRunning="{Binding IsResetLoading}" Color="#00848E" HeightRequest="46" HorizontalOptions="Center" IsVisible="{Binding IsResetLoading}" />
+                        </Grid>
+                    </VerticalStackLayout>
+
+                    <!-- STEP 2: Enter 6-digit Recovery Code & New Password -->
+                    <VerticalStackLayout Spacing="12" IsVisible="{Binding IsResetCodeStep}">
+                        <Label Text="A 6-digit recovery code was sent to your email. Enter it below with your new password." FontSize="12.5" TextColor="#64748B" LineBreakMode="WordWrap" />
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="6-Digit Recovery Code" FontSize="12" FontFamily="OpenSansRegular" TextColor="#475569" />
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" HeightRequest="46" Padding="14, 0">
+                                <Entry Text="{Binding ResetOtpCode}" Placeholder="e.g. 123456" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="15" FontAttributes="Bold" Keyboard="Numeric" MaxLength="6" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="New Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#475569" />
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" HeightRequest="46" Padding="14, 0">
+                                <Entry Text="{Binding ResetNewPassword}" IsPassword="True" Placeholder="Min. 10 characters" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Confirm New Password" FontSize="12" FontFamily="OpenSansRegular" TextColor="#475569" />
+                            <Border StrokeThickness="1" Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" HeightRequest="46" Padding="14, 0">
+                                <Entry Text="{Binding ResetConfirmPassword}" IsPassword="True" Placeholder="Re-type new password" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <Grid Margin="0, 8, 0, 0">
+                            <Border BackgroundColor="#00848E" StrokeThickness="0" HeightRequest="46" IsVisible="{Binding IsResetNotLoading}">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="23" />
+                                </Border.StrokeShape>
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ConfirmResetPasswordCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="Reset &amp; Update Password" TextColor="White" FontFamily="OpenSansSemibold" FontSize="14" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                            <ActivityIndicator IsRunning="{Binding IsResetLoading}" Color="#00848E" HeightRequest="46" HorizontalOptions="Center" IsVisible="{Binding IsResetLoading}" />
+                        </Grid>
+                    </VerticalStackLayout>
+
+                    <!-- SUCCESS STATE -->
+                    <VerticalStackLayout Spacing="14" IsVisible="{Binding IsResetSuccess}" HorizontalOptions="Center">
+                        <Border BackgroundColor="#DCFCE7" StrokeThickness="0" WidthRequest="48" HeightRequest="48" HorizontalOptions="Center">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="24" />
+                            </Border.StrokeShape>
+                            <Path Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" Fill="#16A34A" Aspect="Uniform" WidthRequest="22" HeightRequest="22" HorizontalOptions="Center" VerticalOptions="Center"/>
+                        </Border>
+                        <Label Text="Password Reset Successful!" FontSize="16" FontFamily="OpenSansSemibold" TextColor="#0F172A" HorizontalOptions="Center" />
+                        <Label Text="Your password has been updated. You can now log in with your new credentials." FontSize="12.5" TextColor="#64748B" HorizontalTextAlignment="Center" />
+                        <Border BackgroundColor="#00848E" StrokeThickness="0" HeightRequest="44" Padding="24,0" HorizontalOptions="Center">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="22" />
+                            </Border.StrokeShape>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding CloseResetPasswordModalCommand}" />
+                            </Border.GestureRecognizers>
+                            <Label Text="Back to Log In" TextColor="White" FontFamily="OpenSansSemibold" FontSize="14" HorizontalOptions="Center" VerticalOptions="Center"/>
+                        </Border>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
     </Grid>
 
 </ContentPage>

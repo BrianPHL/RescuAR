@@ -30,6 +30,9 @@ namespace RescuAR.App.ViewModels.Authentication
         [ObservableProperty]
         private string _digit6 = string.Empty;
 
+        public Models.ResidentProfileDraft? Draft { get; set; }
+        private string? _verifiedUserId;
+
         public string OtpCode => $"{Digit1}{Digit2}{Digit3}{Digit4}{Digit5}{Digit6}";
 
         [ObservableProperty]
@@ -59,7 +62,7 @@ namespace RescuAR.App.ViewModels.Authentication
         private async Task VerifyOtpAsync()
         {
             if (IsLoading) return;
-            if (string.IsNullOrWhiteSpace(OtpCode) || OtpCode.Length < 6)
+            if (!System.Text.RegularExpressions.Regex.IsMatch(OtpCode, @"^[0-9]{6}$"))
             {
                 ErrorMessage = "Please enter a valid 6-digit code.";
                 OnPropertyChanged(nameof(HasError));
@@ -72,13 +75,18 @@ namespace RescuAR.App.ViewModels.Authentication
 
             try
             {
-                var client = RescuAR.Services.SupabaseService.Instance.Client;
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync()
+                    ?? throw new InvalidOperationException("Supabase is not configured.");
                 if (client != null)
                 {
                     // Verify the OTP via Supabase
-                    var session = await client.Auth.VerifyOTP(Email, OtpCode, Supabase.Gotrue.Constants.EmailOtpType.Signup);
-                    if (session?.User != null)
+                    var session = _verifiedUserId != null && client.Auth.CurrentUser?.Id == _verifiedUserId
+                        ? client.Auth.CurrentSession
+                        : await client.Auth.VerifyOTP(Email, OtpCode, Supabase.Gotrue.Constants.EmailOtpType.Signup);
+                    if (session?.User != null && !string.IsNullOrWhiteSpace(session.AccessToken))
                     {
+                        _verifiedUserId = session.User.Id;
+                        if (Draft != null) await RescuAR.App.Services.Profile.UserProfileService.Instance.SaveDraftAsync(Draft);
                         // Show Custom Styled Popup
                         IsSuccessPopupVisible = true;
                     }
@@ -104,11 +112,8 @@ namespace RescuAR.App.ViewModels.Authentication
         private async Task ContinueToAddressAsync()
         {
             IsSuccessPopupVisible = false;
-            if (AuthenticationNavigation.RootPage is NavigationPage navPage)
-            {
-                var addressPage = _serviceProvider.GetRequiredService<Views.Authentication.AddressInputPage>();
-                await navPage.PushAsync(addressPage);
-            }
+            try { await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider); }
+            catch (Exception ex) { ErrorMessage = ex.Message; OnPropertyChanged(nameof(HasError)); }
         }
     }
 }

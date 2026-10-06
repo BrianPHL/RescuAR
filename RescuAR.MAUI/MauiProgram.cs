@@ -64,6 +64,9 @@ public static class MauiProgram
 
         // RescuAR authentication service
         builder.Services.AddSingleton<AuthenticationService>();
+        builder.Services.AddSingleton<RescuAR.App.Services.Profile.UserProfileService>();
+        builder.Services.AddTransient<PersonalInfoViewModel>();
+        builder.Services.AddTransient<EmergencyContactsViewModel>();
 
         // Authentication Views + ViewModels
         builder.Services.AddTransient<SplashPage>();
@@ -208,6 +211,8 @@ public static class MauiProgram
         var app = builder.Build();
 
         Services = app.Services;
+        RescuAR.App.Services.Profile.UserProfileService.Instance =
+            app.Services.GetRequiredService<RescuAR.App.Services.Profile.UserProfileService>();
 
         // Several migrated ViewModels still expose the source's static
         // Instance accessors. Point those accessors at the same DI singletons

@@ -41,76 +41,6 @@ namespace RescuAR.App.ViewModels.Authentication
         }
 
         [RelayCommand]
-        private async Task SelectAccount(string email)
-        {
-            if (IsLoading) return;
-
-            IsLoading = true;
-            ErrorMessage = string.Empty;
-            OnPropertyChanged(nameof(HasError));
-
-            try
-            {
-                // In a simulated or actual Google Auth flow, selecting a cached account 
-                // signs the user in.
-                // We'll perform a quick mock delay, then route to the Dashboard (AppShell).
-                await Task.Delay(1500);
-
-                string firstName = "User";
-                string lastName = "";
-
-                if (email == "qblcpasco@tip.edu.ph")
-                {
-                    firstName = "Brian Lawrence";
-                    lastName = "Pasco";
-                }
-                else if (email == "frances@example-email.com")
-                {
-                    firstName = "Frances";
-                    lastName = "Pasco";
-                }
-                else if (!string.IsNullOrWhiteSpace(email))
-                {
-                    string[] parts = email.Split('@');
-                    if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
-                    {
-                        firstName = char.ToUpper(parts[0][0]) + parts[0].Substring(1);
-                    }
-                }
-
-                Preferences.Default.Set("UserFirstName", firstName);
-                Preferences.Default.Set("UserLastName", lastName);
-
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    if (Application.Current != null)
-                    {
-                        Preferences.Default.Set("IsLoggedIn", true);
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                ErrorMessage = ex.Message ?? "Failed to authenticate with Google.";
-                OnPropertyChanged(nameof(HasError));
-            }
-            finally
-            {
-                IsLoading = false;
-            }
-        }
-
-        [RelayCommand]
         private async Task UseAnotherAccount()
         {
             if (IsLoading) return;
@@ -121,27 +51,10 @@ namespace RescuAR.App.ViewModels.Authentication
 
             try
             {
-                // Trigger the actual Supabase OAuth Google authentication flow (with browser + 2FA)
-                await _authService.SignInWithGoogleAsync();
-
-                // Navigate to Permissions or Dashboard upon success
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    if (Application.Current != null)
-                    {
-                        Preferences.Default.Set("IsLoggedIn", true);
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                });
+                var session = await _authService.SignInWithGoogleAsync();
+                if (string.IsNullOrWhiteSpace(session.User?.Id) || string.IsNullOrWhiteSpace(session.AccessToken))
+                    throw new InvalidOperationException("Google did not return an authenticated account.");
+                await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider);
             }
             catch (OperationCanceledException)
             {

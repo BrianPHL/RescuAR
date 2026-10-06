@@ -1,14 +1,19 @@
-using Microsoft.Maui.Controls;
 using RescuAR.App.ViewModels.Profile;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace RescuAR.App.Views.Profile
+namespace RescuAR.App.Views.Profile;
+
+public partial class PersonalInformationPage : ContentPage
 {
-    public partial class PersonalInformationPage : ContentPage
+    public PersonalInformationPage() : this(RescuAR.MAUI.MauiProgram.Services.GetRequiredService<PersonalInfoViewModel>()) { }
+    public PersonalInformationPage(PersonalInfoViewModel viewModel)
     {
-        public PersonalInformationPage()
-        {
-            InitializeComponent();
-            BindingContext = new ProfileViewModel();
-        }
+        InitializeComponent();
+        BindingContext = viewModel;
+    }
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        await ((PersonalInfoViewModel)BindingContext).LoadAsync();
     }
 }

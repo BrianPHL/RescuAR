@@ -4,27 +4,177 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     x:Class="RescuAR.App.Views.Profile.EmergencyContactsPage"
-    x:DataType="vm:ProfileViewModel"
-    Title="Emergency Contacts"
+    x:Name="EmergencyContactsRootPage"
+    x:DataType="vm:EmergencyContactsViewModel"
+    Shell.NavBarIsVisible="False"
     BackgroundColor="#F2F2F7">
 
-    <ScrollView>
-        <VerticalStackLayout Spacing="20" Padding="20">
-            <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="White" Padding="15">
-                <VerticalStackLayout Spacing="10">
-                    <Label Text="Emergency Contacts" FontAttributes="Bold" FontSize="18" TextColor="Black" />
-                    
-                    <Label Text="Contact 1" FontAttributes="Bold" TextColor="Gray" FontSize="12" />
-                    <Entry Placeholder="Name" Text="{Binding CurrentUser.EmergencyContact1Name}" TextColor="Black" />
-                    <Entry Placeholder="Phone" Text="{Binding CurrentUser.EmergencyContact1Phone}" Keyboard="Telephone" TextColor="Black" />
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar -->
+        <Border Grid.Row="0" BackgroundColor="White" HeightRequest="56" StrokeThickness="0" Padding="12,0" ZIndex="10" Shadow="{Shadow Brush=Black, Offset='0,2', Radius=4, Opacity=0.06}">
+            <Grid ColumnDefinitions="Auto, *, Auto" VerticalOptions="Center">
+                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                    <Path Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" Fill="#0F172A" Aspect="Uniform" WidthRequest="18" HeightRequest="18" VerticalOptions="Center" />
+                    <Label Text="Back" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
 
-                    <Label Text="Contact 2" FontAttributes="Bold" TextColor="Gray" FontSize="12" Margin="0,10,0,0"/>
-                    <Entry Placeholder="Name" Text="{Binding CurrentUser.EmergencyContact2Name}" TextColor="Black" />
-                    <Entry Placeholder="Phone" Text="{Binding CurrentUser.EmergencyContact2Phone}" Keyboard="Telephone" TextColor="Black" />
+                <Label Grid.Column="1" Text="RescuAR" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+
+                <Path Grid.Column="2" Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"
+                      Fill="#334155" Aspect="Uniform" WidthRequest="20" HeightRequest="20" VerticalOptions="Center" Margin="0,0,4,0" />
+            </Grid>
+        </Border>
+
+        <!-- Main Scrollable Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="18" Padding="20,12,20,30">
+                <Label Text="{Binding StatusMessage}" TextColor="#0A8491" FontSize="12" />
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#0A8491" />
+                <!-- Breadcrumb & Title -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Profile/" FontSize="13" TextColor="#64748B" FontAttributes="Bold" />
+                    <Label Text="Emergency Contacts" FontSize="26" FontAttributes="Bold" TextColor="#0F172A" />
+                    <Label Text="Save trusted family members or friends for quick emergency calls." FontSize="12" TextColor="#64748B" />
                 </VerticalStackLayout>
-            </Border>
 
-            <Button Text="Save Contacts" Command="{Binding SaveProfileCommand}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" />
-        </VerticalStackLayout>
-    </ScrollView>
+                <!-- Contact 1 Card -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="18">
+                    <VerticalStackLayout Spacing="14" IsEnabled="{Binding IsReady}">
+                        <VerticalStackLayout.Triggers>
+                            <DataTrigger TargetType="VerticalStackLayout" Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger>
+                        </VerticalStackLayout.Triggers>
+                        <!-- Header -->
+                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <Border Grid.Column="0" BackgroundColor="#E6F4F2" StrokeThickness="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Path Data="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                                      Fill="#0A8491"
+                                      Aspect="Uniform"
+                                      WidthRequest="16"
+                                      HeightRequest="16"
+                                      HorizontalOptions="Center"
+                                      VerticalOptions="Center" />
+                            </Border>
+                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="1">
+                                <Label Text="Primary Emergency Contact" FontAttributes="Bold" FontSize="14" TextColor="#0F172A" LineBreakMode="TailTruncation" />
+                                <Label Text="Notified first on SOS alerts" FontSize="11" TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <Button
+                                Grid.Column="2"
+                                Text="Import"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                TextColor="#0A8491"
+                                BackgroundColor="#E6F4F5"
+                                CornerRadius="8"
+                                HeightRequest="32"
+                                Padding="12,0"
+                                Command="{Binding PickContact1Command}"
+                                VerticalOptions="Center" />
+                        </Grid>
+                        <BoxView HeightRequest="1" BackgroundColor="#F1F5F9" />
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Full Name" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact1Name}" Placeholder="e.g. Maria Santos" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Phone Number" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact1Phone}" Placeholder="0917 123 4567" Keyboard="Telephone" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Relationship" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact1Relationship}" Placeholder="e.g. Spouse, Parent, Sibling" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Contact 2 Card -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="18">
+                    <VerticalStackLayout Spacing="14" IsEnabled="{Binding IsReady}">
+                        <VerticalStackLayout.Triggers>
+                            <DataTrigger TargetType="VerticalStackLayout" Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger>
+                        </VerticalStackLayout.Triggers>
+                        <!-- Header -->
+                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <Border Grid.Column="0" BackgroundColor="#E6F4F2" StrokeThickness="0" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Path Data="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                                      Fill="#0A8491"
+                                      Aspect="Uniform"
+                                      WidthRequest="16"
+                                      HeightRequest="16"
+                                      HorizontalOptions="Center"
+                                      VerticalOptions="Center" />
+                            </Border>
+                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="1">
+                                <Label Text="Secondary Contact" FontAttributes="Bold" FontSize="14" TextColor="#0F172A" LineBreakMode="TailTruncation" />
+                                <Label Text="Alternate backup contact" FontSize="11" TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <Button
+                                Grid.Column="2"
+                                Text="Import"
+                                FontSize="12"
+                                FontAttributes="Bold"
+                                TextColor="#0A8491"
+                                BackgroundColor="#E6F4F5"
+                                CornerRadius="8"
+                                HeightRequest="32"
+                                Padding="12,0"
+                                Command="{Binding PickContact2Command}"
+                                VerticalOptions="Center" />
+                        </Grid>
+                        <BoxView HeightRequest="1" BackgroundColor="#F1F5F9" />
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Full Name" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact2Name}" Placeholder="e.g. Juan Dela Cruz" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Phone Number" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact2Phone}" Placeholder="0918 765 4321" Keyboard="Telephone" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Relationship" FontSize="12" FontAttributes="Bold" TextColor="#334155" />
+                            <Border StrokeShape="RoundRectangle 10" Stroke="#CBD5E1" BackgroundColor="#F8FAFC" Padding="12,0" HeightRequest="46">
+                                <Entry Text="{Binding Contact2Relationship}" Placeholder="e.g. Neighbor, Friend, Coworker" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Save Contacts Button -->
+                <Button
+                    Text="Save Emergency Contacts"
+                    FontSize="15"
+                    FontAttributes="Bold"
+                    TextColor="White"
+                    BackgroundColor="#0A8491"
+                    CornerRadius="12"
+                    HeightRequest="48"
+                    Command="{Binding SaveContactsCommand}" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

@@ -59,7 +59,34 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             _serviceProvider = serviceProvider;
             _authService = authService;
+            IsRememberMe = Preferences.Default.Get("RememberMe", false);
+            if (IsRememberMe) Email = Preferences.Default.Get("SavedLoginEmail", string.Empty);
         }
+
+        [ObservableProperty] private bool _isRememberMe;
+        [ObservableProperty] private bool _isResetPasswordModalVisible;
+        [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsResetEmailStep))]
+        [NotifyPropertyChangedFor(nameof(IsResetCodeStep))] private int _resetStep = 1;
+        [ObservableProperty] private string _resetEmail = string.Empty;
+        [ObservableProperty] private string _resetOtpCode = string.Empty;
+        [ObservableProperty] private string _resetNewPassword = string.Empty;
+        [ObservableProperty] private string _resetConfirmPassword = string.Empty;
+        [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasResetError))] private string _resetErrorMessage = string.Empty;
+        [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsResetNotLoading))] private bool _isResetLoading;
+        [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsResetEmailStep))]
+        [NotifyPropertyChangedFor(nameof(IsResetCodeStep))] private bool _isResetSuccess;
+        public bool HasResetError => !string.IsNullOrEmpty(ResetErrorMessage);
+        public bool IsResetNotLoading => !IsResetLoading;
+        public bool IsResetEmailStep => ResetStep == 1 && !IsResetSuccess;
+        public bool IsResetCodeStep => ResetStep == 2 && !IsResetSuccess;
+
+        partial void OnIsRememberMeChanged(bool value)
+        {
+            Preferences.Default.Set("RememberMe", value);
+            if (!value) Preferences.Default.Remove("SavedLoginEmail");
+        }
+
+        [RelayCommand] private void ToggleRememberMe() => IsRememberMe = !IsRememberMe;
 
         [RelayCommand]
         private void TogglePasswordVisibility()
@@ -95,64 +122,12 @@ namespace RescuAR.App.ViewModels.Authentication
                 // Authenticate with email/password using Supabase
                 var session = await _authService.SignInWithEmailAsync(Email.Trim(), Password);
 
-                // Save session preference
-                Preferences.Default.Set("IsLoggedIn", true);
-                Preferences.Default.Set("UserEmail", Email.Trim());
-
-                // Ensure user profile row exists in users table with first_name and last_name
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var client = RescuAR.Services.SupabaseService.Instance.Client;
-                        var authUser = client?.Auth.CurrentUser;
-                        var authUserId = authUser?.Id;
-                        if (client != null && authUser != null && !string.IsNullOrWhiteSpace(authUserId))
-                        {
-                            string fn = "";
-                            string ln = "";
-                            if (authUser.UserMetadata != null)
-                            {
-                                if (authUser.UserMetadata.TryGetValue("first_name", out var f) && f != null) fn = f.ToString()?.Trim() ?? "";
-                                if (authUser.UserMetadata.TryGetValue("last_name", out var l) && l != null) ln = l.ToString()?.Trim() ?? "";
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(fn) || !string.IsNullOrWhiteSpace(ln))
-                            {
-                                Preferences.Default.Set("UserFirstName", fn);
-                                Preferences.Default.Set("UserLastName", ln);
-
-                                var userRecord = new Models.User
-                                {
-                                    Id = authUserId,
-                                    Email = authUser.Email ?? Email.Trim(),
-                                    FirstName = fn,
-                                    LastName = ln
-                                };
-                                await client.From<Models.User>().Upsert(userRecord);
-                            }
-                        }
-                    }
-                    catch { }
-                });
-
-                // Navigate to Permissions or Dashboard
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    if (Application.Current != null)
-                    {
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                });
+                if (string.IsNullOrWhiteSpace(session.User?.Id) || string.IsNullOrWhiteSpace(session.AccessToken))
+                    throw new InvalidOperationException("The authenticated account is unavailable.");
+                if (IsRememberMe) Preferences.Default.Set("SavedLoginEmail", Email.Trim());
+                else Preferences.Default.Remove("SavedLoginEmail");
+                Password = string.Empty;
+                await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider);
             }
             catch (Exception ex)
             {
@@ -162,15 +137,15 @@ namespace RescuAR.App.ViewModels.Authentication
                 {
                     ErrorMessage = "Please confirm your email address via the link sent to your inbox before logging in.";
                 }
-                else if (msg.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase) || 
+                else if (msg.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase) ||
                          msg.Contains("Invalid login credentials", StringComparison.OrdinalIgnoreCase))
                 {
                     ErrorMessage = "Invalid email or password. Please check your credentials and try again.";
                 }
                 else
                 {
-                    ErrorMessage = string.IsNullOrWhiteSpace(msg) 
-                        ? "Failed to log in. Please check your internet connection or credentials." 
+                    ErrorMessage = string.IsNullOrWhiteSpace(msg)
+                        ? "Failed to log in. Please check your internet connection or credentials."
                         : msg;
                 }
 
@@ -220,12 +195,81 @@ namespace RescuAR.App.ViewModels.Authentication
             });
         }
 
+
         [RelayCommand]
-        private async Task ResetPassword()
+        private void OpenResetPasswordModal()
         {
-            if (AuthenticationNavigation.RootPage != null)
+            ResetEmail = Email.Trim(); ResetOtpCode = ResetNewPassword = ResetConfirmPassword = ResetErrorMessage = "";
+            ResetStep = 1; IsResetSuccess = false; IsResetPasswordModalVisible = true;
+        }
+
+        [RelayCommand]
+        private async Task CloseResetPasswordModal()
+        {
+            if (IsResetLoading) return;
+            IsResetPasswordModalVisible = false;
+            ResetOtpCode = ResetNewPassword = ResetConfirmPassword = "";
+            await RescuAR.Services.SupabaseService.Instance.SetSessionPersistenceAsync(true);
+        }
+
+        [RelayCommand]
+        private async Task SendResetOtp()
+        {
+            if (IsResetLoading) return;
+            if (!Regex.IsMatch(ResetEmail.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            { ResetErrorMessage = "Enter a valid email address."; return; }
+            IsResetLoading = true; ResetErrorMessage = "";
+            try
             {
-                await AuthenticationNavigation.RootPage!.DisplayAlert("Reset Password", "Password reset instructions have been sent to your email.", "OK");
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync()
+                    ?? throw new InvalidOperationException("Supabase is not configured.");
+                await client.Auth.ResetPasswordForEmail(ResetEmail.Trim());
+                ResetStep = 2;
+            }
+            catch (Exception ex) { ResetErrorMessage = ex.Message; }
+            finally { IsResetLoading = false; }
+        }
+
+        [RelayCommand]
+        private async Task ConfirmResetPassword()
+        {
+            if (IsResetLoading) return;
+            if (!Regex.IsMatch(ResetOtpCode, @"^[0-9]{6}$"))
+            { ResetErrorMessage = "Enter the six-digit recovery code."; return; }
+            if (ResetNewPassword.Length < 10 || !Regex.IsMatch(ResetNewPassword, @"[A-Z]") ||
+                !Regex.IsMatch(ResetNewPassword, @"\d") || !Regex.IsMatch(ResetNewPassword, @"[!@#$%^&*()]"))
+            { ResetErrorMessage = "Use at least 10 characters, an uppercase letter, a number and a symbol (!@#$%^&*())."; return; }
+            if (ResetNewPassword != ResetConfirmPassword)
+            { ResetErrorMessage = "Passwords do not match."; return; }
+            IsResetLoading = true; ResetErrorMessage = "";
+            try
+            {
+                var cloud = RescuAR.Services.SupabaseService.Instance;
+                var client = await cloud.GetClientAsync() ?? throw new InvalidOperationException("Supabase is not configured.");
+                // A recovery session must never become a normal persisted app login.
+                await cloud.SetSessionPersistenceAsync(false);
+                var session = await client.Auth.VerifyOTP(ResetEmail.Trim(), ResetOtpCode, Supabase.Gotrue.Constants.EmailOtpType.Recovery);
+                if (string.IsNullOrWhiteSpace(session?.AccessToken) || session?.User == null)
+                    throw new InvalidOperationException("The recovery code could not be verified.");
+                try
+                {
+                    var updated = await client.Auth.Update(new Supabase.Gotrue.UserAttributes { Password = ResetNewPassword });
+                    if (updated == null) throw new InvalidOperationException("The password was not updated.");
+                    IsResetSuccess = true;
+                    ResetOtpCode = ResetNewPassword = ResetConfirmPassword = "";
+                }
+                finally
+                {
+                    try { await _authService.SignOutAsync(); }
+                    catch { /* ClearSessionAsync in SignOutAsync still removes the local session. */ }
+                }
+            }
+            catch (Exception ex) { ResetErrorMessage = ex.Message; }
+            finally
+            {
+                await RescuAR.Services.SupabaseService.Instance.ClearSessionAsync();
+                RescuAR.App.Services.Profile.UserProfileService.ClearIdentity();
+                IsResetLoading = false;
             }
         }
     }

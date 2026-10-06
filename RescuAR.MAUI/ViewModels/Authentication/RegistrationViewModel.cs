@@ -18,6 +18,38 @@ namespace RescuAR.App.ViewModels.Authentication
         private readonly IServiceProvider _serviceProvider;
         private readonly AuthenticationService _authService;
 
+        [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsStep1))]
+        [NotifyPropertyChangedFor(nameof(IsStep2))] [NotifyPropertyChangedFor(nameof(StepTitle))] private int _currentStep = 1;
+        [ObservableProperty] private DateTime _birthday = DateTime.Today.AddYears(-20);
+        [ObservableProperty] private string _houseNumber = string.Empty;
+        [ObservableProperty] private string _streetName = string.Empty;
+        [ObservableProperty] private string _selectedBarangay = string.Empty;
+        public static DateTime TodayDate => DateTime.Today;
+        public bool IsStep1 => CurrentStep == 1;
+        public bool IsStep2 => CurrentStep == 2;
+        public string StepTitle => IsStep1 ? "Resident Information" : "Account Security";
+        public List<string> MarikinaBarangays { get; } = new() {
+            "Barangka", "Calumpang", "Concepcion Uno", "Concepcion Dos", "Fortune", "Industrial Valley",
+            "Jesus Dela Peña", "Malanday", "Marikina Heights", "Nangka", "Parang", "San Roque",
+            "Santa Elena", "Santo Niño", "Tañong", "Tumana" };
+
+        private bool HasResidentInformation() => !string.IsNullOrWhiteSpace(FirstName) &&
+            !string.IsNullOrWhiteSpace(LastName) && !string.IsNullOrWhiteSpace(ContactNumber) &&
+            !string.IsNullOrWhiteSpace(HouseNumber) && !string.IsNullOrWhiteSpace(StreetName) &&
+            MarikinaBarangays.Contains(SelectedBarangay) && Birthday.Date <= DateTime.Today;
+
+        [RelayCommand] private async Task ProceedToStep2()
+        {
+            if (!HasResidentInformation()) { await ShowErrorAsync("Complete your name, phone, birthday and address."); return; }
+            CurrentStep = 2;
+        }
+        [RelayCommand] private void BackToStep1() { if (!IsLoading) CurrentStep = 1; }
+        [RelayCommand] private async Task GoogleSignUp()
+        {
+            if (AuthenticationNavigation.RootPage is NavigationPage nav)
+                await nav.PushAsync(_serviceProvider.GetRequiredService<GoogleAuthPage>());
+        }
+
         [ObservableProperty]
         private string _firstName = string.Empty;
 
@@ -132,6 +164,7 @@ namespace RescuAR.App.ViewModels.Authentication
             ErrorMessage = string.Empty;
             OnPropertyChanged(nameof(HasError));
 
+            if (!HasResidentInformation()) { CurrentStep = 1; await ShowErrorAsync("Complete your resident information first."); return; }
             // Validate Fields
             if (string.IsNullOrWhiteSpace(FirstName))
             {
@@ -190,27 +223,26 @@ namespace RescuAR.App.ViewModels.Authentication
             IsLoading = true;
             try
             {
-                // Register via Supabase
-                var session = await _authService.SignUpWithEmailAsync(Email.Trim(), Password, FirstName.Trim(), LastName.Trim(), string.IsNullOrWhiteSpace(MiddleName) ? null : MiddleName.Trim(), ContactNumber.Trim());
-
-                MainThread.BeginInvokeOnMainThread(async () =>
+                var draft = new Models.ResidentProfileDraft { Email = Email.Trim(), FirstName = FirstName.Trim(),
+                    MiddleName = MiddleName.Trim(), LastName = LastName.Trim(), PhoneNumber = ContactNumber.Trim(),
+                    Birthday = Birthday.Date, HouseNumber = HouseNumber.Trim(), StreetName = StreetName.Trim(), Barangay = SelectedBarangay };
+                var session = await _authService.SignUpWithEmailAsync(draft.Email, Password, draft.FirstName,
+                    draft.LastName, draft.MiddleName, draft.PhoneNumber, draft);
+                Password = ConfirmPassword = string.Empty;
+                Preferences.Default.Set("HasSignedUp", true);
+                if (!string.IsNullOrWhiteSpace(session.AccessToken))
                 {
-                    // If email confirmation is disabled in Supabase, the user is logged in immediately
-                    if (session != null && !string.IsNullOrEmpty(session.AccessToken))
-                    {
-                        if (Application.Current != null)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                    }
-                    else if (AuthenticationNavigation.RootPage is NavigationPage navPage)
-                    {
-                        var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
-                        var vm = (OtpVerificationViewModel)otpPage.BindingContext;
-                        vm.Email = Email.Trim();
-                        await navPage.PushAsync(otpPage);
-                    }
-                });
+                    await RescuAR.App.Services.Profile.UserProfileService.Instance.SaveDraftAsync(draft);
+                    await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider);
+                }
+                else if (AuthenticationNavigation.RootPage is NavigationPage navPage)
+                {
+                    var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
+                    var vm = (OtpVerificationViewModel)otpPage.BindingContext;
+                    vm.Email = draft.Email;
+                    vm.Draft = draft;
+                    await navPage.PushAsync(otpPage);
+                }
             }
             catch (Exception ex)
             {
@@ -227,7 +259,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     }
                     catch { }
                 }
-                
+
                 string finalError = msg ?? "An error occurred during registration. Please try again.";
                 await ShowErrorAsync(finalError);
             }
@@ -241,7 +273,7 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             ErrorMessage = message;
             OnPropertyChanged(nameof(HasError));
-            
+
             if (AuthenticationNavigation.RootPage != null)
             {
                 await AuthenticationNavigation.RootPage!.DisplayAlert("Registration Error", message, "OK");
