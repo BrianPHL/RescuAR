@@ -5,6 +5,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:evergine="clr-namespace:RescuAR.MAUI.Evergine"
     xmlns:camera="clr-namespace:RescuAR.App.Views.Camera"
+    xmlns:mapsui="clr-namespace:Mapsui.UI.Maui;assembly=Mapsui.UI.Maui"
+    xmlns:guidance="clr-namespace:RescuAR.MAUI.Services.Navigation"
     Title="Camera"
     BackgroundColor="White"
     Shell.NavBarIsVisible="False"
@@ -133,30 +135,28 @@
                 HorizontalOptions="Fill"
                 VerticalOptions="Fill" />
 
-            <!-- 2D Map submodule belongs elsewhere; no fake map is shown. -->
-            <Grid
-                x:Name="mapModeLayer"
-                IsVisible="False"
-                ZIndex="6"
-                BackgroundColor="#F4F5F6">
-                <VerticalStackLayout
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center"
-                    Spacing="6"
-                    Margin="32">
-                    <Label
-                        Text="2D Map Guidance"
-                        TextColor="#1A1A1A"
-                        FontSize="21"
-                        FontAttributes="Bold"
-                        HorizontalTextAlignment="Center" />
-                    <Label
-                        x:Name="mapModeStatusLabel"
-                        Text="Placeholder"
-                        TextColor="#777777"
-                        FontSize="14"
-                        HorizontalTextAlignment="Center" />
-                </VerticalStackLayout>
+            <!-- Offline context and route use dev's embedded geographic data. -->
+            <Grid x:Name="mapModeLayer" IsVisible="False" ZIndex="6" BackgroundColor="#F4F5F6">
+                <mapsui:MapControl x:Name="CameraMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                <Border VerticalOptions="End" Margin="12,0,12,76" Padding="12,8"
+                        BackgroundColor="#EEFFFFFF" Stroke="#D7DADD" StrokeShape="RoundRectangle 6">
+                    <VerticalStackLayout Spacing="4">
+                        <Label x:Name="cameraMapDestinationLabel" FontSize="14" FontAttributes="Bold" TextColor="#151515" />
+                        <Label x:Name="mapModeStatusLabel" FontSize="11" TextColor="#454545" LineBreakMode="WordWrap" />
+                        <Label Text="Gray: mapped roads and listed centers • Teal: selected route • Blue: current location"
+                               FontSize="10" TextColor="#454545" LineBreakMode="WordWrap" />
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Fit route" Clicked="OnCameraMapFitClicked" HeightRequest="36" Padding="8,0"
+                                    FontSize="11" BackgroundColor="#078F99" TextColor="White" />
+                            <Button Text="Retry" Clicked="OnCameraMapRetryClicked" HeightRequest="36" Padding="8,0"
+                                    FontSize="11" BackgroundColor="#E8EEEE" TextColor="#151515" />
+                            <Button x:Name="cameraMapVoiceButton" Text="Voice off" Clicked="OnVoiceGuidanceToggleClicked"
+                                    HeightRequest="36" Padding="8,0" FontSize="11" BackgroundColor="#E8EEEE" TextColor="#151515" />
+                            <Button Text="Directions" Clicked="OnCameraDirectionsClicked" HeightRequest="36" Padding="8,0"
+                                    FontSize="11" BackgroundColor="#078F99" TextColor="White" />
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
             </Grid>
 
             <!-- ========================================================= -->
@@ -286,7 +286,7 @@
             <Border
                 x:Name="turnGuidancePanel"
                 IsVisible="False"
-                InputTransparent="True"
+                InputTransparent="False"
                 ZIndex="21"
                 Margin="8,48,8,0"
                 Padding="12,9"
@@ -299,6 +299,9 @@
                 <Border.Shadow>
                     <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
                 </Border.Shadow>
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnTurnGuidancePanelClicked" />
+                </Border.GestureRecognizers>
                 <Grid
                     ColumnDefinitions="46,*,22"
                     ColumnSpacing="8"
@@ -785,6 +788,46 @@
                             IsVisible="False"
                             Spacing="4" />
                     </VerticalStackLayout>
+                </Border>
+            </Grid>
+
+            <VerticalStackLayout x:Name="cameraGuidanceControls" ZIndex="32" HorizontalOptions="End" VerticalOptions="Start"
+                                 Margin="0,150,12,0" Spacing="4" WidthRequest="110">
+                <Button x:Name="cameraVoiceButton" Clicked="OnVoiceGuidanceToggleClicked" Text="Voice"
+                        HeightRequest="40" Padding="8,0" FontSize="12" BackgroundColor="#EEFFFFFF" TextColor="#151515" />
+                <Label x:Name="voiceGuidanceStatusLabel" FontSize="10" HorizontalTextAlignment="Center"
+                       TextColor="#151515" BackgroundColor="#EEFFFFFF" LineBreakMode="WordWrap" />
+                <Button x:Name="cameraDirectionsButton" Text="Directions" Clicked="OnCameraDirectionsClicked"
+                        HeightRequest="40" Padding="8,0" FontSize="12" BackgroundColor="#078F99" TextColor="White" />
+            </VerticalStackLayout>
+
+            <Grid x:Name="routeDirectionsSheet" IsVisible="False" ZIndex="70" BackgroundColor="#66000000">
+                <Border VerticalOptions="End" MaximumHeightRequest="540" BackgroundColor="White"
+                        Padding="16" StrokeThickness="0" StrokeShape="RoundRectangle 16,16,0,0">
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Route directions" FontSize="20" FontAttributes="Bold" TextColor="#151515" VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="Close" Clicked="OnRouteDirectionsCloseClicked"
+                                    HeightRequest="40" Padding="12,0" BackgroundColor="#E8EEEE" TextColor="#151515" />
+                        </Grid>
+                        <Label Grid.Row="1" x:Name="routeDirectionsTargetLabel" FontSize="15" FontAttributes="Bold" TextColor="#151515" />
+                        <Label Grid.Row="2" x:Name="routeDirectionsDistanceLabel" FontSize="13" TextColor="#454545" />
+                        <Label Grid.Row="3" x:Name="routeDirectionsStatusLabel" FontSize="11" TextColor="#454545" LineBreakMode="WordWrap" />
+                        <CollectionView Grid.Row="4" x:Name="routeStepsCollectionView" SelectionMode="None" HeightRequest="300">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="guidance:RouteDirectionStep">
+                                    <Grid ColumnDefinitions="30,*,Auto" ColumnSpacing="10" Padding="0,10">
+                                        <Image Source="{Binding IconSource}" HeightRequest="24" WidthRequest="24" VerticalOptions="Start" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                            <Label Text="{Binding InstructionText}" FontSize="14" FontAttributes="Bold" TextColor="#151515" />
+                                            <Label Text="{Binding SubtitleText}" FontSize="11" TextColor="#454545" LineBreakMode="WordWrap" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="2" Text="{Binding DistanceText}" FontSize="12" TextColor="#078F99" />
+                                    </Grid>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </Grid>
                 </Border>
             </Grid>
 
