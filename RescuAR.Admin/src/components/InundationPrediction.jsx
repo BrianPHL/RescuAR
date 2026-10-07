@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  RefreshCw, 
-  ShieldAlert, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Droplets, 
-  Home, 
-  Users, 
-  Building2, 
-  Layers, 
-  Compass, 
+import {
+  RefreshCw,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
+  Droplets,
+  Home,
+  Users,
+  Building2,
+  Layers,
+  Compass,
   Activity,
   ArrowUpRight
 } from 'lucide-react';
@@ -17,7 +17,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
-import { predictPrepInundation, PREP_API_URL } from '../services/prepInundationApi';
+// import { predictPrepInundation, PREP_API_URL } from '../services/prepInundationApi';
 
 // Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -414,7 +414,7 @@ export default function InundationPrediction() {
         </div>
 
         <div className="header-actions">
-          <button 
+          <button
             className="refresh-btn"
             onClick={handleRefresh}
           >
@@ -426,7 +426,7 @@ export default function InundationPrediction() {
 
       {/* Main Responsive Grid */}
       <div className="inundation-grid">
-        
+
         {/* Left Panel: OpenStreetMap Hydrodynamic Viewer */}
         <div className="inundation-card map-card">
           <div className="card-header-bar">
@@ -434,16 +434,16 @@ export default function InundationPrediction() {
               <Compass size={18} className="text-brand" />
               <h2 className="card-heading">Legacy PREP Impact Visualization</h2>
             </div>
-            
+
             {/* Map Theme Control */}
             <div className="map-style-toggle">
-              <button 
+              <button
                 className={`tile-toggle-btn ${mapTileStyle === 'osm' ? 'active' : ''}`}
                 onClick={() => setMapTileStyle('osm')}
               >
                 Standard OSM
               </button>
-              <button 
+              <button
                 className={`tile-toggle-btn ${mapTileStyle === 'voyager' ? 'active' : ''}`}
                 onClick={() => setMapTileStyle('voyager')}
               >
@@ -453,8 +453,8 @@ export default function InundationPrediction() {
           </div>
 
           <div className="map-wrapper">
-            <div 
-              ref={mapContainerRef} 
+            <div
+              ref={mapContainerRef}
               className="osm-map-container"
             />
 
@@ -484,7 +484,7 @@ export default function InundationPrediction() {
 
         {/* Right Panel: Interactive Slider & Dynamic Impact Card */}
         <div className="right-panel-stack">
-          
+
           {/* Prediction Input & Presets */}
           <div className="inundation-card input-card">
             <div className="card-header-bar">
@@ -542,10 +542,10 @@ export default function InundationPrediction() {
               {isLiveMode && isLiveTelemetryActive && <span className="live-input-note"> • linked to PAGASA</span>}
               {!isLiveMode && <span className="simulation-input-note"> • manual scenario only</span>}
             </label>
-            
+
             {/* Main Interactive Slider */}
             <div className="slider-controls-row">
-              <input 
+              <input
                 type="range"
                 min="0"
                 max="30"
@@ -565,28 +565,28 @@ export default function InundationPrediction() {
             {/* Quick Level Preset Buttons */}
             <div className="preset-buttons-row">
               <span className="preset-title">Quick Presets:</span>
-              <button 
+              <button
                 className={`preset-chip ${!isLiveMode && simulationDepth === 0 ? 'active' : ''}`}
                 onClick={() => setSimulationDepth(0)}
                 disabled={isLiveMode}
               >
                 0m Normal
               </button>
-              <button 
+              <button
                 className={`preset-chip ${!isLiveMode && simulationDepth === 15 ? 'active' : ''}`}
                 onClick={() => setSimulationDepth(15)}
                 disabled={isLiveMode}
               >
                 15m Level 1
               </button>
-              <button 
+              <button
                 className={`preset-chip ${!isLiveMode && simulationDepth === 16 ? 'active' : ''}`}
                 onClick={() => setSimulationDepth(16)}
                 disabled={isLiveMode}
               >
                 16m Level 2
               </button>
-              <button 
+              <button
                 className={`preset-chip ${!isLiveMode && simulationDepth === 18 ? 'active' : ''}`}
                 onClick={() => setSimulationDepth(18)}
                 disabled={isLiveMode}
@@ -644,7 +644,7 @@ export default function InundationPrediction() {
             ) : (
               <div className="impact-content-wrapper">
                 {/* Alert Level Chip */}
-                <div 
+                <div
                   className="alert-status-banner"
                   style={{
                     color: alertStatus.color,
@@ -666,7 +666,7 @@ export default function InundationPrediction() {
 
                 {/* Details List */}
                 <div className="impact-details-list">
-                  
+
                   {/* Affected Barangays */}
                   <div className="impact-item-row">
                     <div className="impact-label-group">

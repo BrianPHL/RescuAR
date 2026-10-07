@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw, Check, X, Clock, ShieldCheck, MapPin, User, AlertTriangle } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -172,6 +173,7 @@ export default function ReportsModeration() {
           <h1>Reports Moderation</h1>
           <span className="view-subtitle">Last updated: {lastUpdated}</span>
         </div>
+        <ExportActions title="reports-moderation" rows={filteredReports} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Description', key: 'description' }, { label: 'Reported By', key: 'posted_by' }, { label: 'Category', key: 'category' }, { label: 'Status', key: 'status' }, { label: 'Address', key: 'address' }, { label: 'Latitude', key: 'latitude' }, { label: 'Longitude', key: 'longitude' }, { label: 'Created At', key: 'created_at' }]} disabled={loading} />
       </div>
 
       <div className="stations-split-layout" style={{ marginTop: '24px', alignItems: 'flex-start' }}>

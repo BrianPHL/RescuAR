@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import {
   Phone,
@@ -154,9 +155,12 @@ export default function EmergencyHotlines() {
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: '0 0 4px 0' }}>Emergency Hotlines</h1>
           <span style={{ fontSize: '13px', color: '#64748b' }}>Last updated: June 18, 2026 • 08:42 AM</span>
         </div>
+        <div className="page-header-actions">
+          <ExportActions title="emergency-hotlines" rows={filteredHotlines} columns={[{ label: 'ID', key: 'id' }, { label: 'Agency', key: 'agency' }, { label: 'Primary Number', key: 'primaryNumber' }, { label: 'Alternative Number', key: 'alternativeNumber' }, { label: 'Email', key: 'email' }, { label: 'Category', key: 'category' }, { label: 'Coverage', key: 'coverage' }, { label: 'Availability', key: 'availability' }, { label: 'Contact Person', key: 'contactPerson' }, { label: 'Contact Number', key: 'contactNumber' }]} disabled={loading} />
         <button style={{ ...styles.pageBtn, padding: '8px 16px', fontWeight: '600', color: '#334155', gap: '8px' }}>
           <RefreshCw size={14} /> Refresh
         </button>
+        </div>
       </div>
 
       {/* CONTENT LAYOUT */}

@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import {
   ShieldOff,
@@ -270,12 +271,15 @@ export default function UserManagement() {
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: '0 0 4px 0' }}>User Management</h1>
           <span style={{ fontSize: '13px', color: '#64748b' }}>View and manage RescuAR app users and administrators • Last updated: {lastUpdated}</span>
         </div>
+        <div className="page-header-actions">
+          <ExportActions title="user-management" rows={filteredUsers} columns={[{ label: 'ID', key: 'id' }, { label: 'Full Name', key: 'full_name' }, { label: 'Username', key: 'username' }, { label: 'Email', key: 'email' }, { label: 'Phone', key: 'phone_number' }, { label: 'Role', key: 'role' }, { label: 'Status', key: 'status' }, { label: 'Registered At', key: 'created_at' }]} disabled={loading} />
         <button
           style={{ ...styles.pageBtn, padding: '8px 16px', fontWeight: '600', color: '#334155', gap: '8px' }}
           onClick={fetchUsers}
         >
           <RefreshCw size={14} /> Refresh
         </button>
+        </div>
       </div>
 
       {/* SUMMARY CARDS */}

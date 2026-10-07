@@ -1,1 +1,7 @@
 /* Central styles are in index.css. App.css can remain empty. */
+
+/* Shared data export toolbar */
+.export-actions { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; color: #334155; font-size: 13px; font-weight: 600; }
+.export-actions button { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; color: #0f172a; font-size: 12px; font-weight: 700; cursor: pointer; }
+.export-actions button:hover:not(:disabled) { background: #e2e8f0; }
+.export-actions button:disabled { opacity: .45; cursor: not-allowed; }

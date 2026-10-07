@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
@@ -1205,6 +1206,8 @@ export default function EvacuationCenters() {
             Monitor shelter capacity, classifications, coordinates, and assigned LGU relief officers across Marikina
           </span>
         </div>
+        <div className="page-header-actions">
+          <ExportActions title="evacuation-centers" rows={sortedCenters} columns={[{ label: 'ID', key: 'id' }, { label: 'Name', key: 'name' }, { label: 'Barangay', key: 'barangay' }, { label: 'Classification', key: 'classification' }, { label: 'Status', key: 'status' }, { label: 'Capacity', key: 'capacity' }, { label: 'Current Evacuees', key: 'currentEvacuees' }, { label: 'Contact', key: 'contact' }, { label: 'Head Officer', key: 'headOfficer' }, { label: 'Facilities', key: 'facilities' }, { label: 'Latitude', key: 'latitude' }, { label: 'Longitude', key: 'longitude' }]} disabled={loading} />
         <button
           className="btn-refresh"
           onClick={handleRefresh}
@@ -1213,6 +1216,7 @@ export default function EvacuationCenters() {
           <RefreshCw size={13} className={isRefreshSpinning ? 'spin-icon' : ''} />
           <span>Refresh</span>
         </button>
+        </div>
       </div>
 
       {/* SPLIT PANEL LAYOUT */}
