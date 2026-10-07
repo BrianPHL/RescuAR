@@ -1,82 +1,19 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<ContentPage
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication"
-    x:DataType="vm:SplashViewModel"
-    x:Class="RescuAR.App.Views.Authentication.SplashPage"
-    Shell.NavBarIsVisible="False"
-    NavigationPage.HasNavigationBar="False">
-
-    <ContentPage.Background>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#F8FAFC" Offset="0.0" />
-            <GradientStop Color="#FFFFFF" Offset="0.6" />
-            <GradientStop Color="#F1F5F9" Offset="1.0" />
-        </LinearGradientBrush>
-    </ContentPage.Background>
-
-    <Grid RowDefinitions="*, Auto" ColumnDefinitions="*">
-        
-        <!-- Center Content: Professional Logo Icon Container -->
-        <VerticalStackLayout Grid.Row="0" 
-                             HorizontalOptions="Center" 
-                             VerticalOptions="Center"
-                             Spacing="0"
-                             Padding="24">
-            
-            <!-- Glassmorphic Elevated Logo Box -->
-            <Border WidthRequest="168"
-                    HeightRequest="168"
-                    StrokeThickness="1"
-                    Stroke="#E2E8F0"
-                    BackgroundColor="White"
-                    StrokeShape="RoundRectangle 36"
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center">
-                <Border.Shadow>
-                    <Shadow Brush="#00848E" Offset="0,12" Radius="36" Opacity="0.12" />
-                </Border.Shadow>
-                
-                <Image Source="rescuar_logo.jpg"
-                       Aspect="AspectFill"
-                       HorizontalOptions="Fill"
-                       VerticalOptions="Fill"
-                       Margin="0" />
-            </Border>
-            
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Authentication" xmlns:skia="clr-namespace:SkiaSharp.Views.Maui.Controls;assembly=SkiaSharp.Views.Maui.Controls"
+             x:Class="RescuAR.App.Views.Authentication.SplashPage" x:DataType="vm:SplashViewModel"
+             NavigationPage.HasNavigationBar="False" BackgroundColor="#0D1B36">
+    <Grid RowDefinitions="*,Auto" Padding="24">
+        <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="24">
+            <skia:SKCanvasView x:Name="RadarCanvas" WidthRequest="270" HeightRequest="270" PaintSurface="OnRadarCanvasPaintSurface" InputTransparent="True" />
+            <HorizontalStackLayout HorizontalOptions="Center" Spacing="0">
+                <Label Text="Rescu" FontSize="40" FontAttributes="Bold" TextColor="White" />
+                <Label Text="AR" FontSize="40" FontAttributes="Bold" TextColor="#18B6BC" />
+            </HorizontalStackLayout>
         </VerticalStackLayout>
-
-        <!-- Bottom Loading State & Version -->
-        <VerticalStackLayout Grid.Row="1"
-                             HorizontalOptions="Center"
-                             VerticalOptions="End"
-                             Margin="0,0,0,56"
-                             Spacing="14">
-            
-            <ActivityIndicator IsRunning="True"
-                               Color="#00848E"
-                               WidthRequest="28"
-                               HeightRequest="28"
-                               HorizontalOptions="Center" />
-            
-            <Label Text="{Binding StatusText}"
-                   FontSize="13"
-                   FontFamily="OpenSansSemibold"
-                   TextColor="#475569"
-                   CharacterSpacing="0.3"
-                   HorizontalOptions="Center" />
-            
-            <Label Text="{Binding VersionText}"
-                   FontSize="11"
-                   FontFamily="OpenSansRegular"
-                   TextColor="#94A3B8"
-                   CharacterSpacing="0.8"
-                   HorizontalOptions="Center" />
-            
+        <VerticalStackLayout Grid.Row="1" Spacing="12" Margin="0,0,0,36" HorizontalOptions="Center">
+            <Label Text="{Binding StatusText}" TextColor="#CBD5E1" FontSize="13" HorizontalTextAlignment="Center" />
+            <Label Text="{Binding VersionText}" TextColor="#94A3B8" FontSize="11" HorizontalTextAlignment="Center" />
         </VerticalStackLayout>
-        
     </Grid>
-
 </ContentPage>
-

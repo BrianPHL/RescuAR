@@ -39,8 +39,8 @@ public partial class AdvisoryFeedViewModel : ObservableObject
         StartClockTicker();
 
         // Real-time listener for new admin advisories only
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested += HandleNewAdvisoryPushed;
         RealtimeAdvisoryManager.StartRealtimeListener();
     }
 

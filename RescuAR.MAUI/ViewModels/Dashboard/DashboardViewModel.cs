@@ -254,8 +254,8 @@ public partial class DashboardViewModel : ObservableObject
         RefreshDashboard();
 
         // Listen for real-time admin advisory pushes (unsubscribe first to prevent listener leaks)
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested += HandleNewAdvisoryPushed;
         RealtimeAdvisoryManager.StartRealtimeListener();
     }
 
@@ -276,6 +276,7 @@ public partial class DashboardViewModel : ObservableObject
     public async void RefreshDashboard()
     {
         LoadUserData();
+        RefreshSirenState();
         await LoadWeatherDataAsync();
         await LoadRealtimeBentoBoxDataAsync();
     }
@@ -819,20 +820,45 @@ public partial class DashboardViewModel : ObservableObject
 
     private void ToggleEmergencySiren(QuickActionItem item)
     {
+        if (!RescuAR.MAUI.Services.Settings.AppPreferences.Current.Get(
+                RescuAR.MAUI.Services.Settings.AppSetting.EmergencySiren))
+        {
+            _isSirenOn = false;
+            item.IsActiveState = false;
+            item.Subtitle = "Sound off in App Settings";
+            return;
+        }
         _isSirenOn = !_isSirenOn;
         item.IsActiveState = _isSirenOn;
 
         if (_isSirenOn)
         {
             RealtimeAdvisoryManager.PlayAlarmAudio();
-            if (Shell.Current != null)
+            _isSirenOn = RealtimeAdvisoryManager.IsAlarmPlaying;
+            item.IsActiveState = _isSirenOn;
+            item.Subtitle = _isSirenOn ? "Siren playing • Tap to stop" : "Siren unavailable on this device";
+            if (_isSirenOn && Shell.Current != null)
             {
-                Shell.Current.DisplayAlert("Emergency Siren Playing", "Max volume distress siren is playing. Tap again to stop audio beacon.", "OK");
+                Shell.Current.DisplayAlert("Emergency Siren Playing", "The siren is playing at your device's current volume. Tap again to stop it.", "OK");
             }
         }
         else
         {
             RealtimeAdvisoryManager.StopAlarmAudio();
+            item.Subtitle = "Tap to play the siren";
+        }
+    }
+
+    private void RefreshSirenState()
+    {
+        bool enabled = RescuAR.MAUI.Services.Settings.AppPreferences.Current.Get(
+            RescuAR.MAUI.Services.Settings.AppSetting.EmergencySiren);
+        _isSirenOn = enabled && RealtimeAdvisoryManager.IsAlarmPlaying;
+        foreach (var item in AllAvailableQuickActions.Where(item => item.ActionType == "Siren"))
+        {
+            item.IsActiveState = _isSirenOn;
+            item.Subtitle = !enabled ? "Sound off in App Settings" :
+                _isSirenOn ? "Siren playing • Tap to stop" : "Tap to play the siren";
         }
     }
 

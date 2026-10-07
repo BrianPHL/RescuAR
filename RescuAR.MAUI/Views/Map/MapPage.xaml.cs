@@ -20,5 +20,11 @@ namespace RescuAR.App.Views.Map
                 await vm.InitializeMapAsync(MapControl);
             }
         }
+
+        protected override void OnDisappearing()
+        {
+            if (BindingContext is MapViewModel vm) vm.DeactivateMap();
+            base.OnDisappearing();
+        }
     }
 }

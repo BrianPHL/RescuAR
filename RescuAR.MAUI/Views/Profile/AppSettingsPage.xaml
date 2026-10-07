@@ -1,13 +1,71 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
-<ContentPage
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    x:Class="RescuAR.App.Views.Profile.AppSettingsPage"
-    Title="App Settings">
-
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
-
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+             x:Class="RescuAR.App.Views.Profile.AppSettingsPage" x:DataType="vm:AppSettingsViewModel"
+             Title="App Settings" BackgroundColor="#F2F2F7">
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="18">
+            <Label Text="Make RescuAR work for you" FontSize="26" FontAttributes="Bold" TextColor="#0F172A" />
+            <Label Text="Preferences are saved on this device." TextColor="#64748B" />
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" Padding="16">
+                <VerticalStackLayout Spacing="18">
+                    <Label Text="Alerts &amp; guidance" FontSize="18" FontAttributes="Bold" TextColor="#0A8491" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Advisory popups" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Show new advisories while the app is open. Camera emergency guidance and the advisory feed stay active." FontSize="12" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding AdvisoryPopupsEnabled}" OnColor="#0A8491"  />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Advisory &amp; siren sounds" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Play the app’s alarm sound. Your device volume and sound settings still apply." FontSize="12" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding EmergencySirenEnabled}" OnColor="#0A8491"  />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Turn &amp; advisory vibration" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Pulse near confirmed turns and for new advisories, on supported devices." FontSize="12" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding HapticFeedbackEnabled}" OnColor="#0A8491"  />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Spoken navigation" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Speak confirmed camera and 2D route guidance. The voice button uses the same preference. Offline speech depends on installed device voices." FontSize="12" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding NavigationVoiceEnabled}" OnColor="#0A8491"  />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" Padding="16">
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Offline maps" FontSize="18" FontAttributes="Bold" TextColor="#0A8491" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Detailed Marikina map" FontAttributes="Bold" TextColor="#0F172A" />
+                            <Label Text="Display bundled tiles, buildings, parks and water. Basic roads and offline routing remain available when off." FontSize="12" TextColor="#64748B" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding DetailedOfflineMapEnabled}" OnColor="#0A8491" IsEnabled="{Binding IsNotBusy}" />
+                    </Grid>
+                    <Label Text="{Binding MapStorageText}" FontSize="12" TextColor="#64748B" />
+                    <Label Text="Static map context covers part of Marikina at zoom 13–18. It does not show current flood conditions or confirm access." FontSize="12" TextColor="#64748B" />
+                    <Button Text="Remove local map copy" Command="{Binding RemoveMapCopyCommand}" IsEnabled="{Binding IsNotBusy}" BackgroundColor="#E6F4F5" TextColor="#0A8491" CornerRadius="10" />
+                </VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 16" Padding="16">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="Device permissions" FontSize="18" FontAttributes="Bold" TextColor="#0A8491" />
+                    <Grid ColumnDefinitions="*,Auto"><Label Text="Camera" TextColor="#334155" /><Label Grid.Column="1" Text="{Binding CameraPermission}" TextColor="#64748B" /></Grid>
+                    <Grid ColumnDefinitions="*,Auto"><Label Text="Location" TextColor="#334155" /><Label Grid.Column="1" Text="{Binding LocationPermission}" TextColor="#64748B" /></Grid>
+                    <Button Text="Open device settings" Command="{Binding OpenDeviceSettingsCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="10" />
+                </VerticalStackLayout>
+            </Border>
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#0A8491" />
+            <Label Text="{Binding StatusText}" TextColor="#0A8491" SemanticProperties.Description="{Binding StatusText}" />
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

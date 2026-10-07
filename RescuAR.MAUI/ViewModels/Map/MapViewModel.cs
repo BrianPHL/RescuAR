@@ -13,22 +13,18 @@ using Mapsui.Styles;
 using System.Linq;
 using NetTopologySuite.Geometries;
 using RescuAR.Navigation.Data;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Map;
-
-public class SphericalMercatorProjector : NetTopologySuite.Geometries.ICoordinateFilter
-{
-    public void Filter(Coordinate coord)
-    {
-        var projected = Mapsui.Projections.SphericalMercator.FromLonLat(coord.X, coord.Y);
-        coord.X = projected.x;
-        coord.Y = projected.y;
-    }
-}
 
 public partial class MapViewModel : ObservableObject
 {
     private bool _realtimeAdvisorySubscribed;
+    private OfflineMapLayerController? detailedMapLayers;
+    private bool mapInitialized;
+    private bool mapVisible;
+    private Task? initialization;
+    [ObservableProperty] private string mapStatus = "Loading offline roads…";
 
     [ObservableProperty]
     private Mapsui.Map _map = new();
@@ -39,20 +35,21 @@ public partial class MapViewModel : ObservableObject
 
     public async Task InitializeMapAsync(MapControl mapControl)
     {
+        mapVisible = true;
+        initialization ??= InitializeMapCoreAsync(mapControl);
+        await initialization;
+        if (mapVisible && mapInitialized && detailedMapLayers is not null) await detailedMapLayers.ActivateAsync(Map);
+        if (!mapInitialized) initialization = null;
+    }
+
+    private async Task InitializeMapCoreAsync(MapControl mapControl)
+    {
         try
         {
             var map = new Mapsui.Map
             {
                 CRS = "EPSG:3857"
             };
-
-            // Add Google Maps Base Layer
-            var tileSource = new BruTile.Web.HttpTileSource(new BruTile.Predefined.GlobalSphericalMercator(0, 18), "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", name: "Google Maps");
-            var googleMapsLayer = new Mapsui.Tiling.Layers.TileLayer(tileSource) { Name = "BaseMap" };
-            map.Layers.Add(googleMapsLayer);
-
-            // We will skip loading 2D_MAP.mbtiles because it contains vector tiles (PBF)
-            // Mapsui 4 TileLayer only supports raster image tiles (PNG/JPG).
 
             // Map display and routing share the same embedded datasets.
             foreach (string resourceName in
@@ -87,13 +84,22 @@ public partial class MapViewModel : ObservableObject
 
             Map = map;
             mapControl.Map = map;
+            mapInitialized = true;
+            detailedMapLayers = new(status => MapStatus = status);
         }
         catch (Exception ex)
         {
+            MapStatus = "Offline map unavailable. Reopen the map to retry.";
             if (Shell.Current != null)
                 await Shell.Current.DisplayAlert("Map Error", $"Base Map failed: {ex.Message}", "OK");
             Console.WriteLine($"Error loading map: {ex.Message}");
         }
+    }
+
+    public void DeactivateMap()
+    {
+        mapVisible = false;
+        detailedMapLayers?.Deactivate();
     }
 
     private async Task LoadGeoJsonLayerAsync(Mapsui.Map map, string resourceName, string layerName, IStyle style)
@@ -110,7 +116,7 @@ public partial class MapViewModel : ObservableObject
                 var featureCollection = reader.Read<NetTopologySuite.Features.FeatureCollection>(geoJson);
                 if (featureCollection == null) return new List<GeometryFeature>();
 
-                var projector = new SphericalMercatorProjector();
+                var projector = new OfflineMapProjector();
                 return featureCollection.Select(f => 
                 {
                     var geom = f.Geometry.Copy();
@@ -133,6 +139,7 @@ public partial class MapViewModel : ObservableObject
             if (Shell.Current != null)
                 await Shell.Current.DisplayAlert("Map Error", $"Failed to load {layerName}: {ex.Message}", "OK");
             Console.WriteLine($"Error loading {layerName}: {ex.Message}");
+            throw;
         }
     }
 
@@ -177,7 +184,7 @@ public partial class MapViewModel : ObservableObject
 
         _realtimeAdvisorySubscribed = true;
 
-        RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+        RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnAdvisoryPopupRequested += (newAdvisory) =>
         {
             SelectedAdvisory = newAdvisory;
             IsPopupVisible = true;

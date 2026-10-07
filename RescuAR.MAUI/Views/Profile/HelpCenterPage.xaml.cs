@@ -7,6 +7,7 @@ namespace RescuAR.App.Views.Profile
         public HelpCenterPage()
         {
             InitializeComponent();
+            BindingContext = new RescuAR.App.ViewModels.Profile.HelpCenterViewModel();
         }
     }
 }

@@ -7,6 +7,7 @@ namespace RescuAR.App.Views.Profile
         public TermsConditionsPage()
         {
             InitializeComponent();
+            LegalDocumentScroll.Content = LegalInformationContent.Create(false);
         }
     }
 }

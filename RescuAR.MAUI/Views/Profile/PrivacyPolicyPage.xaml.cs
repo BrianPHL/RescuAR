@@ -7,6 +7,7 @@ namespace RescuAR.App.Views.Profile
         public PrivacyPolicyPage()
         {
             InitializeComponent();
+            LegalDocumentScroll.Content = LegalInformationContent.Create(true);
         }
     }
 }

@@ -1,13 +1,25 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
-<ContentPage
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    x:Class="RescuAR.App.Views.Profile.HelpCenterPage"
-    Title="Help Center">
-
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
-
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile" x:Class="RescuAR.App.Views.Profile.HelpCenterPage"
+             x:DataType="vm:HelpCenterViewModel" Title="Help Center" BackgroundColor="#F2F2F7">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="20" RowSpacing="14">
+        <Label Text="Using RescuAR" FontSize="28" FontAttributes="Bold" TextColor="#0F172A" />
+        <SearchBar Grid.Row="1" Text="{Binding SearchText}" Placeholder="Search help topics" TextColor="#334155" />
+        <Grid Grid.Row="2">
+            <CollectionView ItemsSource="{Binding FilteredTopics}" SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HelpFaqItem">
+                        <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 14" Padding="16" Margin="0,0,0,10">
+                            <VerticalStackLayout Spacing="10">
+                                <Button Text="{Binding Question}" Command="{Binding ToggleCommand}" BackgroundColor="Transparent" TextColor="#0A8491" FontAttributes="Bold" Padding="0" />
+                                <Label Text="{Binding Answer}" IsVisible="{Binding IsExpanded}" TextColor="#334155" FontSize="14" />
+                            </VerticalStackLayout>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+            <Label Text="No matching topics. Try another search." IsVisible="{Binding HasNoMatches}" TextColor="#64748B" HorizontalOptions="Center" VerticalOptions="Center" />
+        </Grid>
+        <Button Grid.Row="3" Text="Open emergency hotline directory" Command="{Binding OpenHotlinesCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="12" />
+    </Grid>
 </ContentPage>

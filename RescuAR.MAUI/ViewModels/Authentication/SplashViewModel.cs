@@ -16,22 +16,24 @@ namespace RescuAR.App.ViewModels.Authentication
     public partial class SplashViewModel : ObservableObject
     {
         private readonly IServiceProvider _serviceProvider;
+        private Task? initialization;
 
         [ObservableProperty]
-        private string _statusText = "Loading safety resources...";
+        private string _statusText = "Restoring your session…";
 
         [ObservableProperty]
-        private string _versionText = "v0.0.1a";
+        private string _versionText = string.Empty;
 
         public SplashViewModel(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
+            VersionText = $"v{AppInfo.Current.VersionString}";
         }
 
-        public async Task InitializeAsync()
-        {
-            await Task.Delay(2000);
+        public Task InitializeAsync() => initialization ??= InitializeCoreAsync();
 
+        private async Task InitializeCoreAsync()
+        {
             bool hasSignedUp = Preferences.Default.Get("HasSignedUp", false);
             try
             {
@@ -46,7 +48,7 @@ namespace RescuAR.App.ViewModels.Authentication
             catch { StatusText = "Sign in to reconnect to your account."; }
             RescuAR.App.Services.Profile.UserProfileService.ClearIdentity();
 
-            MainThread.BeginInvokeOnMainThread(() =>
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
                 if (Application.Current != null)
                 {

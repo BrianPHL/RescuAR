@@ -22,7 +22,7 @@
                            TextColor="#FFFFFF" 
                            FontSize="18" 
                            FontAttributes="Bold" />
-                    <Label Text="Real-time safe zones &amp; active shelters" 
+                    <Label Text="Static map context &amp; listed locations"
                            TextColor="#B2DFDB" 
                            FontSize="11" />
                 </VerticalStackLayout>
@@ -30,7 +30,7 @@
                 <!-- Active Indicator -->
                 <HorizontalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="6">
                     <Ellipse WidthRequest="8" HeightRequest="8" Fill="#22C55E" />
-                    <Label Text="OFFLINE READY" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                    <Label Text="LOCAL MAP" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
                 </HorizontalStackLayout>
             </Grid>
         </Border>
@@ -39,6 +39,10 @@
         <mapsui:MapControl x:Name="MapControl" Grid.Row="1" 
                            HorizontalOptions="FillAndExpand" 
                            VerticalOptions="FillAndExpand" />
+
+        <Border Grid.Row="1" Margin="12" Padding="12" VerticalOptions="Start" BackgroundColor="#EFFFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 12" InputTransparent="True">
+            <Label Text="{Binding MapStatus}" TextColor="#334155" FontSize="12" />
+        </Border>
 
         <!-- Floating Chat Button for Safety Circle -->
         <Border Grid.Row="1"

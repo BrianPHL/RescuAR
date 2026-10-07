@@ -7,6 +7,13 @@ namespace RescuAR.App.Views.Profile
         public SystemInformationPage()
         {
             InitializeComponent();
+            BindingContext = new RescuAR.App.ViewModels.Profile.SystemInformationViewModel();
+        }
+
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            if (BindingContext is RescuAR.App.ViewModels.Profile.SystemInformationViewModel vm) await vm.RefreshAsync();
         }
     }
 }

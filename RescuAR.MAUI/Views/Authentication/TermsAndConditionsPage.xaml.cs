@@ -10,6 +10,7 @@ namespace RescuAR.App.Views.Authentication
         public TermsAndConditionsPage()
         {
             InitializeComponent();
+            LegalDocumentScroll.Content = RescuAR.App.Views.Profile.LegalInformationContent.Create(false);
         }
 
         private async void OnBackTapped(object sender, EventArgs e)

@@ -8,6 +8,7 @@ using RescuAR.AR;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.MAUI.Services.Navigation;
+using RescuAR.MAUI.Services.Settings;
 using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -18,7 +19,9 @@ namespace RescuAR.App.Views.Camera;
 
 public partial class CameraPage
 {
-    private const string VoicePreferenceKey = "NavigationVoiceEnabled";
+    private readonly NavigationHapticGuidanceService hapticGuidance = new();
+    private OfflineMapLayerController? detailedMapLayers;
+    private string detailedMapStatus = "Basic offline roads";
     private readonly NavigationVoiceGuidanceService voiceGuidance = new(new MauiNavigationSpeech());
     private readonly RouteDirectionsService directionsService = new();
     private readonly MemoryLayer cameraMapRouteLayer = new() { Name = "Selected pedestrian route" };
@@ -44,12 +47,13 @@ public partial class CameraPage
 
     private void InitializeCameraGuidance()
     {
-        voiceGuidance.SetEnabled(Preferences.Default.Get(VoicePreferenceKey, false));
+        voiceGuidance.SetEnabled(AppPreferences.Current.Get(AppSetting.NavigationVoice));
         CameraMapControl.Map = new Mapsui.Map { CRS = "EPSG:3857" };
         CameraMapControl.Map.Layers.Add(cameraMapRoadLayer);
         CameraMapControl.Map.Layers.Add(cameraMapShelterLayer);
         CameraMapControl.Map.Layers.Add(cameraMapRouteLayer);
         CameraMapControl.Map.Layers.Add(cameraMapMarkerLayer);
+        detailedMapLayers = new(status => { detailedMapStatus = status; RefreshCameraGuidanceUi(); });
         var shelters = new List<GeometryFeature>();
         foreach (var shelter in EvacuationCenterRepository.GetEvacuationCenters())
         {
@@ -63,6 +67,9 @@ public partial class CameraPage
 
     private void OnCameraGuidanceAppearing()
     {
+        AppPreferences.Current.Changed -= OnGuidancePreferenceChanged;
+        AppPreferences.Current.Changed += OnGuidancePreferenceChanged;
+        voiceGuidance.SetEnabled(AppPreferences.Current.Get(AppSetting.NavigationVoice));
         cameraGuidanceEpoch++;
         cameraLocationPermissionDenied = false;
         cameraGuidanceCancellation = new CancellationTokenSource();
@@ -71,12 +78,21 @@ public partial class CameraPage
 
     private void OnCameraGuidanceDisappearing()
     {
+        AppPreferences.Current.Changed -= OnGuidancePreferenceChanged;
+        detailedMapLayers?.Deactivate();
         cameraGuidanceEpoch++;
         cameraGuidanceCancellation?.Cancel();
         cameraGuidanceCancellation?.Dispose();
         cameraGuidanceCancellation = null;
         voiceGuidance.SetActive(false);
         routeDirectionsSheet.IsVisible = false;
+    }
+
+    private void OnGuidancePreferenceChanged(AppSetting setting)
+    {
+        if (setting == AppSetting.NavigationVoice)
+            voiceGuidance.SetEnabled(AppPreferences.Current.Get(AppSetting.NavigationVoice));
+        RefreshCameraGuidanceUi();
     }
 
     private void OnCameraGuidanceViewChanged(bool changed)
@@ -103,13 +119,18 @@ public partial class CameraPage
         }
         if (currentCameraModuleView == CameraModuleViewMode.Map2D && pageIsVisible)
         {
+            if (detailedMapLayers is not null) _ = detailedMapLayers.ActivateAsync(CameraMapControl.Map);
             cameraMapLoadTask ??= LoadCameraOfflineMapAsync();
             if (cameraMapLoadTask.IsCompleted && !cameraMapLoaded && cameraMapError is null)
                 cameraMapLoadTask = LoadCameraOfflineMapAsync();
             if (CanResumeRetainedRoute()) StartRouteProgress();
             else StartRouteRequestIfPossible();
         }
-        else if (pageIsVisible) RefreshArTrackingStatusBanner();
+        else
+        {
+            detailedMapLayers?.Deactivate();
+            if (pageIsVisible) RefreshArTrackingStatusBanner();
+        }
         RefreshCameraGuidanceUi();
     }
 
@@ -191,7 +212,7 @@ public partial class CameraPage
                 !fresh ? "Waiting for a current location" : initialRoadApproachPending ? "Approach the mapped route; check access" :
                 !onRoute ? "Checking your position on the route" : $"{Math.Max(0, progress.RemainingMeters):0} m remaining";
             mapModeStatusLabel.Text = $"{state}\n{location} • " +
-                (cameraMapError ?? (cameraMapLoaded ? "Offline road map" : "Loading offline road map…")) +
+                (cameraMapError ?? (cameraMapLoaded ? detailedMapStatus : "Loading offline road map…")) +
                 $" • {voiceGuidanceStatusLabel.Text}";
             RefreshCameraMapGeometry(route, reading, fresh, destination);
             if (cameraMapLocationTask is null || cameraMapLocationTask.IsCompleted)
@@ -220,6 +241,8 @@ public partial class CameraPage
                 turnInstructionLabel.Text = RouteDirectionsService.Text(guidance.Instruction) + distance;
                 turnDistanceLabel.Text = $"{Math.Max(0, progress.RemainingMeters):0} meters to {destination.Name}";
                 voiceGuidance.SetActive(true);
+                if (hapticGuidance.ShouldPulse(route!, AppPreferences.Current.Get(AppSetting.HapticFeedback),
+                    guidance, progress.CommittedProgressMeters, DateTimeOffset.UtcNow)) AppPreferences.TurnFeedback();
                 _ = voiceGuidance.UpdateAsync(route!, guidance, progress.CommittedProgressMeters,
                     turnInstructionLabel.Text, DateTimeOffset.UtcNow);
             }
@@ -232,8 +255,12 @@ public partial class CameraPage
                 turnGuidancePanel.IsVisible && lastTurnGuidance.IsAvailable;
             voiceGuidance.SetActive(arCanSpeak);
             if (arCanSpeak)
+            {
+                if (hapticGuidance.ShouldPulse(route!, AppPreferences.Current.Get(AppSetting.HapticFeedback),
+                    lastTurnGuidance, progress.CommittedProgressMeters, DateTimeOffset.UtcNow)) AppPreferences.TurnFeedback();
                 _ = voiceGuidance.UpdateAsync(route!, lastTurnGuidance, progress.CommittedProgressMeters,
                     turnInstructionLabel.Text, DateTimeOffset.UtcNow);
+            }
             if (arRouteAlignmentRequired && !geographicRouteAlignmentInProgress && !routeRequestInProgress &&
                 _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused && fresh &&
                 DateTimeOffset.UtcNow >= nextGeographicAlignmentAt && route is not null)
@@ -368,8 +395,7 @@ public partial class CameraPage
 
     private void OnVoiceGuidanceToggleClicked(object? sender, EventArgs e)
     {
-        voiceGuidance.SetEnabled(!voiceGuidance.Enabled);
-        Preferences.Default.Set(VoicePreferenceKey, voiceGuidance.Enabled);
+        AppPreferences.Current.Set(AppSetting.NavigationVoice, !voiceGuidance.Enabled);
         RefreshCameraGuidanceUi();
     }
 

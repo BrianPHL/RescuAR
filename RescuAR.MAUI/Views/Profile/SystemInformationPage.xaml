@@ -1,13 +1,34 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
-<ContentPage
-    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    x:Class="RescuAR.App.Views.Profile.SystemInformationPage"
-    Title="System Information">
-
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
-
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile" x:Class="RescuAR.App.Views.Profile.SystemInformationPage"
+             x:DataType="vm:SystemInformationViewModel" Title="System Information" BackgroundColor="#F2F2F7">
+    <ScrollView><VerticalStackLayout Padding="20" Spacing="12">
+        <Label Text="This device" FontSize="28" FontAttributes="Bold" TextColor="#0F172A" />
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="App version" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding AppVersion}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Device" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding DeviceText}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="System" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding SystemText}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Connection" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding ConnectionText}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Camera permission" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding CameraPermission}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Location permission" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding LocationPermission}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Contact permission" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding ContactsPermission}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+            <Border BackgroundColor="White" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" Padding="16">
+                <VerticalStackLayout Spacing="6"><Label Text="Offline map storage" FontAttributes="Bold" TextColor="#0A8491" /><Label Text="{Binding MapStorageText}" TextColor="#334155" /></VerticalStackLayout>
+            </Border>
+        <Label Text="Bundled map: 3,555 PNG tiles, zoom 13–18, covering part of Marikina. Exported with Maperitive; survey date and source attribution were not supplied with the export. Static map features do not establish safe access." FontSize="12" TextColor="#64748B" />
+        <Button Text="Refresh information" Command="{Binding RefreshCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="12" />
+    </VerticalStackLayout></ScrollView>
 </ContentPage>

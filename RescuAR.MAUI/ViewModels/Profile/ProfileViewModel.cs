@@ -36,7 +36,7 @@ namespace RescuAR.App.ViewModels.Profile
         public ProfileViewModel()
         {
 
-            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnAdvisoryPopupRequested += (newAdvisory) =>
             {
                 SelectedAdvisory = newAdvisory;
                 IsPopupVisible = true;
