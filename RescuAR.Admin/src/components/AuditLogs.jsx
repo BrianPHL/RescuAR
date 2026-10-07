@@ -1,228 +1,151 @@
-import React, { useState } from 'react';
-import { 
-  Search, 
-  History, 
-  FileText, 
-  CheckCircle, 
-  AlertTriangle, 
-  User, 
-  Server, 
-  ChevronLeft, 
-  ChevronRight,
-  ShieldCheck,
-  RefreshCw
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, History, MousePointerClick, RefreshCw, X } from 'lucide-react';
+import { webAuditService } from '../services/webAuditClient';
+import { createAuditLogController } from '../services/auditLogController';
+import { AUDIT_ACTIONS, AUDIT_MODULES, AUDIT_OUTCOMES, auditDetailLines, auditSourceLabel, readableName } from './auditPresentation';
+import './AuditLogs.css';
 
-const INITIAL_LOGS = [
-  {
-    id: 'EVT-9045',
-    timestamp: '2026-07-22 08:42:01',
-    operator: 'Brian Pasco (LGU)',
-    category: 'Advisory',
-    details: 'Published Alert Level 2 warning advisory for Tumana & Nangka sectors.',
-    ip: '192.168.12.44',
-    hash: '8f7a9d...2c5b'
-  },
-  {
-    id: 'EVT-9044',
-    timestamp: '2026-07-22 08:30:15',
-    operator: 'System Gateway',
-    category: 'Broadcast',
-    details: 'SMS broadcast transmitted to 1,240 subscribers. Delivery confirmation rate: 98.4%.',
-    ip: 'Cloud-Agent',
-    hash: 'a1b2c3...f4e5'
-  },
-  {
-    id: 'EVT-9043',
-    timestamp: '2026-07-22 08:15:00',
-    operator: 'Telemetry Daemon',
-    category: 'System',
-    details: 'Low battery warning triggered for Station 4 (Provident) - battery at 12%.',
-    ip: '10.0.4.12',
-    hash: 'e6d7c8...a9b0'
-  },
-  {
-    id: 'EVT-9042',
-    timestamp: '2026-07-22 08:12:30',
-    operator: 'Brian Pasco (LGU)',
-    category: 'Configuration',
-    details: 'Updated Alert Level 2 threshold from 16.0m to 16.2m.',
-    ip: '192.168.12.44',
-    hash: 'c4d5e6...7f8a'
-  },
-  {
-    id: 'EVT-9041',
-    timestamp: '2026-07-22 07:45:00',
-    operator: 'System Gateway',
-    category: 'Broadcast',
-    details: 'SMS broadcast test packet sent to 4 quick coordinators. Status: Delivered.',
-    ip: 'Cloud-Agent',
-    hash: '3f4e5d...6c7b'
-  },
-  {
-    id: 'EVT-9040',
-    timestamp: '2026-07-22 07:00:00',
-    operator: 'System Daemon',
-    category: 'System',
-    details: 'Daily diagnostic check complete. All telemetry registers synchronized.',
-    ip: 'Localhost',
-    hash: '9a8b7c...6d5e'
-  }
-];
+const noOp = () => {};
+const emptyFilters = { module: '', actorId: '', eventType: '' };
+const shortId = (id) => `${id.slice(0, 8)}…${id.slice(-4)}`;
+const displayTime = (value) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 
-export default function AuditLogs() {
-  const [logs, setLogs] = useState(INITIAL_LOGS);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [isRefreshSpinning, setIsRefreshSpinning] = useState(false);
+export default function AuditLogs({ service = webAuditService, onAccessDenied = noOp }) {
+  const [state, setState] = useState({ pages: [], pageIndex: 0, loading: true, error: '', selected: null });
+  const [draftFilters, setDraftFilters] = useState(emptyFilters);
+  const controllerRef = useRef(null);
+  const initialOperationRef = useRef(null);
 
-  const handleRefresh = () => {
-    setIsRefreshSpinning(true);
-    setTimeout(() => {
-      setIsRefreshSpinning(false);
-    }, 800);
+  useEffect(() => {
+    // Reuse the ID when development StrictMode repeats effect setup.
+    if (!initialOperationRef.current) initialOperationRef.current = service.newOperationId();
+    const controller = createAuditLogController(service, setState, onAccessDenied);
+    controllerRef.current = controller;
+    void controller.loadInitial(initialOperationRef.current);
+    return () => controller.dispose();
+  }, [service, onAccessDenied]);
+
+  const page = state.pages[state.pageIndex];
+  const records = page?.records || [];
+  const selected = state.selected;
+  const detailLines = selected ? auditDetailLines(selected.details) : [];
+  const selectRecord = (row) => {
+    if (!state.loading) void controllerRef.current.inspect(row);
   };
-
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = log.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          log.operator.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          log.details.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter ? log.category === categoryFilter : true;
-    return matchesSearch && matchesCategory;
-  });
-
-  const getCategoryStyle = (cat) => {
-    switch (cat) {
-      case 'Advisory': return { color: '#ea580c', bg: '#fff7ed' };
-      case 'Broadcast': return { color: '#16a34a', bg: '#f0fdf4' };
-      case 'System': return { color: '#dc2626', bg: '#fef2f2' };
-      case 'Configuration': return { color: '#0284c7', bg: '#f0f9ff' };
-      default: return { color: '#4b5563', bg: '#f3f4f6' };
-    }
+  const applyFilters = (event) => {
+    event.preventDefault();
+    if (!state.loading) void controllerRef.current.applyFilters(draftFilters);
+  };
+  const clearFilters = () => {
+    setDraftFilters(emptyFilters);
+    void controllerRef.current.applyFilters(emptyFilters);
   };
 
   return (
-    <div className="main-view">
-      {/* View Header */}
-      <div className="view-header">
+    <div className="main-view audit-view">
+      <div className="view-header audit-header">
         <div className="view-title-container">
           <h1>Audit Logs</h1>
-          <span className="view-subtitle">Cryptographically signed chronological trace of operator actions and warning telemetry dispatches</span>
+          <p className="view-subtitle">Recorded administrative actions, newest first.</p>
         </div>
-        <button className="btn-refresh" onClick={handleRefresh}>
-          <RefreshCw size={13} className={isRefreshSpinning ? 'spin-icon' : ''} />
-          <span>Refresh</span>
+        <button className="btn-refresh" disabled={state.loading} onClick={() => void controllerRef.current.refresh()}>
+          <RefreshCw size={16} /> Refresh
         </button>
       </div>
 
-      {/* Filter and stats row */}
-      <div className="stations-card">
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="search-input-wrapper" style={{ flex: 1, minWidth: '250px' }}>
-            <input 
-              type="text" 
-              placeholder="Search audit logs by ID, operator, details..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          <select 
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="time-range-select"
-            style={{ padding: '10px 14px', borderRadius: '10px', width: '160px', fontSize: '13px' }}
-          >
-            <option value="">All Categories</option>
-            <option value="Advisory">Advisory Updates</option>
-            <option value="Broadcast">Broadcast Logs</option>
-            <option value="System">System Traces</option>
-            <option value="Configuration">Configurations</option>
+      <form className="stations-card audit-filters" aria-label="Filter audit history" onSubmit={applyFilters}>
+        <label>Module
+          <select value={draftFilters.module} onChange={(event) => setDraftFilters({ ...draftFilters, module: event.target.value })} disabled={state.loading}>
+            <option value="">All modules</option>
+            {Object.entries(AUDIT_MODULES).filter(([key]) => key !== 'content-news').map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
+        </label>
+        <label>Action
+          <select value={draftFilters.eventType} onChange={(event) => setDraftFilters({ ...draftFilters, eventType: event.target.value })} disabled={state.loading}>
+            <option value="">All actions</option>
+            {Object.entries(AUDIT_ACTIONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+        <label>Administrator ID
+          <input value={draftFilters.actorId} onChange={(event) => setDraftFilters({ ...draftFilters, actorId: event.target.value })} maxLength={36} autoComplete="off" placeholder="Any administrator" disabled={state.loading} />
+        </label>
+        <div className="audit-filter-actions">
+          <button className="btn-refresh" type="submit" disabled={state.loading}>Apply filters</button>
+          <button className="btn-refresh" type="button" disabled={state.loading} onClick={clearFilters}>Clear filters</button>
         </div>
-      </div>
+      </form>
 
-      {/* Main Table Card */}
-      <div className="stations-card" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <History size={18} style={{ color: 'var(--color-brand)' }} />
-            <span>Audit Trail</span>
-          </h2>
-          <span style={{ fontSize: '12px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
-            <ShieldCheck size={14} />
-            Integrity Check: Valid
-          </span>
-        </div>
+      {state.error && <div className="audit-error" role="alert">{state.error}{records.length > 0 && <p>The previously loaded records are still displayed.</p>}</div>}
 
-        {/* Audit Logs Table */}
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Log ID</th>
-                <th>Timestamp</th>
-                <th>Operator / Source</th>
-                <th>Category</th>
-                <th>Action Details</th>
-                <th>Origin IP</th>
-                <th>SHA-256 Checksum</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-light)' }}>
-                    No audit logs match your search.
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map(log => {
-                  const catStyle = getCategoryStyle(log.category);
-                  return (
-                    <tr key={log.id} style={{ cursor: 'default' }}>
-                      <td style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-main)' }}>{log.id}</td>
-                      <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{log.timestamp}</td>
-                      <td style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '14px 16px', fontWeight: '500' }}>
-                        {log.operator.includes('System') || log.operator.includes('Telemetry') ? (
-                          <Server size={12} style={{ color: 'var(--text-light)' }} />
-                        ) : (
-                          <User size={12} style={{ color: 'var(--color-brand)' }} />
-                        )}
-                        <span>{log.operator}</span>
-                      </td>
-                      <td>
-                        <span style={{ 
-                          color: catStyle.color, 
-                          backgroundColor: catStyle.bg, 
-                          padding: '3px 8px', 
-                          borderRadius: '12px', 
-                          fontSize: '11px', 
-                          fontWeight: '700' 
-                        }}>
-                          {log.category}
-                        </span>
-                      </td>
-                      <td style={{ maxWidth: '300px', wordWrap: 'break-word' }}>{log.details}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{log.ip}</td>
-                      <td style={{ fontFamily: 'monospace', color: 'var(--text-light)', fontSize: '11px' }}>{log.hash}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination controls */}
-        <div className="table-footer">
-          <span>Showing {filteredLogs.length} of {logs.length} logs</span>
-          <div className="pagination-controls">
-            <button className="pagination-btn" disabled><ChevronLeft size={14} /></button>
-            <button className="pagination-btn active">1</button>
-            <button className="pagination-btn" disabled><ChevronRight size={14} /></button>
+      <div className="audit-panels">
+        <section className="stations-card audit-results" aria-busy={state.loading} aria-label="Recorded actions">
+          <div className="audit-panel-header">
+            <h2 className="audit-heading"><History size={18} /> Recorded actions</h2>
+            <p className="audit-note" id="audit-row-instructions">Select an entry to view its details. Times follow your device’s timezone.</p>
           </div>
-        </div>
+          <div className="table-container audit-table-scroll" tabIndex={0} role="region" aria-label="Audit entries" aria-describedby="audit-row-instructions">
+            <table className="data-table audit-table">
+              <thead><tr><th>Recorded at</th><th>Administrator</th><th>Module / action</th><th>Outcome</th><th>Evidence</th></tr></thead>
+              <tbody>
+                {records.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={selected?.id === row.id ? 'audit-row is-selected' : 'audit-row'}
+                    tabIndex={state.loading ? -1 : 0}
+                    aria-current={selected?.id === row.id ? 'true' : undefined}
+                    aria-disabled={state.loading}
+                    aria-controls="audit-record-details"
+                    onClick={() => selectRecord(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        selectRecord(row);
+                      }
+                    }}
+                  >
+                    <td><div className="audit-record-time"><span className="audit-selection-mark" aria-hidden="true">{selected?.id === row.id && <Check size={14} />}</span>{selected?.id === row.id && <span className="audit-sr-only">Selected entry. </span>}<time dateTime={row.recorded_at} title={row.recorded_at}><span>{new Date(row.recorded_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span><span className="audit-time-of-day">{new Date(row.recorded_at).toLocaleTimeString(undefined, { timeStyle: 'medium' })}</span></time></div></td>
+                    <td className="audit-id" title={row.actor_id}>{shortId(row.actor_id)}</td>
+                    <td><strong>{AUDIT_ACTIONS[row.event_type] || readableName(row.event_type)}</strong><span className="audit-module">{AUDIT_MODULES[row.module] || readableName(row.module)}</span></td>
+                    <td><span className={`audit-outcome ${Object.hasOwn(AUDIT_OUTCOMES, row.outcome) ? row.outcome : ''}`}>{AUDIT_OUTCOMES[row.outcome] || readableName(row.outcome)}</span></td>
+                    <td>{auditSourceLabel(row.source)}</td>
+                  </tr>
+                ))}
+                {!records.length && <tr><td className="audit-empty" colSpan={5} role="status">{state.loading ? 'Loading audit history…' : state.error ? 'Audit history is unavailable.' : 'No audit records match these filters.'}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="audit-pagination">
+            <span>{records.length} records · Page {state.pageIndex + 1}{state.loading ? ' · Loading…' : ''}</span>
+            <div className="audit-page-actions">
+              <button className="btn-refresh" disabled={state.loading || state.pageIndex === 0} onClick={() => void controllerRef.current.newer()}><ChevronLeft size={16} /> Newer</button>
+              <button className="btn-refresh" disabled={state.loading || !page?.hasMore} onClick={() => void controllerRef.current.older()}>Older <ChevronRight size={16} /></button>
+            </div>
+          </div>
+        </section>
+
+        <aside className="stations-card audit-record-details" id="audit-record-details" aria-label="Record details">
+          <div className="audit-panel-header audit-details-header">
+            <h2 className="audit-heading">Record details</h2>
+            {selected && <button className="audit-clear-selection" aria-label="Clear selection" title="Clear selection" onClick={() => controllerRef.current.closeDetails()}><X size={16} /></button>}
+          </div>
+          <div className="audit-details-scroll" tabIndex={selected ? 0 : undefined} role="region" aria-label="Record details content" aria-live="polite">
+            {selected ? <>
+              <span className="audit-selected-label"><Check size={14} aria-hidden="true" /> Selected entry</span>
+              <dl>
+                <dt>Action</dt><dd>{AUDIT_ACTIONS[selected.event_type] || readableName(selected.event_type)}</dd>
+                <dt>Module</dt><dd>{AUDIT_MODULES[selected.module] || readableName(selected.module)}</dd>
+                <dt>Recorded at</dt><dd><time dateTime={selected.recorded_at} title={selected.recorded_at}>{displayTime(selected.recorded_at)}</time></dd>
+                <dt>Outcome</dt><dd>{AUDIT_OUTCOMES[selected.outcome] || readableName(selected.outcome)}</dd>
+                <dt>Administrator ID</dt><dd className="audit-id">{selected.actor_id}</dd>
+                <dt>Record ID</dt><dd className="audit-id">{selected.id}</dd>
+                <dt>Operation ID</dt><dd className="audit-id">{selected.operation_id}</dd>
+                <dt>Target</dt><dd>{selected.target_type || '—'}{selected.target_id && <span className="audit-module audit-id">{selected.target_id}</span>}</dd>
+                <dt>Evidence</dt><dd>{auditSourceLabel(selected.source)}<p className="audit-note audit-evidence-note">{selected.source === 'database' ? 'Confirmed by the database.' : 'Records a browser interaction.'}</p></dd>
+              </dl>
+              {detailLines.length > 0 && <div className="audit-metadata"><h3>Activity details</h3><ul>{detailLines.map((line) => <li key={line}>{line}</li>)}</ul></div>}
+            </> : <div className="audit-details-placeholder"><MousePointerClick size={28} aria-hidden="true" /><p>Click any entry and its details will be shown here.</p></div>}
+          </div>
+        </aside>
       </div>
     </div>
   );

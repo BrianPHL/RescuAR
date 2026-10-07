@@ -10,9 +10,7 @@ import {
   Users, 
   Rss, 
   Settings, 
-  BookOpen,
-  HelpCircle,
-  Gavel
+  BookOpen
 } from 'lucide-react';
 
 export default function Sidebar({ activeView, onViewChange }) {
@@ -21,7 +19,7 @@ export default function Sidebar({ activeView, onViewChange }) {
     if (activeView.startsWith('monitoring-')) return 'monitoring';
     if (activeView.startsWith('community-')) return 'community';
     if (activeView.startsWith('content-')) return 'content';
-    if (activeView.startsWith('system-')) return 'system';
+    if (activeView.startsWith('system-') || activeView === 'audit-logs') return 'system';
     return 'monitoring';
   };
 
@@ -179,7 +177,7 @@ export default function Sidebar({ activeView, onViewChange }) {
         {/* System Section */}
         <div>
           <div 
-            className={`menu-group-header ${activeView.startsWith('system-') ? 'active' : ''}`}
+            className={`menu-group-header ${activeView.startsWith('system-') || activeView === 'audit-logs' ? 'active' : ''}`}
             onClick={() => toggleGroup('system')}
           >
             <div className="menu-group-title">
@@ -203,6 +201,13 @@ export default function Sidebar({ activeView, onViewChange }) {
               >
                 <span>System Logs</span>
               </div>
+              <button
+                type="button"
+                className={`sidebar-link audit-nav-link ${activeView === 'audit-logs' ? 'active' : ''}`}
+                onClick={() => onViewChange('audit-logs')}
+              >
+                <span>Audit Logs</span>
+              </button>
             </div>
           )}
         </div>
