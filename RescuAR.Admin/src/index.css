@@ -90,13 +90,28 @@ textarea {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh; /* Fallback for older browsers */
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-content {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
+}
+
+/* Single page scroll container: header and sidebar never share its scroll. */
+.app-workspace {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
 }
 
 /* Header Component */
@@ -108,8 +123,8 @@ textarea {
   align-items: center;
   padding: 0 24px;
   border-bottom: 1px solid var(--color-border);
-  position: sticky;
-  top: 0;
+  position: relative;
+  flex: 0 0 70px;
   z-index: 50;
 }
 
@@ -204,6 +219,7 @@ textarea {
   justify-content: space-between;
   padding: 12px 0;
   flex-shrink: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -225,7 +241,47 @@ textarea {
   color: var(--text-muted);
   cursor: pointer;
   border-radius: var(--radius-md);
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
   transition: background 0.15s ease;
+}
+
+.menu-group-header:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
+.sidebar-chevron {
+  flex-shrink: 0;
+  transition: transform 260ms ease;
+}
+
+.sidebar-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+/* Keep accordion children mounted so opening AND closing animate. */
+.sidebar-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  transition: grid-template-rows 280ms ease, opacity 220ms ease, visibility 280ms;
+}
+
+.sidebar-accordion.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.sidebar-accordion > .menu-group-sublist {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .menu-group-header:hover {
@@ -248,7 +304,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 2px;
   padding-left: 20px;
 }
 
@@ -302,7 +357,8 @@ textarea {
 .main-view {
   flex: 1;
   padding: 32px 40px;
-  overflow-y: auto;
+  overflow: visible;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1078,8 +1134,13 @@ textarea {
   .app-sidebar {
     width: 100%;
     height: auto;
+    max-height: 42dvh;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .app-workspace {
+    flex: 1 1 auto;
   }
 
   .main-view {
@@ -3889,3 +3950,18 @@ textarea {
 .export-actions .export-format-btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
 .export-actions .export-format-btn:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 700px) { .page-header-actions { justify-content: flex-start; } .export-actions { max-width: 100%; } .export-actions .export-format-btn { padding-inline: 7px; } }
+
+/* Let the workspace own vertical scrolling on the specialized dashboard pages. */
+.app-workspace > .inundation-container,
+.app-workspace > .river-level-view,
+.app-workspace > .dashboard-container {
+  min-height: 100%;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-accordion,
+  .sidebar-chevron {
+    transition: none;
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Core Layout & Dashboards
 import Header from './components/Header';
@@ -33,6 +33,12 @@ import {
 
 export default function App({ session }) {
   const [activeView, setActiveView] = useState('monitoring-stations');
+  const workspaceRef = useRef(null);
+
+  // Each page begins at the top of its own scrollable workspace.
+  useEffect(() => {
+    if (workspaceRef.current) workspaceRef.current.scrollTop = 0;
+  }, [activeView]);
 
   // Modal states
   const [isAdvisoryOpen, setIsAdvisoryOpen] = useState(false);
@@ -98,8 +104,10 @@ export default function App({ session }) {
         {/* Sidebar Nav */}
         <Sidebar activeView={activeView} onViewChange={setActiveView} />
 
-        {/* Dynamic Main Workspace Panel */}
-        {renderView()}
+        {/* Only the workspace scrolls; the header and sidebar stay stationary. */}
+        <main className="app-workspace" ref={workspaceRef} id="admin-workspace">
+          {renderView()}
+        </main>
       </div>
 
       {/* Action Simulation Modals */}

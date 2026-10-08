@@ -3,7 +3,6 @@ import {
   LayoutDashboard, 
   Activity, 
   ChevronDown, 
-  ChevronUp, 
   Radio, 
   Waves, 
   AlertTriangle, 
@@ -57,7 +56,7 @@ export default function Sidebar({ activeView, onViewChange }) {
   };
 
   return (
-    <aside className="app-sidebar">
+    <aside className="app-sidebar" aria-label="Primary navigation">
       <div className="sidebar-menu-list">
         {/* Dashboard Link */}
         <div 
@@ -70,18 +69,26 @@ export default function Sidebar({ activeView, onViewChange }) {
 
         {/* Monitoring Section */}
         <div>
-          <div 
+          <button
+            type="button"
             className={`menu-group-header ${activeView.startsWith('monitoring-') ? 'active' : ''}`}
             onClick={() => toggleGroup('monitoring')}
+            aria-expanded={expandedGroups.monitoring}
+            aria-controls="sidebar-monitoring-links"
           >
             <div className="menu-group-title">
               <Activity size={18} />
               <span>Monitoring</span>
             </div>
-            {expandedGroups.monitoring ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </div>
+            <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.monitoring ? 'expanded' : ''}`} />
+          </button>
           
-          {expandedGroups.monitoring && (
+          <div
+            id="sidebar-monitoring-links"
+            className={`sidebar-accordion ${expandedGroups.monitoring ? 'expanded' : ''}`}
+            aria-hidden={!expandedGroups.monitoring}
+            inert={!expandedGroups.monitoring}
+          >
             <div className="menu-group-sublist">
               <div 
                 className={`sidebar-link ${activeView === 'monitoring-stations' ? 'active' : ''}`}
@@ -105,23 +112,31 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>Inundation Prediction</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Community Management Section */}
         <div>
-          <div 
+          <button
+            type="button"
             className={`menu-group-header ${activeView.startsWith('community-') ? 'active' : ''}`}
             onClick={() => toggleGroup('community')}
+            aria-expanded={expandedGroups.community}
+            aria-controls="sidebar-community-links"
           >
             <div className="menu-group-title">
               <Users size={18} />
               <span>Community Management</span>
             </div>
-            {expandedGroups.community ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </div>
+            <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.community ? 'expanded' : ''}`} />
+          </button>
           
-          {expandedGroups.community && (
+          <div
+            id="sidebar-community-links"
+            className={`sidebar-accordion ${expandedGroups.community ? 'expanded' : ''}`}
+            aria-hidden={!expandedGroups.community}
+            inert={!expandedGroups.community}
+          >
             <div className="menu-group-sublist">
               <div 
                 className={`sidebar-link ${activeView === 'community-reports-moderation' ? 'active' : ''}`}
@@ -136,23 +151,31 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>User Management</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Content Management Section */}
         <div>
-          <div 
+          <button
+            type="button"
             className={`menu-group-header ${activeView.startsWith('content-') ? 'active' : ''}`}
             onClick={() => toggleGroup('content')}
+            aria-expanded={expandedGroups.content}
+            aria-controls="sidebar-content-links"
           >
             <div className="menu-group-title">
               <Rss size={18} />
               <span>Content Management</span>
             </div>
-            {expandedGroups.content ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </div>
+            <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.content ? 'expanded' : ''}`} />
+          </button>
           
-          {expandedGroups.content && (
+          <div
+            id="sidebar-content-links"
+            className={`sidebar-accordion ${expandedGroups.content ? 'expanded' : ''}`}
+            aria-hidden={!expandedGroups.content}
+            inert={!expandedGroups.content}
+          >
             <div className="menu-group-sublist">
               <div 
                 className={`sidebar-link ${activeView === 'content-advisories' ? 'active' : ''}`}
@@ -173,23 +196,31 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>Emergency Hotlines</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* System Section */}
         <div>
-          <div 
+          <button
+            type="button"
             className={`menu-group-header ${activeView.startsWith('system-') ? 'active' : ''}`}
             onClick={() => toggleGroup('system')}
+            aria-expanded={expandedGroups.system}
+            aria-controls="sidebar-system-links"
           >
             <div className="menu-group-title">
               <Settings size={18} />
               <span>System Settings</span>
             </div>
-            {expandedGroups.system ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </div>
+            <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.system ? 'expanded' : ''}`} />
+          </button>
           
-          {expandedGroups.system && (
+          <div
+            id="sidebar-system-links"
+            className={`sidebar-accordion ${expandedGroups.system ? 'expanded' : ''}`}
+            aria-hidden={!expandedGroups.system}
+            inert={!expandedGroups.system}
+          >
             <div className="menu-group-sublist">
               <div 
                 className={`sidebar-link ${activeView === 'system-settings' ? 'active' : ''}`}
@@ -204,7 +235,7 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>System Logs</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
