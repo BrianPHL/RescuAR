@@ -20,6 +20,8 @@ RUN python3 /policy/profiles/build-evacuation-policy.py /policy/evacuation-polic
 # regions do not require roads between them.
 # The walking profile does not use route-group relations. Exclude those
 # before checking versions; keep all nodes, ways, and other relation types.
+# Overlapping extracts can come from different dates. Merge their history,
+# then select the latest available version of each object for routing.
 RUN set -eu; \
     mkdir /filtered /sorted; \
     for file in /input/*.osm.pbf; do \
@@ -32,9 +34,10 @@ RUN set -eu; \
             -o "/filtered/$(basename "$file")"; \
         osmium sort "/filtered/$(basename "$file")" -o "/sorted/$(basename "$file")"; \
     done; \
-    osmium merge /sorted/*.osm.pbf -o /data/map.osm.pbf; \
+    osmium merge --with-history /sorted/*.osm.pbf -o /data/merged.osh.pbf; \
+    osmium time-filter /data/merged.osh.pbf -o /data/map.osm.pbf; \
     if [ "$(osmium fileinfo -e -g data.multiple_versions /data/map.osm.pbf)" != "no" ]; then \
-        echo "Conflicting OSM versions: use extracts from the same source snapshot." >&2; \
+        echo "OSM version normalization failed: multiple object versions remain." >&2; \
         exit 1; \
     fi; \
     osmium check-refs /data/map.osm.pbf
