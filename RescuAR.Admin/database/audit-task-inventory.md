@@ -9,6 +9,12 @@ The original schema snapshot is reviewed in
 The [step 3 application integration](application-integration.md) installs the
 administrator session gate and real audit viewer. Initial live acceptance of
 those features was reported completed and validated by the user on 2026-10-07.
+The Reports Moderation prerequisite and deployment results have been reviewed.
+Migration 002 passed all 13 catalog checks. R01-R03 now use its guarded, atomic
+RPC in the web moderator; deliberate opening, selection, media, applied search,
+and refresh have acknowledged observation capture. Local application/browser
+checks passed; live authenticated acceptance remains pending. See
+[report-moderation-audit.md](report-moderation-audit.md).
 
 ## Common task coverage
 
@@ -55,9 +61,9 @@ The common C01-C08 rows apply where the corresponding controls are available.
 | M02 | Select river station/date range; refresh readings | C02, C05, C08 | Reads `monitoring_stations` and `river_level_history` | `components/RiverLevel.jsx:98` |
 | P01 | Select live/simulation input and request a prediction | `prediction.requested`, `prediction.completed` | Browser calls configured external endpoint; link input change to request/outcome | `components/InundationPrediction.jsx:157`; `services/prepInundationApi.js:4` |
 | P02 | Run the prediction modal | `prediction.simulation_run` | Local timer and hardcoded output, explicitly simulation | `components/Modals.jsx:433` |
-| R01 | Approve report | `report.approved` | Direct `community_reports.status` update | `components/ReportsModeration.jsx:130` |
-| R02 | Reject report | `report.rejected` | Same update path; decision reason is not currently collected | `components/ReportsModeration.jsx:130` |
-| R03 | Resolve report | `report.resolved` | Same update path | `components/ReportsModeration.jsx:130` |
+| R01 | Approve report | `report.approved` | Deployed atomic guarded RPC integrated in web; receipt validation, identical retry and current-state refetch tested locally; live acceptance pending | `services/reportsModerationController.js`; `services/reportsModerationService.js`; `database/migrations/002_report_moderation_audit.sql` |
+| R02 | Reject report | `report.rejected` | Same RPC/integration status; decision reason is not currently collected | `services/reportsModerationController.js`; `database/migrations/002_report_moderation_audit.sql` |
+| R03 | Resolve report | `report.resolved` | Same RPC/integration status | `services/reportsModerationController.js`; `database/migrations/002_report_moderation_audit.sql` |
 | U01 | List/refresh users and review a profile | `users.listed`, C03, C05 | Guarded directory RPC records read/count; local profile selection and intentional refresh still need client capture | `components/UserManagement.jsx:48` |
 | U02 | Edit a user | `user.updated` | Guarded RPC records changed field names and outcome atomically; omitted fields are preserved | `components/UserManagement.jsx:153` |
 | U03 | Suspend/reactivate a user | `user.status_changed` | Guarded RPC audits the profile flag; directory still omits status and enforcement is not established | `components/UserManagement.jsx:119` |
@@ -87,7 +93,9 @@ The [step 2 database foundation](web-audit-foundation.md) is deployed, its suppl
 catalog report is verified, and local tests passed. Its guarded user RPCs capture U01-U04 as
 `users.listed`, `user.updated`, `user.status_changed`, and `user.deleted`.
 The client writer is integrated with audit viewing, details, filters, paging and
-refresh. Wiring and acceptance of other task rows remain pending. Other mutation
+refresh. Reports Moderation also captures its deliberate module/selection/media/
+search/refresh interactions and routes R01-R03 through the deployed RPC. Its live
+acceptance and wiring/acceptance of other task rows remain pending. Other mutation
 paths and durable failed/denied capture are not implemented by this foundation.
 
 These rows track the audit viewer and capabilities that still require integration.

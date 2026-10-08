@@ -10,7 +10,25 @@ The step 3 administrator gate and real audit viewer are now integrated locally;
 [application-integration.md](application-integration.md) records behavior,
 validation and the live acceptance reported completed by the user. Its UI revision
 keeps details on the right and scrolling within the table/details content.
-No additional SQL is needed.
+No additional SQL is needed for the gate and audit viewer.
+
+## Reports Moderation integration
+
+The supplied result of [the focused inspection](inspect-report-moderation-prerequisites.sql)
+has been reviewed. The report confirms text IDs, nullable text status, broad
+public insert/update policies, no report triggers, and matching audit helpers.
+[report-moderation-audit.md](report-moderation-audit.md) records the deployed
+findings, the tested RPC contract, frontend behavior, limitations, and live checklist.
+
+Migration [002_report_moderation_audit.sql](migrations/002_report_moderation_audit.sql)
+adds administrator-only approve/reject/resolve with atomic audit evidence,
+retry receipts, and stale-status rejection. Shared policies and mobile writes are
+preserved. The supplied deployment report passed all 13 checks and matched all
+11 function bodies/access contracts. The web moderator now uses this RPC and
+records deliberate opening, selection, media, filtering, and refresh observations.
+All 33 application tests and synthetic browser checks passed; authenticated live
+acceptance remains pending. Direct report writes can still bypass capture.
+Migrations 001 and 002 are already installed; do not rerun them.
 
 ## Run the inspection
 
@@ -60,7 +78,7 @@ in PowerShell:
 $auditValidationRoot = Join-Path (Get-Location) 'RescuAR.Admin/node_modules/.cache/rescuar-audit-validation'
 npm install --prefix $auditValidationRoot --cache (Join-Path $auditValidationRoot 'npm-cache') --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
 $env:RESCUAR_AUDIT_VALIDATION_ROOT = $auditValidationRoot
-node --test RescuAR.Admin/database/tests/inspect-audit-prerequisites.test.mjs RescuAR.Admin/database/tests/web-audit-foundation.test.mjs
+node --test --test-concurrency=1 RescuAR.Admin/database/tests/inspect-audit-prerequisites.test.mjs RescuAR.Admin/database/tests/web-audit-foundation.test.mjs RescuAR.Admin/database/tests/inspect-report-moderation-prerequisites.test.mjs RescuAR.Admin/database/tests/report-moderation-audit.test.mjs
 ```
 
 The tests execute the exact inspection query in read-only transactions against

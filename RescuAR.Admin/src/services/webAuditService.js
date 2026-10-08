@@ -16,7 +16,7 @@ function failure(error, message) {
   return Object.assign(new Error(denied ? 'Administrator access could not be confirmed.' : message), { accessDenied: denied });
 }
 
-export function createWebAuditService(client, newId = () => globalThis.crypto.randomUUID()) {
+export function createWebAuditRecorder(client, { module, targetType }, newId = () => globalThis.crypto.randomUUID()) {
   return {
     newOperationId: newId,
     async recordObservation({ operationId, eventType, targetId = null, details = {} }) {
@@ -25,9 +25,9 @@ export function createWebAuditService(client, newId = () => globalThis.crypto.ra
         result = await client.rpc('record_web_audit_event', {
           p_operation_id: operationId,
           p_event_type: eventType,
-          p_module: 'audit-logs',
-          p_target_type: targetId ? 'audit_event' : 'module',
-          p_target_id: targetId || 'audit-logs',
+          p_module: module,
+          p_target_type: targetId ? targetType : 'module',
+          p_target_id: targetId || module,
           p_details: details,
         });
       } catch (error) {
@@ -37,6 +37,12 @@ export function createWebAuditService(client, newId = () => globalThis.crypto.ra
       if (!uuidPattern.test(result?.data || '')) throw failure(null, 'Could not confirm that this action was recorded. Please retry.');
       return result.data;
     },
+  };
+}
+
+export function createWebAuditService(client, newId = () => globalThis.crypto.randomUUID()) {
+  return {
+    ...createWebAuditRecorder(client, { module: 'audit-logs', targetType: 'audit_event' }, newId),
     async readPage({ filters = {}, cursor = null } = {}) {
       const normalized = normalizeAuditFilters(filters);
       let result;
