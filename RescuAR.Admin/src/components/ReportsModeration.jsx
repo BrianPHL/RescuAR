@@ -1,10 +1,14 @@
 import ExportActions from './ExportActions';
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Check, X, Clock, ShieldCheck, MapPin, User, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RefreshCw, Check, X, Clock, ShieldCheck, MapPin, User } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { supabase } from '../supabaseClient';
+import { reportsModerationService } from '../services/reportsModerationClient';
+import { createReportsModerationController, initialReportsState } from '../services/reportsModerationController';
+import { filterReports, reportMediaUrl } from '../services/reportsModerationService';
+
+const noOp = () => {};
 
 // Custom Leaflet Icons for pin markers per report
 const selectedPinIcon = new L.Icon({
@@ -36,52 +40,57 @@ function MapRecenter({ lat, lng }) {
   return null;
 }
 
-export default function ReportsModeration() {
-  const [reports, setReports] = useState([]);
-  const [selectedReport, setSelectedReport] = useState(null);
-  const [loading, setLoading] = useState(true);
+function ReportMarker({ report, selected, selectionOperation, onInspect, children }) {
+  const markerRef = useRef(null);
+  useEffect(() => {
+    if (selected && selectionOperation) markerRef.current?.openPopup();
+  }, [selected, selectionOperation]);
+  return (
+    <Marker ref={markerRef} position={[Number(report.latitude), Number(report.longitude)]}
+      icon={selected ? selectedPinIcon : reportPinIcon} eventHandlers={{ click: onInspect }}>
+      {selected && selectionOperation ? children : null}
+    </Marker>
+  );
+}
+
+export default function ReportsModeration({ service = reportsModerationService, onAccessDenied = noOp }) {
+  const [state, setState] = useState(initialReportsState);
   const [searchQuery, setSearchQuery] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleString());
-
-  const fetchReports = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('community_reports')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching Supabase reports:', error);
-      } else if (data) {
-        setReports(data);
-        if (data.length > 0 && !selectedReport) {
-          setSelectedReport(data[0]);
-        }
-      }
-    } catch (err) {
-      console.error('Fetch error:', err);
-    } finally {
-      setLoading(false);
-      setLastUpdated(new Date().toLocaleString());
-    }
-  };
+  const controllerRef = useRef(null);
+  const initialOperationRef = useRef(null);
+  const { reports, loading, lastUpdated } = state;
+  const selectedReport = reports.find((report) => report.id === state.selectedId) || null;
+  const pending = state.busy || loading;
 
   useEffect(() => {
-    fetchReports();
-
-    // Realtime listener for incoming mobile reports
-    const channel = supabase
-      .channel('public:community_reports')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'community_reports' }, () => {
-        fetchReports();
-      })
-      .subscribe();
-
+    if (!initialOperationRef.current) initialOperationRef.current = service.newOperationId();
+    const controller = createReportsModerationController(service, setState, onAccessDenied);
+    controllerRef.current = controller;
+    void controller.loadInitial(initialOperationRef.current);
+    const unsubscribe = service.subscribe(() => { void controller.automaticRefresh(); });
     return () => {
-      supabase.removeChannel(channel);
+      controller.dispose();
+      unsubscribe();
     };
-  }, []);
+  }, [service, onAccessDenied]);
+
+  const selectReport = (report) => {
+    if (!pending) void controllerRef.current.inspect(report.id);
+  };
+  const openMedia = (event, report) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (pending) return;
+    const url = reportMediaUrl(report);
+    if (!url) { controllerRef.current.showError('This attachment could not be opened.'); return; }
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) { controllerRef.current.showError('Allow pop-ups for this site to open attachments.'); return; }
+    popup.opener = null;
+    void controllerRef.current.openMedia(report.id, () => {
+      if (popup.closed) throw new Error('The attachment window was closed. Open it again to retry.');
+      popup.location.replace(url);
+    }).then((opened) => { if (!opened) popup.close(); });
+  };
 
   const maskName = (name) => {
     if (!name) return 'Anonymous Citizen';
@@ -109,7 +118,7 @@ export default function ReportsModeration() {
     }
 
     return (
-      <span 
+      <span
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -128,37 +137,7 @@ export default function ReportsModeration() {
     );
   };
 
-  const handleUpdateStatus = async (reportId, newStatus) => {
-    try {
-      const { error } = await supabase
-        .from('community_reports')
-        .update({ status: newStatus })
-        .eq('id', reportId);
-
-      if (error) {
-        alert('Failed to update report status: ' + error.message);
-      } else {
-        setReports(reports.map(r => r.id === reportId ? { ...r, status: newStatus } : r));
-        if (selectedReport && selectedReport.id === reportId) {
-          setSelectedReport({ ...selectedReport, status: newStatus });
-        }
-      }
-    } catch (err) {
-      alert('Error updating status: ' + err.message);
-    }
-  };
-
-  const filteredReports = reports.filter(r => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (r.title && r.title.toLowerCase().includes(q)) ||
-      (r.description && r.description.toLowerCase().includes(q)) ||
-      (r.posted_by && r.posted_by.toLowerCase().includes(q)) ||
-      (r.category && r.category.toLowerCase().includes(q)) ||
-      (r.address && r.address.toLowerCase().includes(q))
-    );
-  });
+  const filteredReports = filterReports(reports, state.query);
 
   const defaultCenter = [
     selectedReport?.latitude || (reports.length > 0 && reports[0].latitude) || 14.6340,
@@ -171,10 +150,18 @@ export default function ReportsModeration() {
       <div className="view-header">
         <div className="view-title-container">
           <h1>Reports Moderation</h1>
-          <span className="view-subtitle">Last updated: {lastUpdated}</span>
+          <span className="view-subtitle">{lastUpdated ? `Last updated: ${lastUpdated}` : 'Loading reports...'}</span>
         </div>
         <ExportActions title="reports-moderation" rows={filteredReports} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Description', key: 'description' }, { label: 'Reported By', key: 'posted_by' }, { label: 'Category', key: 'category' }, { label: 'Status', key: 'status' }, { label: 'Address', key: 'address' }, { label: 'Latitude', key: 'latitude' }, { label: 'Longitude', key: 'longitude' }, { label: 'Created At', key: 'created_at' }]} disabled={loading} />
       </div>
+
+      {state.error && <div role="alert" style={{ marginTop: '16px', padding: '12px 16px', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c' }}>{state.error}</div>}
+      {state.notice && <div role="status" style={{ marginTop: '16px', color: '#15803d' }}>{state.notice}</div>}
+      {state.retryDecision && <div style={{ marginTop: '12px' }}>
+        <p>Pending {state.retryStatus.toLowerCase()} decision for {state.retryTitle}.</p>
+        <button className="btn-secondary" disabled={pending}
+          onClick={() => void controllerRef.current.retryModeration()}>Retry decision</button>
+      </div>}
 
       <div className="stations-split-layout" style={{ marginTop: '24px', alignItems: 'flex-start' }}>
 
@@ -188,12 +175,15 @@ export default function ReportsModeration() {
             </h2>
 
             {/* Search Bar */}
-            <div style={{ marginBottom: '24px' }}>
+            <form aria-label="Search reports" style={{ marginBottom: '24px', display: 'flex', gap: '8px' }}
+              onSubmit={(event) => { event.preventDefault(); if (!pending) void controllerRef.current.applyFilter(searchQuery); }}>
               <input
                 type="text"
                 placeholder="Search for a report by title, category, or user..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Report search"
+                disabled={pending || !state.initialized}
                 style={{
                   width: '100%',
                   padding: '12px 16px',
@@ -206,7 +196,10 @@ export default function ReportsModeration() {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                 }}
               />
-            </div>
+              <button className="btn-secondary" type="submit" disabled={pending || !state.initialized}>Search</button>
+              <button className="btn-secondary" type="button" disabled={pending || !state.initialized}
+                onClick={async () => { if (await controllerRef.current.applyFilter('')) setSearchQuery(''); }}>Clear</button>
+            </form>
 
             {/* Table Card */}
             <div className="stations-card" style={{ padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -231,14 +224,21 @@ export default function ReportsModeration() {
                     ) : filteredReports.length === 0 ? (
                       <tr>
                         <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
-                          No community reports submitted yet.
+                          {state.query ? 'No reports match this search.' : state.initialized ? 'No community reports submitted yet.' : 'Refresh to load reports.'}
                         </td>
                       </tr>
                     ) : (
                       filteredReports.map((report) => (
                         <tr
                           key={report.id}
-                          onClick={() => setSelectedReport(report)}
+                          onClick={() => selectReport(report)}
+                          tabIndex={pending ? -1 : 0}
+                          aria-selected={selectedReport?.id === report.id}
+                          onKeyDown={(event) => {
+                            if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) {
+                              event.preventDefault(); selectReport(report);
+                            }
+                          }}
                           className="table-row-hover"
                           style={{
                             borderBottom: '1px solid var(--color-border)',
@@ -257,15 +257,13 @@ export default function ReportsModeration() {
                           </td>
                           <td style={{ padding: '16px 24px', fontSize: '13px' }}>
                             {report.media_url ? (
-                              <a
-                                href={report.media_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f0fdf4', color: '#16a34a', fontWeight: '700', textDecoration: 'none', fontSize: '12px' }}
+                              <button
+                                type="button" disabled={pending}
+                                onClick={(event) => openMedia(event, report)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', border: 0, cursor: 'pointer', borderRadius: '6px', backgroundColor: '#f0fdf4', color: '#16a34a', fontWeight: '700', fontSize: '12px' }}
                               >
                                 View Media
-                              </a>
+                              </button>
                             ) : (
                               <span style={{ color: '#94a3b8', fontSize: '12px' }}>No media</span>
                             )}
@@ -293,7 +291,8 @@ export default function ReportsModeration() {
                   {filteredReports.length} {filteredReports.length === 1 ? 'record' : 'records'} total
                 </span>
                 <button
-                  onClick={fetchReports}
+                  onClick={() => void controllerRef.current.refresh()}
+                  disabled={pending}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -348,13 +347,10 @@ export default function ReportsModeration() {
                   const isSelected = selectedReport?.id === rpt.id;
 
                   return (
-                    <Marker
+                    <ReportMarker
                       key={rpt.id}
-                      position={[lat, lng]}
-                      icon={isSelected ? selectedPinIcon : reportPinIcon}
-                      eventHandlers={{
-                        click: () => setSelectedReport(rpt)
-                      }}
+                      report={rpt} selected={isSelected} selectionOperation={state.selectionOperation}
+                      onInspect={() => selectReport(rpt)}
                     >
                       <Popup>
                         <div style={{ padding: '4px', maxWidth: '200px' }}>
@@ -379,7 +375,7 @@ export default function ReportsModeration() {
                           )}
                         </div>
                       </Popup>
-                    </Marker>
+                    </ReportMarker>
                   );
                 })}
               </MapContainer>
@@ -424,13 +420,14 @@ export default function ReportsModeration() {
                 </span>
                 {selectedReport.media_url ? (
                   <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                    <a href={selectedReport.media_url} target="_blank" rel="noreferrer">
+                    <button type="button" disabled={pending} aria-label="Open report attachment"
+                      onClick={(event) => openMedia(event, selectedReport)} style={{ padding: 0, border: 0, display: 'block', width: '100%', cursor: 'pointer' }}>
                       <img
                         src={selectedReport.media_url}
                         alt="Report Attachment"
                         style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', display: 'block' }}
                       />
-                    </a>
+                    </button>
                   </div>
                 ) : (
                   <div style={{ padding: '14px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
@@ -457,7 +454,7 @@ export default function ReportsModeration() {
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#94a3b8' }}>
                   <Clock size={14} />
-                  <span>{new Date(selectedReport.created_at || Date.now()).toLocaleString()}</span>
+                  <span>{selectedReport.created_at ? new Date(selectedReport.created_at).toLocaleString() : 'Time unavailable'}</span>
                 </div>
               </div>
 
@@ -469,7 +466,8 @@ export default function ReportsModeration() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <button
-                    onClick={() => handleUpdateStatus(selectedReport.id, 'Approved')}
+                    onClick={() => void controllerRef.current.moderate('Approved')}
+                    disabled={pending || state.retryDecision}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -489,7 +487,8 @@ export default function ReportsModeration() {
                   </button>
 
                   <button
-                    onClick={() => handleUpdateStatus(selectedReport.id, 'Resolved')}
+                    onClick={() => void controllerRef.current.moderate('Resolved')}
+                    disabled={pending || state.retryDecision}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -510,7 +509,8 @@ export default function ReportsModeration() {
                 </div>
 
                 <button
-                  onClick={() => handleUpdateStatus(selectedReport.id, 'Rejected')}
+                  onClick={() => void controllerRef.current.moderate('Rejected')}
+                  disabled={pending || state.retryDecision}
                   style={{
                     display: 'flex',
                     alignItems: 'center',

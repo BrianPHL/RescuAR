@@ -69,7 +69,7 @@ export default function App({ session }) {
       case 'monitoring-inundation':
         return <InundationPrediction />;
       case 'community-reports-moderation':
-        return <ReportsModeration />;
+        return <ReportsModeration onAccessDenied={onAccessDenied} />;
       case 'community-residents':
         return <div style={{ padding: '20px' }}>Residents Directory View (Placeholder)</div>;
       case 'community-sms-parser':
