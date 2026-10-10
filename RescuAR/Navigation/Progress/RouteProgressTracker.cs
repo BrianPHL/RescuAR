@@ -393,6 +393,18 @@ public sealed class RouteProgressTracker
         if (best.CrossTrackErrorMeters >
             corridorRadiusMeters)
         {
+            // Segment identity can be ambiguous at a loop or parallel street.
+            // Rerouting needs distance to the whole route, independent of the
+            // continuity/course penalties used to select a progress segment.
+            double nearestRouteDistanceMeters = double.PositiveInfinity;
+            for (int i = 0; i < currentRoute.Points.Count - 1; i++)
+            {
+                SegmentMatch geometric = ProjectOntoSegment(gpsCoordinate,
+                    currentRoute.Points[i], currentRoute.Points[i + 1], i);
+                if (geometric.IsAvailable)
+                    nearestRouteDistanceMeters = Math.Min(nearestRouteDistanceMeters,
+                        geometric.CrossTrackErrorMeters);
+            }
             RouteProgressUpdate offRoute =
                 new(
                     false,
@@ -417,7 +429,8 @@ public sealed class RouteProgressTracker
                     $"the {corridorRadiusMeters:F1} m accuracy-aware corridor",
                     corridorRadiusMeters,
                     matchConfidence,
-                    best.CourseAlignmentErrorDegrees);
+                    best.CourseAlignmentErrorDegrees,
+                    nearestRouteDistanceMeters);
 
             StoreSnapshot(
                 currentRoute,
@@ -1644,7 +1657,8 @@ public sealed class RouteProgressTracker
         string RejectionReason,
         double CorridorRadiusMeters,
         RouteMatchConfidence MatchConfidence,
-        double CourseAlignmentErrorDegrees);
+        double CourseAlignmentErrorDegrees,
+        double NearestRouteDistanceMeters = double.NaN);
 
     public readonly record struct ProgressSnapshot(
         bool HasRoute,

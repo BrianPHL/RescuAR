@@ -972,7 +972,7 @@
                         HorizontalOptions="Center" />
 
                     <Label
-                        Text="You've Arrived at the&#10;Evacuation Center"
+                        Text="You're Near the&#10;Evacuation Center"
                         TextColor="White"
                         FontSize="27"
                         FontAttributes="Bold"

@@ -19,7 +19,7 @@ public sealed class OffRouteReroutePolicy
 
     private static readonly TimeSpan RerouteCooldown =
         TimeSpan.FromSeconds(
-            45);
+            20);
 
     private static readonly TimeSpan FailedAttemptCooldown =
         TimeSpan.FromSeconds(10);
@@ -27,9 +27,15 @@ public sealed class OffRouteReroutePolicy
     private static readonly TimeSpan ConfirmationRetryCooldown =
         TimeSpan.FromSeconds(3);
 
+    private static readonly TimeSpan ConfirmationWindow = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan MinimumObservationSpacing = TimeSpan.FromSeconds(1);
+
     private int consecutiveOffRouteSamples;
 
     private DateTimeOffset? nextRerouteAllowedUtc;
+    private DateTimeOffset? lastObservationUtc;
+    private DateTimeOffset? lastCountedObservationUtc;
+    private int failedAttempts;
 
     public void Reset()
     {
@@ -38,19 +44,23 @@ public sealed class OffRouteReroutePolicy
 
         nextRerouteAllowedUtc =
             null;
+        lastObservationUtc = null;
+        lastCountedObservationUtc = null;
+        failedAttempts = 0;
     }
 
     public void ResetConfirmation()
     {
         consecutiveOffRouteSamples =
             0;
+        lastCountedObservationUtc = null;
     }
 
     public void MarkRerouteCompleted(
         DateTimeOffset timestampUtc)
     {
-        consecutiveOffRouteSamples =
-            0;
+        ResetConfirmation();
+        failedAttempts = 0;
 
         nextRerouteAllowedUtc = timestampUtc + RerouteCooldown;
     }
@@ -58,11 +68,12 @@ public sealed class OffRouteReroutePolicy
     public void MarkRerouteFailed(DateTimeOffset timestampUtc,
         bool awaitingConfirmation = false)
     {
-        consecutiveOffRouteSamples = 0;
-        nextRerouteAllowedUtc = timestampUtc +
-            (awaitingConfirmation
-                ? ConfirmationRetryCooldown
-                : FailedAttemptCooldown);
+        ResetConfirmation();
+        if (!awaitingConfirmation) failedAttempts = Math.Min(4, failedAttempts + 1);
+        nextRerouteAllowedUtc = timestampUtc + (awaitingConfirmation
+            ? ConfirmationRetryCooldown
+            : TimeSpan.FromSeconds(Math.Min(60,
+                FailedAttemptCooldown.TotalSeconds * Math.Pow(2, failedAttempts - 1))));
     }
 
     public OffRouteDecision Evaluate(
@@ -70,11 +81,15 @@ public sealed class OffRouteReroutePolicy
         DateTimeOffset timestampUtc)
     {
         return EvaluateCore(
-            update.IsOffRoute,
+            update.IsOffRoute && (!double.IsFinite(update.NearestRouteDistanceMeters) ||
+                update.NearestRouteDistanceMeters > update.CorridorRadiusMeters),
             update.CrossTrackErrorMeters,
             update.AccuracyMeters,
             update.MatchConfidence,
-            timestampUtc);
+            timestampUtc,
+            clearlyOutsideWholeRoute: double.IsFinite(update.NearestRouteDistanceMeters) &&
+                update.AccuracyMeters is double accuracy && double.IsFinite(accuracy) &&
+                update.NearestRouteDistanceMeters > update.CorridorRadiusMeters + accuracy + 5.0);
     }
 
 #if RESCUAR_DIAGNOSTICS
@@ -122,30 +137,44 @@ public sealed class OffRouteReroutePolicy
         double crossTrackErrorMeters,
         double? accuracyMeters,
         RouteMatchConfidence matchConfidence,
-        DateTimeOffset timestampUtc)
+        DateTimeOffset timestampUtc,
+        bool clearlyOutsideWholeRoute = false)
     {
         bool accuracyUsable =
             accuracyMeters.HasValue &&
             double.IsFinite(
                 accuracyMeters.Value) &&
+            accuracyMeters.Value >= 0.0 &&
             accuracyMeters.Value <=
                 MaximumAccuracyForRerouteMeters;
 
         bool matchTrustworthy =
             matchConfidence >=
-                RouteMatchConfidence.Medium;
+                RouteMatchConfidence.Medium || clearlyOutsideWholeRoute;
+
+        if (lastObservationUtc.HasValue && timestampUtc <= lastObservationUtc.Value)
+            return new(false, false, consecutiveOffRouteSamples,
+                RequiredConsecutiveOffRouteSamples, crossTrackErrorMeters,
+                accuracyMeters, matchConfidence, "duplicate or older GPS observation ignored");
+        lastObservationUtc = timestampUtc;
+        if (lastCountedObservationUtc.HasValue &&
+            timestampUtc - lastCountedObservationUtc.Value > ConfirmationWindow)
+            ResetConfirmation();
 
         if (!isOffRoute ||
             !accuracyUsable ||
-            !matchTrustworthy)
+            !matchTrustworthy || !double.IsFinite(crossTrackErrorMeters) ||
+            crossTrackErrorMeters < 0)
         {
-            consecutiveOffRouteSamples =
-                0;
+            // A brief accuracy/identity outage supplies no contrary evidence.
+            // Only a trustworthy on-route fix or expiry clears the sequence.
+            if (!isOffRoute && accuracyUsable && matchTrustworthy)
+                ResetConfirmation();
 
             return new OffRouteDecision(
                 false,
                 false,
-                0,
+                consecutiveOffRouteSamples,
                 RequiredConsecutiveOffRouteSamples,
                 crossTrackErrorMeters,
                 accuracyMeters,
@@ -160,8 +189,7 @@ public sealed class OffRouteReroutePolicy
         if (nextRerouteAllowedUtc.HasValue &&
             timestampUtc < nextRerouteAllowedUtc.Value)
         {
-            consecutiveOffRouteSamples =
-                0;
+            ResetConfirmation();
 
             double remainingSeconds = Math.Max(0.0,
                 (nextRerouteAllowedUtc.Value - timestampUtc).TotalSeconds);
@@ -177,6 +205,13 @@ public sealed class OffRouteReroutePolicy
                 $"reroute cooldown active for another {remainingSeconds:F0} s");
         }
 
+        if (lastCountedObservationUtc.HasValue &&
+            timestampUtc - lastCountedObservationUtc.Value < MinimumObservationSpacing)
+            return new(true, false, consecutiveOffRouteSamples,
+                RequiredConsecutiveOffRouteSamples, crossTrackErrorMeters,
+                accuracyMeters, matchConfidence, "waiting for an independent GPS observation");
+
+        lastCountedObservationUtc = timestampUtc;
         consecutiveOffRouteSamples++;
 
         bool shouldReroute =
@@ -194,8 +229,7 @@ public sealed class OffRouteReroutePolicy
              */
             nextRerouteAllowedUtc = timestampUtc + FailedAttemptCooldown;
 
-            consecutiveOffRouteSamples =
-                0;
+            ResetConfirmation();
         }
 
         string reason =

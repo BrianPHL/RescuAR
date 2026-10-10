@@ -4,6 +4,7 @@ using RescuAR.Navigation.Models;
 using System.Collections.Generic;
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,7 +27,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     private const string LogTag =
         "RescuAR-HybridRouting";
 
-    private static readonly TimeSpan HazardAwareOnlineBudget =
+    private static readonly TimeSpan OnlineRequestBudget =
         TimeSpan.FromSeconds(
             6);
 
@@ -105,11 +106,14 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
 
         try
         {
+            using CancellationTokenSource onlineBudget =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            onlineBudget.CancelAfter(OnlineRequestBudget);
             RouteResult? route =
                 await onlineRoutingService.FindRouteAsync(
                     origin,
                     destination,
-                    cancellationToken);
+                    onlineBudget.Token);
 
             if (route is null)
             {
@@ -149,6 +153,13 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             AndroidLog.Warn(
                 LogTag,
                 "Online routing transport failed. Falling back to offline A*: " +
+                DiagnosticPrivacyPolicy.FormatException(ex));
+        }
+        catch (WebException ex) when (IsTransportFailure(ex))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AndroidLog.Warn(LogTag,
+                "Android routing transport failed. Falling back to offline A*: " +
                 DiagnosticPrivacyPolicy.FormatException(ex));
         }
 
@@ -201,7 +212,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                         cancellationToken);
 
                 onlineBudget.CancelAfter(
-                    HazardAwareOnlineBudget);
+                    OnlineRequestBudget);
 
                 RouteResult? onlineRoute =
                     await hazardAwareOnline.FindRouteAvoidingHazardsAsync(
@@ -251,6 +262,13 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 AndroidLog.Warn(
                     LogTag,
                     "Online hazard-aware MLD transport failed. Falling back to A*: " +
+                    DiagnosticPrivacyPolicy.FormatException(ex));
+            }
+            catch (WebException ex) when (IsTransportFailure(ex))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AndroidLog.Warn(LogTag,
+                    "Android hazard routing transport failed. Falling back to offline A*: " +
                     DiagnosticPrivacyPolicy.FormatException(ex));
             }
             catch (InvalidDataException ex)
@@ -434,6 +452,13 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             offlineInitializationGate.Release();
         }
     }
+
+    private static bool IsTransportFailure(WebException exception) =>
+        exception.Status is WebExceptionStatus.ConnectFailure or
+            WebExceptionStatus.NameResolutionFailure or WebExceptionStatus.ProxyNameResolutionFailure or
+            WebExceptionStatus.Timeout or WebExceptionStatus.ConnectionClosed or
+            WebExceptionStatus.ReceiveFailure or WebExceptionStatus.SendFailure or
+            WebExceptionStatus.KeepAliveFailure or WebExceptionStatus.RequestCanceled;
 
     private bool GetInternetAvailabilitySafely()
     {

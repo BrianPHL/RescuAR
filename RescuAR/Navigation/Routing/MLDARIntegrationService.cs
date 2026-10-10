@@ -173,15 +173,19 @@ public sealed class MLDARIntegrationService
         CancellationToken cancellationToken = default)
     {
         RouteResult? route = await RequestRouteAsync(origin, destination, cancellationToken);
-        if (route is { Points.Count: >= 2 } ||
-            roadAccess is not { ConnectsToDestination: true } access ||
-            !access.Coordinate.IsValid) return route;
+        if (route is { Points.Count: >= 2 } &&
+            route.Points[0].Coordinate.IsValid &&
+            origin.DistanceTo(route.Points[0].Coordinate) <= 50) return route;
+        if (roadAccess is not { ConnectsToDestination: true } access ||
+            !access.Coordinate.IsValid) return null;
         double distance = origin.DistanceTo(access.Coordinate);
-        if (!double.IsFinite(distance) || distance <= 1 || distance > 50) return route;
+        if (!double.IsFinite(distance) || distance <= 1 || distance > 50) return null;
         cancellationToken.ThrowIfCancellationRequested();
         AndroidLog.Info(LogTag,
             $"ROAD APPROACH ROUTE RETRY: provider='{routingService.AlgorithmName}', distance={distance:F1}m.");
-        return await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
+        route = await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
+        return route is { Points.Count: >= 2 } && route.Points[0].Coordinate.IsValid &&
+            origin.DistanceTo(route.Points[0].Coordinate) <= 50 ? route : null;
     }
 
     /// <summary>

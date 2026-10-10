@@ -115,7 +115,7 @@ public partial class CameraPage
         if (!target.HasValue)
         {
             ClearRoadApproachCue();
-            routeStartupFailureMessage = "No accessible mapped road within 50 m - inspect the road data";
+            routeStartupFailureMessage = "Road guidance unavailable here - use the map and check local access";
             AndroidLog.Info("RescuAR-Routing", "ROAD APPROACH: no barrier-free pedestrian edge within 50m.");
             return;
         }
@@ -189,6 +189,7 @@ public partial class CameraPage
         }
         ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
             cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session);
+        routeLocatorIcon.IsVisible = true;
         routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
         routeLocatorIcon.Rotation = angle;
         routeLocatorLabel.Text = cue.ReturningToRoute
@@ -196,6 +197,31 @@ public partial class CameraPage
             : cue.ConnectsToDestination
                 ? $"Approach mapped road (~{distance:0} m). Check access."
                 : $"Nearest mapped road (~{distance:0} m). Route connection pending.";
+        routeLocatorPanel.IsVisible = true;
+        turnGuidancePanel.IsVisible = false;
+        return true;
+    }
+
+    private bool TryShowNavigationFallback()
+    {
+        var destination = NavigationDestinationBridge.Current;
+        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
+            currentCameraModuleView != CameraModuleViewMode.ArCamera ||
+            !destination.IsAvailable || lastArGuidanceConfidence.AllowsRouteGeometry)
+            return false;
+        LocationReading? reading;
+        lock (routeProgressFusionSync) reading = latestRouteStartupReading;
+        bool fresh = reading is not null && RouteStartupLocationPolicy.CanPlan(
+            reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
+            DateTimeOffset.UtcNow, cached: true);
+        // A distance summary survives brief AR/floor acquisition interruptions.
+        // It has no directional arrow and does not extend AR fix freshness.
+        routeLocatorIcon.IsVisible = false;
+        routeLocatorLabel.Text = lastSafeZoneDecision.IsCandidate
+            ? "Confirming destination proximity. Remain near the entrance."
+            : fresh
+                ? $"Destination ~{reading!.Coordinate.DistanceTo(destination.Coordinate):0} m away. Use the map to check walking access."
+                : "Waiting for accurate GPS. Use the map to check walking access.";
         routeLocatorPanel.IsVisible = true;
         turnGuidancePanel.IsVisible = false;
         return true;

@@ -369,39 +369,104 @@ Check(geometry.Points.Count <= ARRouteRenderer.MaximumRouteSegments+1 &&
 
 var now = DateTimeOffset.UtcNow;
 var arrival = new SafeZoneConfirmationService();
-Check(!arrival.Evaluate(C(0),C(1),75,5,100,now).IsConfirmed,
-    "arrival needs a second observation");
-Check(!arrival.Evaluate(C(0),C(1),75,5,100,now).IsConfirmed,
+SafeZoneConfirmationService.SafeZoneDecision ObserveArrival(double seconds,
+    double distance = 1, double? accuracy = 5, bool barrier = false,
+    double? fixAge = null) => arrival.Evaluate(C(0), C(distance), 75, accuracy,
+        double.PositiveInfinity, now.AddSeconds(seconds - (fixAge ?? 0)),
+        majorRoadBarrier: barrier, evaluatedAt: now.AddSeconds(seconds));
+Check(!ObserveArrival(0).IsConfirmed, "arrival starts a proximity observation sequence");
+Check(!ObserveArrival(0).IsConfirmed,
     "duplicate GPS observation cannot confirm arrival");
-var blocked = arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(1),
-    majorRoadBarrier:true);
+var blocked = ObserveArrival(1, barrier: true);
 Check(!blocked.IsConfirmed && blocked.ConfirmationCount == 0,
     "major road cancels proximity-only arrival");
-arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(2));
-Check(arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(3)).IsConfirmed,
-    "two unobstructed new observations confirm vicinity");
+ObserveArrival(2);
+ObserveArrival(5);
+Check(ObserveArrival(8).IsConfirmed,
+    "three fresh accurate observations over six seconds confirm vicinity without requiring a mapped route");
+arrival.Reset();
+Check(!ObserveArrival(0, distance: 60, accuracy: 8.5).IsCandidate &&
+    !ObserveArrival(4, distance: 60, accuracy: 8.5).IsConfirmed,
+    "field-test fixes sixty metres from the pin cannot confirm arrival inside a broad facility profile");
+Check(ObserveArrival(5, distance: 24, accuracy: 5).IsCandidate &&
+    !ObserveArrival(6, distance: 26, accuracy: 5).IsCandidate && arrival.Current.ConfirmationCount == 0,
+    "GPS uncertainty must fit entirely inside the thirty metre confirmation boundary");
+ObserveArrival(7);
+Check(ObserveArrival(8, accuracy: 30).ConfirmationCount == 0,
+    "weak arrival fixes reset the consecutive sequence");
+ObserveArrival(9);
+Check(ObserveArrival(10, fixAge: 6).ConfirmationCount == 0 &&
+    !ObserveArrival(11, fixAge: -3).IsCandidate,
+    "stale and future arrival fixes cannot check in");
+arrival.Reset();
+ObserveArrival(0);
+Check(ObserveArrival(13).ConfirmationCount == 1,
+    "arrival evidence expires across a long GPS outage");
+arrival.Reset();
+ObserveArrival(0);
+ObserveArrival(0.1);
+Check(!ObserveArrival(0.2).IsConfirmed,
+    "a burst of GPS fixes cannot satisfy arrival dwell time");
+Check(SafeZoneFacilityCatalog.GetArrivalRadiusMeters("SV Tennis Court") == 30,
+    "unprofiled test destinations default to thirty metres");
 var sample = default(RouteProgressTracker.RouteProgressUpdate) with
 {
     IsAccepted=true, IsOffRoute=true, CrossTrackErrorMeters=35,
-    AccuracyMeters=5, MatchConfidence=RouteMatchConfidence.High
+    AccuracyMeters=5, MatchConfidence=RouteMatchConfidence.High,
+    NearestRouteDistanceMeters=double.NaN, CorridorRadiusMeters=15
 };
 bool Trigger(OffRouteReroutePolicy policy, DateTimeOffset at)
 {
     policy.Evaluate(sample,at);
-    policy.Evaluate(sample,at.AddMilliseconds(100));
-    return policy.Evaluate(sample,at.AddMilliseconds(200)).ShouldReroute;
+    policy.Evaluate(sample,at.AddSeconds(2));
+    return policy.Evaluate(sample,at.AddSeconds(4)).ShouldReroute;
 }
 var reroute = new OffRouteReroutePolicy();
 Check(Trigger(reroute,now), "three reliable off-route observations trigger");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+Check(reroute.Evaluate(sample, now).ConfirmationCount == 1 &&
+    !reroute.Evaluate(sample, now.AddMilliseconds(100)).ShouldReroute,
+    "duplicate and burst GPS observations do not satisfy reroute confirmation");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+reroute.Evaluate(sample with { AccuracyMeters = 50, MatchConfidence = RouteMatchConfidence.Unavailable }, now.AddSeconds(2));
+reroute.Evaluate(sample, now.AddSeconds(4));
+Check(reroute.Evaluate(sample, now.AddSeconds(6)).ShouldReroute,
+    "one weak fix does not discard recent reliable deviation evidence");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+reroute.Evaluate(sample with { IsOffRoute = false }, now.AddSeconds(2));
+Check(reroute.Evaluate(sample, now.AddSeconds(4)).ConfirmationCount == 1,
+    "reliable return to the route clears deviation evidence");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+Check(reroute.Evaluate(sample, now.AddSeconds(16)).ConfirmationCount == 1,
+    "old deviation evidence expires after a GPS outage");
+reroute.Reset();
 reroute.MarkRerouteFailed(now,awaitingConfirmation:true);
-Check(!Trigger(reroute,now.AddSeconds(2)) && Trigger(reroute,now.AddSeconds(4)),
+Check(!reroute.Evaluate(sample,now.AddSeconds(2)).ShouldReroute && Trigger(reroute,now.AddSeconds(4)),
     "pending confirmation retries after three seconds");
+reroute.Reset();
 reroute.MarkRerouteFailed(now);
-Check(!Trigger(reroute,now.AddSeconds(5)) && Trigger(reroute,now.AddSeconds(11)),
+Check(!reroute.Evaluate(sample,now.AddSeconds(9)).ShouldReroute && Trigger(reroute,now.AddSeconds(10)),
     "failed route retries after ten seconds");
-reroute.MarkRerouteCompleted(now);
-Check(!Trigger(reroute,now.AddSeconds(11)) && Trigger(reroute,now.AddSeconds(46)),
-    "successful route retains forty-five second cooldown");
+reroute.MarkRerouteFailed(now.AddSeconds(15));
+Check(!reroute.Evaluate(sample,now.AddSeconds(34)).ShouldReroute && Trigger(reroute,now.AddSeconds(35)),
+    "repeated route failures back off instead of repeatedly rerouting");
+reroute.MarkRerouteCompleted(now.AddSeconds(40));
+Check(!reroute.Evaluate(sample,now.AddSeconds(59)).ShouldReroute && Trigger(reroute,now.AddSeconds(60)),
+    "a successful replacement permits a new confirmed deviation after twenty seconds");
+var ambiguousDeviation = sample with { MatchConfidence = RouteMatchConfidence.Low,
+    NearestRouteDistanceMeters = 80, CrossTrackErrorMeters = 85, CorridorRadiusMeters = 15 };
+reroute.Reset();
+reroute.Evaluate(ambiguousDeviation, now);
+reroute.Evaluate(ambiguousDeviation, now.AddSeconds(2));
+Check(reroute.Evaluate(ambiguousDeviation, now.AddSeconds(4)).ShouldReroute,
+    "clear distance from the whole route can confirm deviation despite ambiguous segment identity");
+reroute.Reset();
+Check(!reroute.Evaluate(ambiguousDeviation with { NearestRouteDistanceMeters = 5 }, now).IsCandidate,
+    "continuity scoring cannot reroute a user already near another segment of the route");
 
 var previous = Route(C(0),C(100));
 var progress = default(RouteProgressTracker.ProgressSnapshot) with
@@ -417,6 +482,15 @@ replacement.Reset();
 replacement.Evaluate(previous,progress,candidateA,C(0),C(100),false,now);
 Check(replacement.Evaluate(previous,progress,candidateA,C(0),C(100),false,
     now.AddSeconds(4)).IsAccepted, "consistent second detour can replace route");
+var roadStartReplacement = Route(C(38), C(100));
+replacement.Reset();
+Check(!replacement.Evaluate(previous, progress, roadStartReplacement, C(0), C(100),
+    false, now).IsAccepted && replacement.Evaluate(previous, progress, roadStartReplacement,
+    C(0), C(100), false, now, allowRoadApproach: true).IsAccepted,
+    "a checked thirty-eight metre road approach can update navigation without permitting AR placement");
+Check(!replacement.Evaluate(previous, progress, Route(C(51), C(100)), C(0), C(100),
+    false, now, allowRoadApproach: true).IsAccepted,
+    "replacement routes cannot silently snap beyond the fifty metre access limit");
 Check(BundledEvacuationCenterCatalog.Centers.Count == 9 &&
     BundledEvacuationCenterCatalog.Centers.All(c =>
         BundledEvacuationCenterCatalog.IsUsableCoordinate(c.Coordinate)) &&
@@ -473,6 +547,42 @@ var hybridOffline = new HybridRoutingService(offlineSpy,
     _ => Task.FromResult(new RoadGraph(nodes,edges)), () => false);
 Check(await hybridOffline.FindRouteAsync(C(0,1),C(100,8)) is not null && offlineSpy.Calls == 0,
     "offline route skips the online provider");
+var androidTransport = new HybridRoutingService(new ThrowingRoutingService(
+    new System.Net.WebException("network unavailable", System.Net.WebExceptionStatus.ConnectFailure)),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await androidTransport.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "Android WebException transport failures use the existing offline graph");
+var androidTimeout = new HybridRoutingService(new ThrowingRoutingService(
+    new System.Net.WebException("request timed out", System.Net.WebExceptionStatus.RequestCanceled)),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await androidTimeout.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "Android transport cancellation falls back when the caller has not cancelled");
+var cancelledTransport = new HybridRoutingService(new ThrowingRoutingService(
+    new OperationCanceledException()), _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await cancelledTransport.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "an online timeout falls back to offline routing");
+bool callerCancellationPropagated = false;
+using (var cancelledRequest = new CancellationTokenSource())
+{
+    cancelledRequest.Cancel();
+    try { await androidTransport.FindRouteAsync(C(0,1), C(100,8), cancelledRequest.Token); }
+    catch (OperationCanceledException) { callerCancellationPropagated = true; }
+}
+Check(callerCancellationPropagated, "caller cancellation never launches an offline fallback");
+var noRouteGraphLoads = 0;
+var onlineNoRoute = new HybridRoutingService(new EmptyRoutingService(),
+    _ => { noRouteGraphLoads++; return Task.FromResult(new RoadGraph(nodes,edges)); }, () => true);
+Check(await onlineNoRoute.FindRouteAsync(C(0,1),C(100,8)) is null && noRouteGraphLoads == 0,
+    "an authoritative online NoRoute result still preserves the routing policy");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), null) is null,
+    "unknown road coverage cannot silently route from a pin one hundred metres away");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), new(C(0), true)) is null,
+    "an unusable road retry cannot return the rejected distant route");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), new(C(38), true)) is null,
+    "a road retry cannot return a route outside the bounded approach area");
 
 bool Angle(GeoCoordinate target, System.Numerics.Quaternion rotation, double expected) =>
     RoadApproachCuePolicy.TryGetAngle(C(0),target,0,rotation,out double angle,out _) &&
@@ -743,6 +853,20 @@ sealed class CountingRoutingService(RouteResult route) : IRoutingService
         Calls++;
         return Task.FromResult<RouteResult?>(route);
     }
+}
+
+sealed class ThrowingRoutingService(Exception failure) : IRoutingService
+{
+    public string AlgorithmName => "MLD transport fixture";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default) => Task.FromException<RouteResult?>(failure);
+}
+
+sealed class EmptyRoutingService : IRoutingService
+{
+    public string AlgorithmName => "MLD NoRoute fixture";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default) => Task.FromResult<RouteResult?>(null);
 }
 
 

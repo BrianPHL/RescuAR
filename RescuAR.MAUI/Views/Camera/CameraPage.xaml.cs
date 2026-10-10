@@ -137,21 +137,8 @@ namespace RescuAR.App.Views.Camera
         private CancellationTokenSource? routeProgressCancellation;
         private Task? routeProgressTask;
 
-        private CancellationTokenSource? connectivityFailoverCancellation;
         private bool connectivityEventSubscribed;
-        private bool networkLossFailoverInProgress;
-
-        private const int NetworkLossConfirmationMilliseconds =
-            1500;
-
-        private const int NetworkFailoverBusyRetryMilliseconds =
-            250;
-
-        private const int NetworkFailoverMaximumBusyWaitMilliseconds =
-            5000;
-
-        private const int NetworkFailoverArReadyWaitMilliseconds =
-            5000;
+        private RouteResult? routeRetainedAfterNetworkLoss;
 
         private bool routeRequestInProgress;
 
@@ -1798,6 +1785,8 @@ namespace RescuAR.App.Views.Camera
             }
 #endif
             if (TryShowRoadApproachCue()) return;
+            if (TryShowNavigationFallback()) return;
+            routeLocatorIcon.IsVisible = true;
             routeLocatorIcon.Rotation = 0;
             RouteLocatorDirection candidateDirection =
                 RouteLocatorDirection.Hidden;
@@ -2795,7 +2784,7 @@ namespace RescuAR.App.Views.Camera
             _arCoreService.LifecycleChanged +=
                 OnArCoreLifecycleChanged;
 
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 "Camera tab entered");
 
             if (currentFloodVisualization.IsAvailable)
@@ -2839,8 +2828,7 @@ namespace RescuAR.App.Views.Camera
             UnsubscribeConnectivityChanges();
             _arCoreService.LifecycleChanged -=
                 OnArCoreLifecycleChanged;
-            CancelConnectivityFailover(
-                "Camera tab exited");
+            routeRetainedAfterNetworkLoss = null;
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
@@ -4021,7 +4009,7 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
             LogDetailedDebug(
                 RerouteLogTag,
-                "Connectivity failover watcher subscribed: " +
+                "Connectivity watcher subscribed: " +
                 $"networkAccess={Connectivity.Current.NetworkAccess}.");
 #endif
         }
@@ -4055,8 +4043,7 @@ namespace RescuAR.App.Views.Camera
             if (e.NetworkAccess ==
                 NetworkAccess.Internet)
             {
-                CancelConnectivityFailover(
-                    "Internet connectivity restored");
+                routeRetainedAfterNetworkLoss = null;
 
 #if ANDROID
                 if (activeRoute is not null &&
@@ -4066,337 +4053,32 @@ namespace RescuAR.App.Views.Camera
                     LogDetailedDebug(
                         RerouteLogTag,
                         "Internet restored while an offline A* route is active. " +
-                        "Keeping the current offline route after Internet returns.");
+                        "Keeping the current route after Internet returns.");
                 }
 #endif
                 return;
             }
 
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 $"ConnectivityChanged:{e.NetworkAccess}");
         }
 
         /// <summary>
-        /// When a route produced by MLD is active and Internet access is lost,
-        /// retain that route visually while preparing exactly one replacement
-        /// route through the existing offline A* implementation.
+        /// Downloaded route geometry remains usable without Internet. Only an
+        /// actual deviation or hazard needs a new route from the offline graph.
         /// </summary>
-        private void ScheduleNetworkLossFailoverIfNeeded(
-            string reason)
+        private void RetainRouteAfterNetworkLoss(string reason)
         {
 #if ANDROID
-            if (!pageIsVisible ||
-                safeZoneConfirmed ||
-                activeRoute is null ||
-                !IsMldRoute(
-                    activeRoute) ||
-                !activeDestinationCoordinate.HasValue ||
-                Connectivity.Current.NetworkAccess ==
-                    NetworkAccess.Internet ||
-                networkLossFailoverInProgress ||
-                connectivityFailoverCancellation is not null)
-            {
-                return;
-            }
-
-            connectivityFailoverCancellation =
-                new CancellationTokenSource();
-
-            CancellationToken cancellationToken =
-                connectivityFailoverCancellation.Token;
-
-            Log.Warn(
-                RerouteLogTag,
-                "MLD route is active while Internet is unavailable. " +
-                $"Confirming network loss for {NetworkLossConfirmationMilliseconds} ms " +
-                "before switching the active trip to offline A*. " +
-                $"reason='{reason}'.");
-
-            _ =
-                RunNetworkLossFailoverAsync(
-                    reason,
-                    cancellationToken);
+            if (!pageIsVisible || safeZoneConfirmed || activeRoute is null ||
+                Connectivity.Current.NetworkAccess == NetworkAccess.Internet ||
+                ReferenceEquals(routeRetainedAfterNetworkLoss, activeRoute)) return;
+            routeRetainedAfterNetworkLoss = activeRoute;
+            Log.Info(RerouteLogTag,
+                "NETWORK LOSS: retaining downloaded pedestrian route and progress. " +
+                $"Offline routing is used for the next deviation or hazard. reason='{reason}'.");
 #endif
         }
-
-        private async Task RunNetworkLossFailoverAsync(
-            string reason,
-            CancellationToken cancellationToken)
-        {
-#if ANDROID
-            if (networkLossFailoverInProgress)
-            {
-                return;
-            }
-
-            try
-            {
-                await Task.Delay(
-                    NetworkLossConfirmationMilliseconds,
-                    cancellationToken);
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (Connectivity.Current.NetworkAccess ==
-                        NetworkAccess.Internet ||
-                    !pageIsVisible ||
-                    safeZoneConfirmed ||
-                    activeRoute is null ||
-                    !IsMldRoute(
-                        activeRoute) ||
-                    !activeDestinationCoordinate.HasValue)
-                {
-                    return;
-                }
-
-                networkLossFailoverInProgress =
-                    true;
-
-                int busyWaitMilliseconds =
-                    0;
-
-                while ((routeRequestInProgress ||
-                        dynamicRerouteInProgress) &&
-                       busyWaitMilliseconds <
-                           NetworkFailoverMaximumBusyWaitMilliseconds)
-                {
-                    await Task.Delay(
-                        NetworkFailoverBusyRetryMilliseconds,
-                        cancellationToken);
-
-                    busyWaitMilliseconds +=
-                        NetworkFailoverBusyRetryMilliseconds;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (routeRequestInProgress ||
-                    dynamicRerouteInProgress)
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Automatic MLD -> A* transition deferred because another " +
-                        "route operation remained active. Existing MLD guidance is retained.");
-
-                    return;
-                }
-
-                if (Connectivity.Current.NetworkAccess ==
-                        NetworkAccess.Internet ||
-                    activeRoute is null ||
-                    !IsMldRoute(
-                        activeRoute))
-                {
-                    return;
-                }
-
-                int arWaitMilliseconds =
-                    0;
-
-                while (arWaitMilliseconds <
-                    NetworkFailoverArReadyWaitMilliseconds)
-                {
-                    ARCameraPoseBridge.SpatialSnapshot spatial =
-                        ARCameraPoseBridge.CurrentFrame;
-
-                    if (spatial.IsTracking &&
-                        spatial.Pose.IsTracking &&
-                        spatial.Anchor.IsAvailable)
-                    {
-                        break;
-                    }
-
-                    await Task.Delay(
-                        250,
-                        cancellationToken);
-
-                    arWaitMilliseconds +=
-                        250;
-                }
-
-                GeoCoordinate? failoverOrigin =
-                    await ResolveNetworkFailoverOriginAsync(
-                        cancellationToken);
-
-                if (!failoverOrigin.HasValue ||
-                    !failoverOrigin.Value.IsValid)
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Automatic MLD -> A* transition could not obtain a valid " +
-                        "offline GPS origin. Existing MLD route remains active.");
-
-                    return;
-                }
-
-                if (Connectivity.Current.NetworkAccess ==
-                    NetworkAccess.Internet)
-                {
-                    LogDetailedDebug(
-                        RerouteLogTag,
-                        "Internet recovered before offline replacement began; " +
-                        "MLD route retained.");
-
-                    return;
-                }
-
-                Log.Warn(
-                    RerouteLogTag,
-                    "CONFIRMED NETWORK LOSS: transitioning active navigation " +
-                    "from MLD to offline A*. The current MLD AR route will stay " +
-                    "visible until the A* replacement is ready. " +
-                    $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(failoverOrigin.Value.Latitude, failoverOrigin.Value.Longitude)}, " +
-                    $"reason='{reason}'.");
-
-                bool switched =
-                    await TryDynamicRerouteAsync(
-                        failoverOrigin.Value,
-                        "NETWORK_LOSS_MLD_TO_ASTAR",
-                        forceOfflineAStar:
-                            true);
-
-                if (!switched &&
-                    activeRoute is not null &&
-                    IsMldRoute(
-                        activeRoute))
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "MLD -> A* transition did not complete. The existing MLD " +
-                        "route was intentionally retained rather than clearing guidance.");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when Internet returns, destination changes, or page exits.
-            }
-            catch (Exception ex)
-            {
-                Log.Error(
-                    RerouteLogTag,
-                    "Automatic MLD -> A* transition FAILED. Existing route retained. " +
-                    ex);
-            }
-            finally
-            {
-                networkLossFailoverInProgress =
-                    false;
-
-                CancellationTokenSource? completedCancellation =
-                    connectivityFailoverCancellation;
-
-                connectivityFailoverCancellation =
-                    null;
-
-                completedCancellation?.Dispose();
-            }
-#else
-            await Task.CompletedTask;
-#endif
-        }
-
-        private async Task<GeoCoordinate?> ResolveNetworkFailoverOriginAsync(
-            CancellationToken cancellationToken)
-        {
-            GeoCoordinate? recentCoordinate;
-            DateTimeOffset? recentTimestamp;
-
-            lock (routeProgressFusionSync)
-            {
-                recentCoordinate =
-                    latestGpsCoordinateForRouting;
-
-                recentTimestamp =
-                    latestGpsTimestampForRouting;
-            }
-
-            if (recentCoordinate.HasValue &&
-                recentCoordinate.Value.IsValid &&
-                recentTimestamp.HasValue &&
-                DateTimeOffset.UtcNow -
-                    recentTimestamp.Value <=
-                        TimeSpan.FromSeconds(
-                            15))
-            {
-#if ANDROID
-                LogDetailedDebug(
-                    RerouteLogTag,
-                    "Using recent GPS route-progress fix as the offline A* " +
-                    "failover origin.");
-#endif
-                return recentCoordinate.Value;
-            }
-
-            LocationReading? lastKnown =
-                await _locationService.GetLastKnownLocationAsync(
-                    cancellationToken);
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (lastKnown is not null &&
-                lastKnown.Coordinate.IsValid &&
-                DateTimeOffset.UtcNow -
-                    lastKnown.Timestamp <=
-                        TimeSpan.FromSeconds(
-                            30))
-            {
-#if ANDROID
-                LogDetailedDebug(
-                    RerouteLogTag,
-                    "Using recent last-known GPS fix as the offline A* " +
-                    "failover origin.");
-#endif
-                return lastKnown.Coordinate;
-            }
-
-#if ANDROID
-            LogDetailedDebug(
-                RerouteLogTag,
-                "Requesting a fresh GPS fix for the offline A* failover origin.");
-#endif
-
-            LocationReading? current =
-                await _locationService.GetCurrentLocationAsync(
-                    cancellationToken);
-
-            return current?.Coordinate.IsValid ==
-                true
-                    ? current.Coordinate
-                    : null;
-        }
-
-        private void CancelConnectivityFailover(
-            string reason)
-        {
-            CancellationTokenSource? cancellation =
-                connectivityFailoverCancellation;
-
-            connectivityFailoverCancellation =
-                null;
-
-            if (cancellation is null)
-            {
-                return;
-            }
-
-#if ANDROID
-            LogDetailedDebug(
-                RerouteLogTag,
-                $"Cancelling pending network-loss failover: {reason}");
-#endif
-
-            try
-            {
-                cancellation.Cancel();
-            }
-            catch
-            {
-                // Best effort.
-            }
-
-            cancellation.Dispose();
-        }
-
         private static bool IsMldRoute(
             RouteResult route)
         {
@@ -4577,8 +4259,7 @@ namespace RescuAR.App.Views.Camera
                 false,
                 "Navigation destination changed; confidence must be rebuilt.");
 
-            CancelConnectivityFailover(
-                "navigation destination changed");
+            routeRetainedAfterNetworkLoss = null;
 
             ResetTurnGuidance();
 
@@ -4850,7 +4531,7 @@ namespace RescuAR.App.Views.Camera
                                 routeStartupFailureMessage ==
                                     ArrivalConfirmationMessage &&
                                 arrival.DistanceToDestinationMeters >
-                                    arrival.ArrivalRadiusMeters + 20.0 &&
+                                    arrival.ArrivalRadiusMeters &&
                                 !routeRequestInProgress)
                             {
                                 routeStartupFailureMessage = null;
@@ -4917,6 +4598,7 @@ namespace RescuAR.App.Views.Camera
 
                         lock (routeProgressFusionSync)
                         {
+                            if (!ReferenceEquals(route, activeRoute)) continue;
                             RouteProgressTracker.ProgressSnapshot beforeGps =
                                 _routeProgressTracker.Current;
 
@@ -4943,7 +4625,7 @@ namespace RescuAR.App.Views.Camera
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 _offRouteReroutePolicy.Evaluate(
                                     matchedGps,
-                                    DateTimeOffset.UtcNow);
+                                    reading.Timestamp);
 
                             lastOffRouteCandidate =
                                 offRouteDecision.IsCandidate;
@@ -6096,7 +5778,7 @@ namespace RescuAR.App.Views.Camera
                     $"reason='{reason}', " +
                     $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
                     $"destination='{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'. " +
-                    "The current AR route remains visible until a replacement route is ready.");
+                    "The geographic route is retained until a validated replacement is ready.");
 
                 if (hazardAware &&
                     triggeringHazard is not null)
@@ -6130,15 +5812,29 @@ namespace RescuAR.App.Views.Camera
                 }
                 else
                 {
+                    LocationReading? rerouteReading;
+                    lock (routeProgressFusionSync) rerouteReading = latestRouteStartupReading;
+                    RoadGraph rerouteGraph = arrivalRoadGraph ??=
+                        await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
                     replacementRoute =
-                        await _mldArIntegrationService.RequestRouteAsync(
+                        await _mldArIntegrationService.RequestRouteWithRoadApproachAsync(
                             origin,
                             destination,
+                            rerouteReading is not null &&
+                                rerouteReading.Coordinate.DistanceTo(origin) <= 5 &&
+                                IsCurrentRouteStartupLocationAcceptable(rerouteReading)
+                                    ? FindRoadAccess(rerouteReading, rerouteGraph, destination)
+                                    : null,
                             cancellationToken);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (!pageIsVisible || safeZoneConfirmed)
+                {
+                    lastRerouteResult = "Cancelled";
+                    return false;
+                }
                 if (replacementRoute is null ||
                     replacementRoute.Points.Count <
                         2)
@@ -6171,34 +5867,20 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                ARCameraPoseBridge.SpatialSnapshot spatial =
-                    ARCameraPoseBridge.CurrentFrame;
-
-                if (!spatial.IsTracking ||
-                    !spatial.Pose.IsTracking ||
-                    !spatial.Anchor.IsAvailable)
+                // Geographic navigation must survive an AR tracking outage.
+                // New geometry is held until subsequent fresh road-entry fixes
+                // and the normal AR placement checks establish its alignment.
+                bool routeAccepted = false;
+                RoadGraph replacementGraph = arrivalRoadGraph ??=
+                    await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (replacementGraph.AccessCrossesMajorRoad(origin,
+                    replacementRoute.Points[0].Coordinate))
                 {
-                    lastRerouteResult =
-                        "WaitingForAR";
-
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Replacement route is ready, but ARCore/ground anchor is not currently usable. " +
-                        "Retaining the existing route; a later confirmed off-route sequence may retry.");
-
+                    lastRerouteResult = "ReplacementRejected";
+                    Log.Warn(RerouteLogTag, "Replacement origin access crosses a major road; route retained.");
                     return false;
                 }
-
-                float arOriginOffsetX =
-                    spatial.Pose.PositionX -
-                    spatial.Anchor.PositionX;
-
-                float arOriginOffsetZ =
-                    spatial.Pose.PositionZ -
-                    spatial.Anchor.PositionZ;
-
-                bool published =
-                    false;
 
                 bool destinationStillCurrent;
 
@@ -6228,32 +5910,17 @@ namespace RescuAR.App.Views.Camera
                                 explicitlyJustifiedDetour:
                                     hazardAware,
                                 timestampUtc:
-                                    DateTimeOffset.UtcNow);
+                                    DateTimeOffset.UtcNow,
+                                allowRoadApproach: true);
                     }
 
                     if (destinationStillCurrent &&
                         replacementDecision.IsAccepted)
                     {
-                        published =
-                            _mldArIntegrationService.PublishProgressWindow(
-                                replacementRoute,
-                                0.0,
-                                replacementRoute.Points[0].Coordinate,
-                                activeMapToArYawDegrees,
-                                arOriginOffsetX,
-                                arOriginOffsetZ,
-                                arWindowMeters:
-                                    GetCurrentArRouteVisualWindowMeters(),
-                                clearRouteOnFailure:
-                                    false,
-                                sourceSegmentIndex:
-                                    0,
-                                userCoordinate:
-                                    origin);
-                    }
-
-                    if (published)
-                    {
+                        routeAccepted = true;
+                        ARRouteBridge.Clear();
+                        ResetArRouteVisualMode("replacement requires fresh road-entry confirmation");
+                        initialRoadApproachPending = true;
                         activeRoute =
                             replacementRoute;
 
@@ -6265,9 +5932,6 @@ namespace RescuAR.App.Views.Camera
 
                         lastVerifiedGpsAt = null;
                         lastVerifiedGpsProgressMeters = 0.0;
-
-                        _routeProgressTracker.MarkWindowPublished(
-                            0.0);
 
                         recoveryConnectorVerified =
                             false;
@@ -6325,14 +5989,14 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                if (!published)
+                if (!routeAccepted)
                 {
                     lastRerouteResult =
-                        "PublishFailed";
+                        "ReplacementRejected";
 
                     Log.Warn(
                         RerouteLogTag,
-                        "Replacement route could not be published. Existing AR route retained.");
+                        "Replacement route could not be accepted. Existing route retained.");
 
                     return false;
                 }
@@ -6355,8 +6019,7 @@ namespace RescuAR.App.Views.Camera
                     $"algorithm='{replacementRoute.Algorithm}', " +
                     $"points={replacementRoute.Points.Count}, " +
                     $"distance={replacementRoute.TotalDistanceMeters:F1} m, " +
-                    $"routeVersion={ARRouteBridge.Current.Version}, " +
-                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m" +
+                    "AR geometry awaits fresh road-entry and tracking confirmation" +
                     (hazardAware
                         ? $", triggeringHazard='{triggeringHazard?.Id ?? "<unknown>"}', " +
                           $"avoidedHazards={hazardsToAvoid!.Count}."
@@ -7796,7 +7459,7 @@ namespace RescuAR.App.Views.Camera
                         $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
-                        "You've arrived at the evacuation center. " +
+                        "Your GPS position is near the destination. " +
                         "Follow posted signs to its entrance and check local advisories.";
 
                     safeZoneConfirmationOverlay.IsVisible =
@@ -10872,7 +10535,7 @@ namespace RescuAR.App.Views.Camera
              * one-second poll is only a safety net for Android network handoffs
              * that do not surface a timely event.
              */
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 "diagnostic connectivity poll");
 
             ARCameraPoseBridge.SpatialSnapshot spatial =

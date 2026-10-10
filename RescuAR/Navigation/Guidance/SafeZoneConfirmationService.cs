@@ -11,18 +11,24 @@ namespace RescuAR.Navigation.Guidance;
 ///
 /// Evacuation centers are areas, not mathematical points. Callers may provide
 /// a facility-specific arrival radius that covers the evacuation building /
-/// compound vicinity. The default radius is 75 m.
+/// compound vicinity. Automatic confirmation is limited to 30 m from the pin;
+/// a larger facility profile alone is not evidence that the user has arrived.
 /// </summary>
 public sealed class SafeZoneConfirmationService
 {
     public const int RequiredConfirmationCount =
-        2;
+        3;
 
     /// <summary>
     /// Default radius used when no facility-specific profile exists.
     /// </summary>
     public const double ArrivalRadiusMeters =
-        75.0;
+        30.0;
+
+    public const double MaximumAutomaticConfirmationRadiusMeters = 30.0;
+
+    private static readonly TimeSpan MinimumConfirmationDuration = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan MaximumObservationGap = TimeSpan.FromSeconds(12);
 
     public const double MaximumAcceptedAccuracyMeters =
         15.0;
@@ -49,13 +55,11 @@ public sealed class SafeZoneConfirmationService
     private const double RouteAllowanceBeyondSafeZoneMeters =
         30.0;
 
-    private const double CandidateResetMarginMeters =
-        20.0;
-
     private int confirmationCount;
     private bool confirmed;
 
     private DateTimeOffset? lastCountedObservationTime;
+    private DateTimeOffset? firstCountedObservationTime;
 
     private SafeZoneDecision current =
         SafeZoneDecision.Unavailable;
@@ -95,11 +99,12 @@ public sealed class SafeZoneConfirmationService
         double? accuracyMeters,
         double remainingRouteMeters,
         DateTimeOffset observedAt,
-        bool majorRoadBarrier = false)
+        bool majorRoadBarrier = false,
+        DateTimeOffset? evaluatedAt = null)
     {
         double effectiveArrivalRadiusMeters =
-            NormalizeArrivalRadius(
-                arrivalRadiusMeters);
+            Math.Min(NormalizeArrivalRadius(arrivalRadiusMeters),
+                MaximumAutomaticConfirmationRadiusMeters);
 
         double effectiveMaximumRemainingRouteMeters =
             Math.Max(
@@ -107,15 +112,10 @@ public sealed class SafeZoneConfirmationService
                 effectiveArrivalRadiusMeters +
                     RouteAllowanceBeyondSafeZoneMeters);
 
-        double effectiveCandidateResetDistanceMeters =
-            Math.Max(
-                CandidateResetDistanceMeters,
-                effectiveArrivalRadiusMeters +
-                    CandidateResetMarginMeters);
-
         if (!currentCoordinate.IsValid ||
             !destinationCoordinate.IsValid)
         {
+            ResetCandidate();
             current =
                 new SafeZoneDecision(
                     IsAvailable: false,
@@ -150,10 +150,15 @@ public sealed class SafeZoneConfirmationService
             accuracyMeters!.Value <=
                 MaximumAcceptedAccuracyMeters;
 
+        TimeSpan fixAge = (evaluatedAt ?? DateTimeOffset.UtcNow) - observedAt;
+        bool observationIsFresh = fixAge >= TimeSpan.FromSeconds(-2) &&
+            fixAge <= TimeSpan.FromSeconds(5);
+
         // The accuracy margin keeps a GPS fix on the outer boundary from
         // confirming a facility on the opposite side of that boundary.
         bool withinArrivalRadius =
             accuracyIsAcceptable &&
+            observationIsFresh &&
             !majorRoadBarrier &&
             double.IsFinite(distanceToDestinationMeters) &&
             distanceToDestinationMeters + accuracyMeters!.Value <=
@@ -188,6 +193,10 @@ public sealed class SafeZoneConfirmationService
 
             if (isNewGpsObservation)
             {
+                if (lastCountedObservationTime.HasValue &&
+                    observedAt - lastCountedObservationTime.Value > MaximumObservationGap)
+                    ResetCandidate();
+                firstCountedObservationTime ??= observedAt;
                 confirmationCount =
                     Math.Min(
                         RequiredConfirmationCount,
@@ -200,7 +209,8 @@ public sealed class SafeZoneConfirmationService
 
             confirmed =
                 confirmationCount >=
-                    RequiredConfirmationCount;
+                    RequiredConfirmationCount &&
+                observedAt - firstCountedObservationTime!.Value >= MinimumConfirmationDuration;
 
             current =
                 new SafeZoneDecision(
@@ -218,30 +228,21 @@ public sealed class SafeZoneConfirmationService
                     Reason: confirmed
                         ? "Repeated accurate GPS fixes confirm the evacuation-center vicinity; facility entry has not been verified."
                         : isNewGpsObservation
-                            ? "Accurate GPS indicates the evacuation-center vicinity; waiting for a second fix."
+                            ? "Remain near the destination while repeated accurate GPS fixes confirm arrival."
                             : "Duplicate or stale GPS observation held; waiting for a newer fix.");
 
             return current;
         }
 
-        bool clearlyOutsideDestination =
-            double.IsFinite(
-                distanceToDestinationMeters) &&
-            distanceToDestinationMeters >
-                effectiveCandidateResetDistanceMeters;
-
-        if (clearlyOutsideDestination || majorRoadBarrier)
-        {
-            confirmationCount =
-                0;
-
-            lastCountedObservationTime =
-                null;
-        }
+        // Confirmation must be continuous: an inaccurate/outside fix cannot
+        // bridge two isolated visits to the edge of the geofence.
+        ResetCandidate();
 
         string reason =
             majorRoadBarrier
                 ? "A mapped major road separates this position from the evacuation center."
+                : !observationIsFresh
+                    ? "A fresh GPS observation is required to confirm arrival."
                 : !accuracyIsFinite
                 ? "GPS accuracy is unavailable."
                 : !accuracyIsAcceptable
@@ -278,9 +279,17 @@ public sealed class SafeZoneConfirmationService
 
         lastCountedObservationTime =
             null;
+        firstCountedObservationTime = null;
 
         current =
             SafeZoneDecision.Unavailable;
+    }
+
+    private void ResetCandidate()
+    {
+        confirmationCount = 0;
+        lastCountedObservationTime = null;
+        firstCountedObservationTime = null;
     }
 
     private static double NormalizeArrivalRadius(
