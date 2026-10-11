@@ -156,6 +156,37 @@ async function fetchPagasaTelemetry() {
     });
 
     const $ = cheerio.load(response.data);
+              const debugPageText = $('body')
+            .text()
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          console.log('[Scraper Debug] HTTP status:', response.status);
+          console.log(
+            '[Scraper Debug] Content-Type:',
+            response.headers['content-type']
+          );
+          console.log(
+            '[Scraper Debug] HTML length:',
+            String(response.data).length
+          );
+          console.log(
+            '[Scraper Debug] Page title:',
+            $('title').text().trim()
+          );
+          console.log(
+            '[Scraper Debug] Table rows:',
+            $('table tr').length
+          );
+          console.log(
+            '[Scraper Debug] Contains "No Data":',
+            /no\s+data/i.test(debugPageText)
+          );
+          console.log(
+            '[Scraper Debug] Body preview:',
+            debugPageText.slice(0, 3000)
+          );
+    
     const observedAt = parsePagasaPageTimestamp($);
 
     if (!observedAt) {
