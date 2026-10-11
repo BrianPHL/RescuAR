@@ -1,0 +1,17 @@
+barangay_name,flooded,severity,observed_flood_area_pct,confidence,source_url,notes
+Barangka,1,chest-deep,,High,https://www.pna.gov.ph/articles/1122505,Confirmed positive flood evidence; not a negative-source dataset.
+Calumpang,1,half ground floor,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via flooded public schools.
+Concepcion Dos,,,,,,Unknown; do not infer flooded=0.
+Concepcion Uno,,,,,,Unknown; do not infer flooded=0.
+Fortune,,,,,,Unknown; do not infer flooded=0.
+Industrial Valley,,,,,,Unknown in this provisional label file; do not infer flooded=0.
+Jesus Dela Peña,1,knee-to-gutter-deep,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via flooded public schools.
+Malanday,1,up to second floor,,High,https://www.pna.gov.ph/articles/1123381,Confirmed positive severe residential flooding.
+Marikina Heights,,,,,,Unknown; do not infer flooded=0.
+Nangka,1,almost third floor,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via Nangka High School.
+Parang,,,,,,Unknown; do not infer flooded=0.
+San Roque,1,gutter-deep,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via flooded public schools.
+Santa Elena,1,gutter-to-half-ground-floor,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via multiple flooded public schools.
+Santo Niño,,,,,,Unknown in this provisional file; do not infer flooded=0.
+Tañong,1,gutter-deep,,High,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Confirmed positive via Tañong High School.
+Tumana,1,up to second floor,,High,https://www.pna.gov.ph/articles/1123381,Confirmed positive severe residential flooding.

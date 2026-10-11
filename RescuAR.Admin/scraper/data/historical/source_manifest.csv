@@ -1,0 +1,6 @@
+source_id,organization,purpose,url,notes
+PAGASA_FFWWS,PAGASA,Primary timestamped river sensor source,https://pasig-marikina-tullahanffws.pagasa.dost.gov.ph/water/table.do,Historical utility queries /water/detail_list.do using official station codes and requested ymdhm.
+PAGASA_AWCI_ULYSSES,PAGASA,Ulysses peak water-level sanity checks,https://www.pwri.go.jp/icharm/ifi/awci/topics/20210226_13/3-2-3_Country_Report_AWCI_2021_Philippines_Overview_TyUlysses_PAGASA.pdf,Reference peaks include Montalban 29.73 m Nangka 24.58 m and Sto. Nino 22.01 m.
+NDRRMC_ULYSSES_27,NDRRMC,Observed flood evidence for provisional barangay labels,https://ndrrmc.gov.ph/attachments/article/4138/SitRep_no_27_re_TY_ULYSSES_as_of_07DEC2020.pdf,Positive observations only; absence is not treated as non-flooding.
+PNA_ULYSSES_MALANDAY_TUMANA,Philippine News Agency,Residential flood evidence for Malanday and Tumana,https://www.pna.gov.ph/articles/1123381,Positive evidence used in provisional labels.
+PNA_ULYSSES_BARANGKA,Philippine News Agency,Residential flood evidence for Barangka,https://www.pna.gov.ph/articles/1122505,Positive evidence used in provisional labels.
