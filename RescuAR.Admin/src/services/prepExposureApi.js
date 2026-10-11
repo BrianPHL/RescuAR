@@ -146,6 +146,13 @@ export async function fetchPrepExposureScenario({
     ? payload.facilities
     : [];
 
+  // Plumber may serialize a one-row R data.frame as a one-element JSON
+  // array. Normalize that shape to a plain object before reading summary
+  // metrics such as affected population and affected children.
+  const rawSummary = Array.isArray(payload.summary)
+    ? (payload.summary[0] ?? {})
+    : (payload.summary ?? {});
+
   return {
     ...payload,
 
@@ -153,7 +160,7 @@ export async function fetchPrepExposureScenario({
     facilities,
 
     summary: normalizeSummary(
-      payload.summary,
+      rawSummary,
       barangays,
       facilities
     ),
