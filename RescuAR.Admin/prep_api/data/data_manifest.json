@@ -1,0 +1,95 @@
+{
+  "weather_daily": {
+    "status": "available",
+    "rows": 1975,
+    "period": [
+      "2021-01-01",
+      "2026-05-29"
+    ],
+    "resolution": "daily"
+  },
+  "barangay_polygons": {
+    "status": "available",
+    "count": 16,
+    "source": "OSM / RescuAR Navigation extract"
+  },
+  "flood_hazard_5yr": {
+    "status": "available",
+    "classes": {
+      "1": "Low 0.1-0.5 m",
+      "2": "Medium 0.5-1.5 m",
+      "3": "High >1.5 m"
+    }
+  },
+  "flood_hazard_25yr": {
+    "status": "available",
+    "classes": {
+      "1": "Low 0.1-0.5 m",
+      "2": "Medium 0.5-1.5 m",
+      "3": "High >1.5 m"
+    }
+  },
+  "flood_hazard_100yr": {
+    "status": "available",
+    "classes": {
+      "1": "Low 0.1-0.5 m",
+      "2": "Medium 0.5-1.5 m",
+      "3": "High >1.5 m"
+    }
+  },
+  "demographics_population": {
+    "status": "available",
+    "year": 2024
+  },
+  "demographics_children": {
+    "status": "available",
+    "year": 2020
+  },
+  "osm_facilities": {
+    "status": "available",
+    "count": 67,
+    "types": [
+      "school",
+      "hospital",
+      "clinic"
+    ]
+  },
+  "historical_river_levels": {
+    "status": "not_required_current_scope",
+    "note": "Not required for the current deterministic hazard-exposure/affected-population scope; only needed for a future predictive model."
+  },
+  "historical_flood_event_labels": {
+    "status": "not_required_current_scope",
+    "note": "Not required for the current deterministic hazard-exposure/affected-population scope; only needed for a future predictive model."
+  },
+  "marikina_dtm": {
+    "status": "future_upgrade",
+    "note": "Not required for the current reference-map exposure model; useful for a future terrain-derived inundation model."
+  },
+  "hourly_rainfall": {
+    "status": "not_required_current_scope",
+    "note": "Not required for the current deterministic hazard-exposure/affected-population scope; only needed for a future predictive model."
+  },
+  "gauge_vertical_datum": {
+    "status": "future_upgrade",
+    "note": "Not required for the current reference-map exposure model; required if gauge height is later combined with terrain elevation."
+  },
+  "hazard_exposure_model": {
+    "status": "operational",
+    "type": "deterministic GIS area-weighted affected-population model",
+    "primary_output": "estimated affected population",
+    "hazard": "flood inundation reference scenarios",
+    "return_periods_years": [
+      5,
+      25,
+      100
+    ],
+    "severity_thresholds": {
+      "Low": "0.1-0.5 m",
+      "Medium": "0.5-1.5 m",
+      "High": ">1.5 m"
+    },
+    "population_assumption": "uniform distribution within each barangay",
+    "note": "Estimates population spatially exposed to mapped flood hazards; does not predict live flood occurrence."
+  }
+}

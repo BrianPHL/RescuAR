@@ -1,0 +1,9 @@
+.git
+.gitignore
+.Rhistory
+.RData
+.Rproj.user
+.env
+.env.*
+*.zip
+README_IMPLEMENTATION.md

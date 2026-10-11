@@ -1,0 +1,4 @@
+return_period_years,annual_exceedance_probability_pct,scenario_label,interpretation
+5,20,5-Year Flood,More frequent reference flood scenario
+25,4,25-Year Flood,Less frequent reference flood scenario
+100,1,100-Year Flood,Rare/extreme reference flood scenario
