@@ -4,13 +4,19 @@ import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
 import { calculateAlertStatus } from '../utils/waterLevelUtils';
 import { deriveProvisionalExposureScenario, describeProvisionalRules } from '../utils/provisionalExposureScenario';
-import { fetchExposureScenario, PREP_EXPOSURE_API_URL } from '../services/prepExposureApi';
+import {
+  PREP_EXPOSURE_API_URL,
+  isPrepExposureApiConfigured,
+  fetchPrepExposureScenario,
+} from "../services/prepExposureApi";
+
 
 const SOURCE_ID = 'PAGASA_FFWWS';
 const STO_NINO_CODE = '11104204';
 
 function numberFrom(...values) {
   for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
     const number = Number(value);
     if (Number.isFinite(number)) return number;
   }
@@ -124,14 +130,23 @@ export default function HazardExposure() {
       return () => controller.abort();
     }
 
+    if (!isPrepExposureApiConfigured()) {
+      setLoading(false);
+      setExposure(null);
+      setError('VITE_PREP_EXPOSURE_API_URL is not configured for the RescuAR Admin deployment.');
+      return () => controller.abort();
+    }
+
     setLoading(true);
     setError('');
-    fetchExposureScenario({
+    fetchPrepExposureScenario({
       returnPeriod: activeScenario.returnPeriod,
       minimumHazard: activeScenario.minimumHazard,
       signal: controller.signal
     })
-      .then(setExposure)
+      .then((result) => {
+        if (!controller.signal.aborted) setExposure(result);
+      })
       .catch((requestError) => {
         if (requestError?.name === 'AbortError') return;
         console.error('PREP exposure request failed:', requestError);
@@ -144,12 +159,46 @@ export default function HazardExposure() {
     return () => controller.abort();
   }, [scenarioMode, activeScenario?.returnPeriod, activeScenario?.minimumHazard, refreshKey]);
 
+  const barangays = useMemo(
+    () => Array.isArray(exposure?.barangays)
+      ? exposure.barangays
+      : Array.isArray(exposure?.results)
+        ? exposure.results
+        : [],
+    [exposure]
+  );
+  const facilityRows = useMemo(
+    () => Array.isArray(exposure?.facilities) ? exposure.facilities : [],
+    [exposure]
+  );
+
   const summary = exposure?.summary || exposure?.city_summary || exposure?.exposure || exposure || {};
-  const affectedPopulation = numberFrom(summary.estimated_affected_population, summary.population_exposed, summary.total_population_affected);
-  const affectedChildren = numberFrom(summary.estimated_affected_children, summary.children_exposed, summary.total_children_affected);
-  const facilities = numberFrom(summary.facilities_exposed, summary.facilities_at_risk, summary.exposed_facilities);
-  const barangayCount = numberFrom(summary.affected_barangays, summary.barangays_with_exposure, Array.isArray(exposure?.barangays) ? exposure.barangays.length : null);
-  const barangays = useMemo(() => Array.isArray(exposure?.barangays) ? exposure.barangays : Array.isArray(exposure?.results) ? exposure.results : [], [exposure]);
+  const affectedPopulation = numberFrom(
+    summary.estimatedAffectedPopulation,
+    summary.estimated_affected_population,
+    summary.population_exposed,
+    summary.total_population_affected
+  );
+  const affectedChildren = numberFrom(
+    summary.estimatedAffectedChildren,
+    summary.estimated_affected_children,
+    summary.children_exposed,
+    summary.total_children_affected
+  );
+  const facilities = numberFrom(
+    summary.facilitiesInHazardArea,
+    summary.facilities_exposed,
+    summary.facilities_at_risk,
+    summary.exposed_facilities,
+    exposure && Array.isArray(exposure.facilities) ? facilityRows.length : null
+  );
+  const barangayCount = numberFrom(
+    summary.barangaysWithExposure,
+    summary.barangays_with_mapped_exposure,
+    summary.affected_barangays,
+    summary.barangays_with_exposure,
+    exposure && Array.isArray(exposure?.barangays) ? barangays.length : null
+  );
   const rules = useMemo(() => describeProvisionalRules(), []);
 
   const noAutomaticScenario = scenarioMode === 'automatic' && !automaticScenario.active;
@@ -276,7 +325,7 @@ export default function HazardExposure() {
                       ? 'No PREP R exposure request is made while the automatic rule is inactive or suspended.'
                       : `PREP R API connected${PREP_EXPOSURE_API_URL ? ` • ${PREP_EXPOSURE_API_URL}` : ''}`}
               </div>
-              {!PREP_EXPOSURE_API_URL && activeScenario && (
+              {!isPrepExposureApiConfigured() && activeScenario && (
                 <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: '#faf5ff', border: '1px solid #e9d5ff', color: '#6b21a8', fontSize: 12 }}>
                   Configure <strong>VITE_PREP_EXPOSURE_API_URL</strong> and rebuild the Admin to enable PREP R calculations.
                 </div>
