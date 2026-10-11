@@ -60,6 +60,94 @@ function aggregateDaily(rows) {
   }));
 }
 
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getLevelContext(status, currentLevel, thresholds) {
+  const alert = finiteNumberOrNull(thresholds?.ALARM_1);
+  const alarm = finiteNumberOrNull(thresholds?.ALARM_2);
+  const critical = finiteNumberOrNull(thresholds?.ALARM_3);
+
+  if (!Number.isFinite(currentLevel)) {
+    return {
+      tone: 'unavailable',
+      title: 'Water level unavailable',
+      summary: 'No verified water-level value is currently available for this station.',
+      proximity: 'Threshold distance unavailable.'
+    };
+  }
+
+  if (status === 'Critical') {
+    const difference = Number.isFinite(critical) ? currentLevel - critical : null;
+    return {
+      tone: 'critical',
+      title: 'Critical threshold reached',
+      summary: 'Emergency response actions should be reviewed immediately using the latest verified PAGASA observation.',
+      proximity: difference == null ? 'Critical threshold exceeded.' : `${difference.toFixed(2)} m above Critical level`
+    };
+  }
+
+  if (status === 'Alarm') {
+    const difference = Number.isFinite(alarm) ? currentLevel - alarm : null;
+    return {
+      tone: 'alarm',
+      title: 'Alarm threshold reached',
+      summary: 'Escalated flood-response actions are available for review and dispatch.',
+      proximity: difference == null ? 'Alarm threshold reached.' : `${difference.toFixed(2)} m above Alarm level`
+    };
+  }
+
+  if (status === 'Alert') {
+    const difference = Number.isFinite(alert) ? currentLevel - alert : null;
+    return {
+      tone: 'alert',
+      title: 'Alert threshold reached',
+      summary: 'Prepare public information and review exposure conditions while monitoring the next PAGASA observations.',
+      proximity: difference == null ? 'Alert threshold reached.' : `${difference.toFixed(2)} m above Alert level`
+    };
+  }
+
+  const belowAlert = Number.isFinite(alert) ? alert - currentLevel : null;
+  return {
+    tone: 'normal',
+    title: 'No flood-related dispatch currently required',
+    summary: "The verified level remains below PAGASA's Alert threshold. Monitoring and historical recording continue normally.",
+    proximity: belowAlert == null ? 'PAGASA Alert threshold unavailable.' : `${Math.max(0, belowAlert).toFixed(2)} m below Alert level`
+  };
+}
+
+function getDispatchActions(status) {
+  if (status === 'Critical') {
+    return {
+      advisory: { enabled: true, title: 'Issue Emergency Advisory', subtitle: 'Draft an urgent public flood warning' },
+      notify: { enabled: true, title: 'Notify Residents Now', subtitle: 'Send SMS & push emergency broadcast' },
+      exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure immediately' }
+    };
+  }
+  if (status === 'Alarm') {
+    return {
+      advisory: { enabled: true, title: 'Generate Flood Advisory', subtitle: 'Draft an escalated public flood warning' },
+      notify: { enabled: true, title: 'Notify Residents', subtitle: 'Send SMS & push broadcast' },
+      exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
+    };
+  }
+  if (status === 'Alert') {
+    return {
+      advisory: { enabled: true, title: 'Generate Advisory', subtitle: 'Draft an Alert-level public notice' },
+      notify: { enabled: true, title: 'Prepare Resident Notification', subtitle: 'Review SMS & push broadcast before dispatch' },
+      exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
+    };
+  }
+  return {
+    advisory: { enabled: false, title: 'Generate Advisory', subtitle: 'Enabled when PAGASA Alert level is reached' },
+    notify: { enabled: false, title: 'Notify Residents', subtitle: 'Enabled when PAGASA Alert level is reached' },
+    exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure' }
+  };
+}
+
 export default function RiverLevel({ onActionClick }) {
   const [timeRange, setTimeRange] = useState('24h');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -76,6 +164,8 @@ export default function RiverLevel({ onActionClick }) {
   const currentAlert = calculateAlertStatus(currentLevel, stationDisplayName, sourceThresholds(selectedStation));
   const freshness = getTelemetryFreshness(selectedStation?.observed_at || selectedStation?.updated_at, nowMs);
   const trend = formatTrend(selectedStation?.trend);
+  const levelContext = getLevelContext(currentAlert.status, currentLevel, thresholds);
+  const dispatchActions = getDispatchActions(currentAlert.status);
 
   const fetchStations = useCallback(async () => {
     const { data, error } = await supabase
@@ -177,7 +267,7 @@ export default function RiverLevel({ onActionClick }) {
           <div className="station-selector-wrapper" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label htmlFor="station-select" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>Station:</label>
             <select id="station-select" value={selectedStationCode || ''} onChange={(e) => setSelectedStationCode(e.target.value)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}>
-              {stationsList.map((station) => <option key={station.station_code} value={station.station_code}>{station.station_name} ({Number(station.level).toFixed(2)}m)</option>)}
+              {stationsList.map((station) => <option key={station.station_code} value={station.station_code}>{station.station_name} ({Number(station.level).toFixed(2)} m EL)</option>)}
             </select>
           </div>
           <button className="refresh-btn" onClick={() => void loadData(selectedStationCode, timeRange)} disabled={isRefreshing}>
@@ -190,15 +280,17 @@ export default function RiverLevel({ onActionClick }) {
 
       <div className="river-metrics-grid">
         <div className="river-card current-level-card">
-          <div className="card-top-label"><Waves size={16} className="text-brand" /><span>CURRENT VERIFIED LEVEL</span></div>
+          <div className="card-top-label"><Waves size={16} className="text-brand" /><span>CURRENT VERIFIED WATER-LEVEL ELEVATION</span></div>
           <div className="level-hero-group">
-            <div className="hero-number-wrapper"><span className="hero-number">{Number.isFinite(currentLevel) ? currentLevel.toFixed(2) : '--'}</span><span className="hero-unit">meters</span></div>
+            <div className="hero-number-wrapper"><span className="hero-number">{Number.isFinite(currentLevel) ? currentLevel.toFixed(2) : '--'}</span><span className="hero-unit">m EL</span></div>
             <div className="trend-chip" style={{ color: trend.color }}><span>{trend.symbol}</span><span>{trend.label}</span></div>
           </div>
           <div className="level-status-pill" style={{ backgroundColor: `${currentAlert.color}15`, color: currentAlert.color, borderColor: `${currentAlert.color}40`, fontWeight: 700 }}>
             <AlertTriangle size={14} /><span>{currentAlert.label.toUpperCase()}</span>
           </div>
-          {Number.isFinite(Number(selectedStation?.delta_30m_m)) && <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
+          <div className={`threshold-distance threshold-distance-${levelContext.tone}`}>{levelContext.proximity}</div>
+          {Number.isFinite(Number(selectedStation?.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
+          <div className="elevation-definition">PAGASA reports WL [EL.m] as water-level elevation at the station datum; it is not river depth.</div>
         </div>
 
         <div className="river-card thresholds-card">
@@ -206,7 +298,7 @@ export default function RiverLevel({ onActionClick }) {
           <div className="thresholds-progress-stack">
             {thresholdRows.length ? thresholdRows.map(([name, value, color]) => (
               <div key={name} className="threshold-bar-item">
-                <div className="threshold-info"><span className="thresh-name">{name}{currentAlert.status === name && <span className="active-tag">CURRENT</span>}</span><span className="thresh-val">{value.toFixed(2)} meters</span></div>
+                <div className="threshold-info"><span className="thresh-name">{name}{currentAlert.status === name && <span className="active-tag">CURRENT</span>}</span><span className="thresh-val">{value.toFixed(2)} m EL</span></div>
                 <div className="thresh-track"><div className="thresh-fill" style={{ width: `${Math.min(100, Math.max(0, ((currentLevel || 0) / value) * 100))}%`, background: color }}></div></div>
               </div>
             )) : <div style={{ color: '#64748b', fontSize: 13 }}>PAGASA did not provide warning thresholds for this station.</div>}
@@ -216,17 +308,31 @@ export default function RiverLevel({ onActionClick }) {
 
         <div className="river-card actions-card">
           <div className="card-top-label"><Zap size={16} className="text-brand" /><span>DISPATCH & ACTIONS</span></div>
+          <div className={`dispatch-condition dispatch-condition-${levelContext.tone}`}>
+            <div className="dispatch-condition-title">{levelContext.title}</div>
+            <div className="dispatch-condition-summary">{levelContext.summary}</div>
+          </div>
           <div className="action-buttons-stack">
-            <button className="action-tile advisory" onClick={() => onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}><div className="tile-icon-box blue"><Megaphone size={16} /></div><div className="tile-text"><span className="tile-title">Generate Advisory</span><span className="tile-sub">Draft public flood warning</span></div><ChevronRight size={16} className="tile-arrow" /></button>
-            <button className="action-tile notify" onClick={() => onActionClick?.('notify')}><div className="tile-icon-box amber"><Bell size={16} /></div><div className="tile-text"><span className="tile-title">Notify Residents</span><span className="tile-sub">Send SMS & push broadcast</span></div><ChevronRight size={16} className="tile-arrow" /></button>
-            <button className="action-tile predict" onClick={() => onActionClick?.('predict')}><div className="tile-icon-box teal"><Compass size={16} /></div><div className="tile-text"><span className="tile-title">Open Exposure Analysis</span><span className="tile-sub">Review reference flood exposure</span></div><ChevronRight size={16} className="tile-arrow" /></button>
+            <button
+              className={`action-tile advisory ${dispatchActions.advisory.enabled ? '' : 'action-tile-disabled'}`}
+              disabled={!dispatchActions.advisory.enabled}
+              aria-disabled={!dispatchActions.advisory.enabled}
+              onClick={() => dispatchActions.advisory.enabled && onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}
+            ><div className="tile-icon-box blue"><Megaphone size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.advisory.title}</span><span className="tile-sub">{dispatchActions.advisory.subtitle}</span></div>{dispatchActions.advisory.enabled && <ChevronRight size={16} className="tile-arrow" />}</button>
+            <button
+              className={`action-tile notify ${dispatchActions.notify.enabled ? '' : 'action-tile-disabled'}`}
+              disabled={!dispatchActions.notify.enabled}
+              aria-disabled={!dispatchActions.notify.enabled}
+              onClick={() => dispatchActions.notify.enabled && onActionClick?.('notify')}
+            ><div className="tile-icon-box amber"><Bell size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.notify.title}</span><span className="tile-sub">{dispatchActions.notify.subtitle}</span></div>{dispatchActions.notify.enabled && <ChevronRight size={16} className="tile-arrow" />}</button>
+            <button className="action-tile predict" onClick={() => onActionClick?.('predict')}><div className="tile-icon-box teal"><Compass size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.exposure.title}</span><span className="tile-sub">{dispatchActions.exposure.subtitle}</span></div><ChevronRight size={16} className="tile-arrow" /></button>
           </div>
         </div>
       </div>
 
       <div className="river-card chart-main-card">
         <div className="chart-header-row">
-          <div className="chart-title-group"><Activity size={18} className="text-brand" /><div><h2 className="chart-heading">Verified PAGASA River Level History</h2><span className="chart-subheading">{stationDisplayName} • official observation timestamps</span></div></div>
+          <div className="chart-title-group"><Activity size={18} className="text-brand" /><div><h2 className="chart-heading">Verified PAGASA River Level History</h2><span className="chart-subheading">{stationDisplayName} • official observation timestamps • normal/below-threshold readings retained for trend monitoring</span></div></div>
           <div className="chart-controls"><div className="pill-selector">{Object.entries(RANGE_OPTIONS).map(([key, option]) => <button key={key} className={`pill-btn ${timeRange === key ? 'active' : ''}`} onClick={() => setTimeRange(key)}>{option.label}</button>)}</div></div>
         </div>
         <div className="chart-canvas-container">
@@ -236,12 +342,12 @@ export default function RiverLevel({ onActionClick }) {
                 <defs><linearGradient id="gradientObserved" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} /><stop offset="95%" stopColor="#0284c7" stopOpacity={0.02} /></linearGradient></defs>
                 <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="time" tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} minTickGap={20} />
-                <YAxis domain={yDomain} tickFormatter={(value) => `${value}m`} tickLine={false} axisLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
-                <Tooltip formatter={(value) => [`${Number(value).toFixed(2)} m`, 'Observed']} />
+                <YAxis domain={yDomain} tickFormatter={(value) => `${value} m EL`} tickLine={false} axisLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
+                <Tooltip formatter={(value) => [`${Number(value).toFixed(2)} m EL`, 'Observed']} />
                 {Number.isFinite(thresholds.ALARM_3) && <ReferenceArea y1={thresholds.ALARM_3} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.04} />}
-                {Number.isFinite(thresholds.ALARM_1) && <ReferenceLine y={thresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" label={{ value: `ALERT ${thresholds.ALARM_1.toFixed(1)}m`, position: 'right', fill: '#ca8a04', fontSize: 10 }} />}
-                {Number.isFinite(thresholds.ALARM_2) && <ReferenceLine y={thresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" label={{ value: `ALARM ${thresholds.ALARM_2.toFixed(1)}m`, position: 'right', fill: '#ea580c', fontSize: 10 }} />}
-                {Number.isFinite(thresholds.ALARM_3) && <ReferenceLine y={thresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" label={{ value: `CRITICAL ${thresholds.ALARM_3.toFixed(1)}m`, position: 'right', fill: '#dc2626', fontSize: 10 }} />}
+                {Number.isFinite(thresholds.ALARM_1) && <ReferenceLine y={thresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" label={{ value: `ALERT ${thresholds.ALARM_1.toFixed(1)} m EL`, position: 'right', fill: '#ca8a04', fontSize: 10 }} />}
+                {Number.isFinite(thresholds.ALARM_2) && <ReferenceLine y={thresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" label={{ value: `ALARM ${thresholds.ALARM_2.toFixed(1)} m EL`, position: 'right', fill: '#ea580c', fontSize: 10 }} />}
+                {Number.isFinite(thresholds.ALARM_3) && <ReferenceLine y={thresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" label={{ value: `CRITICAL ${thresholds.ALARM_3.toFixed(1)} m EL`, position: 'right', fill: '#dc2626', fontSize: 10 }} />}
                 <Area type="monotone" dataKey="observed" stroke="#0284c7" strokeWidth={3} fill="url(#gradientObserved)" dot={timeRange === '24h' ? { r: 3 } : false} connectNulls />
               </AreaChart>
             </ResponsiveContainer>
