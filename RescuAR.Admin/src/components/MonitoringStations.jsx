@@ -1,491 +1,281 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { calculateAlertStatus } from '../utils/waterLevelUtils';
-import { getTelemetryFreshness } from '../utils/telemetryFreshness';
-import {  
-  RefreshCw, 
-  Droplet, 
-  Waves, 
-  AlertTriangle, 
-  Info, 
-  BarChart2, 
-  ArrowUpDown, 
-  ArrowUp, 
-  ArrowDown
+import { calculateAlertStatus, formatTrend } from '../utils/waterLevelUtils';
+import { getTelemetryFreshness, formatTelemetryAge } from '../utils/telemetryFreshness';
+import {
+  RefreshCw, Droplet, Waves, AlertTriangle, Info, BarChart2,
+  ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, WifiOff
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip 
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
 } from 'recharts';
 
-// Do not seed the frontend with synthetic telemetry. Until Supabase returns a verified reading,
-// the monitoring view remains explicitly unavailable.
-const INITIAL_STATIONS = [];
+const SOURCE_ID = 'PAGASA_FFWWS';
+
+function thresholdPayload(row) {
+  return {
+    alert_threshold_m: row.alert_threshold_m,
+    alarm_threshold_m: row.alarm_threshold_m,
+    critical_threshold_m: row.critical_threshold_m
+  };
+}
+
+function formatDateTime(value) {
+  if (!value) return 'No verified timestamp';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Invalid timestamp';
+  return date.toLocaleString('en-PH', {
+    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
 
 export default function MonitoringStations() {
-  const [stations, setStations] = useState(INITIAL_STATIONS);
+  const [stations, setStations] = useState([]);
+  const [sourceStatus, setSourceStatus] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState('Loading live data...');
   const [showSummary, setShowSummary] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
-  const [freshnessNow, setFreshnessNow] = useState(Date.now());
+  const [nowMs, setNowMs] = useState(Date.now());
 
-  // Fetch stations from Supabase table 'monitoring_stations'
-  const fetchStationsFromSupabase = async () => {
+  const loadData = async () => {
     setIsRefreshing(true);
     try {
-      const { data, error } = await supabase
-        .from('monitoring_stations')
-        .select('*')
-        .order('level', { ascending: false });
+      const [{ data: stationRows, error: stationError }, { data: sourceRows, error: sourceError }] = await Promise.all([
+        supabase
+          .from('monitoring_stations')
+          .select('*')
+          .eq('source', SOURCE_ID)
+          .order('level', { ascending: false }),
+        supabase
+          .from('telemetry_source_status')
+          .select('*')
+          .eq('source', SOURCE_ID)
+          .limit(1)
+      ]);
 
-      if (error) {
-        console.error('Error fetching monitoring stations from Supabase:', error.message);
-      } else if (data && data.length > 0) {
-        // Calculate status dynamically using calculateAlertStatus
-        const formattedStations = data.map((item, idx) => {
-          const numericLevel = Number(item.level);
-          const hasValidLevel = item.level !== null && Number.isFinite(numericLevel);
-          const alertInfo = hasValidLevel
-            ? calculateAlertStatus(numericLevel, item.station_name)
-            : { status: 'Unavailable', label: 'Unavailable', color: '#b91c1c' };
+      if (stationError) throw stationError;
+      if (sourceError) console.warn('Unable to load PAGASA source health:', sourceError.message);
 
-          return {
-            id: item.id || idx + 1,
-            name: item.station_name,
-            level: hasValidLevel ? numericLevel : null,
-            status: alertInfo.status,
-            alertInfo,
-            updated_at: item.updated_at
-          };
-        });
-        setStations(formattedStations);
+      const formatted = (stationRows || []).map((row, index) => {
+        const level = Number(row.level);
+        const validLevel = row.level !== null && Number.isFinite(level);
+        const alertInfo = calculateAlertStatus(validLevel ? level : null, row.station_name, thresholdPayload(row));
+        return {
+          ...row,
+          id: row.id || row.station_code || index + 1,
+          name: row.station_name,
+          level: validLevel ? level : null,
+          alertInfo,
+          observedAt: row.observed_at || row.updated_at,
+          sourceCheckedAt: row.source_checked_at
+        };
+      });
 
-        // Find the maximum updated_at timestamp from all stations
-        const latestTimestamp = data.reduce((latest, item) => {
-          if (!item.updated_at) return latest;
-          const itemTime = new Date(item.updated_at).getTime();
-          return itemTime > latest ? itemTime : latest;
-        }, 0);
-
-        if (latestTimestamp > 0) {
-          const dateObj = new Date(latestTimestamp);
-          const dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-          const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-          setLastUpdated(`${dateStr} • ${timeStr}`);
-        } else {
-          setLastUpdated('No verified timestamp');
-        }
-      } else {
-        setStations([]);
-        setLastUpdated('No verified telemetry available');
-      }
-    } catch (err) {
-      console.error('Unexpected error fetching stations:', err);
+      setStations(formatted);
+      setSourceStatus(sourceRows?.[0] || null);
+      setNowMs(Date.now());
+    } catch (error) {
+      console.error('Monitoring telemetry load failed:', error);
     } finally {
       setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchStationsFromSupabase();
-
-    const freshnessTimer = setInterval(() => {
-      setFreshnessNow(Date.now());
-    }, 60 * 1000);
-
-    // Subscribe to real-time changes on the 'monitoring_stations' table
+    void loadData();
+    const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
     const channel = supabase
-      .channel('monitoring-stations-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => {
-        fetchStationsFromSupabase();
-      })
+      .channel('pagasa-monitoring-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => void loadData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry_source_status' }, () => void loadData())
       .subscribe();
 
     return () => {
-      clearInterval(freshnessTimer);
+      clearInterval(timer);
       supabase.removeChannel(channel);
     };
   }, []);
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await fetchStationsFromSupabase();
-    } finally {
-      // Ensure minimum spinning animation duration so user gets immediate visual feedback
-      setTimeout(() => setIsRefreshing(false), 500);
-    }
-  };
+  const latestObservation = useMemo(() => {
+    const times = stations.map((s) => new Date(s.observedAt).getTime()).filter(Number.isFinite);
+    return times.length ? new Date(Math.max(...times)).toISOString() : null;
+  }, [stations]);
 
-  // Sorting Handler
+  const sourceCheckAge = sourceStatus?.last_check_at
+    ? formatTelemetryAge(Math.max(0, nowMs - new Date(sourceStatus.last_check_at).getTime()))
+    : 'No source check recorded';
+
   const handleSort = (key) => {
-    let direction = 'ascending';
-    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
-      direction = null; // Reset to default order
-    }
-    setSortConfig({ key, direction });
-  };
-
-  // Get Sorted Stations
-  const getSortedStations = () => {
-    if (!sortConfig.key || !sortConfig.direction) {
-      return [...stations];
-    }
-    return [...stations].sort((a, b) => {
-      let valA = a[sortConfig.key];
-      let valB = b[sortConfig.key];
-
-      if (typeof valA === 'string') {
-        valA = valA.toLowerCase();
-        valB = valB.toLowerCase();
-      }
-
-      if (valA < valB) {
-        return sortConfig.direction === 'ascending' ? -1 : 1;
-      }
-      if (valA > valB) {
-        return sortConfig.direction === 'ascending' ? 1 : -1;
-      }
-      return 0;
+    setSortConfig((previous) => {
+      if (previous.key !== key) return { key, direction: 'ascending' };
+      if (previous.direction === 'ascending') return { key, direction: 'descending' };
+      return { key: null, direction: null };
     });
   };
 
+  const sortedStations = useMemo(() => {
+    if (!sortConfig.key || !sortConfig.direction) return [...stations];
+    return [...stations].sort((a, b) => {
+      const av = a[sortConfig.key] ?? '';
+      const bv = b[sortConfig.key] ?? '';
+      const result = typeof av === 'string'
+        ? av.localeCompare(String(bv))
+        : Number(av) - Number(bv);
+      return sortConfig.direction === 'ascending' ? result : -result;
+    });
+  }, [stations, sortConfig]);
+
   const getSortIcon = (key) => {
-    if (sortConfig.key !== key) {
-      return <ArrowUpDown size={12} className="sort-icon-inactive" />;
-    }
-    if (sortConfig.direction === 'ascending') {
-      return <ArrowUp size={12} className="sort-icon-active" />;
-    }
-    return <ArrowDown size={12} className="sort-icon-active" />;
+    if (sortConfig.key !== key) return <ArrowUpDown size={12} className="sort-icon-inactive" />;
+    return sortConfig.direction === 'ascending'
+      ? <ArrowUp size={12} className="sort-icon-active" />
+      : <ArrowDown size={12} className="sort-icon-active" />;
   };
 
-  // Sort bar chart data by level descending as shown in the screenshot
-  const barChartData = [...stations]
-    .filter(station => station.level !== null && Number.isFinite(Number(station.level)))
-    .sort((a, b) => Number(b.level) - Number(a.level));
-  const sortedStations = getSortedStations();
-  const freshnessSummary = stations.map(station => getTelemetryFreshness(station.updated_at, freshnessNow));
-  const unavailableCount = freshnessSummary.filter(item => item.status === 'unavailable').length;
-  const staleCount = freshnessSummary.filter(item => item.status === 'stale').length;
-  const alarmCount = stations.filter(station => station.alertInfo && station.alertInfo.status !== 'Normal' && station.alertInfo.status !== 'Unavailable').length;
+  const freshnessRows = stations.map((station) => getTelemetryFreshness(station.observedAt, nowMs));
+  const unavailableCount = freshnessRows.filter((item) => item.status === 'unavailable').length;
+  const delayedCount = freshnessRows.filter((item) => ['delayed', 'stale'].includes(item.status)).length;
+  const warningCount = stations.filter((station) => !['Normal', 'Unavailable'].includes(station.alertInfo.status)).length;
 
-  const getHydrologicalSummary = () => {
-    if (stations.length === 0 || unavailableCount === stations.length) {
-      return 'Hydrological summary unavailable because there is no sufficiently recent verified telemetry. Refresh the feed or wait for the next successful source update.';
-    }
-    if (unavailableCount > 0 || staleCount > 0) {
-      return `Current conditions cannot be fully confirmed: ${staleCount} stale and ${unavailableCount} unavailable station reading${staleCount + unavailableCount === 1 ? '' : 's'}. Values shown are last verified readings and must not be treated as fully live.`;
-    }
-    if (alarmCount > 0) {
-      return `Fresh telemetry is available, and ${alarmCount} station${alarmCount === 1 ? '' : 's'} currently meet a warning or alarm threshold. Review the station statuses before issuing operational guidance.`;
-    }
-    return 'Fresh telemetry is available across the monitoring network. Current readings are within their configured normal thresholds.';
+  const sourceHealthy = sourceStatus?.worker_status === 'healthy' && ['reachable', 'no_data'].includes(sourceStatus?.source_status);
+
+  const hydrologicalSummary = () => {
+    if (!stations.length) return 'No verified PAGASA station rows are available yet.';
+    if (!sourceHealthy) return `The telemetry worker is not reporting a healthy PAGASA source connection${sourceStatus?.last_error_message ? `: ${sourceStatus.last_error_message}` : '.'}`;
+    if (unavailableCount === stations.length) return 'PAGASA is reachable, but the latest verified measurements are too old to treat as live.';
+    if (delayedCount || unavailableCount) return `${delayedCount} delayed/stale and ${unavailableCount} unavailable station reading(s). Values remain the last verified PAGASA observations.`;
+    if (warningCount) return `${warningCount} station(s) currently meet a source-provided Alert, Alarm, or Critical threshold.`;
+    return 'Verified PAGASA telemetry is current across the configured stations and all source-provided thresholds remain in the normal range.';
   };
+
+  const getStation = (fragment) => stations.find((station) => station.name.toLowerCase().includes(fragment.toLowerCase()));
+
+  const renderPointCard = (title, station, Icon) => {
+    const fallback = { name: title, level: null, alertInfo: calculateAlertStatus(null), observedAt: null, trend: 'Unknown' };
+    const item = station || fallback;
+    const freshness = getTelemetryFreshness(item.observedAt, nowMs);
+    const trend = formatTrend(item.trend);
+    const isCritical = item.alertInfo.status === 'Critical';
+
+    return (
+      <div className="point-card" style={freshness.status === 'unavailable' ? { backgroundColor: '#f8fafc' } : {}}>
+        <div className="point-card-left">
+          <span className="point-card-title">{title}</span>
+          <span className="point-card-value" style={{ color: isCritical ? '#b91c1c' : 'var(--text-main)' }}>
+            {Number.isFinite(item.level) ? `${item.level.toFixed(2)} m` : '--'}
+          </span>
+          <div className="point-card-badge-row">
+            <span className="status-badge-pill" style={{ backgroundColor: `${item.alertInfo.color}20`, color: item.alertInfo.color, border: `1px solid ${item.alertInfo.color}40` }}>
+              {item.alertInfo.label}
+            </span>
+            <span className={`telemetry-state-badge compact ${freshness.status}`} title={freshness.description}>
+              <span className={`telemetry-state-dot ${freshness.status}`}></span>
+              {freshness.label} • {freshness.ageText}
+            </span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: trend.color, fontWeight: 700 }}>
+            {trend.symbol} {trend.label}{Number.isFinite(Number(item.delta_30m_m)) ? ` (${Number(item.delta_30m_m) >= 0 ? '+' : ''}${Number(item.delta_30m_m).toFixed(2)} m / 30 min)` : ''}
+          </div>
+        </div>
+        <div className="point-card-right">
+          <div className="point-card-icon-wrapper" style={{ backgroundColor: '#eff6ff', color: isCritical ? '#dc2626' : '#0284c7' }}>
+            <Icon size={22} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const chartData = [...stations].filter((s) => Number.isFinite(s.level)).sort((a, b) => b.level - a.level);
+  const chartMax = chartData.length ? Math.ceil(Math.max(...chartData.map((s) => Math.max(s.level, Number(s.critical_threshold_m) || 0))) + 2) : 30;
 
   return (
     <div className="main-view">
-      {/* View Header */}
       <div className="view-header">
         <div className="view-title-container">
           <h1>Monitoring Stations</h1>
-          <span className="view-subtitle">Last updated: {lastUpdated}</span>
+          <span className="view-subtitle">Latest verified observation: {formatDateTime(latestObservation)}</span>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6, fontSize: 12, color: '#64748b' }}>
+            <span><strong>PAGASA source:</strong> {sourceStatus?.source_status || 'unknown'}</span>
+            <span><strong>Worker:</strong> {sourceStatus?.worker_status || 'unknown'}</span>
+            <span><strong>Last source check:</strong> {sourceCheckAge}</span>
+          </div>
         </div>
-        <button 
-          className="btn-refresh" 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-          <span>Refresh</span>
+        <button className="btn-refresh" onClick={() => void loadData()} disabled={isRefreshing}>
+          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+          <span>Refresh View</span>
         </button>
       </div>
 
-      {/* Point Cards Grid */}
-      {(() => {
-        const getStationData = (namePart) => {
-          const found = stations.find(s => s.name.toLowerCase().includes(namePart.toLowerCase()));
-          const stationObj = found || { level: null, status: 'Unavailable', name: namePart, updated_at: null };
-          const numericLevel = Number(stationObj.level);
-          const hasLevel = stationObj.level !== null && Number.isFinite(numericLevel);
-          const alertInfo = hasLevel ? calculateAlertStatus(numericLevel, stationObj.name) : calculateAlertStatus(0, stationObj.name);
-          const freshness = getTelemetryFreshness(stationObj.updated_at, freshnessNow);
-          return { ...stationObj, level: hasLevel ? numericLevel : null, alertInfo, freshness };
-        };
+      {!sourceHealthy && (
+        <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <WifiOff size={18} style={{ marginTop: 1 }} />
+          <div><strong>PAGASA source health requires attention.</strong><div style={{ marginTop: 2, fontSize: 13 }}>{sourceStatus?.last_error_message || 'No successful source-health record is available yet.'}</div></div>
+        </div>
+      )}
 
-        const renderPointCard = (title, stationData, defaultIcon) => {
-          const { level, alertInfo, freshness = getTelemetryFreshness(stationData.updated_at, freshnessNow) } = stationData;
-          const hasLevel = level !== null && Number.isFinite(Number(level));
-          const numericLevel = hasLevel ? Number(level) : 0;
-          const is3rdAlarm = alertInfo.status === '3rd Alarm' || numericLevel >= 18;
-          const is2ndAlarm = alertInfo.status === '2nd Alarm';
-          const is1stAlarm = alertInfo.status === '1st Alarm';
+      <div className="station-points-grid">
+        {renderPointCard('TUMANA MONITORING POINT', getStation('Tumana'), Droplet)}
+        {renderPointCard('NANGKA MONITORING POINT', getStation('Nangka'), Waves)}
+        {renderPointCard('STO. NIÑO (MAIN NODE)', getStation('Sto. Niño'), AlertTriangle)}
+      </div>
 
-          // Card distinction styles
-          let cardStyle = {};
-          let iconBg = '#e8f7ed';
-          let iconColor = '#10b981';
-          let badgeStyle = { backgroundColor: '#dcfce7', color: '#15803d' };
-          let IconComponent = defaultIcon;
-
-          if (!hasLevel || freshness.status === 'unavailable') {
-            cardStyle = { backgroundColor: '#f8fafc' };
-            badgeStyle = { backgroundColor: '#fee2e2', color: '#b91c1c', fontWeight: '700' };
-            iconBg = '#f1f5f9';
-            iconColor = '#64748b';
-            IconComponent = AlertTriangle;
-          } else if (is3rdAlarm) {
-            cardStyle = {
-              backgroundColor: '#fef2f2',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.12)',
-              position: 'relative'
-            };
-            badgeStyle = {
-              backgroundColor: '#dc2626',
-              color: '#ffffff',
-              fontWeight: '800',
-              boxShadow: '0 2px 4px rgba(220, 38, 38, 0.3)'
-            };
-            iconBg = '#fee2e2';
-            iconColor = '#dc2626';
-            IconComponent = AlertTriangle;
-          } else if (is2ndAlarm) {
-            cardStyle = { backgroundColor: '#fff7ed' };
-            badgeStyle = { backgroundColor: '#ea580c', color: '#ffffff', fontWeight: '700' };
-            iconBg = '#ffedd5';
-            iconColor = '#ea580c';
-            IconComponent = AlertTriangle;
-          } else if (is1stAlarm) {
-            cardStyle = { backgroundColor: '#fefce8' };
-            badgeStyle = { backgroundColor: '#ca8a04', color: '#ffffff', fontWeight: '700' };
-            iconBg = '#fef9c3';
-            iconColor = '#ca8a04';
-          }
-
-          return (
-            <div className="point-card" style={cardStyle}>
-              <div className="point-card-left">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="point-card-title">{title}</span>
-                </div>
-                <span className="point-card-value" style={{ color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>
-                  {hasLevel ? `${numericLevel.toFixed(2)} m` : '--'}
-                </span>
-                <div className="point-card-badge-row">
-                  <span className="status-badge-pill" style={badgeStyle}>
-                    {!hasLevel ? 'Unavailable' : (is3rdAlarm ? '3rd Alarm' : alertInfo.label)}
-                  </span>
-                  <span
-                    className={`telemetry-state-badge compact ${freshness.status}`}
-                    title={freshness.description}
-                  >
-                    <span className={`telemetry-state-dot ${freshness.status}`}></span>
-                    {freshness.label} • {freshness.ageText}
-                  </span>
-                </div>
-              </div>
-              <div className="point-card-right">
-                <div 
-                  className="point-card-icon-wrapper" 
-                  style={{ backgroundColor: iconBg, color: iconColor }}
-                >
-                  <IconComponent size={22} style={{ animation: is3rdAlarm ? 'pulse 1.5s infinite' : 'none' }} />
-                </div>
-              </div>
-            </div>
-          );
-        };
-
-        const tumana = getStationData('Tumana');
-        const nangka = getStationData('Nangka');
-        const stoNino = getStationData('Sto. Niño');
-
-        return (
-          <div className="station-points-grid">
-            {renderPointCard('TUMANA MONITORING POINT', tumana, Droplet)}
-            {renderPointCard('NANGKA MONITORING POINT', nangka, Waves)}
-            {renderPointCard('STO. NIÑO (MAIN NODE)', stoNino, AlertTriangle)}
-          </div>
-        );
-      })()}
-
-      {/* Main Split Layout */}
       <div className="stations-split-layout">
-        {/* Left Side: Levels Bar Chart */}
         <div className="stations-card">
-          <h2 className="stations-card-title">Station Levels vs warning Thresholds</h2>
-          
-          <div className="chart-container-wrapper" style={{ height: '300px', marginTop: '16px' }}>
+          <h2 className="stations-card-title">Verified Station Water Levels</h2>
+          <div className="chart-container-wrapper" style={{ height: 300, marginTop: 16 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={barChartData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-              >
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tick={{ fill: 'var(--text-muted)', fontSize: 10, fontWeight: '500' }}
-                />
-                <YAxis 
-                  domain={[0, 30]}
-                  ticks={[0, 10, 20]}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: 'var(--text-light)', fontSize: 11 }}
-                  label={{ 
-                    value: 'Water Gauge Level (meters)', 
-                    angle: -90, 
-                    position: 'insideLeft', 
-                    style: { textAnchor: 'middle', fill: 'var(--text-muted)', fontSize: 11, fontWeight: '500' },
-                    offset: 0
-                  }}
-                />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div style={{
-                          backgroundColor: '#ffffff',
-                          border: '1px solid var(--color-border)',
-                          padding: '8px 12px',
-                          borderRadius: 'var(--radius-md)',
-                          boxShadow: 'var(--shadow-lg)',
-                          fontSize: '12px'
-                        }}>
-                          <p style={{ fontWeight: '700', color: 'var(--text-main)' }}>{payload[0].payload.name}</p>
-                          <p style={{ color: '#3b82f6', fontWeight: '600', marginTop: '4px' }}>
-                            Level: {Number(payload[0].value).toFixed(2)} m
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar 
-                  dataKey="level" 
-                  fill="#3b82f6" 
-                  barSize={36}
-                  radius={[4, 4, 0, 0]}
-                />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10, fontWeight: 500 }} />
+                <YAxis domain={[0, chartMax]} tickLine={false} axisLine={false} tick={{ fill: 'var(--text-light)', fontSize: 11 }} />
+                <Tooltip formatter={(value) => [`${Number(value).toFixed(2)} m`, 'Verified level']} />
+                <Bar dataKey="level" fill="#3b82f6" barSize={36} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          <div className="x-axis-title-centered">
-            Gaging Network Station Node Location
-          </div>
-
-          <div className="graph-type-label">
-            <BarChart2 size={14} />
-            <span>Graph Type: Bar Chart</span>
-          </div>
-
+          <div className="x-axis-title-centered">PAGASA FFWWS Configured Station</div>
+          <div className="graph-type-label"><BarChart2 size={14} /><span>Graph Type: Bar Chart</span></div>
           <div className="checkbox-wrapper">
-            <input 
-              type="checkbox" 
-              id="show-summary" 
-              checked={showSummary} 
-              onChange={(e) => setShowSummary(e.target.checked)} 
-            />
+            <input type="checkbox" id="show-summary" checked={showSummary} onChange={(e) => setShowSummary(e.target.checked)} />
             <label htmlFor="show-summary">Show Hydrological Summary</label>
           </div>
-
           {showSummary && (
             <div className="hydrological-summary-box">
               <Info size={16} className="summary-icon" />
-              <div>
-                <div className="summary-title">Hydrological Summary</div>
-                <div className="summary-text">
-                  {getHydrologicalSummary()}
-                </div>
-              </div>
+              <div><div className="summary-title">Hydrological Summary</div><div className="summary-text">{hydrologicalSummary()}</div></div>
             </div>
           )}
         </div>
 
-        {/* Right Side: Telemetry Node Database */}
         <div className="stations-card">
-          <h2 className="stations-card-title">Telemetry Node Database</h2>
-          
-          <div className="table-container" style={{ marginTop: '16px' }}>
+          <h2 className="stations-card-title">PAGASA Telemetry Database</h2>
+          <div className="table-container" style={{ marginTop: 16 }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th onClick={() => handleSort('name')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>RIVER</span>
-                      {getSortIcon('name')}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('level')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>LEVEL</span>
-                      {getSortIcon('level')}
-                    </div>
-                  </th>
-                  <th>DATA FRESHNESS</th>
-                  <th onClick={() => handleSort('status')} className="sortable-header">
-                    <div className="header-cell-content">
-                      <span>STATUS</span>
-                      {getSortIcon('status')}
-                    </div>
-                  </th>
+                  <th onClick={() => handleSort('name')} className="sortable-header"><div className="header-cell-content"><span>STATION</span>{getSortIcon('name')}</div></th>
+                  <th onClick={() => handleSort('level')} className="sortable-header"><div className="header-cell-content"><span>LEVEL</span>{getSortIcon('level')}</div></th>
+                  <th>TREND</th>
+                  <th>OBSERVATION</th>
+                  <th onClick={() => handleSort('status')} className="sortable-header"><div className="header-cell-content"><span>STATUS</span>{getSortIcon('status')}</div></th>
                 </tr>
               </thead>
               <tbody>
                 {sortedStations.map((station) => {
-                  const alertInfo = station.alertInfo || calculateAlertStatus(station.level, station.name);
-                  const is3rdAlarm = alertInfo.status === '3rd Alarm';
+                  const freshness = getTelemetryFreshness(station.observedAt, nowMs);
+                  const trend = formatTrend(station.trend);
                   return (
-                    <tr 
-                      key={station.id} 
-                      className="table-row-hover"
-                      style={is3rdAlarm ? { backgroundColor: '#fef2f2' } : {}}
-                    >
-                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#b91c1c' : 'var(--text-main)' }}>{station.name}</td>
-                      <td style={{ fontWeight: '600', color: is3rdAlarm ? '#dc2626' : 'inherit' }}>{station.level !== null && Number.isFinite(Number(station.level)) ? `${Number(station.level).toFixed(2)} m` : '--'}</td>
-                      <td>
-                        {(() => {
-                          const freshness = getTelemetryFreshness(station.updated_at, freshnessNow);
-                          return (
-                            <span
-                              className={`telemetry-state-badge compact ${freshness.status}`}
-                              title={freshness.description}
-                            >
-                              <span className={`telemetry-state-dot ${freshness.status}`}></span>
-                              {freshness.label} • {freshness.ageText}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td>
-                        <span 
-                          className="status-badge-pill"
-                          style={{
-                            backgroundColor: `${alertInfo.color}20`,
-                            color: alertInfo.color,
-                            border: `1px solid ${alertInfo.color}40`,
-                            fontWeight: '700'
-                          }}
-                        >
-                          {alertInfo.status}
-                        </span>
-                      </td>
+                    <tr key={station.id} className="table-row-hover">
+                      <td style={{ fontWeight: 600 }}>{station.name}<div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{station.station_code}</div></td>
+                      <td style={{ fontWeight: 700 }}>{Number.isFinite(station.level) ? `${station.level.toFixed(2)} m` : '--'}</td>
+                      <td style={{ color: trend.color, fontWeight: 700 }}>{trend.symbol} {trend.label}</td>
+                      <td><span className={`telemetry-state-badge compact ${freshness.status}`} title={freshness.description}><span className={`telemetry-state-dot ${freshness.status}`}></span>{freshness.label} • {freshness.ageText}</span></td>
+                      <td><span className="status-badge-pill" style={{ backgroundColor: `${station.alertInfo.color}20`, color: station.alertInfo.color, border: `1px solid ${station.alertInfo.color}40`, fontWeight: 700 }}>{station.alertInfo.status}</span></td>
                     </tr>
                   );
                 })}
+                {!sortedStations.length && <tr><td colSpan="5" style={{ textAlign: 'center', padding: 30, color: '#64748b' }}>No verified PAGASA telemetry has been stored yet.</td></tr>}
               </tbody>
             </table>
           </div>

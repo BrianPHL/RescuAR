@@ -105,11 +105,11 @@ export default function Sidebar({ activeView, onViewChange }) {
                 <span>Marikina River Level</span>
               </div>
               <div 
-                className={`sidebar-link ${activeView === 'monitoring-inundation' ? 'active' : ''}`}
-                onClick={() => onViewChange('monitoring-inundation')}
+                className={`sidebar-link ${activeView === 'monitoring-hazard-exposure' ? 'active' : ''}`}
+                onClick={() => onViewChange('monitoring-hazard-exposure')}
               >
                 <AlertTriangle size={16} />
-                <span>Inundation Prediction</span>
+                <span>Flood Hazard Exposure</span>
               </div>
             </div>
           </div>
