@@ -243,6 +243,25 @@ Check(reverseRoute is not null && Math.Abs(reverseRoute.TotalDistanceMeters - 10
     "reverse-only partial edge seeds only its reachable endpoint");
 Check(await reverseService.FindRouteAsync(C(100), C(200)) is null,
     "partial edge cannot bypass pedestrian one-way restrictions");
+var sparseService = new AStarRoutingService(new RoadGraphBuilder().Build(new[] {
+    Way("residential", C(0), C(400)) }));
+var midDestination = await sparseService.FindRouteAsync(C(0), C(200));
+Check(midDestination is not null && midDestination.Points[^1].Coordinate.DistanceTo(C(200)) < 0.1 &&
+    Math.Abs(midDestination.TotalDistanceMeters - 200) < 1,
+    "AStar reaches a destination midway along a sparse segment without requiring a nearby vertex");
+var sameSegment = await sparseService.FindRouteAsync(C(100), C(200));
+Check(sameSegment is not null && Math.Abs(sameSegment.TotalDistanceMeters - 100) < 1,
+    "two partial endpoints on the same segment do not detour through its vertices");
+var deadEndService = new AStarRoutingService(new RoadGraphBuilder().Build(new[] {
+    Way("residential", C(0), C(50), new Dictionary<string,string> { ["oneway:foot"]="yes" }),
+    new GeoJsonRoadFeature { Highway="residential", Coordinates=new[] { C(-100,10),C(0,10),C(100,10) } },
+    Way("residential", C(0,10), C(0), new Dictionary<string,string> { ["oneway:foot"]="yes" }) }));
+var alternativeStart = await deadEndService.FindRouteAsync(C(20), C(-100,10));
+Check(alternativeStart is not null && alternativeStart.Points[0].Coordinate.DistanceTo(C(20,10)) < 0.1,
+    "nearby reachable segment is considered when the closest one-way segment is a directed dead end");
+var reachableAccess = deadEndService.FindRoadApproachTarget(C(20), C(-100,10));
+Check(reachableAccess is { ConnectsToDestination: true } && reachableAccess.Value.Coordinate.DistanceTo(C(20,10)) < 0.1,
+    "road approach proves directed reachability rather than just weak connectivity");
 var wallGraph = new RoadGraphBuilder().Build(new[] { new GeoJsonRoadFeature
     { Highway="path", Coordinates=new[] { C(0),C(100),C(200) } } },
     new[] { new GeoJsonPointFeature { Barrier="wall", Coordinate=C(100) } });
@@ -252,6 +271,25 @@ var gradeGraph = new RoadGraphBuilder().Build(new[] {
     new GeoJsonRoadFeature { Highway="path", Coordinates=new[] { C(-100),C(0),C(100) },
         Tags=new Dictionary<string,string> { ["bridge"]="yes" } } });
 Check(!CanReach(gradeGraph,C(-100),C(0,100)), "bridge interior does not connect to the road beneath it");
+GeoJsonRoadFeature SourceWay(GeoCoordinate[] coordinates, string[] identifiers) =>
+    new() { Highway="path", Coordinates=coordinates, OsmNodeIds=identifiers };
+var distinctSourceNodes = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","5","6" }) });
+Check(!CanReach(distinctSourceNodes,C(-100),C(0,100)),
+    "different OSM nodes at the same coordinate cannot manufacture a junction");
+var sharedSourceNodes = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","2","6" }) });
+Check(CanReach(sharedSourceNodes,C(-100),C(0,100)),
+    "matching OSM node IDs retain an actual mapped junction");
+var sourceBarrierGraph = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","5","6" }) },
+    new[] { new GeoJsonPointFeature { OsmId="2", Barrier="gate", Coordinate=C(0),
+        Tags=new Dictionary<string,string> { ["locked"]="yes" } } });
+Check(!CanReach(sourceBarrierGraph,C(-100),C(100)) && CanReach(sourceBarrierGraph,C(0,-100),C(0,100)),
+    "central barrier restrictions split their source node without blocking a distinct colocated node");
 var preferenceGraph = new RoadGraphBuilder().Build(new[] {
     Way("primary",C(0),C(200)),
     Way("residential",C(0),C(0,20)), Way("residential",C(0,20),C(200,20)),
@@ -292,11 +330,28 @@ Check(endpointUrl.Contains("radiuses=20;50") && bypassUrl.Contains("radiuses=20;
     "MLD endpoints use shared bounds while hazard bypasses remain steering hints");
 var parseRoutes = typeof(MLDRoutingService).GetMethod("ParseRoutes",
     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" })!).Count == 0,
-    "MLD out-of-range endpoint is a no-route result rather than an endpoint failure");
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" })!).Count == 0,
-    "MLD invalid interior geometry cannot manufacture a shortcut");
+bool endpointUnmatched = false;
+try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" }); }
+catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is RoutingEndpointUnmatchedException)
+{ endpointUnmatched = true; }
+Check(endpointUnmatched, "MLD NoSegment is distinguished from a disconnected NoRoute result");
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD" })!).Count == 0,
+    "MLD NoRoute remains an authoritative disconnected result");
+var geometryRoute = ((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
+    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD" })!)[0];
+Check(Math.Abs(geometryRoute.TotalDistanceMeters - geometryRoute.Points[^1].DistanceFromStartMeters) < 0.01,
+    "MLD progress and total distance use the same physical geometry");
+bool invalidGeometryRejected = false;
+try { parseRoutes.Invoke(null,new object[] {
+    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" }); }
+catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is InvalidDataException)
+{ invalidGeometryRejected = true; }
+Check(invalidGeometryRejected, "MLD invalid interior geometry is an invalid response, not a disconnected route");
+var readOsrmCode = typeof(MLDRoutingService).GetMethod("TryReadOsrmCode",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+Check(new[] { "[]", "{\"code\":123}", "broken JSON" }.All(body =>
+    !(bool)readOsrmCode.Invoke(null, new object?[] { body, null })!),
+    "malformed HTTP error bodies cannot crash MLD outcome classification");
 using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0.001,0]]},\"properties\":{\"highway\":\"service\",\"foot\":\"yes\",\"access\":\"no\",\"tunnel\":\"building_passage\"}}]}")))
 {
@@ -304,6 +359,18 @@ using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     Check(exportedRoads.Count == 1 && pedestrianFilter.IsWalkable(exportedRoads[0]),
         "flat exported tags preserve pedestrian permission and building passage access");
 }
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[121,14],[121.001,14]]},\"properties\":{\"highway\":\"path\",\"osm_node_ids\":[\"123\",\"456\"]}}]}")))
+    Check((await new GeoJsonRoadLoader().LoadRoadsAsync(json))[0].OsmNodeIds.SequenceEqual(new[] { "123", "456" }),
+        "central export node identifiers survive parsing into the routing graph");
+bool incompleteIdsRejected = false;
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[121,14],[121.001,14]]},\"properties\":{\"highway\":\"path\",\"osm_node_ids\":[\"123\"]}}]}")))
+{
+    try { await new GeoJsonRoadLoader().LoadRoadsAsync(json); }
+    catch (InvalidDataException) { incompleteIdsRejected = true; }
+}
+Check(incompleteIdsRejected, "incomplete central source IDs fail instead of reverting to invented coordinate junctions");
 using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0,95],[0.001,0]]},\"properties\":{\"highway\":\"path\"}}]}")))
     Check((await new GeoJsonRoadLoader().LoadRoadsAsync(json)).Count == 0,
@@ -318,6 +385,21 @@ var qcLocal = await regionalService.FindRouteAsync(new(14.71374502,121.01964361)
 var marikinaLocal = await regionalService.FindRouteAsync(new(14.644776,121.094967),new(14.660172,121.118353));
 Check(qcLocal is not null && qcLocal.Points.Count > 1, "QC tester request routes on the expanded offline network");
 Check(marikinaLocal is not null && marikinaLocal.Points.Count > 1, "Marikina request routes on the expanded offline network");
+Check(await regionalService.FindRouteAsync(new(14.644776,121.094967), new(14.647648,121.103974)) is not null,
+    "embedded Concepcion Elementary destination can match the nearby road segment");
+string tipPointsResource = NavigationDataBootstrap.GeoJsonResourcePrefix + "QC_TIP_POINTS.GEOJSON";
+if (NavigationDataBootstrap.GetGeoJsonResourceNames("POINTS").Contains(tipPointsResource))
+{
+    using Stream tipPoints = NavigationDataBootstrap.OpenGeoJsonResource(tipPointsResource);
+    var restrictions = await new GeoJsonRoadLoader().LoadPointsAsync(tipPoints);
+    string[] missingBarrierIds = { "8678367374", "8931729696", "11489648941", "246784995",
+        "11484349473", "10783437609", "12497591656", "8628789127" };
+    Check(restrictions.Count == 1309 && missingBarrierIds.All(id => restrictions.Any(p => p.OsmId == id &&
+        EvacuationRoutingPolicy.IsBlockedPoint(p.Barrier, p.Tags))),
+        "TIP points preserve all eight previously missing source access barriers");
+}
+Check(NavigationDataBootstrap.DatasetId.StartsWith("regional-") || NavigationDataBootstrap.DatasetId.StartsWith("central-"),
+    "routing diagnostics identify the exact embedded policy and source data");
 var balboaBend = actualRoads.Where(road => road.OsmId == "48381228").ToArray();
 if (balboaBend.Length > 0)
 {
@@ -574,6 +656,21 @@ var onlineNoRoute = new HybridRoutingService(new EmptyRoutingService(),
     _ => { noRouteGraphLoads++; return Task.FromResult(new RoadGraph(nodes,edges)); }, () => true);
 Check(await onlineNoRoute.FindRouteAsync(C(0,1),C(100,8)) is null && noRouteGraphLoads == 0,
     "an authoritative online NoRoute result still preserves the routing policy");
+var unmatchedOnline = new HybridRoutingService(new ThrowingRoutingService(new RoutingEndpointUnmatchedException()),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await unmatchedOnline.FindRouteAsync(C(0,1),C(100,8)) is not null &&
+    await unmatchedOnline.FindRouteAsync(C(0,100),C(100,8)) is null,
+    "MLD NoSegment tries offline matching without widening its origin radius");
+var invalidOnline = new HybridRoutingService(new ThrowingRoutingService(new InvalidDataException("bad geometry")),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await invalidOnline.FindRouteAsync(C(0,1),C(100,8)) is not null,
+    "invalid online responses can recover with an independently checked offline route");
+int deferredAccessCalls = 0;
+var deferredRoute = await new MLDARIntegrationService(new FixedRoutingService(Route(C(0),C(100))))
+    .RequestRouteWithDeferredRoadApproachAsync(C(0),C(100), _ =>
+    { deferredAccessCalls++; return Task.FromResult<AStarRoutingService.RoadApproachTarget?>(null); });
+Check(deferredRoute is not null && deferredAccessCalls == 0,
+    "a valid direct route does not wait for offline road-access graph initialization");
 Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
     .RequestRouteWithRoadApproachAsync(C(0), C(200), null) is null,
     "unknown road coverage cannot silently route from a pin one hundred metres away");

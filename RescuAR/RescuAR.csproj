@@ -23,6 +23,7 @@
 	<ItemGroup>
 		<EmbeddedResource Include="Navigation\Data\evacuation-policy.json" />
 		<EmbeddedResource Include="Navigation\Data\Resources\*ROADS.geojson;Navigation\Data\Resources\*POINTS.geojson" />
+		<EmbeddedResource Include="Navigation\Data\Resources\routing-manifest.json" Condition="Exists('Navigation\Data\Resources\routing-manifest.json')" />
 	</ItemGroup>
 
 </Project>

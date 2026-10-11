@@ -4,6 +4,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RescuAR.Navigation.Models;
@@ -33,6 +36,7 @@ public static class NavigationDataBootstrap
     private static IReadOnlyList<GeoJsonRoadFeature>? cachedRoadFeatures;
 
     public static NavigationRuntimeValidationResult? LastResult { get; private set; }
+    public static string DatasetId { get; private set; } = "uninitialized";
 
     /// <summary>Primary data first, then every named regional dataset.</summary>
     public static string[] GetGeoJsonResourceNames(string kind)
@@ -40,11 +44,23 @@ public static class NavigationDataBootstrap
         if (kind is not ("ROADS" or "POINTS"))
             throw new ArgumentException("Expected ROADS or POINTS.", nameof(kind));
 
+        string[] resources = typeof(NavigationDataBootstrap).Assembly.GetManifestResourceNames();
+        string centralRoads = GeoJsonResourcePrefix + "CENTRAL_ROADS.geojson";
+        string centralPoints = GeoJsonResourcePrefix + "CENTRAL_POINTS.geojson";
+        bool central = resources.Contains(centralRoads) || resources.Contains(centralPoints);
+        if (central)
+        {
+            if (!resources.Contains(centralRoads) || !resources.Contains(centralPoints) ||
+                !resources.Contains(GeoJsonResourcePrefix + "routing-manifest.json"))
+                throw new InvalidOperationException("Central routing requires both ROADS/POINTS and their source manifest.");
+            // Retained historical resources must never contaminate a central snapshot.
+            return new[] { kind == "ROADS" ? centralRoads : centralPoints };
+        }
+
         string primary = GeoJsonResourcePrefix + kind + ".geojson";
         string regionalSuffix = "_" + kind + ".geojson";
 
-        return typeof(NavigationDataBootstrap).Assembly
-            .GetManifestResourceNames()
+        return resources
             .Where(name =>
                 name.StartsWith(GeoJsonResourcePrefix, StringComparison.Ordinal) &&
                 (name.Equals(primary, StringComparison.OrdinalIgnoreCase) ||
@@ -140,6 +156,8 @@ public static class NavigationDataBootstrap
         Stopwatch stopwatch =
             Stopwatch.StartNew();
 
+        ValidateDatasetIdentity();
+
         GeoJsonRoadLoader loader =
             new();
         List<GeoJsonRoadFeature> roads = new();
@@ -154,6 +172,9 @@ public static class NavigationDataBootstrap
         if (roads.Count == 0)
             throw new InvalidOperationException(
                 "No usable road GeoJSON datasets were included.");
+        if (DatasetId.StartsWith("central-", StringComparison.Ordinal) &&
+            roads.Any(road => road.OsmNodeIds.Count != road.Coordinates.Count))
+            throw new InvalidOperationException("Central roads must preserve source OSM node IDs.");
 
         long roadsParsedMilliseconds =
             stopwatch.ElapsedMilliseconds;
@@ -217,12 +238,49 @@ public static class NavigationDataBootstrap
         return result;
     }
 
+    private static void ValidateDatasetIdentity()
+    {
+        string[] names = GetGeoJsonResourceNames("ROADS").Concat(GetGeoJsonResourceNames("POINTS")).ToArray();
+        using Stream policy = typeof(NavigationDataBootstrap).Assembly.GetManifestResourceStream(
+            "RescuAR.Navigation.Data.evacuation-policy.json")!;
+        string policyHash = Convert.ToHexString(SHA256.HashData(policy)).ToLowerInvariant();
+        var hashes = names.ToDictionary(name => name, name =>
+        {
+            using Stream stream = OpenGeoJsonResource(name);
+            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        });
+        if (names.Contains(GeoJsonResourcePrefix + "CENTRAL_ROADS.geojson"))
+        {
+            using Stream stream = OpenGeoJsonResource(GeoJsonResourcePrefix + "routing-manifest.json");
+            using JsonDocument manifest = JsonDocument.Parse(stream);
+            var root = manifest.RootElement;
+            if (root.GetProperty("schemaVersion").GetInt32() != 1 ||
+                root.GetProperty("policySha256").GetString() != policyHash)
+                throw new InvalidOperationException("Central routing schema/policy does not match the app.");
+            foreach (string name in names)
+                if (root.GetProperty("files").GetProperty(name[GeoJsonResourcePrefix.Length..]).GetString() != hashes[name])
+                    throw new InvalidOperationException("Central routing data hash mismatch: " + name);
+            string expectedId = "central-" + Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(
+                root.GetProperty("files").GetProperty("central.osm.pbf").GetString() + policyHash))).ToLowerInvariant();
+            if (root.GetProperty("datasetId").GetString() != expectedId)
+                throw new InvalidOperationException("Central routing identity mismatch.");
+            DatasetId = expectedId;
+        }
+        else
+        {
+            string identity = policyHash + string.Join("", names.Select(name => name + hashes[name]));
+            DatasetId = "regional-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
+        }
+    }
+
     private static void WriteDiagnostic(
         NavigationRuntimeValidationResult result)
     {
         string message =
             Environment.NewLine +
             "========== RescuAR Navigation Data Validation ==========" +
+            Environment.NewLine +
+            $"Dataset ID               = {DatasetId}" +
             Environment.NewLine +
             $"ROADS parsed             = {result.SourceRoadFeatureCount}" +
             Environment.NewLine +

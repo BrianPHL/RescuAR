@@ -23,6 +23,12 @@ RUN python3 /policy/profiles/build-evacuation-policy.py /policy/evacuation-polic
 # Overlapping extracts can come from different dates. Merge their history,
 # then select the latest available version of each object for routing.
 RUN set -eu; \
+    python3 /policy/profiles/validate-routing-input.py /input /policy/evacuation-policy.json; \
+    if [ -f /input/central.osm.pbf ]; then \
+        cp /input/central.osm.pbf /data/map.osm.pbf; \
+        cp /input/routing-manifest.json /data/routing-manifest.json; \
+    else \
+    echo 'Legacy regional snapshots: no shared app/server identity is established.' >&2; \
     mkdir /filtered /sorted; \
     for file in /input/*.osm.pbf; do \
         if [ ! -f "$file" ]; then \
@@ -36,6 +42,8 @@ RUN set -eu; \
     done; \
     osmium merge --with-history /sorted/*.osm.pbf -o /data/merged.osh.pbf; \
     osmium time-filter /data/merged.osh.pbf -o /data/map.osm.pbf; \
+    printf '{"datasetId":"legacy-regional-unverified"}\n' > /data/routing-manifest.json; \
+    fi; \
     if [ "$(osmium fileinfo -e -g data.multiple_versions /data/map.osm.pbf)" != "no" ]; then \
         echo "OSM version normalization failed: multiple object versions remain." >&2; \
         exit 1; \
@@ -46,6 +54,7 @@ FROM ${OSRM_IMAGE} AS builder
 
 WORKDIR /data
 COPY --from=merger /data/map.osm.pbf /data/map.osm.pbf
+COPY --from=merger /data/routing-manifest.json /data/routing-manifest.json
 COPY profiles/evacuation-foot.lua /opt/evacuation-foot.lua
 COPY profiles/evacuation-access.lua /opt/evacuation-access.lua
 COPY --from=merger /policy/profiles/evacuation-policy.lua /opt/evacuation-policy.lua
@@ -59,7 +68,8 @@ FROM ${OSRM_IMAGE} AS runner
 
 WORKDIR /data
 COPY --from=builder /data/map.osrm* /data/
+COPY --from=builder /data/routing-manifest.json /data/routing-manifest.json
 
 EXPOSE 5000
 
-CMD ["sh", "-c", "exec osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000} -t 1"]
+CMD ["sh", "-c", "cat /data/routing-manifest.json; exec osrm-routed --algorithm mld /data/map.osrm --port ${PORT:-5000} -t 1"]

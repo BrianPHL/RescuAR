@@ -39,7 +39,8 @@ public partial class CameraPage
     }
 
     private AStarRoutingService.RoadApproachTarget? FindRoadAccess(
-        LocationReading reading, RoadGraph graph, GeoCoordinate destination)
+        LocationReading reading, RoadGraph graph, GeoCoordinate destination,
+        CancellationToken cancellationToken = default)
     {
         if (pendingInitialRoute is { Points.Count: >= 2 } && pendingInitialDestination == destination)
         {
@@ -48,7 +49,7 @@ public partial class CameraPage
                 !graph.AccessCrossesMajorRoad(reading.Coordinate, first)) return new(first, true);
         }
         return (roadApproachPlanner ??= new AStarRoutingService(graph))
-            .FindRoadApproachTarget(reading.Coordinate, destination);
+            .FindRoadApproachTarget(reading.Coordinate, destination, cancellationToken);
     }
 
     // Heading sampling must not hold up fresh GPS acquisition. One observed
@@ -111,7 +112,13 @@ public partial class CameraPage
                 reading = latestRouteStartupReading;
         }
         if (!IsRoadApproachFixUsable(reading)) return;
-        var target = FindRoadAccess(reading!, graph, destination.Coordinate);
+        var target = await Task.Run(() => FindRoadAccess(reading!, graph, destination.Coordinate, token), token);
+        token.ThrowIfCancellationRequested();
+        if (!pageIsVisible || _arCoreService.IsSessionPaused ||
+            ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != session ||
+            !NavigationDestinationBridge.Current.IsAvailable ||
+            NavigationDestinationBridge.Current.Coordinate != destination.Coordinate ||
+            (noRouteAtStart && activeRoute is not null)) return;
         if (!target.HasValue)
         {
             ClearRoadApproachCue();

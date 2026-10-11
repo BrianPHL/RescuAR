@@ -167,15 +167,26 @@ public sealed class MLDARIntegrationService
     /// Uses the same provider for a bounded mapped-road start when a direct
     /// origin request cannot route. AR still aligns to the actual GPS reading.
     /// </summary>
-    public async Task<RouteResult?> RequestRouteWithRoadApproachAsync(
+    public Task<RouteResult?> RequestRouteWithRoadApproachAsync(
         GeoCoordinate origin, GeoCoordinate destination,
         AStarRoutingService.RoadApproachTarget? roadAccess,
         CancellationToken cancellationToken = default)
+        => RequestRouteWithDeferredRoadApproachAsync(origin, destination,
+            _ => Task.FromResult(roadAccess), cancellationToken);
+
+    /// <summary>Direct routing starts before offline access lookup or graph initialization.</summary>
+    public async Task<RouteResult?> RequestRouteWithDeferredRoadApproachAsync(
+        GeoCoordinate origin, GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
         RouteResult? route = await RequestRouteAsync(origin, destination, cancellationToken);
         if (route is { Points.Count: >= 2 } &&
             route.Points[0].Coordinate.IsValid &&
             origin.DistanceTo(route.Points[0].Coordinate) <= 50) return route;
+        cancellationToken.ThrowIfCancellationRequested();
+        var roadAccess = await findRoadAccess(cancellationToken);
         if (roadAccess is not { ConnectsToDestination: true } access ||
             !access.Coordinate.IsValid) return null;
         double distance = origin.DistanceTo(access.Coordinate);

@@ -1,6 +1,7 @@
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Data;
 using System.Collections.Generic;
 using System;
 using System.IO;
@@ -148,6 +149,17 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 "Online routing timed out. Falling back to offline A*: " +
                 DiagnosticPrivacyPolicy.FormatException(ex));
         }
+        catch (RoutingEndpointUnmatchedException)
+        {
+            AndroidLog.Warn(LogTag,
+                "MLD endpoint unmatched (NoSegment). Trying bounded offline pedestrian matching; " +
+                "a disconnected NoRoute result remains final.");
+        }
+        catch (InvalidDataException ex)
+        {
+            AndroidLog.Warn(LogTag, "Online response is invalid. Trying independently validated offline routing: " +
+                DiagnosticPrivacyPolicy.FormatException(ex));
+        }
         catch (HttpRequestException ex)
         {
             AndroidLog.Warn(
@@ -278,6 +290,10 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                     "Online hazard-aware MLD response/request was unusable. " +
                     "Falling back to A*: " +
                     DiagnosticPrivacyPolicy.FormatException(ex));
+            }
+            catch (RoutingEndpointUnmatchedException)
+            {
+                AndroidLog.Warn(LogTag, "MLD hazard endpoint unmatched. Trying bounded hazard-aware A*.");
             }
         }
         else if (internetAvailable)
@@ -442,6 +458,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             AndroidLog.Debug(
                 LogTag,
                 "Offline A* provider READY: " +
+                $"dataset='{NavigationDataBootstrap.DatasetId}', " +
                 $"nodes={graph.Nodes.Count}, " +
                 $"directedEdges={graph.Edges.Count}.");
 

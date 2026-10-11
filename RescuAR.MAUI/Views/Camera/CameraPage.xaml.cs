@@ -98,6 +98,8 @@ namespace RescuAR.App.Views.Camera
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private RoadGraph? arrivalRoadGraph;
+        private Task<RoadGraph?>? arrivalGraphLoadTask;
+        private Task? routeHeadingRecoveryTask;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
         private readonly HazardReroutingService _hazardReroutingService;
 
@@ -2744,7 +2746,7 @@ namespace RescuAR.App.Views.Camera
                 true;
 
             if (NavigationDestinationBridge.Current.IsAvailable)
-                _ = NavigationDataBootstrap.ValidateOnceAsync();
+                _ = GetArrivalGraphSafelyAsync();
 
 #if RESCUAR_DIAGNOSTICS
             lastDetailedStatusLogTimestamp =
@@ -2807,6 +2809,8 @@ namespace RescuAR.App.Views.Camera
             ApplyCameraModuleView(
                 currentCameraModuleView,
                 "Camera tab entered");
+            if (NavigationDestinationBridge.Current.IsAvailable && activeRoute is null)
+                StartRouteRequestIfPossible();
         }
 
         protected override void OnDisappearing()
@@ -3387,8 +3391,8 @@ namespace RescuAR.App.Views.Camera
         /// <summary>
         /// Requests a navigation route from the configured provider only when:
         /// - Camera page is active,
-        /// - ARCore has an active (not paused) Session,
         /// - a verified destination has been published.
+        /// AR tracking and heading gate placement separately from geographic routing.
         /// </summary>
         public async Task<bool> TryRequestNavigationRouteAsync()
         {
@@ -3398,16 +3402,6 @@ namespace RescuAR.App.Views.Camera
                 LogDetailedDebug(
                     RoutingLogTag,
                     "navigation route request skipped: Camera tab is not active.");
-
-                return false;
-            }
-
-            if (!_arCoreService.IsInitialized ||
-                _arCoreService.IsSessionPaused)
-            {
-                LogDetailedDebug(
-                    RoutingLogTag,
-                    "navigation route request skipped: ARCore Session is not active.");
 
                 return false;
             }
@@ -3555,15 +3549,17 @@ namespace RescuAR.App.Views.Camera
                 activeDestinationSafeZoneRadiusMeters =
                     destination.SafeZoneRadiusMeters;
 
-                RoadGraph arrivalGraph = arrivalRoadGraph ??=
-                    await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                // Online calculation does not wait for offline graph construction.
+                // Arrival and road access stay unavailable until its barriers are loaded.
+                _ = GetArrivalGraphSafelyAsync();
+                RoadGraph? arrivalGraph = arrivalRoadGraph;
                 var initialArrival = _safeZoneConfirmationService.Evaluate(
                     origin, destination.Coordinate,
                     destination.SafeZoneRadiusMeters,
                     locationReading.AccuracyMeters,
                     double.PositiveInfinity,
                     locationReading.Timestamp,
-                    majorRoadBarrier: arrivalGraph.AccessCrossesMajorRoad(
+                    majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                         origin, destination.Coordinate));
                 if (initialArrival.IsCandidate)
                 {
@@ -3602,9 +3598,14 @@ namespace RescuAR.App.Views.Camera
                         TimeSpan.FromMinutes(1);
                 Task<RouteResult?> routeWork = reuseComputedRoute
                     ? Task.FromResult(pendingInitialRoute)
-                    : _mldArIntegrationService.RequestRouteWithRoadApproachAsync(
+                    : _mldArIntegrationService.RequestRouteWithDeferredRoadApproachAsync(
                         origin, destination.Coordinate,
-                        FindRoadAccess(locationReading, arrivalGraph, destination.Coordinate), startupWork.Token);
+                        async token =>
+                        {
+                            RoadGraph? accessGraph = await GetArrivalGraphSafelyAsync().WaitAsync(token);
+                            return accessGraph is null ? null : await Task.Run(
+                                () => FindRoadAccess(locationReading, accessGraph, destination.Coordinate, token), token);
+                        }, startupWork.Token);
 
                 if (reuseComputedRoute)
                     Log.Info(RoutingLogTag,
@@ -3649,8 +3650,9 @@ namespace RescuAR.App.Views.Camera
                         0.0);
                     routeStartupFailureMessage =
                         "No connected pedestrian route — use the 2D map";
-                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken,
-                        approachHeading, captureHeading: false);
+                    if (arrivalGraph is not null)
+                        await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken,
+                            approachHeading, captureHeading: false);
 
                     Log.Warn(
                         RoutingLogTag,
@@ -3660,39 +3662,8 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                ArHeadingAlignmentService.HeadingAlignmentResult?
-                    headingAlignment = await headingWork;
-
                 cancellationToken.ThrowIfCancellationRequested();
-
-                double mapToArYawDegrees;
-
-                if (!headingAlignment.HasValue ||
-                    !headingAlignment.Value.IsAvailable ||
-                    !headingAlignment.Value.IsStable ||
-                    headingAlignment.Value.SessionGeneration !=
-                        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
-                {
-                    pendingInitialRoute = route;
-                    pendingInitialOrigin = origin;
-                    pendingInitialDestination = destination.Coordinate;
-                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
-                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
-                    lastHeadingAlignment = null;
-                    routeStartupFailureMessage =
-                        "Align the phone for AR guidance — use the 2D map";
-                    ARRouteBridge.Clear();
-                    Log.Warn(HeadingLogTag,
-                        "Route calculated, but geographic heading is unverified; " +
-                        "refusing the yaw=0 cyan route fallback.");
-                    return false;
-                }
-
-                lastHeadingAlignment = headingAlignment;
-                mapToArYawDegrees = headingAlignment.Value.MapToArYawDegrees;
-                LogDetailedDebug(HeadingLogTag,
-                    $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
-
+                if (!pageIsVisible) return false;
                 NavigationDestinationBridge.DestinationSnapshot currentDestination =
                     NavigationDestinationBridge.Current;
 
@@ -3705,20 +3676,10 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                // Retain the complete calculated route, but publish no cyan
-                // corridor until independent GPS observations confirm road entry.
-                // This also keeps a route calculated from a road >20 m away
-                // available while the floor arrow guides the approach.
                 ARRouteBridge.Clear();
-                Log.Info(RoutingLogTag,
-                    $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
-                    $"headingStable={headingAlignment.Value.IsStable}, roadEntry=PENDING.");
-
                 ClearRoadApproachCue();
-                routeStartupPublishedVersion = -1;
-                routeStartupFailureMessage = null;
+                lastHeadingAlignment = null;
                 pendingInitialRoute = null;
-
                 activeRoute =
                     route;
 
@@ -3733,9 +3694,6 @@ namespace RescuAR.App.Views.Camera
 
                 activeDestinationSafeZoneRadiusMeters =
                     destination.SafeZoneRadiusMeters;
-
-                activeMapToArYawDegrees =
-                    mapToArYawDegrees;
 
                 ResetArRouteVisualMode("new route requires independent road-entry confirmation");
                 _routeProgressTracker.SetRoute(route);
@@ -3785,6 +3743,66 @@ namespace RescuAR.App.Views.Camera
                 UpdateTurnGuidance();
 
                 StartRouteProgress();
+                Log.Info(RoutingLogTag, "Geographic route accepted; GPS progress continues while AR heading recovers.");
+
+                ArHeadingAlignmentService.HeadingAlignmentResult?
+                    headingAlignment = await headingWork;
+                if (!ReferenceEquals(activeRoute, route) ||
+                    !NavigationDestinationBridge.Current.IsAvailable ||
+                    NavigationDestinationBridge.Current.Coordinate != destination.Coordinate)
+                    return false;
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                double mapToArYawDegrees;
+
+                if (!headingAlignment.HasValue ||
+                    !headingAlignment.Value.IsAvailable ||
+                    !headingAlignment.Value.IsStable ||
+                    headingAlignment.Value.SessionGeneration !=
+                        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+                {
+                    pendingInitialRoute = route;
+                    pendingInitialOrigin = origin;
+                    pendingInitialDestination = destination.Coordinate;
+                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
+                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
+                    lastHeadingAlignment = null;
+                    routeStartupFailureMessage =
+                        "Align the phone for AR guidance — use the 2D map";
+                    ARRouteBridge.Clear();
+                    Log.Warn(HeadingLogTag,
+                        "Route calculated, but geographic heading is unverified; " +
+                        "refusing the yaw=0 cyan route fallback.");
+                    return true;
+                }
+
+                mapToArYawDegrees = headingAlignment.Value.MapToArYawDegrees;
+                LogDetailedDebug(HeadingLogTag,
+                    $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
+
+                // Retain the complete calculated route, but publish no cyan
+                // corridor until independent GPS observations confirm road entry.
+                // This also keeps a route calculated from a road >20 m away
+                // available while the floor arrow guides the approach.
+                ARRouteBridge.Clear();
+                Log.Info(RoutingLogTag,
+                    $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
+                    $"headingStable={headingAlignment.Value.IsStable}, roadEntry=PENDING.");
+
+                ClearRoadApproachCue();
+                routeStartupPublishedVersion = -1;
+                routeStartupFailureMessage = null;
+                pendingInitialRoute = null;
+
+                lock (routeProgressFusionSync)
+                {
+                    activeMapToArYawDegrees = mapToArYawDegrees;
+                    lastHeadingAlignment = headingAlignment;
+                    ResetArRouteVisualMode("heading ready; confirm road entry with fresh GPS");
+                    initialRoadApproachPending = true;
+                    roadEntryConfirmation.Reset();
+                }
 
                 var routeSnapshot = ARRouteBridge.Current;
                 LogDetailedDebug(
@@ -3949,6 +3967,61 @@ namespace RescuAR.App.Views.Camera
                 sameName;
         }
 
+        private bool HasCurrentRouteHeading() =>
+            _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+            lastHeadingAlignment is { IsAvailable: true, IsStable: true } heading &&
+            _headingAlignmentService.HasSessionCalibration &&
+            heading.SessionGeneration == ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+
+        private Task<RoadGraph?> GetArrivalGraphSafelyAsync() =>
+            arrivalGraphLoadTask ??= LoadArrivalGraphSafelyAsync();
+
+        private async Task<RoadGraph?> LoadArrivalGraphSafelyAsync()
+        {
+            try
+            {
+                return arrivalRoadGraph = await NavigationDataBootstrap.GetRoadGraphAsync();
+            }
+            catch (Exception exception)
+            {
+                AndroidLog.Error(RoutingLogTag,
+                    "Offline graph unavailable; online routing can continue, arrival/access checks are held: " +
+                    DiagnosticPrivacyPolicy.FormatException(exception));
+                return null;
+            }
+        }
+
+        private async Task RecoverRouteHeadingAsync(RouteResult route, LocationReading reading)
+        {
+            try
+            {
+                var heading = await _headingAlignmentService.CaptureAsync(reading.Coordinate,
+                    reading.AltitudeMeters, routeProgressCancellation?.Token ?? CancellationToken.None);
+                if (!pageIsVisible || safeZoneConfirmed || !ReferenceEquals(route, activeRoute) ||
+                    !heading.HasValue || !heading.Value.IsAvailable || !heading.Value.IsStable ||
+                    _arCoreService.IsSessionPaused ||
+                    heading.Value.SessionGeneration != ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+                    return;
+                lock (routeProgressFusionSync)
+                {
+                    lastHeadingAlignment = heading;
+                    activeMapToArYawDegrees = heading.Value.MapToArYawDegrees;
+                    pendingInitialRoute = null;
+                    routeStartupFailureMessage = null;
+                    ResetArRouteVisualMode("AR heading recovered; require fresh road-entry observations");
+                    initialRoadApproachPending = true;
+                    roadEntryConfirmation.Reset();
+                }
+                AndroidLog.Info(HeadingLogTag, "AR heading recovered without recalculating the geographic route.");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                AndroidLog.Warn(HeadingLogTag, "AR heading recovery deferred: " +
+                    DiagnosticPrivacyPolicy.FormatException(exception));
+            }
+        }
+
         private void StartRouteRequestIfPossible()
         {
             if (!pageIsVisible)
@@ -3956,8 +4029,13 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            _ =
-                TryRequestNavigationRouteAsync();
+            if (activeRoute is not null && NavigationDestinationBridge.Current.IsAvailable &&
+                activeDestinationCoordinate == NavigationDestinationBridge.Current.Coordinate)
+            {
+                if (routeProgressTask is null && !safeZoneConfirmed) StartRouteProgress();
+                return;
+            }
+            _ = TryRequestNavigationRouteAsync();
         }
 
         private void CancelRouteRequest(
@@ -4481,9 +4559,7 @@ namespace RescuAR.App.Views.Camera
                         continue;
                     }
 
-                    if (!pageIsVisible ||
-                        !_arCoreService.IsInitialized ||
-                        _arCoreService.IsSessionPaused)
+                    if (!pageIsVisible)
                     {
                         await Task.Delay(
                             RouteProgressPollInterval,
@@ -4495,8 +4571,8 @@ namespace RescuAR.App.Views.Camera
                     RouteResult? route =
                         activeRoute;
 
-                    RoadGraph arrivalGraph = arrivalRoadGraph ??=
-                        await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                    _ = GetArrivalGraphSafelyAsync();
+                    RoadGraph? arrivalGraph = arrivalRoadGraph;
 
                     if (route is null)
                     {
@@ -4516,14 +4592,15 @@ namespace RescuAR.App.Views.Camera
                                 arrivalReading.AccuracyMeters,
                                 double.PositiveInfinity,
                                 arrivalReading.Timestamp,
-                                majorRoadBarrier: arrivalGraph.AccessCrossesMajorRoad(
+                                majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                     arrivalReading.Coordinate,
                                     activeDestinationCoordinate.Value));
                             HandleSafeZoneDecision(arrival);
                             lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
                             {
-                                BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
+                                if (arrivalGraph is not null)
+                                    BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
                                 RetryRouteFromRoadApproachIfReady(cancellationToken);
                             }
                             else ClearRoadApproachCue();
@@ -4855,9 +4932,9 @@ namespace RescuAR.App.Views.Camera
                                         safeZoneEvaluationRemainingMeters,
                                         reading.Timestamp,
                                         majorRoadBarrier: !developerArrivalTest &&
-                                            arrivalGraph.AccessCrossesMajorRoad(
+                                            (arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                                 reading.Coordinate,
-                                                safeZoneEvaluationCoordinate));
+                                                safeZoneEvaluationCoordinate)));
 
                                 safeZoneDecision =
                                     decision;
@@ -5814,17 +5891,18 @@ namespace RescuAR.App.Views.Camera
                 {
                     LocationReading? rerouteReading;
                     lock (routeProgressFusionSync) rerouteReading = latestRouteStartupReading;
-                    RoadGraph rerouteGraph = arrivalRoadGraph ??=
-                        await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
                     replacementRoute =
-                        await _mldArIntegrationService.RequestRouteWithRoadApproachAsync(
+                        await _mldArIntegrationService.RequestRouteWithDeferredRoadApproachAsync(
                             origin,
                             destination,
-                            rerouteReading is not null &&
-                                rerouteReading.Coordinate.DistanceTo(origin) <= 5 &&
-                                IsCurrentRouteStartupLocationAcceptable(rerouteReading)
-                                    ? FindRoadAccess(rerouteReading, rerouteGraph, destination)
-                                    : null,
+                            async token =>
+                            {
+                                if (rerouteReading is null || rerouteReading.Coordinate.DistanceTo(origin) > 5 ||
+                                    !IsCurrentRouteStartupLocationAcceptable(rerouteReading)) return null;
+                                RoadGraph? accessGraph = await GetArrivalGraphSafelyAsync().WaitAsync(token);
+                                return accessGraph is null ? null : await Task.Run(
+                                    () => FindRoadAccess(rerouteReading, accessGraph, destination, token), token);
+                            },
                             cancellationToken);
                 }
 
@@ -5871,9 +5949,14 @@ namespace RescuAR.App.Views.Camera
                 // New geometry is held until subsequent fresh road-entry fixes
                 // and the normal AR placement checks establish its alignment.
                 bool routeAccepted = false;
-                RoadGraph replacementGraph = arrivalRoadGraph ??=
-                    await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                RoadGraph? replacementGraph = await GetArrivalGraphSafelyAsync().WaitAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (replacementGraph is null)
+                {
+                    lastRerouteResult = "ReplacementAccessUnverified";
+                    Log.Warn(RerouteLogTag, "Replacement access cannot be checked without barrier data; geographic route retained.");
+                    return false;
+                }
                 if (replacementGraph.AccessCrossesMajorRoad(origin,
                     replacementRoute.Points[0].Coordinate))
                 {
@@ -9086,7 +9169,8 @@ namespace RescuAR.App.Views.Camera
             LocationReading reading,
             RouteProgressTracker.RouteProgressUpdate update)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (!HasCurrentRouteHeading() ||
+                arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
 
 #if ANDROID
             if (!update.IsAccepted ||
@@ -9823,7 +9907,8 @@ namespace RescuAR.App.Views.Camera
             RouteProgressTracker.RouteProgressUpdate update,
             string progressSource = "GPS")
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+            if (!HasCurrentRouteHeading() ||
+                arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
             {
                 ARRouteBridge.Clear();
                 return false;
@@ -10517,6 +10602,17 @@ namespace RescuAR.App.Views.Camera
             EventArgs e)
         {
 #if ANDROID
+            if (activeRoute is { } headingRoute && !routeRequestInProgress && pageIsVisible &&
+                !safeZoneConfirmed && !HasCurrentRouteHeading() &&
+                _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+                currentCameraModuleView == CameraModuleViewMode.ArCamera &&
+                IsRoadApproachFixUsable(latestRouteStartupReading) &&
+                routeHeadingRecoveryTask is not { IsCompleted: false } &&
+                DateTimeOffset.UtcNow >= nextHeadingRetryAt)
+            {
+                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(5);
+                routeHeadingRecoveryTask = RecoverRouteHeadingAsync(headingRoute, latestRouteStartupReading!);
+            }
             if ((routeStartupGpsRetryPending || pendingInitialRoute is not null) &&
                 activeRoute is null && !routeRequestInProgress && pageIsVisible &&
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
