@@ -22,26 +22,73 @@ source(file.path("R", "exposure_model.R"))
 # Example: https://rescuar-admin-production.up.railway.app
 #* @filter cors
 function(req, res) {
-  configured <- Sys.getenv("PREP_ALLOWED_ORIGINS", "*")
-  allowed <- trimws(strsplit(configured, ",", fixed = TRUE)[[1]])
-  origin <- req$HTTP_ORIGIN %||% "*"
-
-  if ("*" %in% allowed) {
-    res$setHeader("Access-Control-Allow-Origin", "*")
-  } else if (origin %in% allowed) {
-    res$setHeader("Access-Control-Allow-Origin", origin)
-    res$setHeader("Vary", "Origin")
+  
+  raw_allowed <- Sys.getenv(
+    "PREP_ALLOWED_ORIGINS",
+    "http://localhost:5173"
+  )
+  
+  allowed_origins <- trimws(
+    strsplit(raw_allowed, ",", fixed = TRUE)[[1]]
+  )
+  
+  # Remove accidental quotes and trailing slashes.
+  allowed_origins <- gsub('^["\']|["\']$', "", allowed_origins)
+  allowed_origins <- sub("/+$", "", allowed_origins)
+  
+  request_origin <- req$HTTP_ORIGIN
+  
+  if (is.null(request_origin)) {
+    request_origin <- ""
   }
-
-  res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res$setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-  res$setHeader("Access-Control-Max-Age", "86400")
-
+  
+  request_origin <- trimws(request_origin)
+  request_origin <- sub("/+$", "", request_origin)
+  
+  # Temporary diagnostic output visible in Railway logs.
+  cat(
+    "[CORS] request_origin =",
+    request_origin,
+    "| allowed =",
+    paste(allowed_origins, collapse = " ; "),
+    "\n"
+  )
+  
+  if (
+    nzchar(request_origin) &&
+    request_origin %in% allowed_origins
+  ) {
+    res$setHeader(
+      "Access-Control-Allow-Origin",
+      request_origin
+    )
+    
+    res$setHeader(
+      "Vary",
+      "Origin"
+    )
+  }
+  
+  res$setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS"
+  )
+  
+  res$setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  )
+  
+  res$setHeader(
+    "Access-Control-Max-Age",
+    "86400"
+  )
+  
   if (identical(req$REQUEST_METHOD, "OPTIONS")) {
     res$status <- 204
-    return("")
+    return(list())
   }
-
+  
   plumber::forward()
 }
 
