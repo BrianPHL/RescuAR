@@ -24,8 +24,19 @@ function numberFrom(...values) {
 }
 
 function formatNumber(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return '—';
+  }
+
   const number = Number(value);
-  return Number.isFinite(number) ? Math.round(number).toLocaleString('en-PH') : '—';
+
+  return Number.isFinite(number)
+    ? Math.round(number).toLocaleString('en-PH')
+    : '—';
 }
 
 function formatObservedAt(value) {
@@ -173,18 +184,19 @@ export default function HazardExposure() {
   );
 
   const summary = exposure?.summary || exposure?.city_summary || exposure?.exposure || exposure || {};
-  const affectedPopulation = numberFrom(
-    summary.estimatedAffectedPopulation,
-    summary.estimated_affected_population,
-    summary.population_exposed,
-    summary.total_population_affected
-  );
-  const affectedChildren = numberFrom(
-    summary.estimatedAffectedChildren,
-    summary.estimated_affected_children,
-    summary.children_exposed,
-    summary.total_children_affected
-  );
+const affectedPopulation = numberFrom(
+  summary.estimated_affected_population,
+  summary.estimatedAffectedPopulation,
+  summary.population_exposed,
+  summary.total_population_affected
+);
+
+const affectedChildren = numberFrom(
+  summary.estimated_affected_children,
+  summary.estimatedAffectedChildren,
+  summary.children_exposed,
+  summary.total_children_affected
+);
   const facilities = numberFrom(
     summary.facilitiesInHazardArea,
     summary.facilities_exposed,

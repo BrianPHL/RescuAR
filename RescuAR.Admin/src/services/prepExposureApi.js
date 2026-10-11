@@ -8,7 +8,11 @@ export const isPrepExposureApiConfigured = () =>
   Boolean(PREP_EXPOSURE_API_URL);
 
 function toFiniteNumber(value) {
-  if (value === null || value === undefined || value === "") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
     return null;
   }
 
@@ -42,17 +46,19 @@ function normalizeSummary(summary = {}, barangays = [], facilities = []) {
     minimumDepthThreshold:
       summary.minimum_depth_threshold ?? null,
 
-    estimatedAffectedPopulation: toFiniteNumber(
-      summary.estimated_affected_population
-    ),
+    estimatedAffectedPopulation:
+      toFiniteNumber(
+        summary.estimated_affected_population
+      ),
 
     estimatedAffectedPopulationPct: toFiniteNumber(
       summary.estimated_affected_population_pct
     ),
 
-    estimatedAffectedChildren: toFiniteNumber(
-      summary.estimated_affected_children
-    ),
+    estimatedAffectedChildren:
+      toFiniteNumber(
+        summary.estimated_affected_children
+      ),
 
     estimatedAffectedChildrenPct: toFiniteNumber(
       summary.estimated_affected_children_pct
