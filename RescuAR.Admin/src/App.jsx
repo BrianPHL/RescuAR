@@ -8,7 +8,7 @@ import Dashboard from './components/Dashboard';
 // Monitoring Components
 import MonitoringStations from './components/MonitoringStations';
 import RiverLevel from './components/RiverLevel';
-import InundationPrediction from './components/InundationPrediction';
+import HazardExposure from './components/HazardExposure';
 
 // Community & Reports Components
 import ReportsModeration from './components/ReportsModeration';
@@ -27,8 +27,7 @@ import Documentation from './components/Documentation';
 // Modals
 import {
   AdvisoryModal,
-  NotifyModal,
-  PredictModal
+  NotifyModal
 } from './components/Modals';
 
 export default function App({ session }) {
@@ -43,7 +42,6 @@ export default function App({ session }) {
   // Modal states
   const [isAdvisoryOpen, setIsAdvisoryOpen] = useState(false);
   const [isNotifyOpen, setIsNotifyOpen] = useState(false);
-  const [isPredictOpen, setIsPredictOpen] = useState(false);
   const [activeStationData, setActiveStationData] = useState(null);
 
   const handleActionClick = (actionType, data = null) => {
@@ -53,7 +51,7 @@ export default function App({ session }) {
     } else if (actionType === 'notify') {
       setIsNotifyOpen(true);
     } else if (actionType === 'predict') {
-      setIsPredictOpen(true);
+      setActiveView('monitoring-hazard-exposure');
     }
   };
 
@@ -66,10 +64,10 @@ export default function App({ session }) {
         return <MonitoringStations />;
       case 'monitoring-river-level':
         return <RiverLevel onActionClick={handleActionClick} />;
-      case 'monitoring-inundation':
-        return <InundationPrediction />;
+      case 'monitoring-hazard-exposure':
+        return <HazardExposure />;
       case 'community-reports-moderation':
-        return <ReportsModeration onAccessDenied={onAccessDenied} />;
+        return <ReportsModeration />;
       case 'community-residents':
         return <div style={{ padding: '20px' }}>Residents Directory View (Placeholder)</div>;
       case 'community-sms-parser':
@@ -120,10 +118,6 @@ export default function App({ session }) {
       <NotifyModal
         isOpen={isNotifyOpen}
         onClose={() => setIsNotifyOpen(false)}
-      />
-      <PredictModal
-        isOpen={isPredictOpen}
-        onClose={() => setIsPredictOpen(false)}
       />
     </div>
   );

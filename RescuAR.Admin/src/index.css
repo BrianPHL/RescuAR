@@ -3682,9 +3682,10 @@ textarea {
   animation: spin 0.8s linear infinite;
 }
 /* Telemetry freshness states -------------------------------------------------
-   Fresh: <= 10 minutes old (within two scraper cycles)
-   Stale: > 10 and <= 30 minutes old
-   Unavailable: missing/invalid timestamp or > 30 minutes old
+   Fresh: <= 15 minutes old
+   Delayed: > 15 and <= 30 minutes old
+   Stale: > 30 and <= 60 minutes old
+   Unavailable: missing/invalid timestamp or > 60 minutes old
 */
 .telemetry-state-badge {
   display: inline-flex;
@@ -3710,10 +3711,16 @@ textarea {
   border-color: #bbf7d0;
 }
 
-.telemetry-state-badge.stale {
+.telemetry-state-badge.delayed {
   color: #a16207;
   background: #fefce8;
   border-color: #fde68a;
+}
+
+.telemetry-state-badge.stale {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .telemetry-state-badge.unavailable {
@@ -3735,8 +3742,12 @@ textarea {
   animation: pulse-green 1.8s infinite;
 }
 
-.telemetry-state-dot.stale {
+.telemetry-state-dot.delayed {
   background: #ca8a04;
+}
+
+.telemetry-state-dot.stale {
+  background: #ea580c;
 }
 
 .telemetry-state-dot.unavailable {
