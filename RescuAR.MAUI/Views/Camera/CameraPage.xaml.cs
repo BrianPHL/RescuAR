@@ -98,6 +98,8 @@ namespace RescuAR.App.Views.Camera
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private RoadGraph? arrivalRoadGraph;
+        private string? lastArrivalHoldReason;
+        private DateTimeOffset lastArrivalHoldLogAt;
         private Task<RoadGraph?>? arrivalGraphLoadTask;
         private Task? routeHeadingRecoveryTask;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
@@ -1786,6 +1788,7 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 #endif
+            if (TryShowArrivalStatus()) return;
             if (TryShowRoadApproachCue()) return;
             if (TryShowNavigationFallback()) return;
             routeLocatorIcon.IsVisible = true;
@@ -7423,7 +7426,32 @@ namespace RescuAR.App.Views.Camera
         private void HandleSafeZoneDecision(
             SafeZoneConfirmationService.SafeZoneDecision decision)
         {
+            // Both routed and unrouted trips publish the same arrival state.
+            // Otherwise an unrouted trip evaluates proximity but its UI keeps
+            // displaying the initial unavailable decision.
+            bool arrivalStatusChanged = !lastSafeZoneDecision.IsAvailable ||
+                lastSafeZoneDecision.IsCandidate != decision.IsCandidate ||
+                lastSafeZoneDecision.ConfirmationCount != decision.ConfirmationCount ||
+                lastSafeZoneDecision.Reason != decision.Reason ||
+                Math.Round(lastSafeZoneDecision.DistanceToDestinationMeters) !=
+                    Math.Round(decision.DistanceToDestinationMeters);
+            lastSafeZoneDecision = decision;
+            if (arrivalStatusChanged && !decision.IsConfirmed)
+                Dispatcher.Dispatch(RefreshCameraModuleDynamicUi);
 #if ANDROID
+            if (!decision.IsCandidate && decision.IsAvailable &&
+                decision.DistanceToDestinationMeters <= SafeZoneConfirmationService.CandidateResetDistanceMeters &&
+                (lastArrivalHoldReason != decision.Reason ||
+                 DateTimeOffset.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
+            {
+                lastArrivalHoldReason = decision.Reason;
+                lastArrivalHoldLogAt = DateTimeOffset.UtcNow;
+                Log.Info(SafeZoneLogTag,
+                    $"ARRIVAL HELD: distance={decision.DistanceToDestinationMeters:F1}m, " +
+                    $"radius={decision.ArrivalRadiusMeters:F1}m, accuracy={decision.AccuracyMeters?.ToString("F1") ?? "unknown"}m, " +
+                    $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - decision.ObservedAt).TotalSeconds):F1}s, " +
+                    $"accessDataReady={arrivalRoadGraph is not null}, reason='{decision.Reason}'.");
+            }
             if (decision.IsCandidate &&
                 decision.ConfirmationCount !=
                     lastLoggedSafeZoneConfirmationCount)
@@ -7559,6 +7587,8 @@ namespace RescuAR.App.Views.Camera
                     0;
 
             _safeZoneConfirmationService.Reset();
+            lastArrivalHoldReason = null;
+            lastArrivalHoldLogAt = default;
 
             lastSafeZoneDecision =
                 SafeZoneConfirmationService.SafeZoneDecision.Unavailable;

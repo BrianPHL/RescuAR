@@ -252,6 +252,9 @@ Check(midDestination is not null && midDestination.Points[^1].Coordinate.Distanc
 var sameSegment = await sparseService.FindRouteAsync(C(100), C(200));
 Check(sameSegment is not null && Math.Abs(sameSegment.TotalDistanceMeters - 100) < 1,
     "two partial endpoints on the same segment do not detour through its vertices");
+Check(await sparseService.FindRouteAsync(C(0),C(200,80)) is null &&
+    sparseService.FindRoadApproachTarget(C(0),C(200,80)) is { ConnectsToDestination: false, DestinationComponentCount: 0 },
+    "a custom pin without mapped access inside fifty metres cannot turn a nearest-road arrow into an evacuation route");
 var deadEndService = new AStarRoutingService(new RoadGraphBuilder().Build(new[] {
     Way("residential", C(0), C(50), new Dictionary<string,string> { ["oneway:foot"]="yes" }),
     new GeoJsonRoadFeature { Highway="residential", Coordinates=new[] { C(-100,10),C(0,10),C(100,10) } },
@@ -385,6 +388,10 @@ var qcLocal = await regionalService.FindRouteAsync(new(14.71374502,121.01964361)
 var marikinaLocal = await regionalService.FindRouteAsync(new(14.644776,121.094967),new(14.660172,121.118353));
 Check(qcLocal is not null && qcLocal.Points.Count > 1, "QC tester request routes on the expanded offline network");
 Check(marikinaLocal is not null && marikinaLocal.Points.Count > 1, "Marikina request routes on the expanded offline network");
+var qc2Street = actualRoads.First(road => road.OsmId == "13845789");
+var qc2Local = await regionalService.FindRouteAsync(qc2Street.Coordinates[0],qc2Street.Coordinates[^1]);
+Check(qc2Local is not null && qc2Local.Points.Count > 1,
+    "QC_TEST2 Hilario Moncado Street provides an actual local AStar route");
 Check(await regionalService.FindRouteAsync(new(14.644776,121.094967), new(14.647648,121.103974)) is not null,
     "embedded Concepcion Elementary destination can match the nearby road segment");
 string tipPointsResource = NavigationDataBootstrap.GeoJsonResourcePrefix + "QC_TIP_POINTS.GEOJSON";

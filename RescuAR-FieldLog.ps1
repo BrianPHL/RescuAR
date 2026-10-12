@@ -31,6 +31,10 @@ param(
     [ValidateSet("Auto", "VisualStudio", "ADB", "PlayInternal", "Sideload", "Other")]
     [string]$InstallMethod = "Auto",
 
+    # Include only RescuAR and ADB-shell markers to avoid vendor system-log
+    # floods. All-process capture remains available by omitting this switch.
+    [switch]$AppOnly,
+
     [switch]$DeleteAfterPull
 )
 
@@ -168,6 +172,7 @@ function Get-InstalledPackageEvidence {
 
     return [PSCustomObject]@{
         PackageName = $PackageName
+        UserId = $(if ($packageDump -match '(?m)^\s*(?:userId|appId)=(\d+)') { $Matches[1] } else { "" })
         VersionName = $versionName
         VersionCode = $versionCode
         Installer = $installer
@@ -249,6 +254,19 @@ function Export-InstalledArtifactManifest {
                 )
 
                 $nativeSha256 = "absent"
+                $buildProfile = @{}
+                $profileEntry = $archive.GetEntry('assets/rescuar-build-profile.txt')
+                if ($null -ne $profileEntry) {
+                    $profileReader = [IO.StreamReader]::new($profileEntry.Open())
+                    try {
+                        foreach ($profileLine in ($profileReader.ReadToEnd() -split "`r?`n")) {
+                            if ($profileLine -match '^([^=]+)=(.*)$') {
+                                $buildProfile[$Matches[1].Trim()] = $Matches[2].Trim()
+                            }
+                        }
+                    }
+                    finally { $profileReader.Dispose() }
+                }
                 if ($nativeEntries.Count -eq 1) {
                     $entryStream = $nativeEntries[0].Open()
                     try {
@@ -271,6 +289,7 @@ function Export-InstalledArtifactManifest {
                     ApkSha256 = $apkSha256
                     NativeBridgeEntryCount = $nativeEntries.Count
                     NativeBridgeSha256 = $nativeSha256
+                    BuildProfile = $buildProfile
                 }
             }
             finally {
@@ -304,6 +323,59 @@ function Export-InstalledArtifactManifest {
     }
 
     return $manifestPath
+}
+
+function Get-RotationThresholdKB {
+    param([int64]$RequestedKB, [string]$LimitsText)
+    if ($LimitsText -match '(?m)^Max file size\s+(\d+)\s+') {
+        $limitKB = [int64][Math]::Floor([double]$Matches[1] / 1024.0)
+        $RequestedKB = [Math]::Min($RequestedKB, $limitKB - 16L)
+    }
+    if ($RequestedKB -lt 1) {
+        throw "The inherited file-size limit leaves no safe Logcat rotation space."
+    }
+    return $RequestedKB
+}
+
+function Get-FieldCaptureQuality {
+    param([string[]]$Paths, [string]$Session, [bool]$LoggerAliveBeforeStop)
+    $startMarker = "RESCUAR_FIELDLOG_VERIFY_$Session"
+    $endMarker = "RESCUAR_FIELDLOG_COMPLETE_$Session"
+    $startFound = $false
+    $endFound = $false
+    $appEvents = 0L
+    $navigationEvents = 0L
+    $firstTime = $null
+    $lastTime = $null
+    foreach ($path in $Paths) {
+        foreach ($line in [IO.File]::ReadLines($path)) {
+            if ($line -match '\s[VDIWEF]\s+RescuAR-FieldLog\s*:') {
+                if ($line.Contains($startMarker)) { $startFound = $true }
+                if ($line.Contains($endMarker)) { $endFound = $true }
+            }
+            if ($line -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)') {
+                $timestamp = $Matches[1]
+                if ($null -eq $firstTime -or $timestamp -lt $firstTime) { $firstTime = $timestamp }
+                if ($null -eq $lastTime -or $timestamp -gt $lastTime) { $lastTime = $timestamp }
+            }
+            if ($line -match '\s[VDIWEF]\s+RescuAR-(?!FieldLog\b)[^:]+:') { $appEvents++ }
+            if ($line -match '\s[VDIWEF]\s+RescuAR-(?:AStar|HybridRouting|MLD|Routing|RouteProgress|SafeZone|GPS)\s*:') {
+                $navigationEvents++
+            }
+        }
+    }
+    return [PSCustomObject]@{
+        Session = $Session
+        LoggerAliveBeforeStop = $LoggerAliveBeforeStop
+        StartMarkerFound = $startFound
+        EndMarkerFound = $endFound
+        FirstLogTime = $firstTime
+        LastLogTime = $lastTime
+        ApplicationEvents = $appEvents
+        NavigationEvents = $navigationEvents
+        CaptureComplete = ($LoggerAliveBeforeStop -and $startFound -and $endFound)
+        HasNavigationEvidence = ($navigationEvents -gt 0)
+    }
 }
 
 function Read-RemoteFile {
@@ -417,6 +489,9 @@ function Get-CaptureStatus {
             Files = 0
         }
     }
+    if ($session -notmatch '^\d{8}_\d{6}$') {
+        throw "Unexpected on-device capture session name; capture paths were not used."
+    }
 
     $sessionDir = "$RemoteRoot/$session"
 
@@ -452,7 +527,8 @@ function Get-CaptureStatus {
 function Test-NativeLogcatRotationSupport {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Serial
+        [string]$Serial,
+        [string]$UidFilter = ""
     )
 
     $probe = "$RemoteRoot/.rotation-probe"
@@ -461,7 +537,8 @@ function Test-NativeLogcatRotationSupport {
 
     # A real invocation is more reliable than parsing vendor-specific --help
     # text. -d makes it exit after dumping the current main buffer.
-    & adb -s $Serial shell "logcat -d -b main -v threadtime -v year -f '$probe' -r 64 -n 2 '*:I'" | Out-Null
+    $uidArgument = if ($UidFilter) { "--uid '$UidFilter'" } else { "" }
+    & adb -s $Serial shell "logcat -d -b main -v threadtime -v year -f '$probe' -r 64 -n 2 $uidArgument '*:I'" | Out-Null
     $probeExit = $LASTEXITCODE
 
     $probeExists = Invoke-AdbShellText `
@@ -525,9 +602,32 @@ if ($Start) {
     if (-not $nohupPath) {
         throw "This Android build does not expose 'nohup' to the ADB shell, so detached capture cannot be guaranteed after USB disconnection."
     }
+    $setsidPath = Invoke-AdbShellText -Serial $serial -Command "command -v setsid"
+    $detachCommand = if ($setsidPath) { "nohup setsid sh" } else { "nohup sh" }
+    if (-not $setsidPath) {
+        Write-Warning "setsid is unavailable; capture uses nohup only. Check logger status after reconnecting USB."
+    }
 
-    Write-Host "Checking native Logcat file rotation support..."
-    Test-NativeLogcatRotationSupport -Serial $serial
+    $installedPackage = Get-InstalledPackageEvidence -Serial $serial
+    if ($installedPackage.PackagePaths.Count -eq 0) {
+        throw "$PackageName is not installed; field evidence cannot be tied to an application artifact."
+    }
+    $uidFilter = ""
+    if ($AppOnly) {
+        if ($installedPackage.UserId -notmatch '^\d+$') {
+            throw "The RescuAR UID is unavailable; retry without -AppOnly."
+        }
+        $androidUser = Invoke-AdbShellText -Serial $serial -Command "am get-current-user"
+        $shellUid = Invoke-AdbShellText -Serial $serial -Command "id -u"
+        if ($androidUser -notmatch '^\d+$' -or $shellUid -notmatch '^\d+$') {
+            throw "The active Android user/shell UID is unavailable; retry without -AppOnly."
+        }
+        $appUid = [int64]$installedPackage.UserId
+        if ($appUid -lt 100000) { $appUid += [int64]$androidUser * 100000L }
+        $uidFilter = "$appUid,$shellUid"
+    }
+    Write-Host "Checking native Logcat file rotation/filter support..."
+    Test-NativeLogcatRotationSupport -Serial $serial -UidFilter $uidFilter
 
     $session = Get-Date -Format "yyyyMMdd_HHmmss"
     $remoteSessionDir = "$RemoteRoot/$session"
@@ -541,6 +641,8 @@ if ($Start) {
     $segmentCeilingKB = [int64]$RotateMB * 1024L
     $rotationSafetyKB = 16L
     $rotateKB = $segmentCeilingKB - $rotationSafetyKB
+    $loggerLimits = Invoke-AdbShellText -Serial $serial -Command "cat /proc/self/limits"
+    $rotateKB = Get-RotationThresholdKB -RequestedKB $rotateKB -LimitsText $loggerLimits
     if ($rotateKB -lt 1) {
         throw "Calculated Logcat rotation size is invalid."
     }
@@ -569,11 +671,6 @@ if ($Start) {
     $androidVersion = Get-AndroidProperty -Serial $serial -Property "ro.build.version.release"
     $sdkVersion = Get-AndroidProperty -Serial $serial -Property "ro.build.version.sdk"
     $supportedAbis = Get-AndroidProperty -Serial $serial -Property "ro.product.cpu.abilist"
-    $installedPackage = Get-InstalledPackageEvidence -Serial $serial
-
-    if ($installedPackage.PackagePaths.Count -eq 0) {
-        throw "$PackageName is not installed; field evidence cannot be tied to an application artifact."
-    }
 
     $resolvedInstallMethod = Resolve-InstallMethod `
         -RequestedMethod $InstallMethod `
@@ -598,6 +695,8 @@ if ($Start) {
     & adb -s $serial shell "echo 'RotateCount=$RotateCount' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'ApproxRetentionMB=$approxRetentionMB' >> '$remoteMeta'" | Out-Null
     & adb -s $serial shell "echo 'CaptureMode=Native_Logcat_File_Rotation' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'UidFilter=$uidFilter' >> '$remoteMeta'" | Out-Null
+    & adb -s $serial shell "echo 'DetachMethod=$detachCommand' >> '$remoteMeta'" | Out-Null
 
     # The wrapper immediately execs Logcat. Because exec replaces the shell,
     # the PID written here remains the actual long-lived Logcat PID. This avoids
@@ -611,11 +710,17 @@ STATUS_FILE="$3"
 ROTATE_KB="$4"
 ROTATE_COUNT="$5"
 PRIORITY="$6"
+UID_FILTER="$7"
 
 BASE="$SESSION_DIR/logcat"
 
 echo "$$" > "$PID_FILE"
 echo "STARTING" > "$STATUS_FILE"
+cat "/proc/$$/limits" > "$SESSION_DIR/logger-limits.txt"
+set --
+if [ -n "$UID_FILTER" ]; then
+    set -- --uid "$UID_FILTER"
+fi
 
 # Mark RUNNING immediately before exec. The host performs an independent PID
 # check and writes a Logcat marker afterward, so a failed exec is still caught.
@@ -629,6 +734,7 @@ exec logcat \
     -r "$ROTATE_KB" \
     -n "$ROTATE_COUNT" \
     -T 1 \
+    "$@" \
     "*:$PRIORITY"
 '@
 
@@ -670,13 +776,14 @@ exec logcat \
     Write-Host "Install method: $resolvedInstallMethod"
 
     $launchCommand =
-        "nohup sh '$RemoteWrapper' " +
+        "$detachCommand '$RemoteWrapper' " +
         "'$remoteSessionDir' " +
         "'$RemoteLogcatPidFile' " +
         "'$RemoteStatusFile' " +
         "'$rotateKB' " +
         "'$RotateCount' " +
         "'$MinimumPriority' " +
+        "'$uidFilter' " +
         "> '$RemoteLauncherLog' 2>&1 < /dev/null &"
 
     & adb -s $serial shell $launchCommand | Out-Null
@@ -757,6 +864,9 @@ if ($Collect) {
     if (-not $session) {
         throw "No active RescuAR field-log session was found on the phone."
     }
+    if ($session -notmatch '^\d{8}_\d{6}$') {
+        throw "Unexpected on-device capture session name; collection paths were not used."
+    }
 
     $remoteSessionDir = "$RemoteRoot/$session"
     $captureBeforeStop = Get-CaptureStatus -Serial $serial
@@ -767,6 +877,15 @@ if ($Collect) {
     Write-Host "Logcat alive before stop: $($captureBeforeStop.LogcatAlive)"
     Write-Host "Captured before stop: $preStopMB MB in $($captureBeforeStop.Files) file(s)"
 
+    $launcherOutput = Read-RemoteFile -Serial $serial -Path $RemoteLauncherLog
+    $loggerStatus = Read-RemoteFile -Serial $serial -Path $RemoteStatusFile
+    $completionMarker = "RESCUAR_FIELDLOG_COMPLETE_$session"
+    $completionMeta = Read-RemoteFile -Serial $serial -Path "$remoteSessionDir/session.txt"
+    $completionPriority = if ($completionMeta -match '(?m)^MinimumPriority=([VDIWEF])') {
+        $Matches[1].ToLowerInvariant()
+    } else { "i" }
+    & adb -s $serial shell "log -p $completionPriority -t RescuAR-FieldLog '$completionMarker'" | Out-Null
+    Start-Sleep -Seconds 2
     Stop-RemoteCapture -Serial $serial
     & adb -s $serial shell "sync" | Out-Null
     Start-Sleep -Milliseconds 750
@@ -785,6 +904,8 @@ if ($Collect) {
     }
 
     New-Item -ItemType Directory -Path $localSessionDir -Force | Out-Null
+    $launcherOutput | Set-Content -LiteralPath (Join-Path $localSessionDir "launcher.log") -Encoding UTF8
+    $loggerStatus | Set-Content -LiteralPath (Join-Path $localSessionDir "logger-status.txt") -Encoding UTF8
 
     Write-Host "Pulling field logs..."
     & adb -s $serial pull "$remoteSessionDir/." "$localSessionDir"
@@ -865,6 +986,12 @@ if ($Collect) {
     }
 
     $totalMB = [Math]::Round([double]$totalBytes / 1MB, 2)
+    $quality = Get-FieldCaptureQuality -Paths @($logFiles.FullName) -Session $session `
+        -LoggerAliveBeforeStop $captureBeforeStop.LogcatAlive
+    $quality | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $localSessionDir "CaptureQuality.json") -Encoding UTF8
+    if (-not $quality.CaptureComplete -or -not $quality.HasNavigationEvidence) {
+        Write-Warning "Field evidence is incomplete: loggerAlive=$($quality.LoggerAliveBeforeStop), startMarker=$($quality.StartMarkerFound), endMarker=$($quality.EndMarkerFound), navigationEvents=$($quality.NavigationEvents). Last captured event: $($quality.LastLogTime)."
+    }
 
     $manufacturer = Get-AndroidProperty -Serial $serial -Property "ro.product.manufacturer"
     $model = Get-AndroidProperty -Serial $serial -Property "ro.product.model"
@@ -981,6 +1108,12 @@ Rotation Count   : $capturedRotateCount
 Log Files        : $($logFiles.Count)
 Log Data         : $totalMB MB
 Largest Segment  : $largestSegmentBytes bytes
+Logger Alive     : $($quality.LoggerAliveBeforeStop)
+Capture Complete : $($quality.CaptureComplete)
+First Log Event  : $($quality.FirstLogTime)
+Last Log Event   : $($quality.LastLogTime)
+App Events       : $($quality.ApplicationEvents)
+Navigation Events: $($quality.NavigationEvents)
 Segment Check    : $(if ($oversizedSegments.Count -eq 0) { "PASS" } else { "WARNING - $($oversizedSegments.Count) oversized segment(s)" })
 Capture Location : $RemoteRoot
 
@@ -990,7 +1123,9 @@ $(adb version)
 "@ | Set-Content -Path $infoFile -Encoding UTF8
 
     Write-Host ""
-    Write-Host "COLLECTION VERIFIED."
+    Write-Host $(if ($quality.CaptureComplete -and $quality.HasNavigationEvidence) {
+        "COLLECTION VERIFIED: complete capture with navigation events."
+    } else { "COLLECTION SAVED: incomplete field evidence; see CaptureQuality.json and launcher.log." })
     Write-Host "Files: $($logFiles.Count)"
     Write-Host "Log data: $totalMB MB"
     Write-Host "Saved to: $localSessionDir"
@@ -999,7 +1134,7 @@ $(adb version)
     # when the phone-side files are retained as a backup.
     & adb -s $serial shell "rm -f '$RemoteSessionFile' '$RemoteLogcatPidFile'" | Out-Null
 
-    if ($DeleteAfterPull) {
+    if ($DeleteAfterPull -and $quality.CaptureComplete -and $quality.HasNavigationEvidence) {
         Write-Host "Deleting the collected phone-side session..."
         & adb -s $serial shell "rm -rf '$remoteSessionDir'" | Out-Null
         & adb -s $serial shell "rm -f '$RemoteStatusFile' '$RemoteLauncherLog'" | Out-Null
@@ -1008,5 +1143,6 @@ $(adb version)
         Write-Host "The original phone-side session directory has been kept as a backup."
     }
 
+    if (-not $quality.CaptureComplete -or -not $quality.HasNavigationEvidence) { exit 2 }
     exit 0
 }

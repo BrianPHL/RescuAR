@@ -169,7 +169,15 @@
 		<_RescuArBuildProfileLine Include="correctiveBatch=$(RescuArCorrectiveBatch)" />
 		<_RescuArBuildProfileLine Include="validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 	</ItemGroup>
-	<Target Name="GenerateRescuArBuildProfileAsset" BeforeTargets="PrepareForBuild">
+	<Target Name="GenerateRescuArBuildProfileAsset" BeforeTargets="PrepareForBuild" DependsOnTargets="InitializeSourceControlInformation">
+		<PropertyGroup>
+			<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == 'unavailable' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
+		</PropertyGroup>
+		<ItemGroup>
+			<AssemblyMetadata Update="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
+			<_RescuArBuildProfileLine Include="sourceRevision=$(RescuArSourceRevision)" />
+			<_RescuArBuildProfileLine Include="configuration=$(Configuration)" />
+		</ItemGroup>
 		<MakeDir Directories="$(IntermediateOutputPath)" />
 		<WriteLinesToFile File="$(IntermediateOutputPath)rescuar-build-profile.txt" Lines="@(_RescuArBuildProfileLine)" Overwrite="true" Encoding="UTF-8" />
 	</Target>

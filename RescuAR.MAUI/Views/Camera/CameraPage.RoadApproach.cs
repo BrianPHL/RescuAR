@@ -168,6 +168,37 @@ public partial class CameraPage
         return true;
     }
 
+    private bool TryShowArrivalStatus()
+    {
+        var decision = lastSafeZoneDecision;
+        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
+            currentCameraModuleView != CameraModuleViewMode.ArCamera ||
+            !NavigationDestinationBridge.Current.IsAvailable || !decision.IsAvailable ||
+            !double.IsFinite(decision.DistanceToDestinationMeters) ||
+            (!decision.IsCandidate && decision.DistanceToDestinationMeters >
+                RescuAR.Navigation.Guidance.SafeZoneConfirmationService.CandidateResetDistanceMeters))
+            return false;
+        TimeSpan age = DateTimeOffset.UtcNow - decision.ObservedAt;
+        bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(5);
+        routeLocatorIcon.IsVisible = false;
+        routeLocatorLabel.Text = !fresh
+            ? "Arrival not confirmed. Waiting for a fresh GPS fix."
+            : arrivalRoadGraph is null
+                ? "Arrival check waiting for mapped access data."
+            : decision.IsCandidate
+                ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the destination."
+            : decision.AccuracyMeters is not double accuracy || !double.IsFinite(accuracy)
+                ? "Arrival not confirmed. GPS accuracy is unavailable."
+            : accuracy > RescuAR.Navigation.Guidance.SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters
+                ? $"GPS too uncertain to confirm arrival (±{accuracy:0} m)."
+            : decision.Reason.StartsWith("A mapped major road", StringComparison.Ordinal)
+                ? "Arrival not confirmed. Check the mapped road crossing."
+                : $"Arrival not confirmed (~{decision.DistanceToDestinationMeters:0} m from the selected pin).";
+        routeLocatorPanel.IsVisible = true;
+        turnGuidancePanel.IsVisible = false;
+        return true;
+    }
+
     private bool TryShowRoadApproachCue()
     {
         RoadApproachCue? cue;
