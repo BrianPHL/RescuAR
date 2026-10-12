@@ -6,7 +6,7 @@ namespace RescuAR.Navigation.Data;
 
 /// <summary>
 /// Builds an evacuation graph from mapped passages and shared junctions.
-/// Lines connect at shared source coordinates; a visual crossing
+/// Canonical lines connect at shared OSM node IDs; legacy lines use source coordinates. A visual crossing
 /// without a shared source vertex does not create a routing connection.
 /// </summary>
 public sealed class RoadGraphBuilder
@@ -45,10 +45,18 @@ public sealed class RoadGraphBuilder
             new();
         var crossingPolicy = new MajorRoadCrossingPolicy(features);
         var blockedPoints = new HashSet<(double Lat, double Lon)>();
+        var blockedNodeIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var point in points)
             if (EvacuationRoutingPolicy.IsBlockedPoint(point.Barrier, point.Tags))
+            {
                 blockedPoints.Add((Math.Round(point.Coordinate.Latitude, CoordinatePrecision),
                     Math.Round(point.Coordinate.Longitude, CoordinatePrecision)));
+                if (!string.IsNullOrWhiteSpace(point.OsmId)) blockedNodeIds.Add(point.OsmId);
+            }
+        bool Blocked(GeoCoordinate coordinate, string? sourceNodeId) => sourceNodeId is not null
+            ? blockedNodeIds.Contains(sourceNodeId)
+            : blockedPoints.Contains((Math.Round(coordinate.Latitude, CoordinatePrecision),
+                Math.Round(coordinate.Longitude, CoordinatePrecision)));
 
         Dictionary<int, RoadNode> nodes =
             new();
@@ -66,6 +74,8 @@ public sealed class RoadGraphBuilder
         for (int featureIndex = 0; featureIndex < features.Count; featureIndex++)
         {
             GeoJsonRoadFeature feature = features[featureIndex];
+            if (feature.OsmNodeIds.Count != 0 && feature.OsmNodeIds.Count != feature.Coordinates.Count)
+                throw new ArgumentException("Source node IDs do not match road geometry.", nameof(features));
             if (!filter.IsWalkable(
                     feature))
             {
@@ -81,6 +91,8 @@ public sealed class RoadGraphBuilder
 
                 GeoCoordinate toCoordinate =
                     feature.Coordinates[i + 1];
+                string? fromSourceId = feature.OsmNodeIds.Count == 0 ? null : feature.OsmNodeIds[i];
+                string? toSourceId = feature.OsmNodeIds.Count == 0 ? null : feature.OsmNodeIds[i + 1];
 
                 if (fromCoordinate == toCoordinate)
                     continue;
@@ -98,15 +110,14 @@ public sealed class RoadGraphBuilder
                 // A blocked node keeps approaches on either side usable but
                 // cannot join them. The same segment's two directions share a port.
                 string port = $"barrier/{featureIndex}/{i}";
-                string fromSide = blockedPoints.Contains((Math.Round(fromCoordinate.Latitude, CoordinatePrecision),
-                    Math.Round(fromCoordinate.Longitude, CoordinatePrecision))) ? port : string.Empty;
-                string toSide = blockedPoints.Contains((Math.Round(toCoordinate.Latitude, CoordinatePrecision),
-                    Math.Round(toCoordinate.Longitude, CoordinatePrecision))) ? port : string.Empty;
+                string fromSide = Blocked(fromCoordinate, fromSourceId) ? port : string.Empty;
+                string toSide = Blocked(toCoordinate, toSourceId) ? port : string.Empty;
                 RoadNode from =
                     GetOrCreateNode(
                         fromCoordinate,
                         fromLayer,
                         fromSide,
+                        fromSourceId,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -116,6 +127,7 @@ public sealed class RoadGraphBuilder
                         toCoordinate,
                         toLayer,
                         toSide,
+                        toSourceId,
                         byCoordinate,
                         nodes,
                         ref nextNodeId);
@@ -177,13 +189,14 @@ public sealed class RoadGraphBuilder
         GeoCoordinate coordinate,
         int layer,
         string side,
+        string? sourceNodeId,
         Dictionary<CoordinateKey, RoadNode> byCoordinate,
         Dictionary<int, RoadNode> nodes,
         ref int nextNodeId)
     {
         CoordinateKey key =
             CoordinateKey.From(
-                coordinate, layer, side);
+                coordinate, layer, side, sourceNodeId);
 
         if (byCoordinate.TryGetValue(
                 key,
@@ -212,22 +225,25 @@ public sealed class RoadGraphBuilder
         double Latitude,
         double Longitude,
         int Layer,
-        string Side)
+        string Side,
+        string? SourceNodeId)
     {
         public static CoordinateKey From(
             GeoCoordinate coordinate,
             int layer,
-            string side)
+            string side,
+            string? sourceNodeId)
         {
             return new CoordinateKey(
-                Math.Round(
+                sourceNodeId is not null ? 0 : Math.Round(
                     coordinate.Latitude,
                     CoordinatePrecision),
-                Math.Round(
+                sourceNodeId is not null ? 0 : Math.Round(
                     coordinate.Longitude,
                     CoordinatePrecision),
                 layer,
-                side);
+                side,
+                sourceNodeId);
         }
     }
 

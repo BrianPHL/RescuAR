@@ -360,7 +360,7 @@
                 ZIndex="23"
                 Margin="24,150,24,0"
                 Padding="12,8"
-                HorizontalOptions="Center"
+                HorizontalOptions="Fill"
                 VerticalOptions="Center"
                 BackgroundColor="#E8FFFFFF"
                 Stroke="#70C9D2"
@@ -369,7 +369,7 @@
                 <Border.Shadow>
                     <Shadow Brush="#30000000" Offset="0,2" Radius="7" Opacity="0.25" />
                 </Border.Shadow>
-                <HorizontalStackLayout Spacing="8">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                     <Image
                         x:Name="routeLocatorIcon"
                         Source="lucide_arrow_up_left_teal.png"
@@ -378,12 +378,15 @@
                         VerticalOptions="Center" />
                     <Label
                         x:Name="routeLocatorLabel"
+                        Grid.Column="1"
                         Text="Look left to find the cyan route"
                         TextColor="#075D66"
                         FontSize="12"
                         FontAttributes="Bold"
+                        LineBreakMode="WordWrap"
+                        HorizontalOptions="Fill"
                         VerticalTextAlignment="Center" />
-                </HorizontalStackLayout>
+                </Grid>
             </Border>
 
             <!-- ========================================================= -->
