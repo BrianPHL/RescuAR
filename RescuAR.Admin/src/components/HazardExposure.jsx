@@ -497,8 +497,8 @@ export default function HazardExposure() {
       <div style="font-family: Inter, Arial, sans-serif; min-width: 220px;">
         <div style="font-weight: 700; margin-bottom: 6px;">${props.barangay_name || 'Barangay'}</div>
         <div>Hazard area: <strong>${formatPercent(props.hazard_area_pct)}</strong></div>
-        <div>Affected population: <strong>${formatNumber(props.estimated_affected_population)}</strong></div>
-        <div>Affected children: <strong>${formatNumber(props.estimated_affected_children)}</strong></div>
+        <div>Estimated exposed population: <strong>${formatNumber(props.estimated_affected_population)}</strong></div>
+        <div>Estimated exposed children: <strong>${formatNumber(props.estimated_affected_children)}</strong></div>
       </div>
     `);
   };
@@ -560,7 +560,7 @@ export default function HazardExposure() {
             </div>
 
             <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: 12 }}>
-              <strong>Scientific limitation:</strong> Alert/Alarm/Critical levels are being mapped to reference 5/25/100-year hazard scenarios by project rule only. The mapping must not be presented as a calibrated current inundation prediction until validated against historical water levels and observed flood extents.
+              <strong>Scientific limitation:</strong> Alert/Alarm/Critical levels are mapped to reference 5/25/100-year hazard scenarios by project rule only. Population and child figures are area-weighted exposure estimates, and facility markers indicate spatial intersection with a mapped hazard area. These outputs must not be presented as confirmed impacts, confirmed safe areas, or a calibrated current inundation prediction until independently validated against historical observations.
             </div>
           </div>
         </div>
@@ -631,10 +631,10 @@ export default function HazardExposure() {
           <div className="inundation-card summary-card">
             <div className="card-header-bar"><div className="card-title-container"><Activity size={18} className="text-brand" /><h2 className="card-heading">Exposure Summary</h2></div></div>
             <div style={{ padding: 18, display: 'grid', gap: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Users size={15} style={{ marginRight: 6 }} />Estimated affected population</span><strong>{formatNumber(affectedPopulation)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Baby size={15} style={{ marginRight: 6 }} />Estimated affected children</span><strong>{formatNumber(affectedChildren)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Building2 size={15} style={{ marginRight: 6 }} />Facilities in hazard area</span><strong>{formatNumber(facilities)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><AlertTriangle size={15} style={{ marginRight: 6 }} />Barangays with exposure</span><strong>{formatNumber(barangayCount)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Users size={15} style={{ marginRight: 6 }} />Estimated exposed population</span><strong>{formatNumber(affectedPopulation)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Baby size={15} style={{ marginRight: 6 }} />Estimated exposed children</span><strong>{formatNumber(affectedChildren)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><Building2 size={15} style={{ marginRight: 6 }} />Facilities within mapped hazard area</span><strong>{formatNumber(facilities)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span><AlertTriangle size={15} style={{ marginRight: 6 }} />Barangays with mapped exposure</span><strong>{formatNumber(barangayCount)}</strong></div>
               {!activeScenario && <div style={{ marginTop: 5, fontSize: 12, color: '#64748b' }}>No automatic exposure estimate is active. Switch to Manual to inspect a reference scenario while conditions remain below Alert or telemetry is not Fresh.</div>}
             </div>
           </div>
@@ -667,10 +667,10 @@ export default function HazardExposure() {
 
         <div className="inundation-card">
           <div className="card-header-bar">
-            <div className="card-title-container"><BarChart3 size={18} className="text-brand" /><h2 className="card-heading">Ranked Barangay Priority</h2></div>
+            <div className="card-title-container"><BarChart3 size={18} className="text-brand" /><h2 className="card-heading">Barangays by Estimated Exposed Population</h2></div>
           </div>
           <div style={{ padding: 16 }}>
-            <SectionHint>Shows which areas need priority based on estimated affected population.</SectionHint>
+            <SectionHint>Ranks barangays by estimated exposed population. This is an exposure ranking, not an operational priority score.</SectionHint>
             <div style={{ marginTop: 12, height: Math.max(360, rankedBarangayChart.length * 28) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rankedBarangayChart} layout="vertical" margin={{ top: 8, right: 24, left: 18, bottom: 8 }}>
@@ -683,7 +683,7 @@ export default function HazardExposure() {
                       return [metricTooltipFormatter(value), name];
                     }}
                   />
-                  <Bar dataKey="affectedPopulation" name="Affected population" fill="#2563eb" radius={[0, 6, 6, 0]}>
+                  <Bar dataKey="affectedPopulation" name="Estimated exposed population" fill="#2563eb" radius={[0, 6, 6, 0]}>
                     <LabelList dataKey="affectedPopulation" position="right" formatter={(value) => formatNumber(value)} style={{ fill: '#475569', fontSize: 11 }} />
                   </Bar>
                 </BarChart>
@@ -696,18 +696,18 @@ export default function HazardExposure() {
       <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.1fr', gap: 16, marginTop: 16 }}>
         <div className="inundation-card">
           <div className="card-header-bar">
-            <div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Affected vs Unaffected</h2></div>
+            <div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Estimated Exposed vs Not Mapped as Exposed</h2></div>
           </div>
           <div style={{ padding: 16 }}>
-            <SectionHint>Shows how much of the population is exposed versus not exposed for the selected scenario.</SectionHint>
+            <SectionHint>Shows the estimated population inside the selected mapped hazard area versus the population not mapped as exposed by this reference scenario. Areas not mapped as exposed are not guaranteed safe.</SectionHint>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12, marginBottom: 8 }}>
               <div style={{ padding: 12, borderRadius: 12, border: '1px solid #dbeafe', background: '#eff6ff' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8' }}>Affected share</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8' }}>Estimated exposed share</div>
                 <div style={{ marginTop: 6, fontSize: 24, fontWeight: 800 }}>{formatPercent(affectedPopulationPct)}</div>
                 <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>{formatNumber(affectedPopulation)} people</div>
               </div>
               <div style={{ padding: 12, borderRadius: 12, border: '1px solid #dcfce7', background: '#f0fdf4' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#15803d' }}>Children affected</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#15803d' }}>Children exposed</div>
                 <div style={{ marginTop: 6, fontSize: 24, fontWeight: 800 }}>{formatPercent(affectedChildrenPct)}</div>
                 <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>{formatNumber(affectedChildren)} children</div>
               </div>
@@ -720,8 +720,8 @@ export default function HazardExposure() {
                   <YAxis type="category" dataKey="cohort" width={90} />
                   <Tooltip formatter={(value) => metricTooltipFormatter(value)} />
                   <Legend />
-                  <Bar dataKey="affected" name="Affected" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="unaffected" name="Unaffected" stackId="a" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="affected" name="Estimated exposed" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="unaffected" name="Not mapped as exposed" stackId="a" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -730,10 +730,10 @@ export default function HazardExposure() {
 
         <div className="inundation-card">
           <div className="card-header-bar">
-            <div className="card-title-container"><Hospital size={18} className="text-brand" /><h2 className="card-heading">Facility Exposure</h2></div>
+            <div className="card-title-container"><Hospital size={18} className="text-brand" /><h2 className="card-heading">Facilities within Mapped Hazard Area</h2></div>
           </div>
           <div style={{ padding: 16 }}>
-            <SectionHint>Shows which services or infrastructure may be affected, with counts by type and map markers for the exposed facilities.</SectionHint>
+            <SectionHint>Shows facilities whose mapped points intersect the selected hazard area. This indicates spatial exposure only and does not confirm flooding, damage, closure, or loss of service.</SectionHint>
             <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.1fr', gap: 16, marginTop: 12 }}>
               <div style={{ minHeight: 320 }}>
                 <ResponsiveContainer width="100%" height={320}>
@@ -742,7 +742,7 @@ export default function HazardExposure() {
                     <XAxis type="number" allowDecimals={false} />
                     <YAxis dataKey="label" type="category" width={90} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(value) => metricTooltipFormatter(value)} />
-                    <Bar dataKey="exposedFacilities" name="Exposed facilities" radius={[0, 6, 6, 0]}>
+                    <Bar dataKey="exposedFacilities" name="Facilities within mapped hazard area" radius={[0, 6, 6, 0]}>
                       {facilityTypeData.map((entry) => (
                         <Cell key={entry.type} fill={entry.color} />
                       ))}
@@ -788,9 +788,9 @@ export default function HazardExposure() {
       <div className="inundation-card" style={{ marginTop: 16 }}>
         <div className="card-header-bar"><div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Detailed Barangay Exposure Table</h2></div></div>
         <div className="table-container" style={{ padding: 16 }}>
-          <SectionHint>Retained for officers who need the exact barangay-level figures.</SectionHint>
+          <SectionHint>Retained for officers who need the exact barangay-level exposure estimates behind the visualizations.</SectionHint>
           <table className="data-table" style={{ marginTop: 12 }}>
-            <thead><tr><th>BARANGAY</th><th>HAZARD AREA</th><th>EST. AFFECTED POPULATION</th><th>EST. AFFECTED CHILDREN</th></tr></thead>
+            <thead><tr><th>BARANGAY</th><th>MAPPED HAZARD AREA</th><th>EST. EXPOSED POPULATION</th><th>EST. EXPOSED CHILDREN</th></tr></thead>
             <tbody>
               {enrichedBarangays.map((row) => (
                 <tr key={row.chartKey}>

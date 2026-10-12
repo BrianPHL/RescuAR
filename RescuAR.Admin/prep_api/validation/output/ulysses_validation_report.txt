@@ -1,0 +1,30 @@
+RESCUAR / PREP — ULYSSES VALIDATION REPORT
+
+IMPORTANT INTERPRETATION:
+This evaluates LiPAD reference hazard scenarios against a NAMRIA-derived Ulysses flood reference.
+Because Ulysses is not independently assigned here to one specific LiPAD return-period/severity scenario, the 9-scenario comparison is a sensitivity analysis, not proof that the best-scoring scenario is the true Ulysses return period.
+
+Observed NAMRIA flood area inside Marikina: 4.2896 km²
+
+Best spatial IoU/CSI scenario (descriptive):
+100-Year / Low+ | Precision=0.05 Recall=0.182 F1=0.079 IoU=0.041
+
+Lowest population WAPE scenario (descriptive):
+5-Year / High+ | WAPE=209.27% | Spearman=-0.594
+
+Project targets:
+Recall >= 0.9
+Precision >= 0.8
+F1 >= 0.85
+IoU/CSI >= 0.7
+Population WAPE <= 20%
+Population Spearman >= 0.8
+
+Limitations:
+- One historical event (Ulysses) is being tested.
+- NAMRIA survey/map coverage is incomplete.
+- Manual georeferencing/digitization introduces positional uncertainty.
+- Population exposure assumes uniform population distribution within barangays.
+- Derived exposed population is not a direct observed affected-person count.
+- Areas outside the NAMRIA mapped extent must not be described as safe/non-flooded.
+- Internal consistency must be reported separately from external flood-model accuracy.
