@@ -1,5 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Activity, AlertTriangle, Users, Building2, Baby, Waves, ShieldAlert, Radio, SlidersHorizontal } from 'lucide-react';
+import {
+  RefreshCw,
+  Activity,
+  AlertTriangle,
+  Users,
+  Building2,
+  Baby,
+  Waves,
+  ShieldAlert,
+  Radio,
+  SlidersHorizontal,
+  Map as MapIcon,
+  BarChart3,
+  Hospital,
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  Cell,
+  LabelList,
+} from 'recharts';
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
 import { calculateAlertStatus } from '../utils/waterLevelUtils';
@@ -8,11 +36,30 @@ import {
   PREP_EXPOSURE_API_URL,
   isPrepExposureApiConfigured,
   fetchPrepExposureScenario,
-} from "../services/prepExposureApi";
-
+} from '../services/prepExposureApi';
+import barangayBoundaries from '../data/marikinaBarangays.json';
+import facilityDirectory from '../data/marikinaFacilities.json';
 
 const SOURCE_ID = 'PAGASA_FFWWS';
 const STO_NINO_CODE = '11104204';
+const MARIKINA_CENTER = [14.6488, 121.1029];
+
+const CHOROPLETH_BUCKETS = [
+  { min: 80, color: '#08306b', label: '80%+' },
+  { min: 60, color: '#2171b5', label: '60% - 79.9%' },
+  { min: 40, color: '#6baed6', label: '40% - 59.9%' },
+  { min: 20, color: '#9ecae1', label: '20% - 39.9%' },
+  { min: 0.01, color: '#deebf7', label: '0.1% - 19.9%' },
+  { min: 0, color: '#f8fafc', label: 'No mapped exposure' },
+];
+
+const FACILITY_TYPE_COLORS = {
+  hospital: '#dc2626',
+  clinic: '#f97316',
+  school: '#2563eb',
+  evacuation_center: '#16a34a',
+  default: '#475569',
+};
 
 function numberFrom(...values) {
   for (const value of values) {
@@ -23,12 +70,17 @@ function numberFrom(...values) {
   return null;
 }
 
+function normalizeKey(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function formatNumber(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ''
-  ) {
+  if (value === null || value === undefined || value === '') {
     return '—';
   }
 
@@ -37,6 +89,11 @@ function formatNumber(value) {
   return Number.isFinite(number)
     ? Math.round(number).toLocaleString('en-PH')
     : '—';
+}
+
+function formatPercent(value, digits = 1) {
+  const number = numberFrom(value);
+  return number == null ? '—' : `${number.toFixed(digits)}%`;
 }
 
 function formatObservedAt(value) {
@@ -51,6 +108,51 @@ function hazardLabel(value) {
   if (value === 'High') return 'High only (>1.5 m)';
   if (value === 'Medium') return 'Medium or worse (>0.5 m)';
   return 'Low or worse (0.1 m+)';
+}
+
+function exposureColor(percent) {
+  const number = numberFrom(percent) ?? 0;
+  const bucket = CHOROPLETH_BUCKETS.find((item) => number >= item.min);
+  return bucket?.color || '#f8fafc';
+}
+
+function facilityTypeLabel(value) {
+  if (!value) return 'Other';
+  return String(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function facilityTypeColor(value) {
+  const key = String(value || '').toLowerCase();
+  return FACILITY_TYPE_COLORS[key] || FACILITY_TYPE_COLORS.default;
+}
+
+function metricTooltipFormatter(value) {
+  const number = numberFrom(value);
+  return number == null ? '—' : number.toLocaleString('en-PH');
+}
+
+function pctTooltipFormatter(value) {
+  const number = numberFrom(value);
+  return number == null ? '—' : `${number.toFixed(1)}%`;
+}
+
+function SectionHint({ children }) {
+  return (
+    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
+      {children}
+    </p>
+  );
+}
+
+function LegendSwatch({ color, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ width: 14, height: 14, borderRadius: 4, background: color, border: '1px solid rgba(15, 23, 42, 0.08)' }} />
+      <span style={{ fontSize: 12, color: '#475569' }}>{label}</span>
+    </div>
+  );
 }
 
 export default function HazardExposure() {
@@ -178,25 +280,48 @@ export default function HazardExposure() {
         : [],
     [exposure]
   );
+
   const facilityRows = useMemo(
     () => Array.isArray(exposure?.facilities) ? exposure.facilities : [],
     [exposure]
   );
 
   const summary = exposure?.summary || exposure?.city_summary || exposure?.exposure || exposure || {};
-const affectedPopulation = numberFrom(
-  summary.estimated_affected_population,
-  summary.estimatedAffectedPopulation,
-  summary.population_exposed,
-  summary.total_population_affected
-);
 
-const affectedChildren = numberFrom(
-  summary.estimated_affected_children,
-  summary.estimatedAffectedChildren,
-  summary.children_exposed,
-  summary.total_children_affected
-);
+  const affectedPopulation = numberFrom(
+    summary.estimated_affected_population,
+    summary.estimatedAffectedPopulation,
+    summary.population_exposed,
+    summary.total_population_affected
+  );
+
+  const affectedChildren = numberFrom(
+    summary.estimated_affected_children,
+    summary.estimatedAffectedChildren,
+    summary.children_exposed,
+    summary.total_children_affected
+  );
+
+  const cityPopulationBaseline = numberFrom(
+    summary.city_population_baseline,
+    summary.cityPopulationBaseline
+  );
+
+  const cityChildrenBaseline = numberFrom(
+    summary.city_children_baseline,
+    summary.cityChildrenBaseline
+  );
+
+  const affectedPopulationPct = numberFrom(
+    summary.estimated_affected_population_pct,
+    summary.estimatedAffectedPopulationPct,
+  );
+
+  const affectedChildrenPct = numberFrom(
+    summary.estimated_affected_children_pct,
+    summary.estimatedAffectedChildrenPct,
+  );
+
   const facilities = numberFrom(
     summary.facilitiesInHazardArea,
     summary.facilities_exposed,
@@ -204,6 +329,7 @@ const affectedChildren = numberFrom(
     summary.exposed_facilities,
     exposure && Array.isArray(exposure.facilities) ? facilityRows.length : null
   );
+
   const barangayCount = numberFrom(
     summary.barangaysWithExposure,
     summary.barangays_with_mapped_exposure,
@@ -211,14 +337,171 @@ const affectedChildren = numberFrom(
     summary.barangays_with_exposure,
     exposure && Array.isArray(exposure?.barangays) ? barangays.length : null
   );
-  const rules = useMemo(() => describeProvisionalRules(), []);
 
+  const rules = useMemo(() => describeProvisionalRules(), []);
   const noAutomaticScenario = scenarioMode === 'automatic' && !automaticScenario.active;
   const exposureUnavailableMessage = error
     ? 'Exposure service unavailable.'
     : noAutomaticScenario
       ? automaticScenario.reason
       : 'No barangay rows were returned by the exposure service.';
+
+  const enrichedBarangays = useMemo(() => {
+    return barangays
+      .map((row, index) => {
+        const hazardAreaPct = numberFrom(row.selected_hazard_area_pct, row.hazard_area_pct, row.exposure_pct);
+        const estimatedAffectedPopulation = numberFrom(row.estimated_affected_population, row.population_exposed);
+        const estimatedAffectedChildren = numberFrom(row.estimated_affected_children, row.children_exposed);
+        const totalPopulation = numberFrom(row.population_2024, row.population, row.city_population);
+        const totalChildren = numberFrom(row.children_2020, row.children);
+
+        return {
+          ...row,
+          chartKey: String(row.barangay_id || row.barangay_name || row.name || index),
+          barangay_name: row.barangay_name || row.name || 'Unnamed barangay',
+          barangay_id: row.barangay_id || null,
+          hazardAreaPct,
+          estimatedAffectedPopulation,
+          estimatedAffectedChildren,
+          totalPopulation,
+          totalChildren,
+        };
+      })
+      .sort((a, b) => (b.estimatedAffectedPopulation || 0) - (a.estimatedAffectedPopulation || 0));
+  }, [barangays]);
+
+  const choroplethGeoJson = useMemo(() => {
+    const byId = new Map();
+    const byName = new Map();
+
+    enrichedBarangays.forEach((row) => {
+      if (row.barangay_id) byId.set(String(row.barangay_id), row);
+      byName.set(normalizeKey(row.barangay_name), row);
+    });
+
+    return {
+      ...barangayBoundaries,
+      features: (barangayBoundaries?.features || []).map((feature) => {
+        const props = feature.properties || {};
+        const joined = byId.get(String(props.barangay_id)) || byName.get(normalizeKey(props.barangay_name)) || null;
+
+        return {
+          ...feature,
+          properties: {
+            ...props,
+            exposure_joined: Boolean(joined),
+            hazard_area_pct: joined?.hazardAreaPct ?? 0,
+            estimated_affected_population: joined?.estimatedAffectedPopulation ?? 0,
+            estimated_affected_children: joined?.estimatedAffectedChildren ?? 0,
+            total_population: joined?.totalPopulation ?? null,
+            total_children: joined?.totalChildren ?? null,
+          },
+        };
+      })
+    };
+  }, [enrichedBarangays]);
+
+  const rankedBarangayChart = useMemo(() => {
+    return enrichedBarangays.map((row) => ({
+      barangay: row.barangay_name,
+      affectedPopulation: row.estimatedAffectedPopulation || 0,
+      affectedChildren: row.estimatedAffectedChildren || 0,
+      hazardAreaPct: row.hazardAreaPct || 0,
+    }));
+  }, [enrichedBarangays]);
+
+  const exposureSplitData = useMemo(() => {
+    const totalPopulation = cityPopulationBaseline || 0;
+    const totalChildren = cityChildrenBaseline || 0;
+    const affectedPop = affectedPopulation || 0;
+    const affectedKids = affectedChildren || 0;
+
+    return [
+      {
+        cohort: 'Population',
+        affected: affectedPop,
+        unaffected: Math.max(totalPopulation - affectedPop, 0),
+      },
+      {
+        cohort: 'Children',
+        affected: affectedKids,
+        unaffected: Math.max(totalChildren - affectedKids, 0),
+      },
+    ];
+  }, [affectedPopulation, affectedChildren, cityPopulationBaseline, cityChildrenBaseline]);
+
+  const facilityTypeData = useMemo(() => {
+    const counts = new Map();
+
+    facilityRows.forEach((row) => {
+      const key = String(row.facility_type || 'other').toLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([type, count]) => ({
+        type,
+        label: facilityTypeLabel(type),
+        exposedFacilities: count,
+        color: facilityTypeColor(type),
+      }))
+      .sort((a, b) => b.exposedFacilities - a.exposedFacilities);
+  }, [facilityRows]);
+
+  const exposedFacilitiesWithCoords = useMemo(() => {
+    const byOsmId = new Map();
+    const byNameAndType = new Map();
+
+    facilityDirectory.forEach((facility) => {
+      const osmKey = String(facility.osm_id || '');
+      if (osmKey) byOsmId.set(osmKey, facility);
+      byNameAndType.set(
+        `${normalizeKey(facility.facility_name)}|${normalizeKey(facility.facility_type)}`,
+        facility
+      );
+    });
+
+    return facilityRows
+      .map((row, index) => {
+        const directoryMatch = byOsmId.get(String(row.osm_id || ''))
+          || byNameAndType.get(`${normalizeKey(row.facility_name)}|${normalizeKey(row.facility_type)}`);
+
+        if (!directoryMatch) return null;
+
+        return {
+          ...row,
+          key: String(row.osm_id || `${row.facility_name}-${index}`),
+          latitude: directoryMatch.latitude,
+          longitude: directoryMatch.longitude,
+          facility_type: row.facility_type || directoryMatch.facility_type,
+          facility_name: row.facility_name || directoryMatch.facility_name,
+        };
+      })
+      .filter(Boolean);
+  }, [facilityRows]);
+
+  const choroplethStyle = (feature) => {
+    const percent = feature?.properties?.hazard_area_pct || 0;
+    return {
+      color: '#334155',
+      weight: 1,
+      fillColor: exposureColor(percent),
+      fillOpacity: percent > 0 ? 0.75 : 0.25,
+      opacity: 0.85,
+    };
+  };
+
+  const bindBarangayPopup = (feature, layer) => {
+    const props = feature?.properties || {};
+    layer.bindPopup(`
+      <div style="font-family: Inter, Arial, sans-serif; min-width: 220px;">
+        <div style="font-weight: 700; margin-bottom: 6px;">${props.barangay_name || 'Barangay'}</div>
+        <div>Hazard area: <strong>${formatPercent(props.hazard_area_pct)}</strong></div>
+        <div>Affected population: <strong>${formatNumber(props.estimated_affected_population)}</strong></div>
+        <div>Affected children: <strong>${formatNumber(props.estimated_affected_children)}</strong></div>
+      </div>
+    `);
+  };
 
   return (
     <div className="inundation-container">
@@ -302,7 +585,7 @@ const affectedChildren = numberFrom(
               {scenarioMode === 'automatic' ? (
                 <div style={{ padding: 12, borderRadius: 9, background: '#f8fafc', border: '1px solid #e2e8f0', marginBottom: 14 }}>
                   <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>AUTOMATIC RESULT</div>
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>{automaticScenario.active ? automaticScenario.shortLabel : automaticScenario.shortLabel}</div>
+                  <div style={{ marginTop: 6, fontWeight: 800 }}>{automaticScenario.shortLabel}</div>
                   <div style={{ marginTop: 5, fontSize: 12, color: '#64748b' }}>{automaticScenario.reason}</div>
                 </div>
               ) : (
@@ -358,21 +641,166 @@ const affectedChildren = numberFrom(
         </div>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, marginTop: 16 }}>
+        <div className="inundation-card">
+          <div className="card-header-bar">
+            <div className="card-title-container"><MapIcon size={18} className="text-brand" /><h2 className="card-heading">Barangay Choropleth Map</h2></div>
+          </div>
+          <div style={{ padding: 16 }}>
+            <SectionHint>Shows where the affected areas are. Darker shading means a higher portion of the barangay is inside the selected hazard scenario.</SectionHint>
+            <div style={{ marginTop: 14, border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
+              <MapContainer center={MARIKINA_CENTER} zoom={13} style={{ height: 380, width: '100%' }} scrollWheelZoom={false}>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <GeoJSON key={`${activeScenario?.returnPeriod || 'none'}-${activeScenario?.minimumHazard || 'none'}-${rankedBarangayChart.length}`} data={choroplethGeoJson} style={choroplethStyle} onEachFeature={bindBarangayPopup} />
+              </MapContainer>
+            </div>
+            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              {CHOROPLETH_BUCKETS.map((bucket) => (
+                <LegendSwatch key={bucket.label} color={bucket.color} label={bucket.label} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="inundation-card">
+          <div className="card-header-bar">
+            <div className="card-title-container"><BarChart3 size={18} className="text-brand" /><h2 className="card-heading">Ranked Barangay Priority</h2></div>
+          </div>
+          <div style={{ padding: 16 }}>
+            <SectionHint>Shows which areas need priority based on estimated affected population.</SectionHint>
+            <div style={{ marginTop: 12, height: Math.max(360, rankedBarangayChart.length * 28) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rankedBarangayChart} layout="vertical" margin={{ top: 8, right: 24, left: 18, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(value) => Number(value).toLocaleString('en-PH')} />
+                  <YAxis dataKey="barangay" type="category" width={110} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      if (name === 'Hazard area %') return [pctTooltipFormatter(value), name];
+                      return [metricTooltipFormatter(value), name];
+                    }}
+                  />
+                  <Bar dataKey="affectedPopulation" name="Affected population" fill="#2563eb" radius={[0, 6, 6, 0]}>
+                    <LabelList dataKey="affectedPopulation" position="right" formatter={(value) => formatNumber(value)} style={{ fill: '#475569', fontSize: 11 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.1fr', gap: 16, marginTop: 16 }}>
+        <div className="inundation-card">
+          <div className="card-header-bar">
+            <div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Affected vs Unaffected</h2></div>
+          </div>
+          <div style={{ padding: 16 }}>
+            <SectionHint>Shows how much of the population is exposed versus not exposed for the selected scenario.</SectionHint>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12, marginBottom: 8 }}>
+              <div style={{ padding: 12, borderRadius: 12, border: '1px solid #dbeafe', background: '#eff6ff' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8' }}>Affected share</div>
+                <div style={{ marginTop: 6, fontSize: 24, fontWeight: 800 }}>{formatPercent(affectedPopulationPct)}</div>
+                <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>{formatNumber(affectedPopulation)} people</div>
+              </div>
+              <div style={{ padding: 12, borderRadius: 12, border: '1px solid #dcfce7', background: '#f0fdf4' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#15803d' }}>Children affected</div>
+                <div style={{ marginTop: 6, fontSize: 24, fontWeight: 800 }}>{formatPercent(affectedChildrenPct)}</div>
+                <div style={{ marginTop: 4, fontSize: 12, color: '#475569' }}>{formatNumber(affectedChildren)} children</div>
+              </div>
+            </div>
+            <div style={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={exposureSplitData} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" tickFormatter={(value) => Number(value).toLocaleString('en-PH')} />
+                  <YAxis type="category" dataKey="cohort" width={90} />
+                  <Tooltip formatter={(value) => metricTooltipFormatter(value)} />
+                  <Legend />
+                  <Bar dataKey="affected" name="Affected" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="unaffected" name="Unaffected" stackId="a" fill="#cbd5e1" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        <div className="inundation-card">
+          <div className="card-header-bar">
+            <div className="card-title-container"><Hospital size={18} className="text-brand" /><h2 className="card-heading">Facility Exposure</h2></div>
+          </div>
+          <div style={{ padding: 16 }}>
+            <SectionHint>Shows which services or infrastructure may be affected, with counts by type and map markers for the exposed facilities.</SectionHint>
+            <div style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.1fr', gap: 16, marginTop: 12 }}>
+              <div style={{ minHeight: 320 }}>
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={facilityTypeData} layout="vertical" margin={{ top: 8, right: 16, left: 4, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} />
+                    <YAxis dataKey="label" type="category" width={90} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value) => metricTooltipFormatter(value)} />
+                    <Bar dataKey="exposedFacilities" name="Exposed facilities" radius={[0, 6, 6, 0]}>
+                      {facilityTypeData.map((entry) => (
+                        <Cell key={entry.type} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 14, overflow: 'hidden' }}>
+                <MapContainer center={MARIKINA_CENTER} zoom={13} style={{ height: 320, width: '100%' }} scrollWheelZoom={false}>
+                  <TileLayer
+                    attribution='&copy; OpenStreetMap contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {exposedFacilitiesWithCoords.map((facility) => (
+                    <CircleMarker
+                      key={facility.key}
+                      center={[facility.latitude, facility.longitude]}
+                      radius={7}
+                      pathOptions={{
+                        color: facilityTypeColor(facility.facility_type),
+                        fillColor: facilityTypeColor(facility.facility_type),
+                        fillOpacity: 0.85,
+                        weight: 1,
+                      }}
+                    >
+                      <Popup>
+                        <div style={{ minWidth: 200 }}>
+                          <div style={{ fontWeight: 700 }}>{facility.facility_name || 'Unnamed facility'}</div>
+                          <div style={{ marginTop: 4 }}>Type: <strong>{facilityTypeLabel(facility.facility_type)}</strong></div>
+                          <div>Barangay: <strong>{facility.barangay_name || 'Unknown'}</strong></div>
+                          {facility.hazard_class && <div>Hazard class: <strong>{facility.hazard_class}</strong></div>}
+                        </div>
+                      </Popup>
+                    </CircleMarker>
+                  ))}
+                </MapContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="inundation-card" style={{ marginTop: 16 }}>
-        <div className="card-header-bar"><div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Barangay Exposure Estimate</h2></div></div>
+        <div className="card-header-bar"><div className="card-title-container"><Users size={18} className="text-brand" /><h2 className="card-heading">Detailed Barangay Exposure Table</h2></div></div>
         <div className="table-container" style={{ padding: 16 }}>
-          <table className="data-table">
+          <SectionHint>Retained for officers who need the exact barangay-level figures.</SectionHint>
+          <table className="data-table" style={{ marginTop: 12 }}>
             <thead><tr><th>BARANGAY</th><th>HAZARD AREA</th><th>EST. AFFECTED POPULATION</th><th>EST. AFFECTED CHILDREN</th></tr></thead>
             <tbody>
-              {barangays.map((row, index) => (
-                <tr key={row.barangay_id || row.barangay_name || index}>
-                  <td style={{ fontWeight: 600 }}>{row.barangay_name || row.name || 'Unnamed barangay'}</td>
-                  <td>{numberFrom(row.selected_hazard_area_pct, row.hazard_area_pct, row.exposure_pct) == null ? '—' : `${numberFrom(row.selected_hazard_area_pct, row.hazard_area_pct, row.exposure_pct).toFixed(1)}%`}</td>
-                  <td>{formatNumber(numberFrom(row.estimated_affected_population, row.population_exposed))}</td>
-                  <td>{formatNumber(numberFrom(row.estimated_affected_children, row.children_exposed))}</td>
+              {enrichedBarangays.map((row) => (
+                <tr key={row.chartKey}>
+                  <td style={{ fontWeight: 600 }}>{row.barangay_name}</td>
+                  <td>{formatPercent(row.hazardAreaPct)}</td>
+                  <td>{formatNumber(row.estimatedAffectedPopulation)}</td>
+                  <td>{formatNumber(row.estimatedAffectedChildren)}</td>
                 </tr>
               ))}
-              {!barangays.length && <tr><td colSpan="4" style={{ textAlign: 'center', padding: 30, color: '#64748b' }}>{loading ? 'Calculating exposure…' : exposureUnavailableMessage}</td></tr>}
+              {!enrichedBarangays.length && <tr><td colSpan="4" style={{ textAlign: 'center', padding: 30, color: '#64748b' }}>{loading ? 'Calculating exposure…' : exposureUnavailableMessage}</td></tr>}
             </tbody>
           </table>
         </div>
