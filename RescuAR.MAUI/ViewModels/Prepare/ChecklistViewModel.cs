@@ -140,6 +140,15 @@ public partial class ChecklistViewModel : ObservableObject
             Preferences.Set("PASS_ChecklistScore", PercentReady);
             Preferences.Set("PASS_ChecklistCompleted", completedCount);
             Preferences.Set("PASS_ChecklistTotal", totalCount);
+
+            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                            ?? Preferences.Get("CurrentUserId", "");
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                Preferences.Set($"PASS_ChecklistScore_{userId}", PercentReady);
+                Preferences.Set($"PASS_ChecklistCompleted_{userId}", completedCount);
+                Preferences.Set($"PASS_ChecklistTotal_{userId}", totalCount);
+            }
         }
     }
 
@@ -176,6 +185,29 @@ public partial class ChecklistViewModel : ObservableObject
         UpdateProgress();
 
         IsAddModalVisible = false;
+    }
+
+    [RelayCommand]
+    private async Task DeleteItemAsync(ChecklistItem item)
+    {
+        if (item == null) return;
+
+        bool confirm = false;
+        if (Application.Current?.Windows.Count > 0 && Application.Current.Windows[0].Page != null)
+        {
+            confirm = await Application.Current.Windows[0].Page!.DisplayAlert(
+                "Delete Item",
+                $"Are you sure you want to delete \"{item.Title}\" from your checklist?",
+                "Delete",
+                "Cancel");
+        }
+
+        if (confirm)
+        {
+            _allMasterItems.Remove(item);
+            ApplyFilter();
+            UpdateProgress();
+        }
     }
 
     [RelayCommand]
