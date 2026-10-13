@@ -6,8 +6,10 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
     (Resolve-Path -LiteralPath $scriptPath).Path, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
 
-# Import only pure functions, never the script's device operations.
-foreach ($name in @('Get-RotationThresholdKB', 'Get-FieldLogMarkerPriority', 'Get-FieldCaptureQuality')) {
+# Import helper definitions without running the script. Device-facing helpers
+# are exercised only with the ADB stubs below, never a connected phone.
+foreach ($name in @('Get-RotationThresholdKB', 'Get-FieldLogMarkerPriority', 'Test-FieldLogMarkerLine',
+    'Get-FieldLogMarkerCommand', 'Confirm-FieldLogMarker', 'Test-NativeLogcatRotationSupport', 'Get-FieldCaptureQuality')) {
     $definition = $ast.Find({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $true)
@@ -83,11 +85,112 @@ try {
     Check ($infoMarkers.CaptureComplete -and $infoMarkers.ApplicationEvents -eq 0 -and
         -not $infoMarkers.HasNavigationEvidence) `
         'INFO markers establish a complete Debug capture without counting as navigation evidence'
+
+    $marker = "RESCUAR_FIELDLOG_VERIFY_$session"
+    $realMarkerLine = "2026-10-12 09:36:52.044 100 100 I RescuAR-FieldLog: $marker"
+    Check (-not (Test-FieldLogMarkerLine "$realMarkerLine`_wrong_session" $marker)) `
+        'a marker prefix cannot verify another session'
+    Check (-not (Test-FieldLogMarkerLine "2026-10-12 09:36:52.044 100 100 I adbd: echoed I RescuAR-FieldLog: $marker" $marker)) `
+        'a command echo containing a marker-like tag cannot pass startup verification'
+
+    # Execute the generated POSIX-shell payload with a fake log command. This
+    # checks quoting, message ordering and the actual burst without Android.
+    $bashPath = if (Get-Command bash -ErrorAction SilentlyContinue) {
+        (Get-Command bash).Source
+    } elseif (Test-Path -LiteralPath 'C:\Program Files\Git\bin\bash.exe') {
+        'C:\Program Files\Git\bin\bash.exe'
+    } else { $null }
+    if ($bashPath) {
+        $shellPath = Join-Path $testDirectory 'marker-check.sh'
+        $fakeLog = 'log() { printf ''%s\t%s\t%s\n'' "$2" "$4" "$5"; }'
+        $command = Get-FieldLogMarkerCommand -Marker $marker -MinimumPriority 'D'
+        [IO.File]::WriteAllText($shellPath, "$fakeLog`n$command`n", [Text.UTF8Encoding]::new($false))
+        $records = @(& $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/'))
+        Check ($LASTEXITCODE -eq 0 -and $records.Count -eq 33 -and
+            ($records[0] -split "`t")[2] -ceq $marker) `
+            'the shell emits the marker before 32 distinct flush records'
+        Check (@($records | Select-Object -Skip 1 | Sort-Object -Unique).Count -eq 32) `
+            'flush records are distinct so identical-message suppression cannot discard the burst'
+
+        $memory = [IO.MemoryStream]::new()
+        $writer = [IO.StreamWriter]::new($memory, [Text.UTF8Encoding]::new($false), 16384, $true)
+        try {
+            $firstRecord = ($records[0] -split "`t", 3)
+            $writer.WriteLine("2026-10-12 09:36:52.044 100 100 $($firstRecord[0].ToUpperInvariant()) $($firstRecord[1]): $($firstRecord[2])")
+            Check ($memory.Length -eq 0) 'a quiet marker remains buffered even though the logger is alive'
+            foreach ($record in ($records | Select-Object -Skip 1)) {
+                $fields = $record -split "`t", 3
+                $writer.WriteLine("2026-10-12 09:36:52.045 100 100 $($fields[0].ToUpperInvariant()) $($fields[1]): $($fields[2])")
+            }
+            $persisted = [Text.Encoding]::UTF8.GetString($memory.ToArray())
+            Check ($persisted.Contains($marker)) 'the burst persists the marker without closing or explicitly flushing the logger'
+        }
+        finally { $writer.Dispose(); $memory.Dispose() }
+
+        [IO.File]::WriteAllText($shellPath, "log() { return 7; }`n$command`n", [Text.UTF8Encoding]::new($false))
+        & $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/') | Out-Null
+        Check ($LASTEXITCODE -eq 7) 'the shell preserves a failed marker emission exit code'
+    }
+    else { Write-Host 'SKIP: POSIX-shell payload and buffering model checks (Bash unavailable).' }
+
+    # Isolate polling/error handling from real ADB and real device state.
+    $script:emissionExit = 0
+    $script:reads = 0
+    $script:persistAfter = 2
+    $script:loggerAlive = $true
+    $script:probeHasMarker = $true
+    $RemoteRoot = '/data/local/tmp/RescuARFieldLogs'
+    function adb { $global:LASTEXITCODE = 0 }
+    function Invoke-AdbShellResult {
+        param([string]$Serial, [string]$Command)
+        $script:lastDeviceCommand = $Command
+        [PSCustomObject]@{ ExitCode = $script:emissionExit; Output = 'mocked device output' }
+    }
+    function Invoke-AdbShellText {
+        param([string]$Serial, [string]$Command)
+        $script:reads++
+        if ($Command -match "'(RESCUAR_FIELDLOG_PROBE_[0-9a-f]+)'") {
+            if ($script:probeHasMarker) { return "2026-10-12 09:36:52.044 100 100 I RescuAR-FieldLog: $($Matches[1])" }
+            return ''
+        }
+        if ($script:reads -ge $script:persistAfter) { return $realMarkerLine }
+        return ''
+    }
+    function Test-RemotePidAlive { param([string]$Serial, [string]$PidText); return $script:loggerAlive }
+    function Get-FieldLogDiagnostics { param($Serial, $BaseLogPath, $Marker, $UidFilter, $PidText); return 'mocked diagnostics' }
+
+    Check (Confirm-FieldLogMarker -Serial 'fake' -BaseLogPath '/fake/logcat' -Marker $marker -MinimumPriority 'D' -PidText '123') `
+        'startup polls until a delayed file write contains the exact marker'
+    $script:reads = 0
+    $script:emissionExit = 7
+    $emissionRejected = $false
+    try { Confirm-FieldLogMarker 'fake' '/fake/logcat' $marker 'D' '123' | Out-Null }
+    catch { $emissionRejected = $_.Exception.Message -match 'exit 7' }
+    Check ($emissionRejected -and $script:reads -eq 0) 'failed emission reports its exit code without waiting for a nonexistent marker'
+    $script:emissionExit = 0
+    $script:persistAfter = [int]::MaxValue
+    Check (-not (Confirm-FieldLogMarker 'fake' '/fake/logcat' $marker 'D' '123' 0)) `
+        'a live process with no persisted marker cannot pass verification'
+    $script:loggerAlive = $false
+    $script:persistAfter = 0
+    Check (-not (Confirm-FieldLogMarker 'fake' '/fake/logcat' $marker 'D' '123' 0)) `
+        'a persisted marker cannot verify a dead capture process'
+
+    Test-NativeLogcatRotationSupport -Serial 'fake' -UidFilter '10123,2000' -MinimumPriority 'D'
+    Check ($script:lastDeviceCommand -match "--uid '10123,2000'" -and
+        $script:lastDeviceCommand -match 'log -p i' -and $script:lastDeviceCommand -match 'logcat -d') `
+        'preflight verifies marker delivery using the actual UID filter and a normally flushed dump'
+    $script:probeHasMarker = $false
+    $emptyProbeRejected = $false
+    try { Test-NativeLogcatRotationSupport -Serial 'fake' -UidFilter '10123,2000' }
+    catch { $emptyProbeRejected = $_.Exception.Message -match 'did not capture its marker' }
+    Check $emptyProbeRejected 'creating an empty probe file cannot establish rotation/filter support'
 }
 finally {
-    # Delete only the two exact files created by this test, then the empty folder.
+    # Delete only the exact files created by this test, then the empty folder.
     Remove-Item -LiteralPath (Join-Path $testDirectory 'logcat-001.txt') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $testDirectory 'logcat-002.txt') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $testDirectory 'marker-check.sh') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $testDirectory -Force
 }
 Write-Host "$passed field-log regression checks passed."

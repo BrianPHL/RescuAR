@@ -92,6 +92,19 @@ function Invoke-AdbShellText {
     return (($output -join "`n").Trim())
 }
 
+function Invoke-AdbShellResult {
+    param([string]$Serial, [string]$Command)
+
+    # Windows PowerShell treats native stderr as error records. Capture those
+    # records without losing the device exit code or the actual error message.
+    $ErrorActionPreference = "Continue"
+    $output = @(& adb -s $Serial shell $Command 2>&1 | ForEach-Object { $_.ToString() })
+    return [PSCustomObject]@{
+        ExitCode = $LASTEXITCODE
+        Output = (($output -join "`n").Trim())
+    }
+}
+
 function Get-AndroidProperty {
     param(
         [Parameter(Mandatory = $true)]
@@ -346,6 +359,93 @@ function Get-FieldLogMarkerPriority {
     return $MinimumPriority.ToLowerInvariant()
 }
 
+function Test-FieldLogMarkerLine {
+    param([string]$Line, [string]$Marker)
+
+    # Require a real threadtime record, not an ADB command echo or a marker
+    # from another session whose name happens to begin with the same text.
+    $pattern = '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+\s+[VDIWEF]\s+RescuAR-FieldLog\s*:\s*' +
+        [regex]::Escape($Marker) + '\s*$'
+    return ($Line -cmatch $pattern)
+}
+
+function Get-FieldLogMarkerCommand {
+    param(
+        [ValidatePattern('^RESCUAR_FIELDLOG_(VERIFY|COMPLETE)_\d{8}_\d{6}$')][string]$Marker,
+        [string]$MinimumPriority
+    )
+
+    $priority = Get-FieldLogMarkerPriority -MinimumPriority $MinimumPriority
+    $padding = 'x' * 1024
+    # Native Logcat -f uses buffered stdio. Sleeping or running sync does not
+    # flush that userspace buffer. Emit the marker FIRST, then >32 KiB of
+    # distinct same-UID/priority records so quiet AppOnly captures persist it.
+    # This also persists preceding app events before collection stops Logcat.
+    return (@"
+log -p $priority -t RescuAR-FieldLog '$Marker' || exit `$?
+rescuar_flush_index=0
+while [ "`$rescuar_flush_index" -lt 32 ]; do
+    log -p $priority -t RescuAR-FieldLog "RESCUAR_FIELDLOG_FLUSH_`${rescuar_flush_index}_$padding" || exit `$?
+    rescuar_flush_index=`$((rescuar_flush_index + 1))
+done
+"@ -replace "`r`n", "`n")
+}
+
+function Confirm-FieldLogMarker {
+    param(
+        [string]$Serial, [string]$BaseLogPath, [string]$Marker,
+        [string]$MinimumPriority, [string]$PidText, [int]$TimeoutSeconds = 8
+    )
+
+    $command = Get-FieldLogMarkerCommand -Marker $Marker -MinimumPriority $MinimumPriority
+    $emission = Invoke-AdbShellResult -Serial $Serial -Command $command
+    if ($emission.ExitCode -ne 0) {
+        throw "Marker emission failed (ADB/device exit $($emission.ExitCode)): $($emission.Output)"
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $lines = Invoke-AdbShellText -Serial $Serial `
+            -Command "grep -h -F '$Marker' '$BaseLogPath' '$BaseLogPath'.* 2>/dev/null"
+        foreach ($line in ($lines -split "`n")) {
+            if (Test-FieldLogMarkerLine -Line $line -Marker $Marker) {
+                return (Test-RemotePidAlive -Serial $Serial -PidText $PidText)
+            }
+        }
+        if (-not (Test-RemotePidAlive -Serial $Serial -PidText $PidText)) { return $false }
+        if ((Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
+function Get-FieldLogDiagnostics {
+    param([string]$Serial, [string]$BaseLogPath, [string]$Marker, [string]$UidFilter, [string]$PidText)
+
+    $uidArgument = if ($UidFilter) { "--uid '$UidFilter'" } else { "" }
+    $processCommand = if ($PidText -match '^\d+$') {
+        "cat '/proc/$PidText/cmdline' 2>/dev/null | tr '\000' ' '; echo"
+    } else { "echo 'Detached logger not started (preflight)'" }
+    $command = @"
+echo 'Shell identity:'
+id
+echo 'Logger command line:'
+$processCommand
+echo 'Native log file sizes:'
+ls -ln '$BaseLogPath' '$BaseLogPath'.* 2>/dev/null
+echo 'Marker in main buffer without UID filter:'
+logcat -d -b main -v threadtime -v year 'RescuAR-FieldLog:V' '*:S' | grep -F '$Marker'
+echo 'Marker in main buffer with capture UID filter:'
+logcat -d -b main -v threadtime -v year $uidArgument 'RescuAR-FieldLog:V' '*:S' | grep -F '$Marker'
+echo 'Android write-side log priorities:'
+getprop log.tag.RescuAR-FieldLog
+getprop persist.log.tag.RescuAR-FieldLog
+getprop log.tag
+getprop persist.log.tag
+"@
+    $result = Invoke-AdbShellResult -Serial $Serial -Command ($command -replace "`r`n", "`n")
+    return "Capture UID filter: $UidFilter`n$($result.Output)"
+}
+
 function Get-FieldCaptureQuality {
     param([string[]]$Paths, [string]$Session, [bool]$LoggerAliveBeforeStop)
     $startMarker = "RESCUAR_FIELDLOG_VERIFY_$Session"
@@ -359,8 +459,8 @@ function Get-FieldCaptureQuality {
     foreach ($path in $Paths) {
         foreach ($line in [IO.File]::ReadLines($path)) {
             if ($line -match '\s[VDIWEF]\s+RescuAR-FieldLog\s*:') {
-                if ($line.Contains($startMarker)) { $startFound = $true }
-                if ($line.Contains($endMarker)) { $endFound = $true }
+                if (Test-FieldLogMarkerLine -Line $line -Marker $startMarker) { $startFound = $true }
+                if (Test-FieldLogMarkerLine -Line $line -Marker $endMarker) { $endFound = $true }
             }
             if ($line -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)') {
                 $timestamp = $Matches[1]
@@ -537,28 +637,35 @@ function Test-NativeLogcatRotationSupport {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Serial,
-        [string]$UidFilter = ""
+        [string]$UidFilter = "",
+        [string]$MinimumPriority = "D"
     )
 
     $probe = "$RemoteRoot/.rotation-probe"
 
     & adb -s $Serial shell "rm -f '$probe' '$probe'.*" | Out-Null
 
-    # A real invocation is more reliable than parsing vendor-specific --help
-    # text. -d makes it exit after dumping the current main buffer.
+    # Check actual marker delivery, not just an empty file being created.
+    # Unlike the long-lived capture, -d exits normally and flushes stdio.
+    $marker = "RESCUAR_FIELDLOG_PROBE_$([guid]::NewGuid().ToString('N'))"
+    $priority = Get-FieldLogMarkerPriority -MinimumPriority $MinimumPriority
     $uidArgument = if ($UidFilter) { "--uid '$UidFilter'" } else { "" }
-    & adb -s $Serial shell "logcat -d -b main -v threadtime -v year -f '$probe' -r 64 -n 2 $uidArgument '*:I'" | Out-Null
-    $probeExit = $LASTEXITCODE
-
-    $probeExists = Invoke-AdbShellText `
-        -Serial $Serial `
-        -Command "test -f '$probe' && echo yes"
-
-    & adb -s $Serial shell "rm -f '$probe' '$probe'.*" | Out-Null
-
-    if ($probeExit -ne 0 -or $probeExists -ne "yes") {
-        throw "This device's Logcat does not appear to support native -f/-r/-n file rotation from the ADB shell."
+    $probeResult = Invoke-AdbShellResult -Serial $Serial -Command (
+        "log -p $priority -t RescuAR-FieldLog '$marker' || exit `$?; " +
+        "logcat -d -b main -v threadtime -v year -f '$probe' -r 64 -n 2 $uidArgument '*:$MinimumPriority'")
+    try {
+        $probeLines = Invoke-AdbShellText -Serial $Serial `
+            -Command "grep -h -F '$marker' '$probe' '$probe'.* 2>/dev/null"
+        $markerFound = @($probeLines -split "`n" | Where-Object {
+            Test-FieldLogMarkerLine -Line $_ -Marker $marker
+        }).Count -gt 0
+        if ($probeResult.ExitCode -ne 0 -or -not $markerFound) {
+            $diagnostics = Get-FieldLogDiagnostics -Serial $Serial -BaseLogPath $probe `
+                -Marker $marker -UidFilter $UidFilter -PidText "self"
+            throw "Native Logcat rotation/filter probe did not capture its marker (exit $($probeResult.ExitCode)). $($probeResult.Output)`n$diagnostics"
+        }
     }
+    finally { & adb -s $Serial shell "rm -f '$probe' '$probe'.*" | Out-Null }
 }
 
 $serial = Get-DeviceSerial
@@ -636,7 +743,7 @@ if ($Start) {
         $uidFilter = "$appUid,$shellUid"
     }
     Write-Host "Checking native Logcat file rotation/filter support..."
-    Test-NativeLogcatRotationSupport -Serial $serial -UidFilter $uidFilter
+    Test-NativeLogcatRotationSupport -Serial $serial -UidFilter $uidFilter -MinimumPriority $MinimumPriority
 
     $session = Get-Date -Format "yyyyMMdd_HHmmss"
     $remoteSessionDir = "$RemoteRoot/$session"
@@ -782,6 +889,8 @@ exec logcat \
     Write-Host "Rotated files retained: $RotateCount (+ 1 active file)"
     Write-Host "Approximate maximum log retention: $approxRetentionMB MB"
     Write-Host "Minimum priority: $MinimumPriority"
+    Write-Host "Marker priority: $(Get-FieldLogMarkerPriority $MinimumPriority) (buffered-file verification)"
+    Write-Host "Capture UID filter: $(if ($uidFilter) { $uidFilter } else { 'all' })"
     Write-Host "Install method: $resolvedInstallMethod"
 
     $launchCommand =
@@ -818,29 +927,32 @@ exec logcat \
         throw "Logcat PID $pidText exited during startup. Status='$statusText'. Launcher output: $launcherError"
     }
 
-    # Verify end-to-end capture with a marker that survives Android's write
-    # filtering as well as the configured Logcat minimum.
-    $priorityForLogCommand = Get-FieldLogMarkerPriority -MinimumPriority $MinimumPriority
+    # Verify the actual file after flushing a quiet native Logcat capture.
     $marker = "RESCUAR_FIELDLOG_VERIFY_$session"
-    & adb -s $serial shell "log -p $priorityForLogCommand -t RescuAR-FieldLog '$marker'" | Out-Null
-    Start-Sleep -Seconds 3
-
-    $markerCheck = Invoke-AdbShellText `
-        -Serial $serial `
-        -Command "grep -h -F '$marker' '$remoteBaseLog' '$remoteBaseLog'.* 2>/dev/null | tail -n 1"
-
-    if (-not $markerCheck) {
+    try {
+        $markerCaptured = Confirm-FieldLogMarker -Serial $serial -BaseLogPath $remoteBaseLog `
+            -Marker $marker -MinimumPriority $MinimumPriority -PidText $pidText
+        if (-not $markerCaptured) {
+            throw "The startup marker did not reach the native log files after the flush burst."
+        }
+    }
+    catch {
+        $failureMessage = $_.Exception.Message
         $launcherError = Read-RemoteFile -Serial $serial -Path $RemoteLauncherLog
         $statusText = Read-RemoteFile -Serial $serial -Path $RemoteStatusFile
-
+        $diagnostics = Get-FieldLogDiagnostics -Serial $serial -BaseLogPath $remoteBaseLog `
+            -Marker $marker -UidFilter $uidFilter -PidText $pidText
+        $failureDetails = "Session: $session`n$failureMessage`nStatus before stop: $statusText`nLauncher output: $launcherError`n$diagnostics"
+        try {
+            New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+            $diagnosticPath = Join-Path $OutputDirectory "RescuAR_FieldLog_Failure_$session.txt"
+            $failureDetails | Set-Content -LiteralPath $diagnosticPath -Encoding UTF8
+            Write-Host "Failure diagnostics saved to: $((Resolve-Path -LiteralPath $diagnosticPath).Path)"
+        }
+        catch { Write-Warning "Could not save failure diagnostics locally: $($_.Exception.Message)" }
         Stop-RemoteCapture -Serial $serial
-        & adb -s $serial shell "rm -f '$RemoteSessionFile'" | Out-Null
-
-        throw @"
-Logcat PID verification passed, but the test marker did not reach the on-device log files.
-Status: $statusText
-Launcher output: $launcherError
-"@
+        # Keep the pointer and session files available for -Status/-Collect.
+        throw $failureDetails
     }
 
     $capture = Get-CaptureStatus -Serial $serial
@@ -890,11 +1002,19 @@ if ($Collect) {
     $loggerStatus = Read-RemoteFile -Serial $serial -Path $RemoteStatusFile
     $completionMarker = "RESCUAR_FIELDLOG_COMPLETE_$session"
     $completionMeta = Read-RemoteFile -Serial $serial -Path "$remoteSessionDir/session.txt"
-    $completionPriority = if ($completionMeta -match '(?m)^MinimumPriority=([VDIWEF])') {
-        Get-FieldLogMarkerPriority -MinimumPriority $Matches[1]
-    } else { "i" }
-    & adb -s $serial shell "log -p $completionPriority -t RescuAR-FieldLog '$completionMarker'" | Out-Null
-    Start-Sleep -Seconds 2
+    $completionMinimum = if ($completionMeta -match '(?m)^MinimumPriority=([VDIWEF])') {
+        $Matches[1]
+    } else { "I" }
+    if ($captureBeforeStop.LogcatAlive) {
+        try {
+            $completionCaptured = Confirm-FieldLogMarker -Serial $serial -BaseLogPath "$remoteSessionDir/logcat" `
+                -Marker $completionMarker -MinimumPriority $completionMinimum -PidText $captureBeforeStop.LogcatPid
+            if (-not $completionCaptured) { throw "The completion marker was not persisted before stopping Logcat." }
+        }
+        catch {
+            Write-Warning "Completion verification failed; collecting the available evidence: $($_.Exception.Message)"
+        }
+    }
     Stop-RemoteCapture -Serial $serial
     & adb -s $serial shell "sync" | Out-Null
     Start-Sleep -Milliseconds 750
