@@ -337,6 +337,15 @@ function Get-RotationThresholdKB {
     return $RequestedKB
 }
 
+function Get-FieldLogMarkerPriority {
+    param([ValidateSet("V", "D", "I", "W", "E", "F")][string]$MinimumPriority)
+
+    # Android can discard V/D messages in liblog before Logcat receives them.
+    # Markers must meet both that default INFO floor and the capture filter.
+    if ($MinimumPriority -in @("V", "D")) { return "i" }
+    return $MinimumPriority.ToLowerInvariant()
+}
+
 function Get-FieldCaptureQuality {
     param([string[]]$Paths, [string]$Session, [bool]$LoggerAliveBeforeStop)
     $startMarker = "RESCUAR_FIELDLOG_VERIFY_$Session"
@@ -809,9 +818,9 @@ exec logcat \
         throw "Logcat PID $pidText exited during startup. Status='$statusText'. Launcher output: $launcherError"
     }
 
-    # Verify end-to-end capture. The marker priority follows the configured
-    # minimum so W/E/F captures do not falsely fail verification.
-    $priorityForLogCommand = $MinimumPriority.ToLowerInvariant()
+    # Verify end-to-end capture with a marker that survives Android's write
+    # filtering as well as the configured Logcat minimum.
+    $priorityForLogCommand = Get-FieldLogMarkerPriority -MinimumPriority $MinimumPriority
     $marker = "RESCUAR_FIELDLOG_VERIFY_$session"
     & adb -s $serial shell "log -p $priorityForLogCommand -t RescuAR-FieldLog '$marker'" | Out-Null
     Start-Sleep -Seconds 3
@@ -882,7 +891,7 @@ if ($Collect) {
     $completionMarker = "RESCUAR_FIELDLOG_COMPLETE_$session"
     $completionMeta = Read-RemoteFile -Serial $serial -Path "$remoteSessionDir/session.txt"
     $completionPriority = if ($completionMeta -match '(?m)^MinimumPriority=([VDIWEF])') {
-        $Matches[1].ToLowerInvariant()
+        Get-FieldLogMarkerPriority -MinimumPriority $Matches[1]
     } else { "i" }
     & adb -s $serial shell "log -p $completionPriority -t RescuAR-FieldLog '$completionMarker'" | Out-Null
     Start-Sleep -Seconds 2

@@ -6,8 +6,8 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
     (Resolve-Path -LiteralPath $scriptPath).Path, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
 
-# Import only the two pure functions, never the script's device operations.
-foreach ($name in @('Get-RotationThresholdKB', 'Get-FieldCaptureQuality')) {
+# Import only pure functions, never the script's device operations.
+foreach ($name in @('Get-RotationThresholdKB', 'Get-FieldLogMarkerPriority', 'Get-FieldCaptureQuality')) {
     $definition = $ast.Find({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $true)
@@ -30,6 +30,18 @@ $smallLimitRejected = $false
 try { Get-RotationThresholdKB 2032 'Max file size             1024                 1024                 bytes' | Out-Null }
 catch { $smallLimitRejected = $true }
 Check $smallLimitRejected 'an unusable file-size limit fails before field capture starts'
+
+foreach ($priorityCase in @(
+    @{ Capture = 'V'; Marker = 'i' },
+    @{ Capture = 'D'; Marker = 'i' },
+    @{ Capture = 'I'; Marker = 'i' },
+    @{ Capture = 'W'; Marker = 'w' },
+    @{ Capture = 'E'; Marker = 'e' },
+    @{ Capture = 'F'; Marker = 'f' }
+)) {
+    Check ((Get-FieldLogMarkerPriority $priorityCase.Capture) -ceq $priorityCase.Marker) `
+        "$($priorityCase.Capture) capture markers meet Android's INFO floor and the capture minimum"
+}
 
 $testDirectory = Join-Path ([IO.Path]::GetTempPath()) ("rescuar-fieldlog-checks-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $testDirectory | Out-Null
@@ -62,6 +74,15 @@ try {
     $echoedCommands = Get-FieldCaptureQuality @($first) $session $true
     Check (-not $echoedCommands.StartMarkerFound -and -not $echoedCommands.EndMarkerFound) `
         'ADB command echoes cannot substitute for captured completion markers'
+    $markerPriority = (Get-FieldLogMarkerPriority 'D').ToUpperInvariant()
+    [IO.File]::WriteAllText($first, @"
+2026-10-12 09:36:52.044 100 100 $markerPriority RescuAR-FieldLog: RESCUAR_FIELDLOG_VERIFY_$session
+2026-10-12 09:55:00.000 100 100 $markerPriority RescuAR-FieldLog: RESCUAR_FIELDLOG_COMPLETE_$session
+"@)
+    $infoMarkers = Get-FieldCaptureQuality @($first) $session $true
+    Check ($infoMarkers.CaptureComplete -and $infoMarkers.ApplicationEvents -eq 0 -and
+        -not $infoMarkers.HasNavigationEvidence) `
+        'INFO markers establish a complete Debug capture without counting as navigation evidence'
 }
 finally {
     # Delete only the two exact files created by this test, then the empty folder.
