@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -22,22 +24,28 @@ public partial class PASSViewModel : ObservableObject
     private bool _isModalVisible = false;
 
     [ObservableProperty]
-    private int _scorePercentage = 72;
+    private int _scorePercentage = 0;
 
     [ObservableProperty]
-    private double _progressValue = 0.72;
+    private double _progressValue = 0.0;
 
     [ObservableProperty]
-    private string _scoreStatus = "Prepared";
+    private string _scoreStatus = "Not Assessed";
 
     [ObservableProperty]
-    private string _statusColor = "#385723";
+    private string _statusColor = "#64748B";
 
     [ObservableProperty]
-    private string _statusBadgeBg = "#E2F0D9";
+    private string _statusBadgeBg = "#F1F5F9";
 
     [ObservableProperty]
-    private string _lastAssessedText = "Last assessed June 15, 2026";
+    private string _lastAssessedText = "Not assessed yet";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoHistory))]
+    private bool _hasHistory = false;
+
+    public bool HasNoHistory => !HasHistory;
 
     [ObservableProperty]
     private bool _isEmergencySuppliesExpanded = true;
@@ -51,7 +59,7 @@ public partial class PASSViewModel : ObservableObject
     [ObservableProperty]
     private bool _isHouseholdPreparednessExpanded = false;
 
-    public List<AssessmentHistoryItem> History { get; } = new();
+    public ObservableCollection<AssessmentHistoryItem> History { get; } = new();
 
     public PASSViewModel()
     {
@@ -61,11 +69,34 @@ public partial class PASSViewModel : ObservableObject
 
     public void RefreshScore()
     {
-        ScorePercentage = Preferences.Get("PASS_Score", 72);
+        string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                        ?? Preferences.Get("CurrentUserId", "");
+
+        bool hasUserScore = !string.IsNullOrWhiteSpace(userId) && Preferences.ContainsKey($"PASS_Score_{userId}");
+        bool hasGlobalScore = Preferences.ContainsKey("PASS_Score");
+
+        if (hasUserScore)
+        {
+            ScorePercentage = Preferences.Get($"PASS_Score_{userId}", 0);
+            ScoreStatus = Preferences.Get($"PASS_Status_{userId}", "Prepared");
+            string date = Preferences.Get($"PASS_LastDate_{userId}", DateTime.Now.ToString("MMMM dd, yyyy"));
+            LastAssessedText = $"Last assessed {date}";
+        }
+        else if (hasGlobalScore)
+        {
+            ScorePercentage = Preferences.Get("PASS_Score", 0);
+            ScoreStatus = Preferences.Get("PASS_Status", "Prepared");
+            string date = Preferences.Get("PASS_LastDate", DateTime.Now.ToString("MMMM dd, yyyy"));
+            LastAssessedText = $"Last assessed {date}";
+        }
+        else
+        {
+            ScorePercentage = 0;
+            ScoreStatus = "Not Assessed";
+            LastAssessedText = "Not assessed yet";
+        }
+
         ProgressValue = ScorePercentage / 100.0;
-        ScoreStatus = Preferences.Get("PASS_Status", "Prepared");
-        string date = Preferences.Get("PASS_LastDate", "June 15, 2026");
-        LastAssessedText = $"Last assessed {date}";
 
         if (ScorePercentage >= 80)
         {
@@ -77,19 +108,87 @@ public partial class PASSViewModel : ObservableObject
             StatusColor = "#0A8491";
             StatusBadgeBg = "#E0F2FE";
         }
-        else
+        else if (ScorePercentage > 0)
         {
             StatusColor = "#B45309";
             StatusBadgeBg = "#FEF3C7";
         }
+        else
+        {
+            StatusColor = "#64748B";
+            StatusBadgeBg = "#F1F5F9";
+        }
     }
 
-    private void LoadHistory()
+    public void LoadHistory()
     {
         History.Clear();
-        History.Add(new AssessmentHistoryItem { Date = "June 15, 2026", ScoreText = "72%", Status = "Prepared", StatusColor = "#0A8491" });
-        History.Add(new AssessmentHistoryItem { Date = "May 20, 2026", ScoreText = "65%", Status = "Partially Prepared", StatusColor = "#D97706" });
-        History.Add(new AssessmentHistoryItem { Date = "April 10, 2026", ScoreText = "58%", Status = "Needs Work", StatusColor = "#DC2626" });
+
+        try
+        {
+            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                            ?? Preferences.Get("CurrentUserId", "");
+
+            string historyJson = "";
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                historyJson = Preferences.Get($"PASS_AssessmentHistoryJson_{userId}", "");
+            }
+
+            if (string.IsNullOrWhiteSpace(historyJson))
+            {
+                historyJson = Preferences.Get("PASS_AssessmentHistoryJson", "");
+            }
+
+            if (!string.IsNullOrWhiteSpace(historyJson))
+            {
+                var items = System.Text.Json.JsonSerializer.Deserialize<List<AssessmentHistoryItem>>(historyJson);
+                if (items != null && items.Count > 0)
+                {
+                    foreach (var item in items)
+                    {
+                        History.Add(item);
+                    }
+                    HasHistory = History.Count > 0;
+                    return;
+                }
+            }
+
+            // If user has a current score recorded but no history array yet, display their initial recorded score
+            bool hasScore = (!string.IsNullOrWhiteSpace(userId) && Preferences.ContainsKey($"PASS_Score_{userId}"))
+                            || Preferences.ContainsKey("PASS_Score");
+            if (hasScore)
+            {
+                int currentScore = !string.IsNullOrWhiteSpace(userId) && Preferences.ContainsKey($"PASS_Score_{userId}")
+                    ? Preferences.Get($"PASS_Score_{userId}", 0)
+                    : Preferences.Get("PASS_Score", 0);
+                string currentStatus = !string.IsNullOrWhiteSpace(userId) && Preferences.ContainsKey($"PASS_Status_{userId}")
+                    ? Preferences.Get($"PASS_Status_{userId}", "Prepared")
+                    : Preferences.Get("PASS_Status", "Prepared");
+                string currentDate = !string.IsNullOrWhiteSpace(userId) && Preferences.ContainsKey($"PASS_LastDate_{userId}")
+                    ? Preferences.Get($"PASS_LastDate_{userId}", DateTime.Now.ToString("MMMM dd, yyyy"))
+                    : Preferences.Get("PASS_LastDate", DateTime.Now.ToString("MMMM dd, yyyy"));
+                string color = currentScore >= 80 ? "#15803D" : currentScore >= 60 ? "#0A8491" : "#D97706";
+
+                History.Add(new AssessmentHistoryItem
+                {
+                    Date = currentDate,
+                    ScoreText = $"{currentScore}%",
+                    Status = currentStatus,
+                    StatusColor = color
+                });
+                HasHistory = true;
+            }
+            else
+            {
+                HasHistory = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading assessment history: {ex.Message}");
+            HasHistory = History.Count > 0;
+        }
     }
 
     [RelayCommand]

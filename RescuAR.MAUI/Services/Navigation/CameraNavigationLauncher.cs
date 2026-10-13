@@ -260,6 +260,17 @@ public static class CameraNavigationLauncher
 
         try
         {
+            try
+            {
+                Microsoft.Maui.Storage.Preferences.Default.Set("LastArSessionTimestamp", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                if (!string.IsNullOrWhiteSpace(destinationName))
+                {
+                    Microsoft.Maui.Storage.Preferences.Default.Set("LastArSessionDestination", destinationName);
+                    Microsoft.Maui.Storage.Preferences.Default.Set("LastViewedEvacuationCenter", destinationName);
+                }
+            }
+            catch { }
+
             /*
              * AppShell defines:
              *

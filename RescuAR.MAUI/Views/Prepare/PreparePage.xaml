@@ -6,86 +6,118 @@
     x:Class="RescuAR.App.Views.Prepare.PreparePage"
     x:DataType="vm:PrepareViewModel"
     Title="Prepare Page"
+    Shell.NavBarIsVisible="False"
     BackgroundColor="#F8FAFC">
 
-    <ScrollView VerticalScrollBarVisibility="Never">
-        <VerticalStackLayout Spacing="20" Padding="16,20,16,30">
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top Custom Header Bar with Back Button and Title Banner -->
+        <Border Grid.Row="0"
+                BackgroundColor="#FFFFFF"
+                Stroke="#E2E8F0"
+                StrokeThickness="0,0,0,1"
+                Padding="16,11">
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
+                <Border Grid.Column="0"
+                        BackgroundColor="#F1F5F9"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="←" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
 
-            <!-- 1. HERO PREPAREDNESS SCORE BANNER -->
-            <Border BackgroundColor="#0A8491"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 24"
-                    Padding="20">
-                <VerticalStackLayout Spacing="14">
-                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                        <VerticalStackLayout Grid.Column="0" Spacing="4">
-                            <Label Text="DISASTER PREPAREDNESS"
-                                   TextColor="#E0F2FE"
-                                   FontSize="11"
-                                   FontAttributes="Bold"
-                                   CharacterSpacing="1" />
-                            <Label Text="Prepare Page"
-                                   TextColor="#FFFFFF"
-                                   FontSize="26"
-                                   FontAttributes="Bold" />
-                        </VerticalStackLayout>
+                <!-- Title Banner -->
+                <Label Grid.Column="1"
+                       Text="Prepare Page"
+                       TextColor="#0F172A"
+                       FontSize="17"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
 
-                        <!-- Score Pill Badge -->
-                        <Border Grid.Column="1"
-                                BackgroundColor="#065F69"
-                                StrokeThickness="0"
-                                StrokeShape="RoundRectangle 16"
-                                Padding="14,8">
-                            <VerticalStackLayout Spacing="2" HorizontalOptions="Center">
-                                <Label Text="{Binding PercentReady, StringFormat='{0}%'}"
-                                       TextColor="#4ADE80"
-                                       FontSize="22"
-                                       FontAttributes="Bold"
-                                       HorizontalOptions="Center" />
-                                <Label Text="READY"
+                <!-- Spacer to ensure title remains perfectly centered -->
+                <BoxView Grid.Column="2" WidthRequest="36" Color="Transparent" />
+            </Grid>
+        </Border>
+
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Spacing="16" Padding="16,14,16,28">
+
+                <!-- 1. HERO PREPAREDNESS SCORE BANNER -->
+                <Border BackgroundColor="#0A8491"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 18"
+                        Padding="16,14">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                            <!-- Left Column: Prominent Disaster Preparedness Title & Subtitle (No awkward whitespace) -->
+                            <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                <Label Text="Disaster Preparedness"
                                        TextColor="#FFFFFF"
-                                       FontSize="10"
-                                       FontAttributes="Bold"
-                                       HorizontalOptions="Center" />
+                                       FontSize="19"
+                                       FontAttributes="Bold" />
+                                <Label Text="{Binding Subtitle}"
+                                       TextColor="#E0F2FE"
+                                       FontSize="11"
+                                       LineBreakMode="TailTruncation"
+                                       MaxLines="2" />
                             </VerticalStackLayout>
+
+                            <!-- Right Column: Score Pill Badge -->
+                            <Border Grid.Column="1"
+                                    BackgroundColor="#065F69"
+                                    StrokeThickness="0"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="12,6"
+                                    VerticalOptions="Center">
+                                <VerticalStackLayout Spacing="1" HorizontalOptions="Center" VerticalOptions="Center">
+                                    <Label Text="{Binding PercentReady, StringFormat='{0}%'}"
+                                           TextColor="#4ADE80"
+                                           FontSize="19"
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="Center" />
+                                    <Label Text="READY"
+                                           TextColor="#FFFFFF"
+                                           FontSize="9"
+                                           FontAttributes="Bold"
+                                           HorizontalOptions="Center" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </Grid>
+
+                        <!-- Progress Bar Track -->
+                        <Border BackgroundColor="#065F69"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="12,8">
+                            <VerticalStackLayout Spacing="6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Grid.Column="0"
+                                           Text="{Binding PreparednessStatus}"
+                                           TextColor="#FFFFFF"
+                                           FontSize="11"
+                                           FontAttributes="Bold" />
+                                    <Label Grid.Column="1"
+                                           Text="View Progress ↗"
+                                           TextColor="#4ADE80"
+                                           FontSize="11"
+                                           FontAttributes="Bold" />
+                                </Grid>
+
+                                <ProgressBar Progress="{Binding ProgressFraction}"
+                                             ProgressColor="#4ADE80"
+                                             HeightRequest="5" />
+                            </VerticalStackLayout>
+
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenChecklistCommand}" />
+                            </Border.GestureRecognizers>
                         </Border>
-                    </Grid>
-
-                    <Label Text="{Binding Subtitle}"
-                           TextColor="#E0F2FE"
-                           FontSize="13"
-                           LineBreakMode="WordWrap" />
-
-                    <!-- Progress Bar Track -->
-                    <Border BackgroundColor="#065F69"
-                            StrokeThickness="0"
-                            StrokeShape="RoundRectangle 16"
-                            Padding="16,12">
-                        <VerticalStackLayout Spacing="8">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <Label Grid.Column="0"
-                                       Text="{Binding PreparednessStatus}"
-                                       TextColor="#FFFFFF"
-                                       FontSize="12"
-                                       FontAttributes="Bold" />
-                                <Label Grid.Column="1"
-                                       Text="View Progress ↗"
-                                       TextColor="#4ADE80"
-                                       FontSize="12"
-                                       FontAttributes="Bold" />
-                            </Grid>
-
-                            <ProgressBar Progress="{Binding ProgressFraction}"
-                                         ProgressColor="#4ADE80"
-                                         HeightRequest="8" />
-                        </VerticalStackLayout>
-
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding OpenChecklistCommand}" />
-                        </Border.GestureRecognizers>
-                    </Border>
-                </VerticalStackLayout>
-            </Border>
+                    </VerticalStackLayout>
+                </Border>
 
             <!-- 2. SECTION 1: ESSENTIAL EMERGENCY TOOLS -->
             <VerticalStackLayout Spacing="10">
@@ -361,4 +393,5 @@
 
         </VerticalStackLayout>
     </ScrollView>
+    </Grid>
 </ContentPage>
