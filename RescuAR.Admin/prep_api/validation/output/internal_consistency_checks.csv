@@ -1,8 +1,0 @@
-check,expected,observed,tolerance,pass
-City exposed population equals sum of barangay estimates,285842,285842,1,TRUE
-City exposed children equals sum of barangay estimates,89902,89902,1,TRUE
-Mapped barangay count equals computed exposed barangay count,16,16,0,TRUE
-All baseline barangays are represented,16,16,0,TRUE
-Facility exposure rows are unique by OSM ID,34,34,0,TRUE
-Hazard-area percentages stay within 0-100,1,1,0,TRUE
-Population estimates are non-negative,1,1,0,TRUE
