@@ -160,55 +160,69 @@
                     </HorizontalStackLayout>
                 </ScrollView>
 
-                <!-- 4. Checklist Items List (Checkmark on Left) -->
+                <!-- 4. Checklist Items List with Swipe to Delete -->
                 <VerticalStackLayout BindableLayout.ItemsSource="{Binding FilteredItems}" Spacing="12">
                     <BindableLayout.ItemTemplate>
                         <DataTemplate x:DataType="vm:ChecklistItem">
-                            <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,16">
-                                <Border.GestureRecognizers>
-                                    <TapGestureRecognizer 
-                                        Command="{Binding ViewModel.ToggleItemCommand, Source={x:Reference thisPage}, x:DataType=local:ChecklistPage}"
-                                        CommandParameter="{Binding .}" />
-                                </Border.GestureRecognizers>
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" VerticalOptions="Center">
-                                    
-                                    <!-- Checkmark Circle (Left) -->
-                                    <Border Grid.Column="0" WidthRequest="26" HeightRequest="26" StrokeShape="RoundRectangle 13" StrokeThickness="1.5" Stroke="#CBD5E1" BackgroundColor="Transparent" VerticalOptions="Start" Margin="0,2,0,0">
-                                        <Border.Triggers>
-                                            <DataTrigger TargetType="Border" Binding="{Binding IsCompleted}" Value="True">
-                                                <Setter Property="BackgroundColor" Value="#16A34A" />
-                                                <Setter Property="Stroke" Value="#16A34A" />
-                                            </DataTrigger>
-                                        </Border.Triggers>
-                                        <Path Data="M20 6L9 17l-5-5"
-                                              Stroke="#FFFFFF"
-                                              StrokeThickness="2.5"
-                                              StrokeLineCap="Round"
-                                              StrokeLineJoin="Round"
-                                              WidthRequest="12" HeightRequest="12"
-                                              Aspect="Uniform"
-                                              HorizontalOptions="Center" VerticalOptions="Center"
-                                              IsVisible="{Binding IsCompleted}" />
-                                    </Border>
+                            <SwipeView>
+                                <!-- Right Swipe Action: Delete Option -->
+                                <SwipeView.RightItems>
+                                    <SwipeItems Mode="Reveal">
+                                        <SwipeItem Text="Delete"
+                                                   BackgroundColor="#EF4444"
+                                                   IconImageSource="trash.png"
+                                                   Command="{Binding ViewModel.DeleteItemCommand, Source={x:Reference thisPage}, x:DataType=local:ChecklistPage}"
+                                                   CommandParameter="{Binding .}" />
+                                    </SwipeItems>
+                                </SwipeView.RightItems>
 
-                                    <!-- Title and Description (Middle) -->
-                                    <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
-                                        <Label Text="{Binding Title}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold">
-                                            <Label.Triggers>
-                                                <DataTrigger TargetType="Label" Binding="{Binding IsCompleted}" Value="True">
-                                                    <Setter Property="TextDecorations" Value="Strikethrough" />
-                                                    <Setter Property="TextColor" Value="#94A3B8" />
-                                                </DataTrigger>
-                                            </Label.Triggers>
-                                        </Label>
+                                <!-- Card Content -->
+                                <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16,16">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer 
+                                            Command="{Binding ViewModel.ToggleItemCommand, Source={x:Reference thisPage}, x:DataType=local:ChecklistPage}"
+                                            CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" VerticalOptions="Center">
                                         
-                                        <Label Text="{Binding Description}" TextColor="#64748B" FontSize="13" LineBreakMode="WordWrap" />
-                                    </VerticalStackLayout>
+                                        <!-- Checkmark Circle (Left) -->
+                                        <Border Grid.Column="0" WidthRequest="26" HeightRequest="26" StrokeShape="RoundRectangle 13" StrokeThickness="1.5" Stroke="#CBD5E1" BackgroundColor="Transparent" VerticalOptions="Start" Margin="0,2,0,0">
+                                            <Border.Triggers>
+                                                <DataTrigger TargetType="Border" Binding="{Binding IsCompleted}" Value="True">
+                                                    <Setter Property="BackgroundColor" Value="#16A34A" />
+                                                    <Setter Property="Stroke" Value="#16A34A" />
+                                                </DataTrigger>
+                                            </Border.Triggers>
+                                            <Path Data="M20 6L9 17l-5-5"
+                                                  Stroke="#FFFFFF"
+                                                  StrokeThickness="2.5"
+                                                  StrokeLineCap="Round"
+                                                  StrokeLineJoin="Round"
+                                                  WidthRequest="12" HeightRequest="12"
+                                                  Aspect="Uniform"
+                                                  HorizontalOptions="Center" VerticalOptions="Center"
+                                                  IsVisible="{Binding IsCompleted}" />
+                                        </Border>
 
-                                    <!-- Category Tag (Right) -->
-                                    <Label Grid.Column="2" Text="{Binding Category}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Start" Margin="0,4,0,0" />
-                                </Grid>
-                            </Border>
+                                        <!-- Title and Description (Middle) -->
+                                        <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                            <Label Text="{Binding Title}" TextColor="#0F172A" FontSize="15" FontAttributes="Bold">
+                                                <Label.Triggers>
+                                                    <DataTrigger TargetType="Label" Binding="{Binding IsCompleted}" Value="True">
+                                                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                        <Setter Property="TextColor" Value="#94A3B8" />
+                                                    </DataTrigger>
+                                                </Label.Triggers>
+                                            </Label>
+                                            
+                                            <Label Text="{Binding Description}" TextColor="#64748B" FontSize="13" LineBreakMode="WordWrap" />
+                                        </VerticalStackLayout>
+
+                                        <!-- Category Tag (Right) -->
+                                        <Label Grid.Column="2" Text="{Binding Category}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Start" Margin="0,4,0,0" />
+                                    </Grid>
+                                </Border>
+                            </SwipeView>
                         </DataTemplate>
                     </BindableLayout.ItemTemplate>
                 </VerticalStackLayout>
@@ -219,36 +233,64 @@
         <!-- Add Custom Item Modal Overlay -->
         <Grid Grid.RowSpan="2" BackgroundColor="#80000000" IsVisible="{Binding IsAddModalVisible}">
             <Border BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 16" Margin="24" Padding="24" VerticalOptions="Center">
-                <VerticalStackLayout Spacing="16">
-                    <Label Text="Add Custom Kit Item" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" Margin="0,0,0,8" />
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="Add Custom Kit Item" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" Margin="0,0,0,4" />
                     
-                    <Entry Placeholder="Item Title (e.g., Heavy Duty Gloves)" Text="{Binding NewItemTitle}" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="14" />
-                    <Entry Placeholder="Item Description (e.g., Protection from sharp debris)" Text="{Binding NewItemDescription}" TextColor="#0F172A" PlaceholderColor="#94A3B8" FontSize="14" />
+                    <!-- 1. Category Selection Dropdown (Positioned ABOVE Item Title) -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Category" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                        <Border Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,2" BackgroundColor="#F8FAFC">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Picker Grid.Column="0"
+                                        Title="Select Category"
+                                        TitleColor="#94A3B8"
+                                        TextColor="#0F172A"
+                                        FontSize="14"
+                                        ItemsSource="{Binding AvailableCategories}"
+                                        SelectedItem="{Binding NewItemCategory}"
+                                        VerticalOptions="Center" />
+                                <Path Grid.Column="1"
+                                      Data="M7,10L12,15L17,10H7Z"
+                                      Fill="#64748B"
+                                      WidthRequest="12"
+                                      HeightRequest="12"
+                                      Aspect="Uniform"
+                                      HorizontalOptions="End"
+                                      VerticalOptions="Center"
+                                      InputTransparent="True" />
+                            </Grid>
+                        </Border>
+                    </VerticalStackLayout>
 
-                    <!-- Category Selection Dropdown -->
-                    <Border Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,0" BackgroundColor="#FFFFFF">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Picker Grid.Column="0"
-                                    Title="Select Category"
-                                    TitleColor="#94A3B8"
-                                    TextColor="#0F172A"
-                                    FontSize="14"
-                                    ItemsSource="{Binding AvailableCategories}"
-                                    SelectedItem="{Binding NewItemCategory}"
-                                    VerticalOptions="Center" />
-                            <Path Grid.Column="1"
-                                  Data="M7,10L12,15L17,10H7Z"
-                                  Fill="#64748B"
-                                  WidthRequest="12"
-                                  HeightRequest="12"
-                                  Aspect="Uniform"
-                                  HorizontalOptions="End"
-                                  VerticalOptions="Center"
-                                  InputTransparent="True" />
-                        </Grid>
-                    </Border>
+                    <!-- 2. Item Title with Outline Box -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Item Title" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                        <Border Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,4" BackgroundColor="#F8FAFC">
+                            <Entry Placeholder="e.g., Heavy Duty Gloves"
+                                   Text="{Binding NewItemTitle}"
+                                   TextColor="#0F172A"
+                                   PlaceholderColor="#94A3B8"
+                                   FontSize="14"
+                                   HeightRequest="40"
+                                   BackgroundColor="Transparent" />
+                        </Border>
+                    </VerticalStackLayout>
 
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,16,0,0">
+                    <!-- 3. Item Description with Outline Box -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Item Description" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                        <Border Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8" Padding="12,4" BackgroundColor="#F8FAFC">
+                            <Entry Placeholder="e.g., Protection from sharp debris"
+                                   Text="{Binding NewItemDescription}"
+                                   TextColor="#0F172A"
+                                   PlaceholderColor="#94A3B8"
+                                   FontSize="14"
+                                   HeightRequest="40"
+                                   BackgroundColor="Transparent" />
+                        </Border>
+                    </VerticalStackLayout>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,12,0,0">
                         <Button Grid.Column="0" Text="Cancel" TextColor="#64748B" BackgroundColor="#F1F5F9" CornerRadius="8" HeightRequest="44" FontSize="14" FontAttributes="Bold"
                                 Command="{Binding CloseAddModalCommand}" />
                         <Button Grid.Column="1" Text="Save Item" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="8" HeightRequest="44" FontSize="14" FontAttributes="Bold"
