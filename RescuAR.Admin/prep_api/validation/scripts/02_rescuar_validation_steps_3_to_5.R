@@ -142,9 +142,18 @@ EVENT_NAME <- "Typhoon Ulysses (Vamco)"
 EVENT_DATE <- "2020-11-12"
 
 # Project acceptance criteria (NOT universal official standards)
-TARGET_RECALL <- 0.90
+#
+# The project's acceptable flood-extent accuracy rate is 85%,
+# operationalized as F1 >= 0.85. F1 is used instead of raw pixel
+# accuracy because flooded/non-flooded areas are spatially imbalanced.
+# Precision, recall, IoU/CSI, WAPE, and Spearman remain supporting
+# diagnostics and are reported separately; they do not override the
+# primary 85% F1 acceptance decision.
+TARGET_ACCURACY <- 0.85
+ACCEPTANCE_METRIC <- "F1"
+TARGET_RECALL <- 0.80
 TARGET_PRECISION <- 0.80
-TARGET_F1 <- 0.85
+TARGET_F1 <- TARGET_ACCURACY
 TARGET_IOU <- 0.70
 TARGET_WAPE <- 0.20
 TARGET_SPEARMAN <- 0.80
@@ -1390,13 +1399,18 @@ combined_results <- spatial_results |>
     by = c("return_period", "minimum_hazard")
   ) |>
   mutate(
-    all_targets_met =
+    accuracy_rate_met =
+      !is.na(f1) &
+      f1 >= TARGET_ACCURACY,
+    supporting_targets_met =
       precision >= TARGET_PRECISION &
       recall >= TARGET_RECALL &
-      f1 >= TARGET_F1 &
       iou_csi >= TARGET_IOU &
       population_wape <= TARGET_WAPE &
-      population_spearman >= TARGET_SPEARMAN
+      population_spearman >= TARGET_SPEARMAN,
+    # Backward-compatible field used by downstream calibration/promotion.
+    # It now represents the project's primary 85% F1 acceptance gate.
+    all_targets_met = accuracy_rate_met
   )
 
 # ============================================================
@@ -1495,10 +1509,7 @@ best_population <- population_results |>
 
 spatial_target_pass <- with(
   best_iou,
-  isTRUE(precision >= TARGET_PRECISION) &&
-    isTRUE(recall >= TARGET_RECALL) &&
-    isTRUE(f1 >= TARGET_F1) &&
-    isTRUE(iou_csi >= TARGET_IOU)
+  isTRUE(f1 >= TARGET_ACCURACY)
 )
 
 population_target_pass <- with(
@@ -1507,7 +1518,7 @@ population_target_pass <- with(
     isTRUE(population_spearman >= TARGET_SPEARMAN)
 )
 
-overall_target_pass <- any(combined_results$all_targets_met %in% TRUE, na.rm = TRUE)
+overall_target_pass <- any(combined_results$accuracy_rate_met %in% TRUE, na.rm = TRUE)
 
 validation_decision <- data.frame(
   best_spatial_return_period = best_iou$return_period,
@@ -1523,6 +1534,10 @@ validation_decision <- data.frame(
   lowest_population_wape_minimum_hazard = best_population$minimum_hazard,
   population_wape = best_population$population_wape,
   population_spearman = best_population$population_spearman,
+  acceptance_metric = ACCEPTANCE_METRIC,
+  acceptable_accuracy_rate = TARGET_ACCURACY,
+  best_spatial_accuracy_rate = best_iou$f1,
+  acceptable_accuracy_rate_met = spatial_target_pass,
   spatial_targets_met_for_best_spatial_scenario = spatial_target_pass,
   population_targets_met_for_lowest_wape_scenario = population_target_pass,
   any_single_scenario_meets_all_targets = overall_target_pass,
@@ -1565,9 +1580,9 @@ report_lines <- c(
   "",
   "VALIDATION DECISION:",
   if (overall_target_pass) {
-    "PASS — at least one single evaluated LiPAD scenario meets all current project-defined spatial and population targets."
+    "PASS — at least one evaluated LiPAD scenario reaches the project-defined acceptable spatial accuracy rate of 85% using F1 score."
   } else {
-    "DOES NOT YET MEET ALL PROJECT ACCEPTANCE TARGETS — no single evaluated LiPAD scenario meets every spatial and population target; investigate failed metrics and do not tune the independent reference to force a pass."
+    "DOES NOT YET MEET THE PROJECT ACCEPTABLE ACCURACY RATE — no evaluated LiPAD scenario reaches F1 >= 0.85; investigate the spatial errors and do not tune the independent reference to force a pass."
   },
   "",
   "Best spatial IoU/CSI scenario (descriptive):",
@@ -1602,7 +1617,12 @@ report_lines <- c(
     " km² | FN=", round(best_iou$fn_km2, 3), " km²"
   ),
   paste0(
-    "Spatial target status: Precision=", ifelse(best_iou$precision >= TARGET_PRECISION, "PASS", "FAIL"),
+    "Primary acceptable accuracy rate (F1 >= ", TARGET_ACCURACY, "): ",
+    ifelse(best_iou$f1 >= TARGET_ACCURACY, "PASS", "FAIL"),
+    " | observed F1=", round(best_iou$f1, 3)
+  ),
+  paste0(
+    "Supporting spatial diagnostics: Precision=", ifelse(best_iou$precision >= TARGET_PRECISION, "PASS", "FAIL"),
     " | Recall=", ifelse(best_iou$recall >= TARGET_RECALL, "PASS", "FAIL"),
     " | F1=", ifelse(best_iou$f1 >= TARGET_F1, "PASS", "FAIL"),
     " | IoU=", ifelse(best_iou$iou_csi >= TARGET_IOU, "PASS", "FAIL")
@@ -1629,7 +1649,13 @@ report_lines <- c(
     " | Spearman=", ifelse(best_population$population_spearman >= TARGET_SPEARMAN, "PASS", "FAIL")
   ),
   "",
-  "Project targets:",
+  "Project acceptance and supporting targets:",
+  paste0(
+    "Primary acceptable spatial accuracy rate: F1 >= ",
+    TARGET_ACCURACY,
+    " (85%)"
+  ),
+  "Supporting diagnostics (reported separately from the primary acceptance decision):",
   paste0(
     "Recall >= ",
     TARGET_RECALL

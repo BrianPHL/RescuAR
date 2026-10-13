@@ -14,6 +14,11 @@ Spatial metrics + population metrics + explicit PASS/FAIL decision
 
 The main validation script now supports an optional `observation_domain.gpkg`/GeoJSON so incomplete post-event survey coverage does not automatically count as confirmed non-flooded area.
 
+
+## Project acceptance rule
+
+The project accepts **85% flood-extent accuracy**, operationalized as **F1 >= 0.85**. Raw overall pixel accuracy is not used as the acceptance metric because flood maps are spatially imbalanced. Precision, recall, IoU/CSI, population WAPE, and Spearman correlation remain supporting diagnostics and are reported separately.
+
 ## Peer reproducibility
 
 ```text

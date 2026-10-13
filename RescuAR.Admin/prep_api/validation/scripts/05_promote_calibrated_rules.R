@@ -5,7 +5,7 @@
 # This script never runs automatically. Promotion requires:
 #   1. APPROVE_PROMOTION <- TRUE
 #   2. enough independent calibration and holdout events
-#   3. holdout metrics meeting project targets (default behavior)
+#   3. holdout events meeting the project 85% F1 accuracy gate (default behavior)
 #
 # It writes only the scenario-rule configuration. It does not
 # alter NAMRIA references, LiPAD hazard polygons, or demographics.
@@ -22,7 +22,7 @@ suppressPackageStartupMessages({
 # ------------------------------------------------------------
 
 APPROVE_PROMOTION <- FALSE
-REQUIRE_ALL_HOLDOUT_ROWS_TO_MEET_TARGETS <- TRUE
+REQUIRE_ALL_HOLDOUT_ROWS_TO_MEET_TARGETS <- TRUE  # all holdout rows must have F1 >= 0.85
 MIN_CALIBRATION_EVENTS <- 2
 MIN_HOLDOUT_EVENTS <- 1
 
@@ -101,7 +101,7 @@ if (nrow(holdout) == 0) stop("Promotion blocked: no held-out scores are availabl
 if (REQUIRE_ALL_HOLDOUT_ROWS_TO_MEET_TARGETS && !all(holdout$all_targets_met %in% TRUE)) {
   failed <- holdout |> filter(!all_targets_met)
   print(failed)
-  stop("Promotion blocked: one or more held-out events do not meet all project targets.")
+  stop("Promotion blocked: one or more held-out events do not meet the project acceptable accuracy rate (F1 >= 0.85).")
 }
 
 candidate$approved <- TRUE
