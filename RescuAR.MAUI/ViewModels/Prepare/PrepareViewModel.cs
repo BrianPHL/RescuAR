@@ -58,6 +58,15 @@ public partial class PrepareViewModel : ObservableObject
             System.Diagnostics.Debug.WriteLine($"Error loading prepare data: {ex.Message}");
         }
     }
+    
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("..");
+        }
+    }
 
     [RelayCommand]
     private async Task NavigateToRouteAsync(string? route)
