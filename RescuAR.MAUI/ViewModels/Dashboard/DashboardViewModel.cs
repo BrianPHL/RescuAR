@@ -173,8 +173,7 @@ public partial class DashboardViewModel : ObservableObject
     public string QuickActionsToggleLabelText => IsQuickActionsExpanded ? "Hide" : "Show";
 
     public bool HasQuickActions => QuickActions.Count > 0;
-    public bool HasNoQuickActions => QuickActions.Count == 0;
-    public bool IsQuickActionsCardVisible => IsQuickActionsExpanded;
+    public bool IsQuickActionsCardVisible => QuickActions.Count > 0 && IsQuickActionsExpanded;
 
     public double QuickActionsCarouselHeight
     {
@@ -253,15 +252,8 @@ public partial class DashboardViewModel : ObservableObject
         LoadQuickActions();
         RefreshDashboard();
 
-        // Listen for real-time admin advisory pushes (unsubscribe first to prevent listener leaks)
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.StartRealtimeListener();
-    }
-
-    private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
+        // Listen for real-time admin advisory pushes
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
         {
             SelectedAdvisory = newAdvisory;
             IsPopupVisible = true;
@@ -270,7 +262,8 @@ public partial class DashboardViewModel : ObservableObject
             {
                 FloodAdvisoryDetailText = newAdvisory.DisplayMessageText;
             }
-        });
+        };
+        RealtimeAdvisoryManager.StartRealtimeListener();
     }
 
     public async void RefreshDashboard()
@@ -525,7 +518,6 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasQuickActions));
-        OnPropertyChanged(nameof(HasNoQuickActions));
         OnPropertyChanged(nameof(IsQuickActionsCardVisible));
         OnPropertyChanged(nameof(HasMultipleQuickActionPages));
         OnPropertyChanged(nameof(QuickActionsCarouselHeight));
@@ -911,9 +903,28 @@ public partial class DashboardViewModel : ObservableObject
                 UserName = "User";
             }
 
-            int score = Preferences.Default.Get("PASS_ChecklistScore", Preferences.Default.Get("PASS_Score", 60));
-            int completed = Preferences.Default.Get("PASS_ChecklistCompleted", 6);
-            int total = Preferences.Default.Get("PASS_ChecklistTotal", 10);
+            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                            ?? Preferences.Default.Get("CurrentUserId", "");
+
+            int score = 60;
+            int completed = 6;
+            int total = 10;
+
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                score = Preferences.Default.Get($"PASS_ChecklistScore_{userId}", Preferences.Default.Get("PASS_ChecklistScore", Preferences.Default.Get("PASS_Score", 60)));
+                completed = Preferences.Default.Get($"PASS_ChecklistCompleted_{userId}", Preferences.Default.Get("PASS_ChecklistCompleted", 6));
+                total = Preferences.Default.Get($"PASS_ChecklistTotal_{userId}", Preferences.Default.Get("PASS_ChecklistTotal", 10));
+                
+                // Cache user id for offline resumption
+                Preferences.Default.Set("CurrentUserId", userId);
+            }
+            else
+            {
+                score = Preferences.Default.Get("PASS_ChecklistScore", Preferences.Default.Get("PASS_Score", 60));
+                completed = Preferences.Default.Get("PASS_ChecklistCompleted", 6);
+                total = Preferences.Default.Get("PASS_ChecklistTotal", 10);
+            }
 
             PreparednessScore = score;
             PreparednessCompletedItems = completed;
@@ -1063,27 +1074,6 @@ public partial class DashboardViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenActiveAdvisoriesPopup()
-    {
-        if (SelectedAdvisory == null)
-        {
-            SelectedAdvisory = new DisasterAdvisory
-            {
-                Id = "dash-active-advisory-1",
-                Title = "FLOOD WARNING — Marikina River Level 2",
-                Message = "Water level in Marikina River has reached 16.5 meters. Low-lying areas in Barangay Tumana and Malanday are advised to stay on standby for possible evacuation.",
-                WaterLevel = 16.5,
-                AlertLevel = "Warning",
-                Severity = "High",
-                AffectedArea = "Barangay Tumana & Malanday, Marikina City",
-                ActionPlan = "Prepare emergency go-bags, keep emergency contacts ready, and monitor barangay LGU updates.",
-                CreatedAt = DateTime.Now
-            };
-        }
-        IsPopupVisible = true;
-    }
-
-    [RelayCommand]
     private async Task OpenTranslationMenuAsync()
     {
         if (SelectedAdvisory is null ||
@@ -1195,20 +1185,7 @@ public partial class DashboardViewModel : ObservableObject
 
             // 2. Fetch Live Community Incident Reports from CommunityReportService
             var reportService = new CommunityReportService();
-            double uLat = 14.6585;
-            double uLng = 121.0955;
-            try
-            {
-                var loc = await Geolocation.Default.GetLastKnownLocationAsync();
-                if (loc != null)
-                {
-                    uLat = loc.Latitude;
-                    uLng = loc.Longitude;
-                }
-            }
-            catch { }
-
-            var liveReports = await reportService.GetReportsAsync("", "Nearest to me", uLat, uLng);
+            var liveReports = await reportService.GetReportsAsync();
             if (liveReports != null && liveReports.Count > 0)
             {
                 var r1 = liveReports[0];
