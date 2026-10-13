@@ -36,6 +36,11 @@ library(dplyr)
 # 0. SETTINGS
 # ============================================================
 
+# Optional evaluator identifier. Peers can set the environment variable
+# PREP_EVALUATOR_ID before sourcing the script, e.g. "Peer01".
+EVALUATOR_ID <- trimws(Sys.getenv("PREP_EVALUATOR_ID", "unassigned"))
+if (!nzchar(EVALUATOR_ID)) EVALUATOR_ID <- "unassigned"
+
 # Number of disconnected OUTER flood polygons to trace.
 NUMBER_OF_OUTER_POLYGONS <- 1
 
@@ -62,10 +67,44 @@ GUIDE_MAX_POINTS <- 5000
 # 1. PATHS
 # ============================================================
 
-project_root <- paste0(
-  "C:/Users/Josh/Documents/Project/RescuAR/",
-  "RescuAR.Admin"
-)
+find_project_root <- function(start = getwd()) {
+  current <- normalizePath(start, winslash = "/", mustWork = TRUE)
+
+  repeat {
+    marker <- file.path(
+      current,
+      "prep_api",
+      "data",
+      "spatial",
+      "baseline_spatial.gpkg"
+    )
+
+    if (file.exists(marker)) return(current)
+
+    # Also support running with prep_api itself as the working directory.
+    local_marker <- file.path(
+      current,
+      "data",
+      "spatial",
+      "baseline_spatial.gpkg"
+    )
+
+    if (file.exists(local_marker)) return(dirname(current))
+
+    parent <- dirname(current)
+    if (identical(parent, current)) {
+      stop(
+        paste(
+          "Could not locate the RescuAR.Admin project root.",
+          "Open RStudio inside RescuAR.Admin or one of its subfolders."
+        )
+      )
+    }
+    current <- parent
+  }
+}
+
+project_root <- find_project_root()
 
 gpkg <- file.path(
   project_root,
@@ -185,6 +224,14 @@ stale_files <- c(
   file.path(
     validation_output_dir,
     "ulysses_validation_report.txt"
+  ),
+  file.path(
+    validation_output_dir,
+    "validation_decision.csv"
+  ),
+  file.path(
+    validation_output_dir,
+    "tracing_metadata.csv"
   )
 )
 
@@ -1264,7 +1311,40 @@ title(
 )
 
 # ============================================================
-# 16. PRINT FINAL STATUS
+# 16. SAVE TRACE PROVENANCE / EVALUATOR METADATA
+# ============================================================
+
+trace_metadata <- data.frame(
+  evaluator_id = EVALUATOR_ID,
+  completed_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+  outer_polygon_count = NUMBER_OF_OUTER_POLYGONS,
+  exclusion_hole_count = NUMBER_OF_EXCLUSION_HOLES,
+  observed_flood_area_km2 = total_observed_flood_m2 / 1e6,
+  georeferenced_source = basename(georef_tif),
+  automated_guide_used = SHOW_AUTOMATED_TRACE_GUIDE,
+  guide_min_red = GUIDE_MIN_RED,
+  guide_max_blue = GUIDE_MAX_BLUE,
+  guide_min_rb_diff = GUIDE_MIN_RB_DIFF,
+  guide_min_gb_diff = GUIDE_MIN_GB_DIFF,
+  guide_red_green_tolerance = GUIDE_RED_GREEN_TOLERANCE,
+  guide_smooth_window = GUIDE_SMOOTH_WINDOW,
+  guide_smooth_threshold = GUIDE_SMOOTH_THRESHOLD,
+  stringsAsFactors = FALSE
+)
+
+trace_metadata_csv <- file.path(
+  validation_output_dir,
+  "tracing_metadata.csv"
+)
+
+write.csv(
+  trace_metadata,
+  trace_metadata_csv,
+  row.names = FALSE
+)
+
+# ============================================================
+# 17. PRINT FINAL STATUS
 # ============================================================
 
 cat(
@@ -1291,6 +1371,8 @@ cat(
   observed_geojson,
   "\n",
   flood_fraction_csv,
+  "\n",
+  trace_metadata_csv,
   "\n\n",
   "NEXT STEP:\n",
   "Inspect the final magenta QC outline.",

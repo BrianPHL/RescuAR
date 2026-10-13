@@ -31,11 +31,17 @@ import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
 import { calculateAlertStatus } from '../utils/waterLevelUtils';
-import { deriveProvisionalExposureScenario, describeProvisionalRules } from '../utils/provisionalExposureScenario';
+import {
+  deriveProvisionalExposureScenario,
+  describeProvisionalRules,
+  normalizeExposureRuleConfig,
+  DEFAULT_EXPOSURE_RULE_CONFIG,
+} from '../utils/provisionalExposureScenario';
 import {
   PREP_EXPOSURE_API_URL,
   isPrepExposureApiConfigured,
   fetchPrepExposureScenario,
+  fetchPrepExposureRules,
 } from '../services/prepExposureApi';
 import barangayBoundaries from '../data/marikinaBarangays.json';
 import facilityDirectory from '../data/marikinaFacilities.json';
@@ -167,6 +173,26 @@ export default function HazardExposure() {
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [exposureRuleConfig, setExposureRuleConfig] = useState(DEFAULT_EXPOSURE_RULE_CONFIG);
+  const [ruleConfigError, setRuleConfigError] = useState('');
+
+  const loadExposureRuleConfig = async () => {
+    setRuleConfigError('');
+
+    if (!isPrepExposureApiConfigured()) {
+      setExposureRuleConfig(DEFAULT_EXPOSURE_RULE_CONFIG);
+      return;
+    }
+
+    try {
+      const payload = await fetchPrepExposureRules();
+      setExposureRuleConfig(normalizeExposureRuleConfig(payload));
+    } catch (requestError) {
+      console.error('Unable to load PREP exposure-rule config:', requestError);
+      setExposureRuleConfig(DEFAULT_EXPOSURE_RULE_CONFIG);
+      setRuleConfigError(requestError?.message || 'Unable to load PREP exposure-rule configuration.');
+    }
+  };
 
   const loadTelemetryContext = async () => {
     setTelemetryError('');
@@ -202,6 +228,7 @@ export default function HazardExposure() {
 
   useEffect(() => {
     void loadTelemetryContext();
+    void loadExposureRuleConfig();
     const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
     const channel = supabase
       .channel('exposure-live-context')
@@ -220,8 +247,16 @@ export default function HazardExposure() {
   const automaticScenario = useMemo(() => deriveProvisionalExposureScenario({
     telemetry: liveTelemetry,
     freshness,
-    sourceStatus
-  }), [liveTelemetry, freshness.status, freshness.ageText, sourceStatus?.worker_status, sourceStatus?.source_status]);
+    sourceStatus,
+    ruleConfig: exposureRuleConfig,
+  }), [
+    liveTelemetry,
+    freshness.status,
+    freshness.ageText,
+    sourceStatus?.worker_status,
+    sourceStatus?.source_status,
+    exposureRuleConfig,
+  ]);
 
   const activeScenario = scenarioMode === 'automatic'
     ? (automaticScenario.active ? {
@@ -338,7 +373,13 @@ export default function HazardExposure() {
     exposure && Array.isArray(exposure?.barangays) ? barangays.length : null
   );
 
-  const rules = useMemo(() => describeProvisionalRules(), []);
+  const rules = useMemo(
+    () => describeProvisionalRules(exposureRuleConfig),
+    [exposureRuleConfig]
+  );
+  const automaticRuleApproved = Boolean(exposureRuleConfig?.approved);
+  const automaticRuleLabel = automaticRuleApproved ? 'Calibrated Auto-Scenario' : 'Provisional Auto-Scenario';
+  const automaticRuleHeading = automaticRuleApproved ? 'Configured calibrated mapping' : 'Configured provisional mapping';
   const noAutomaticScenario = scenarioMode === 'automatic' && !automaticScenario.active;
   const exposureUnavailableMessage = error
     ? 'Exposure service unavailable.'
@@ -509,11 +550,11 @@ export default function HazardExposure() {
         <div className="title-group">
           <div className="title-row">
             <h1 className="inundation-title">Flood Hazard Exposure</h1>
-            <span className="live-badge"><span className="pulse-dot"></span>Provisional Auto-Scenario</span>
+            <span className="live-badge"><span className="pulse-dot"></span>{automaticRuleLabel}</span>
           </div>
-          <p className="inundation-subtitle">Uses live PAGASA station condition to automatically select a LiPAD/UP DREAM reference hazard scenario. This is a provisional rule-based reference, not a calibrated prediction of current flood extent.</p>
+          <p className="inundation-subtitle">Uses live PAGASA station condition to select a LiPAD/UP DREAM reference hazard scenario. {automaticRuleApproved ? 'The status-to-scenario mapping is an approved historical calibration, but the output remains a reference exposure estimate rather than a live hydraulic inundation prediction.' : 'The current mapping is provisional and has not been promoted through independent holdout validation.'}</p>
         </div>
-        <button className="refresh-btn" onClick={() => { void loadTelemetryContext(); setRefreshKey((key) => key + 1); }}><RefreshCw size={15} /><span>Refresh View</span></button>
+        <button className="refresh-btn" onClick={() => { void loadTelemetryContext(); void loadExposureRuleConfig(); setRefreshKey((key) => key + 1); }}><RefreshCw size={15} /><span>Refresh View</span></button>
       </div>
 
       <div className="inundation-grid">
@@ -539,6 +580,7 @@ export default function HazardExposure() {
               <strong>Last verified observation:</strong> {formatObservedAt(liveTelemetry?.observed_at)}<br />
               <strong>PAGASA source:</strong> {sourceStatus?.source_status || 'unknown'} • <strong>Worker:</strong> {sourceStatus?.worker_status || 'unknown'}
               {telemetryError && <><br /><strong>Telemetry error:</strong> {telemetryError}</>}
+              {ruleConfigError && <><br /><strong>Rule config:</strong> using provisional fallback ({ruleConfigError})</>}
             </div>
 
             <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: automaticScenario.active ? '#ecfdf5' : '#eff6ff', border: automaticScenario.active ? '1px solid #a7f3d0' : '1px solid #bfdbfe', color: automaticScenario.active ? '#065f46' : '#1e40af', fontSize: 13 }}>
@@ -547,7 +589,7 @@ export default function HazardExposure() {
             </div>
 
             <div style={{ marginTop: 18 }}>
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>Configured provisional mapping</div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{automaticRuleHeading}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
                 {rules.map((rule) => (
                   <div key={rule.condition} style={{ padding: 10, border: '1px solid #e2e8f0', borderRadius: 9, background: '#fff' }}>
@@ -560,7 +602,7 @@ export default function HazardExposure() {
             </div>
 
             <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: 12 }}>
-              <strong>Scientific limitation:</strong> Alert/Alarm/Critical levels are mapped to reference 5/25/100-year hazard scenarios by project rule only. Population and child figures are area-weighted exposure estimates, and facility markers indicate spatial intersection with a mapped hazard area. These outputs must not be presented as confirmed impacts, confirmed safe areas, or a calibrated current inundation prediction until independently validated against historical observations.
+              <strong>Scientific limitation:</strong> {automaticRuleApproved ? 'The Alert/Alarm/Critical mapping has passed the configured promotion gate using historical calibration plus held-out event validation; this does not make the reference scenario a live hydraulic flood-extent prediction.' : 'Alert/Alarm/Critical levels are currently mapped by provisional project rule only.'} Population and child figures remain exposure estimates, and facility markers indicate spatial intersection with a mapped hazard area. These outputs must not be presented as confirmed impacts or confirmed safe areas.
             </div>
           </div>
         </div>

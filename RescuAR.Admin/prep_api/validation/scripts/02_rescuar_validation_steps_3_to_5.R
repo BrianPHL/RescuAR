@@ -23,10 +23,44 @@ library(stringr)
 # 0. PATHS
 # ============================================================
 
-project_root <- paste0(
-  "C:/Users/Josh/Documents/Project/RescuAR/",
-  "RescuAR.Admin"
-)
+find_project_root <- function(start = getwd()) {
+  current <- normalizePath(start, winslash = "/", mustWork = TRUE)
+
+  repeat {
+    marker <- file.path(
+      current,
+      "prep_api",
+      "data",
+      "spatial",
+      "baseline_spatial.gpkg"
+    )
+
+    if (file.exists(marker)) return(current)
+
+    # Also support running with prep_api itself as the working directory.
+    local_marker <- file.path(
+      current,
+      "data",
+      "spatial",
+      "baseline_spatial.gpkg"
+    )
+
+    if (file.exists(local_marker)) return(dirname(current))
+
+    parent <- dirname(current)
+    if (identical(parent, current)) {
+      stop(
+        paste(
+          "Could not locate the RescuAR.Admin project root.",
+          "Open RStudio inside RescuAR.Admin or one of its subfolders."
+        )
+      )
+    }
+    current <- parent
+  }
+}
+
+project_root <- find_project_root()
 
 spatial_gpkg <- file.path(
   project_root,
@@ -84,6 +118,16 @@ observed_exposure_csv <- file.path(
   "observed_barangay_exposure.csv"
 )
 
+# Optional observation/survey coverage mask. If present, spatial validation
+# is restricted to this independently documented domain so unobserved areas
+# are not silently treated as confirmed dry. Supported filenames:
+#   observation_domain.gpkg
+#   observation_domain.geojson
+observation_domain_candidates <- c(
+  file.path(validation_input_dir, "observation_domain.gpkg"),
+  file.path(validation_input_dir, "observation_domain.geojson")
+)
+
 # ============================================================
 # 1. CONFIGURATION
 # ============================================================
@@ -132,6 +176,28 @@ area_m2 <- function(x) {
     ),
     na.rm = TRUE
   )
+}
+
+load_optional_observation_domain <- function(paths, target_crs = 32651) {
+  path <- paths[file.exists(paths)][1]
+  if (length(path) == 0 || is.na(path)) return(NULL)
+
+  domain <- if (grepl("\\.gpkg$", path, ignore.case = TRUE)) {
+    layers <- sf::st_layers(path)$name
+    layer <- if ("observation_domain" %in% layers) "observation_domain" else layers[1]
+    sf::st_read(path, layer = layer, quiet = TRUE)
+  } else {
+    sf::st_read(path, quiet = TRUE)
+  }
+
+  if (nrow(domain) == 0 || is.na(sf::st_crs(domain))) {
+    stop("Observation domain exists but is empty or has no CRS: ", path)
+  }
+
+  domain <- sf::st_make_valid(domain)
+  domain <- sf::st_transform(domain, target_crs)
+  attr(domain, "source_path") <- path
+  domain
 }
 
 # ============================================================
@@ -228,10 +294,32 @@ marikina_boundary <- st_union(
   )
 )
 
+observation_domain <- load_optional_observation_domain(
+  observation_domain_candidates,
+  target_crs = 32651
+)
+
+if (is.null(observation_domain)) {
+  analysis_domain <- marikina_boundary
+  analysis_domain_label <- "Full Marikina boundary (no separate observation-domain mask supplied)"
+} else {
+  analysis_domain <- suppressWarnings(
+    st_intersection(
+      st_union(st_geometry(observation_domain)),
+      marikina_boundary
+    )
+  )
+  analysis_domain <- st_make_valid(analysis_domain)
+  analysis_domain_label <- paste0(
+    "Independent observation-domain mask: ",
+    basename(attr(observation_domain, "source_path"))
+  )
+}
+
 observed_flood <- suppressWarnings(
   st_intersection(
     observed_flood,
-    marikina_boundary
+    analysis_domain
   )
 )
 
@@ -257,6 +345,32 @@ barangay_area_table$barangay_area_m2 <- as.numeric(
     barangay_area_table
   )
 )
+
+coverage_intersections <- suppressWarnings(
+  st_intersection(
+    barangay_area_table[, c("barangay_name", "name_key")],
+    st_sf(geometry = analysis_domain)
+  )
+)
+
+if (nrow(coverage_intersections) > 0) {
+  coverage_intersections$observation_coverage_area_m2 <- as.numeric(
+    st_area(coverage_intersections)
+  )
+  coverage_by_barangay <- coverage_intersections |>
+    st_drop_geometry() |>
+    group_by(barangay_name, name_key) |>
+    summarise(
+      observation_coverage_area_m2 = sum(observation_coverage_area_m2, na.rm = TRUE),
+      .groups = "drop"
+    )
+} else {
+  coverage_by_barangay <- data.frame(
+    barangay_name = character(0),
+    name_key = character(0),
+    observation_coverage_area_m2 = numeric(0)
+  )
+}
 
 observed_intersections <- suppressWarnings(
   st_intersection(
@@ -316,7 +430,26 @@ observed_fraction <- barangay_area_table |>
       "name_key"
     )
   ) |>
+  left_join(
+    coverage_by_barangay,
+    by = c(
+      "barangay_name",
+      "name_key"
+    )
+  ) |>
   mutate(
+    observation_coverage_area_m2 = coalesce(
+      observation_coverage_area_m2,
+      0
+    ),
+    observation_coverage_fraction = pmin(
+      1,
+      pmax(
+        0,
+        observation_coverage_area_m2 / barangay_area_m2
+      )
+    ),
+    observation_coverage_percent = observation_coverage_fraction * 100,
     observed_flood_area_m2 = coalesce(
       observed_flood_area_m2,
       0
@@ -774,7 +907,7 @@ build_scenario_polygon <- function(
   geom <- suppressWarnings(
     st_intersection(
       geom,
-      marikina_boundary
+      analysis_domain
     )
   )
 
@@ -1251,6 +1384,21 @@ scenario_barangay <- bind_rows(
   scenario_barangay_rows
 )
 
+combined_results <- spatial_results |>
+  left_join(
+    population_results,
+    by = c("return_period", "minimum_hazard")
+  ) |>
+  mutate(
+    all_targets_met =
+      precision >= TARGET_PRECISION &
+      recall >= TARGET_RECALL &
+      f1 >= TARGET_F1 &
+      iou_csi >= TARGET_IOU &
+      population_wape <= TARGET_WAPE &
+      population_spearman >= TARGET_SPEARMAN
+  )
+
 # ============================================================
 # 5D. SAVE VALIDATION OUTPUTS
 # ============================================================
@@ -1268,6 +1416,11 @@ population_output <- file.path(
 barangay_output <- file.path(
   validation_output_dir,
   "population_validation_by_barangay.csv"
+)
+
+combined_output <- file.path(
+  validation_output_dir,
+  "combined_validation_scenarios.csv"
 )
 
 write.csv(
@@ -1288,6 +1441,12 @@ write.csv(
       -name_key
     ),
   barangay_output,
+  row.names = FALSE
+)
+
+write.csv(
+  combined_results,
+  combined_output,
   row.names = FALSE
 )
 
@@ -1334,6 +1493,51 @@ best_population <- population_results |>
     n = 1
   )
 
+spatial_target_pass <- with(
+  best_iou,
+  isTRUE(precision >= TARGET_PRECISION) &&
+    isTRUE(recall >= TARGET_RECALL) &&
+    isTRUE(f1 >= TARGET_F1) &&
+    isTRUE(iou_csi >= TARGET_IOU)
+)
+
+population_target_pass <- with(
+  best_population,
+  isTRUE(population_wape <= TARGET_WAPE) &&
+    isTRUE(population_spearman >= TARGET_SPEARMAN)
+)
+
+overall_target_pass <- any(combined_results$all_targets_met %in% TRUE, na.rm = TRUE)
+
+validation_decision <- data.frame(
+  best_spatial_return_period = best_iou$return_period,
+  best_spatial_minimum_hazard = best_iou$minimum_hazard,
+  precision = best_iou$precision,
+  recall = best_iou$recall,
+  f1 = best_iou$f1,
+  iou_csi = best_iou$iou_csi,
+  tp_km2 = best_iou$tp_km2,
+  fp_km2 = best_iou$fp_km2,
+  fn_km2 = best_iou$fn_km2,
+  lowest_population_wape_return_period = best_population$return_period,
+  lowest_population_wape_minimum_hazard = best_population$minimum_hazard,
+  population_wape = best_population$population_wape,
+  population_spearman = best_population$population_spearman,
+  spatial_targets_met_for_best_spatial_scenario = spatial_target_pass,
+  population_targets_met_for_lowest_wape_scenario = population_target_pass,
+  any_single_scenario_meets_all_targets = overall_target_pass,
+  overall_targets_met = overall_target_pass,
+  analysis_domain = analysis_domain_label,
+  stringsAsFactors = FALSE
+)
+
+decision_output <- file.path(
+  validation_output_dir,
+  "validation_decision.csv"
+)
+
+write.csv(validation_decision, decision_output, row.names = FALSE)
+
 report_lines <- c(
   "RESCUAR / PREP — ULYSSES VALIDATION REPORT",
   "",
@@ -1350,13 +1554,21 @@ report_lines <- c(
   ),
   "",
   paste0(
-    "Observed NAMRIA flood area inside Marikina: ",
+    "Observed NAMRIA flood area inside analysis domain: ",
     round(
       observed_total_m2 / 1e6,
       4
     ),
     " km²"
   ),
+  paste0("Analysis domain: ", analysis_domain_label),
+  "",
+  "VALIDATION DECISION:",
+  if (overall_target_pass) {
+    "PASS — at least one single evaluated LiPAD scenario meets all current project-defined spatial and population targets."
+  } else {
+    "DOES NOT YET MEET ALL PROJECT ACCEPTANCE TARGETS — no single evaluated LiPAD scenario meets every spatial and population target; investigate failed metrics and do not tune the independent reference to force a pass."
+  },
   "",
   "Best spatial IoU/CSI scenario (descriptive):",
   paste0(
@@ -1384,6 +1596,17 @@ report_lines <- c(
       3
     )
   ),
+  paste0(
+    "Spatial areas: TP=", round(best_iou$tp_km2, 3),
+    " km² | FP=", round(best_iou$fp_km2, 3),
+    " km² | FN=", round(best_iou$fn_km2, 3), " km²"
+  ),
+  paste0(
+    "Spatial target status: Precision=", ifelse(best_iou$precision >= TARGET_PRECISION, "PASS", "FAIL"),
+    " | Recall=", ifelse(best_iou$recall >= TARGET_RECALL, "PASS", "FAIL"),
+    " | F1=", ifelse(best_iou$f1 >= TARGET_F1, "PASS", "FAIL"),
+    " | IoU=", ifelse(best_iou$iou_csi >= TARGET_IOU, "PASS", "FAIL")
+  ),
   "",
   "Lowest population WAPE scenario (descriptive):",
   paste0(
@@ -1400,6 +1623,10 @@ report_lines <- c(
       best_population$population_spearman,
       3
     )
+  ),
+  paste0(
+    "Population target status: WAPE=", ifelse(best_population$population_wape <= TARGET_WAPE, "PASS", "FAIL"),
+    " | Spearman=", ifelse(best_population$population_spearman >= TARGET_SPEARMAN, "PASS", "FAIL")
   ),
   "",
   "Project targets:",
@@ -1432,6 +1659,11 @@ report_lines <- c(
   "Limitations:",
   "- One historical event (Ulysses) is being tested.",
   "- NAMRIA survey/map coverage is incomplete.",
+  if (is.null(observation_domain)) {
+    "- No independent observation-domain mask was supplied; false-positive interpretation outside mapped/surveyed coverage is therefore uncertain."
+  } else {
+    "- Spatial metrics were restricted to the supplied observation-domain mask to avoid treating unobserved areas as confirmed dry."
+  },
   "- Manual georeferencing/digitization introduces positional uncertainty.",
   "- Population exposure assumes uniform population distribution within barangays.",
   "- Derived exposed population is not a direct observed affected-person count.",
@@ -1456,8 +1688,12 @@ cat(
   spatial_output,
   "\n\nPopulation metrics:\n",
   population_output,
+  "\n\nCombined scenario decision table:\n",
+  combined_output,
   "\n\nBarangay comparison:\n",
   barangay_output,
+  "\n\nDecision summary:\n",
+  decision_output,
   "\n\nText report:\n",
   report_file,
   "\n",

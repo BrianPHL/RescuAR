@@ -76,7 +76,7 @@
   },
   "hazard_exposure_model": {
     "status": "operational",
-    "type": "deterministic GIS area-weighted affected-population model",
+    "type": "deterministic GIS exposure model with optional population spatial weighting",
     "primary_output": "estimated affected population",
     "hazard": "flood inundation reference scenarios",
     "return_periods_years": [
@@ -89,7 +89,20 @@
       "Medium": "0.5-1.5 m",
       "High": ">1.5 m"
     },
-    "population_assumption": "uniform distribution within each barangay",
-    "note": "Estimates population spatially exposed to mapped flood hazards; does not predict live flood occurrence."
+    "population_assumption": "uniform distribution within each barangay unless an optional compatible population weighting layer is installed",
+    "note": "Estimates population spatially exposed to mapped flood hazards; does not predict live flood occurrence. Automatic status-to-scenario rules remain provisional until an approved multi-event calibration config is promoted."
+  },
+  "population_spatial_weights": {
+    "status": "optional_not_installed",
+    "accepted_layers": [
+      "population_weights",
+      "population_grid",
+      "population_density"
+    ],
+    "note": "When installed in baseline_spatial.gpkg, PREP uses within-barangay spatial weighting; otherwise it falls back to uniform area weighting."
+  },
+  "historical_event_validation": {
+    "status": "framework_available",
+    "note": "Peer consensus, multi-event calibration, independent holdout validation, and explicit production promotion scripts are available under validation/scripts. Independent historical events must be supplied before calibration can be approved."
   }
 }

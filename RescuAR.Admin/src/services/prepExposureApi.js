@@ -82,6 +82,37 @@ function normalizeSummary(summary = {}, barangays = [], facilities = []) {
   };
 }
 
+
+export async function fetchPrepExposureRules({ signal } = {}) {
+  if (!isPrepExposureApiConfigured()) {
+    throw new Error(
+      "VITE_PREP_EXPOSURE_API_URL is not configured for the RescuAR Admin deployment."
+    );
+  }
+
+  const response = await fetch(
+    `${PREP_EXPOSURE_API_URL}/v1/exposure/rules`,
+    { method: "GET", signal }
+  );
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload) {
+    throw new Error(
+      payload?.message ||
+        payload?.error ||
+        `Unable to load PREP exposure rules (HTTP ${response.status}).`
+    );
+  }
+
+  return payload;
+}
+
 export async function fetchPrepExposureScenario({
   returnPeriod,
   minimumHazard,

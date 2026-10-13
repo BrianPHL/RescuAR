@@ -34,3 +34,26 @@ assert.equal(failedSource.active, false);
 assert.equal(failedSource.state, 'suspended');
 
 console.log('Option B provisional exposure rule tests passed.');
+
+const calibratedRuleConfig = {
+  version: 'test-calibrated',
+  approved: true,
+  source: 'test',
+  rules: {
+    Alert: { return_period: 25, minimum_hazard: 'Low' },
+    Alarm: { return_period: 100, minimum_hazard: 'Low' },
+    Critical: { return_period: 100, minimum_hazard: 'Medium' },
+  }
+};
+
+const calibratedAlarm = deriveProvisionalExposureScenario({
+  telemetry: telemetry(16.2),
+  freshness: fresh,
+  sourceStatus: healthy,
+  ruleConfig: calibratedRuleConfig,
+});
+assert.deepEqual(
+  [calibratedAlarm.active, calibratedAlarm.returnPeriod, calibratedAlarm.minimumHazard, calibratedAlarm.calibrated],
+  [true, 100, 'Low', true]
+);
+console.log('Approved calibration rule override test passed.');

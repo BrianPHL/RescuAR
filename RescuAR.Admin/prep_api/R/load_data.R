@@ -17,6 +17,41 @@ safe_read_layer <- function(gpkg, layer) {
   sf::st_read(gpkg, layer = layer, quiet = TRUE)
 }
 
+optional_read_population_weights <- function(gpkg) {
+  if (!file.exists(gpkg)) return(NULL)
+
+  layer_names <- tryCatch(
+    sf::st_layers(gpkg)$name,
+    error = function(e) character(0)
+  )
+
+  preferred <- c("population_weights", "population_grid", "population_density")
+  selected <- preferred[preferred %in% layer_names]
+  if (length(selected) == 0) return(NULL)
+
+  layer <- selected[1]
+  weights <- sf::st_read(gpkg, layer = layer, quiet = TRUE)
+
+  population_candidates <- c("population_weight", "population_2024", "population", "pop_weight", "pop")
+  children_candidates <- c("children_weight", "children_2020", "children", "child_weight")
+
+  pop_col <- population_candidates[population_candidates %in% names(weights)][1]
+  child_col <- children_candidates[children_candidates %in% names(weights)][1]
+
+  if (is.na(pop_col) || is.null(pop_col)) {
+    warning(
+      "Optional population weighting layer '", layer,
+      "' was found but contains no supported population-weight field. Falling back to area weighting."
+    )
+    return(NULL)
+  }
+
+  attr(weights, "prep_population_weight_col") <- pop_col
+  attr(weights, "prep_children_weight_col") <- if (!is.na(child_col) && !is.null(child_col)) child_col else NULL
+  attr(weights, "prep_source_layer") <- layer
+  weights
+}
+
 load_baseline_data <- function() {
   gpkg <- prep_path("data", "spatial", "baseline_spatial.gpkg")
 
@@ -29,8 +64,6 @@ load_baseline_data <- function() {
   # barangay_id is an identifier, not a measurement. Keep it as character
   # in datasets that actually contain the field so dplyr joins do not fail
   # when GeoPackage IDs are text while CSV IDs are inferred as numeric.
-  # demographics_barangay.csv is keyed by barangay_name only and intentionally
-  # has no barangay_id column.
   normalize_barangay_id <- function(x) {
     if ("barangay_id" %in% names(x)) {
       x <- x %>% mutate(barangay_id = as.character(.data$barangay_id))
@@ -42,6 +75,8 @@ load_baseline_data <- function() {
   features <- normalize_barangay_id(features)
   exposure <- normalize_barangay_id(exposure)
   barangays <- normalize_barangay_id(barangays)
+
+  population_weights <- optional_read_population_weights(gpkg)
 
   list(
     weather = weather,
@@ -56,6 +91,7 @@ load_baseline_data <- function() {
       `25` = safe_read_layer(gpkg, "hazard_25yr"),
       `100` = safe_read_layer(gpkg, "hazard_100yr")
     ),
+    population_weights = population_weights,
     manifest = jsonlite::fromJSON(
       prep_path("data", "data_manifest.json"),
       simplifyVector = FALSE
