@@ -16,6 +16,7 @@ namespace RescuAR.App.Views.Prepare
             if (BindingContext is PASSViewModel vm)
             {
                 vm.RefreshScore();
+                vm.LoadHistory();
             }
         }
     }
