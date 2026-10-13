@@ -17,20 +17,12 @@
         </Border.GestureRecognizers>
 
         <VerticalStackLayout Spacing="14">
-            <!-- Header Badge & Status Title -->
+            <!-- Status Header (Badge removed, bold direct text) -->
             <VerticalStackLayout Spacing="6">
-                <!-- Badge Pill -->
-                <Border StrokeShape="RoundRectangle 8"
-                        BackgroundColor="#FFFFFF"
-                        Padding="10,4"
-                        HorizontalOptions="Start"
-                        StrokeThickness="0"
-                        Opacity="0.85">
-                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding TextColor}" VerticalOptions="Center" />
-                        <Label Text="{Binding RiskTitle}" TextColor="{Binding TextColor}" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
-                    </HorizontalStackLayout>
-                </Border>
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding TextColor}" VerticalOptions="Center" />
+                    <Label Text="{Binding RiskTitle}" TextColor="{Binding TextColor}" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
 
                 <!-- Dynamic Advisories Text -->
                 <Label Text="{Binding AdvisoriesText}"
