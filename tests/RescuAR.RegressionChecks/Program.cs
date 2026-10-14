@@ -937,6 +937,60 @@ Check(connectedAccess is { RoadComponentNodeCount:3, DestinationComponentCount:1
     pendingAccess is { RoadComponentNodeCount:2, DestinationComponentCount:0 },
     "road approach reports local connectivity without inventing a connection");
 
+bool CanPreview(GeoCoordinate gps, GeoCoordinate matched, double? accuracy = 12,
+    bool accepted = true, bool offRoute = false, bool access = true,
+    RouteMatchConfidence confidence = RouteMatchConfidence.Medium,
+    DateTimeOffset? fix = null) => MappedRoutePreviewPolicy.CanPublish(
+        accepted, offRoute, confidence, accuracy, gps, matched, fix ?? now, now, access);
+Check(CanPreview(C(0,-8.2), C(0)) &&
+    !RouteCorridorPolicy.CanEnterRoadFollowing(true,false,8.2,25,RouteMatchConfidence.Medium,12),
+    "nearby mapped route can be previewed without widening physical road-entry confirmation");
+Check(!CanPreview(C(0,-21),C(0)) && !CanPreview(C(0),C(0),accuracy:21) &&
+    !CanPreview(C(0),C(0),accuracy:null) && !CanPreview(C(0),C(0),accuracy:double.NaN),
+    "mapped preview rejects excessive displacement and uncertain GPS");
+Check(!CanPreview(C(0),C(0),accepted:false) && !CanPreview(C(0),C(0),offRoute:true) &&
+    !CanPreview(C(0),C(0),access:false) &&
+    !CanPreview(C(0),C(0),confidence:RouteMatchConfidence.Low),
+    "no route match, confirmed deviation, blocked access and ambiguous matches cannot produce a preview");
+Check(!CanPreview(C(0),C(0),fix:now.AddSeconds(-6)) &&
+    !CanPreview(C(0),C(0),fix:now.AddSeconds(3)) &&
+    !CanPreview(C(0),new GeoCoordinate(121,14)),
+    "stale, future and invalid positions cannot display a mapped preview");
+Check(!RoadApproachCuePolicy.IsAccessDirectionReliable(1.6,12) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(8.2,20) &&
+    RoadApproachCuePolicy.IsAccessDirectionReliable(8.2,3) &&
+    RoadApproachCuePolicy.IsAccessDirectionReliable(35,20),
+    "access arrows distinguish a supported lateral direction from GPS or map offset uncertainty");
+Check(!RoadApproachCuePolicy.IsAccessDirectionReliable(35,null) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(double.NaN,12) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(51,12),
+    "invalid or distant access targets cannot create an arrow");
+var mappedPreviewGeometry = Route(C(0),C(3),C(3,20));
+foreach (string algorithm in new[] { "AStar", "MLD (Railway OSRM)" })
+{
+    var previewRoute = new RouteResult(mappedPreviewGeometry.Points,
+        mappedPreviewGeometry.TotalDistanceMeters, algorithm);
+    var previewTracker = new RouteProgressTracker();
+    previewTracker.SetRoute(previewRoute);
+    var match = previewTracker.Update(C(0,-8.2),12);
+    Check(MappedRoutePreviewPolicy.CanPublish(match.IsAccepted,match.IsOffRoute,
+        match.MatchConfidence,match.AccuracyMeters,match.GpsCoordinate,
+        match.SnappedCoordinate,now,now,true),
+        $"{algorithm} route match permits actual geometry while road entry is still pending");
+    bool published = new MLDARIntegrationService(new EmptyRoutingService()).PublishProgressWindow(
+        previewRoute,match.CommittedProgressMeters,match.SnappedCoordinate,0,0,0,
+        arWindowMeters:LocalArNavigationPolicy.ApproachWindowMeters,
+        sourceSegmentIndex:match.SegmentIndex,userCoordinate:match.GpsCoordinate);
+    var preview = ARRouteBridge.Current;
+    Check(published && preview.IsAvailable && preview.Algorithm == algorithm &&
+        preview.NavigationState.VisualKind == RouteVisualKind.RouteWindow && preview.Points.Count == 3,
+        $"{algorithm} pending-entry preview publishes a cyan polyline with its mapped corner");
+    Check(Math.Abs(preview.Points[0].X)<0.01 && Math.Abs(preview.Points[0].Z+8.2)<0.01 &&
+        Math.Abs(preview.Points[1].X-3)<0.01 && Math.Abs(preview.Points[1].Z+8.2)<0.01,
+        $"{algorithm} preview starts on mapped geometry and never draws a GPS-to-road connector");
+}
+ARRouteBridge.Clear();
+
 Console.WriteLine($"{passed} regression checks passed.");
 
 sealed class FixedRoutingService(RouteResult route) : IRoutingService

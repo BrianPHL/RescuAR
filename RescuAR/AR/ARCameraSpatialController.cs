@@ -1150,11 +1150,10 @@ public static class ARCameraSpatialController
             hasValidRouteSpatialPlacement = false;
         }
 
-        // Approach arrows have their own trust gates and do not need an
-        // already-published evacuation route. Raw-road diagnostics take priority.
-        if (ARRoadApproachRenderer.ProcessDrawThreadWork(frame,
-                routeGroundHeightPlausible, roadDiagnostic.Active))
-            route.IsEnabled = false;
+        // The access arrow supplements any independently trusted mapped
+        // route window. It must not replace that geometry while entry is pending.
+        ARRoadApproachRenderer.ProcessDrawThreadWork(frame,
+            routeGroundHeightPlausible, roadDiagnostic.Active);
 
         bool routeHeldFromLastValidPlacement =
             route.IsEnabled &&

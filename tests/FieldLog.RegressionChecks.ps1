@@ -9,7 +9,8 @@ if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
 # Import helper definitions without running the script. Device-facing helpers
 # are exercised only with the ADB stubs below, never a connected phone.
 foreach ($name in @('Get-RotationThresholdKB', 'Get-FieldLogMarkerPriority', 'Test-FieldLogMarkerLine',
-    'Get-FieldLogMarkerCommand', 'Confirm-FieldLogMarker', 'Test-NativeLogcatRotationSupport', 'Get-FieldCaptureQuality')) {
+    'Get-FieldLogMarkerCommand', 'Confirm-FieldLogMarker', 'Test-NativeLogcatRotationSupport', 'Get-FieldCaptureQuality',
+    'Test-RemoteLogcatIdentity', 'Stop-RemoteCapture')) {
     $definition = $ast.Find({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $true)
@@ -85,6 +86,10 @@ try {
     Check ($infoMarkers.CaptureComplete -and $infoMarkers.ApplicationEvents -eq 0 -and
         -not $infoMarkers.HasNavigationEvidence) `
         'INFO markers establish a complete Debug capture without counting as navigation evidence'
+    $failedCompletion = Get-FieldCaptureQuality @($first) $session $true $false
+    Check ($failedCompletion.StartMarkerFound -and $failedCompletion.EndMarkerFound -and
+        -not $failedCompletion.CompletionVerified -and -not $failedCompletion.CaptureComplete) `
+        'captured marker text cannot override a failed completion verification'
 
     $marker = "RESCUAR_FIELDLOG_VERIFY_$session"
     $realMarkerLine = "2026-10-12 09:36:52.044 100 100 I RescuAR-FieldLog: $marker"
@@ -102,15 +107,31 @@ try {
     } else { $null }
     if ($bashPath) {
         $shellPath = Join-Path $testDirectory 'marker-check.sh'
-        $fakeLog = 'log() { printf ''%s\t%s\t%s\n'' "$2" "$4" "$5"; }'
+        # The helper generates ASCII only, so this byte limit matches Toybox's
+        # strlen check. The previous unlimited stub missed the real failure.
+        $fakeLog = @'
+log() {
+    if [ "${#5}" -ge 1024 ]; then
+        printf 'log: log cut at 1024 bytes\n' >&2
+        return 1
+    fi
+    printf '%s\t%s\t%s\n' "$2" "$4" "$5"
+}
+'@
         $command = Get-FieldLogMarkerCommand -Marker $marker -MinimumPriority 'D'
         [IO.File]::WriteAllText($shellPath, "$fakeLog`n$command`n", [Text.UTF8Encoding]::new($false))
         $records = @(& $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/'))
-        Check ($LASTEXITCODE -eq 0 -and $records.Count -eq 33 -and
+        Check ($LASTEXITCODE -eq 0 -and $records.Count -eq 65 -and
             ($records[0] -split "`t")[2] -ceq $marker) `
-            'the shell emits the marker before 32 distinct flush records'
-        Check (@($records | Select-Object -Skip 1 | Sort-Object -Unique).Count -eq 32) `
+            'the shell emits the marker before 64 flush records within the Android message limit'
+        Check (@($records | Select-Object -Skip 1 | Sort-Object -Unique).Count -eq 64) `
             'flush records are distinct so identical-message suppression cannot discard the burst'
+        $messageSizes = @($records | ForEach-Object {
+            [Text.Encoding]::UTF8.GetByteCount(($_ -split "`t", 3)[2])
+        })
+        Check (($messageSizes | Measure-Object -Maximum).Maximum -lt 1024 -and
+            ($messageSizes | Measure-Object -Sum).Sum -gt 32768) `
+            'every complete message is below 1024 bytes while the burst still exceeds 32 KiB'
 
         $memory = [IO.MemoryStream]::new()
         $writer = [IO.StreamWriter]::new($memory, [Text.UTF8Encoding]::new($false), 16384, $true)
@@ -124,8 +145,39 @@ try {
             }
             $persisted = [Text.Encoding]::UTF8.GetString($memory.ToArray())
             Check ($persisted.Contains($marker)) 'the burst persists the marker without closing or explicitly flushing the logger'
+
+            $completionMarker = "RESCUAR_FIELDLOG_COMPLETE_$session"
+            $completionCommand = Get-FieldLogMarkerCommand $completionMarker 'W'
+            [IO.File]::WriteAllText($shellPath, "$fakeLog`n$completionCommand`n", [Text.UTF8Encoding]::new($false))
+            $completionRecords = @(& $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/'))
+            Check ($LASTEXITCODE -eq 0 -and $completionRecords.Count -eq 65 -and
+                $completionRecords[0] -ceq "w`tRescuAR-FieldLog`t$completionMarker") `
+                'completion respects the Warning capture priority and stays within Android message limits'
+            $lastAppEvent = '2026-10-12 09:55:00.000 300 300 W RescuAR-RouteProgress: last app event'
+            $writer.WriteLine($lastAppEvent)
+            foreach ($record in $completionRecords) {
+                $fields = $record -split "`t", 3
+                $writer.WriteLine("2026-10-12 09:55:00.001 100 100 $($fields[0].ToUpperInvariant()) $($fields[1]): $($fields[2])")
+            }
+            $persisted = [Text.Encoding]::UTF8.GetString($memory.ToArray())
+            Check ($persisted.Contains($lastAppEvent) -and $persisted.Contains($completionMarker)) `
+                'completion persists preceding app events and its marker before logger shutdown'
         }
         finally { $writer.Dispose(); $memory.Dispose() }
+
+        # Reproduce the supplied failure using the old padding length.
+        $oversizedCommand = $command.Replace(('x' * 512), ('x' * 1024))
+        [IO.File]::WriteAllText($shellPath, "$fakeLog`n$oversizedCommand`n", [Text.UTF8Encoding]::new($false))
+        try {
+            $ErrorActionPreference = 'Continue'
+            $oversizedOutput = @(& $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/') 2>&1 |
+                ForEach-Object { $_.ToString() })
+            $oversizedExit = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = 'Stop' }
+        Check ($oversizedExit -eq 1 -and ($oversizedOutput -join "`n").Contains('log cut at 1024 bytes') -and
+            $oversizedOutput -ccontains "i`tRescuAR-FieldLog`t$marker") `
+            'old oversized padding reproduces exit 1 after the marker was already emitted'
 
         [IO.File]::WriteAllText($shellPath, "log() { return 7; }`n$command`n", [Text.UTF8Encoding]::new($false))
         & $bashPath --noprofile --norc --posix ($shellPath -replace '\\', '/') | Out-Null
@@ -136,18 +188,32 @@ try {
     # Isolate polling/error handling from real ADB and real device state.
     $script:emissionExit = 0
     $script:reads = 0
-    $script:persistAfter = 2
+    $script:persistAfter = 3
     $script:loggerAlive = $true
     $script:probeHasMarker = $true
     $RemoteRoot = '/data/local/tmp/RescuARFieldLogs'
+    $RemoteSessionFile = "$RemoteRoot/current.session"
+    $RemoteLogcatPidFile = "$RemoteRoot/logcat.pid"
+    $RemoteStatusFile = "$RemoteRoot/logger.status"
+    $script:testSession = $session
+    $script:processArguments = "logcat`n-b`nall`n-f`n$RemoteRoot/$session/logcat"
+    $script:stopExit = 0
+    $script:ignoreSignals = $false
+    $script:deviceCommands = @()
     function adb { $global:LASTEXITCODE = 0 }
     function Invoke-AdbShellResult {
         param([string]$Serial, [string]$Command)
         $script:lastDeviceCommand = $Command
+        $script:deviceCommands += $Command
+        if ($Command -match '^kill -') {
+            if ($script:stopExit -eq 0 -and -not $script:ignoreSignals) { $script:loggerAlive = $false }
+            return [PSCustomObject]@{ ExitCode = $script:stopExit; Output = 'mocked signal output' }
+        }
         [PSCustomObject]@{ ExitCode = $script:emissionExit; Output = 'mocked device output' }
     }
     function Invoke-AdbShellText {
         param([string]$Serial, [string]$Command)
+        if ($Command -match '/proc/\d+/cmdline') { return $script:processArguments }
         $script:reads++
         if ($Command -match "'(RESCUAR_FIELDLOG_PROBE_[0-9a-f]+)'") {
             if ($script:probeHasMarker) { return "2026-10-12 09:36:52.044 100 100 I RescuAR-FieldLog: $($Matches[1])" }
@@ -157,10 +223,20 @@ try {
         return ''
     }
     function Test-RemotePidAlive { param([string]$Serial, [string]$PidText); return $script:loggerAlive }
+    function Read-RemoteFile {
+        param([string]$Serial, [string]$Path)
+        if ($Path -eq $RemoteSessionFile) { return $script:testSession }
+        if ($Path -eq $RemoteLogcatPidFile) { return '123' }
+        return ''
+    }
     function Get-FieldLogDiagnostics { param($Serial, $BaseLogPath, $Marker, $UidFilter, $PidText); return 'mocked diagnostics' }
 
     Check (Confirm-FieldLogMarker -Serial 'fake' -BaseLogPath '/fake/logcat' -Marker $marker -MinimumPriority 'D' -PidText '123') `
         'startup polls until a delayed file write contains the exact marker'
+    $script:reads = 0
+    $script:persistAfter = 0
+    Check ((Confirm-FieldLogMarker 'fake' '/fake/logcat' $marker 'D' '123') -and $script:reads -eq 1) `
+        'an active-file marker avoids scanning the retained rotated logs'
     $script:reads = 0
     $script:emissionExit = 7
     $emissionRejected = $false
@@ -185,6 +261,42 @@ try {
     try { Test-NativeLogcatRotationSupport -Serial 'fake' -UidFilter '10123,2000' }
     catch { $emptyProbeRejected = $_.Exception.Message -match 'did not capture its marker' }
     Check $emptyProbeRejected 'creating an empty probe file cannot establish rotation/filter support'
+
+    Check (Test-RemoteLogcatIdentity 'fake' '123') 'shutdown recognizes the registered native Logcat command and file'
+    $script:processArguments = "/system/bin/sh`n-f`n$RemoteRoot/$session/logcat"
+    Check (-not (Test-RemoteLogcatIdentity 'fake' '123')) 'a reused PID belonging to another program is rejected'
+    $script:processArguments = "logcat`n-f`n$RemoteRoot/20261011_100000/logcat"
+    Check (-not (Test-RemoteLogcatIdentity 'fake' '123')) 'a different capture session cannot inherit the registered PID ownership'
+    $script:loggerAlive = $true
+    $script:deviceCommands = @()
+    $unownedStopRejected = $false
+    try { Stop-RemoteCapture 'fake' 0 }
+    catch { $unownedStopRejected = $_.Exception.Message -match 'not the registered' }
+    Check ($unownedStopRejected -and $script:deviceCommands.Count -eq 0) `
+        'shutdown sends no signal or state change to an unrelated process'
+
+    $script:processArguments = "logcat`n-b`nall`n-f`n$RemoteRoot/$session/logcat"
+    Stop-RemoteCapture 'fake' 0
+    Check (-not $script:loggerAlive -and $script:lastDeviceCommand.Contains("echo 'STOPPED'")) `
+        'STOPPED is written only after the registered logger has exited'
+    $script:loggerAlive = $true
+    $script:stopExit = 1
+    $script:deviceCommands = @()
+    $failedSignalRejected = $false
+    try { Stop-RemoteCapture 'fake' 0 }
+    catch { $failedSignalRejected = $_.Exception.Message -match 'Could not stop' }
+    Check ($failedSignalRejected -and $script:deviceCommands.Count -eq 1 -and
+        -not $script:lastDeviceCommand.Contains('STOPPED')) `
+        'a failed termination signal preserves logger state and prevents collection'
+    $script:stopExit = 0
+    $script:ignoreSignals = $true
+    $script:deviceCommands = @()
+    $persistentProcessRejected = $false
+    try { Stop-RemoteCapture 'fake' 0 }
+    catch { $persistentProcessRejected = $_.Exception.Message -match 'remains alive' }
+    Check ($persistentProcessRejected -and $script:deviceCommands.Count -eq 2 -and
+        -not $script:lastDeviceCommand.Contains('STOPPED')) `
+        'an unsuccessful forced stop cannot report STOPPED or pull changing files'
 }
 finally {
     # Delete only the exact files created by this test, then the empty folder.

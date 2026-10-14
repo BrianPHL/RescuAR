@@ -52,10 +52,11 @@
 	</PropertyGroup>
 
 	<!--
-		Native Android build-tool paths.
+		Pinned Android native-rebuild tools.
 
 		Update these version folders only when your installed NDK or CMake
-		version changes.
+		version changes. Ordinary MAUI builds can use ANDROID_NDK_HOME for
+		their installed NDK without changing the native bridge toolchain.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
 		<NativeBridgeAbi>arm64-v8a</NativeBridgeAbi>
@@ -82,6 +83,7 @@
 		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_HOME)' != ''">$(ANDROID_HOME)</AndroidSdkDirectory>
 		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
 
+		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == '' and '$(ANDROID_NDK_HOME)' != '' and '$(BuildNativeBridgeOnBuild)' != 'true'">$(ANDROID_NDK_HOME)</AndroidNdkDirectory>
 		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == ''">$(AndroidSdkDirectory)\ndk\$(NativeBridgeNdkVersion)</AndroidNdkDirectory>
 		<AndroidCMakeDirectory Condition="'$(AndroidCMakeDirectory)' == ''">$(AndroidSdkDirectory)\cmake\$(NativeBridgeCMakeVersion)</AndroidCMakeDirectory>
 
