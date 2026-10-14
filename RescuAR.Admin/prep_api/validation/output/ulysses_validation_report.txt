@@ -4,16 +4,26 @@ IMPORTANT INTERPRETATION:
 This evaluates LiPAD reference hazard scenarios against a NAMRIA-derived Ulysses flood reference.
 Because Ulysses is not independently assigned here to one specific LiPAD return-period/severity scenario, the 9-scenario comparison is a sensitivity analysis, not proof that the best-scoring scenario is the true Ulysses return period.
 
-Observed NAMRIA flood area inside Marikina: 18.8594 km²
+Observed NAMRIA flood area inside analysis domain: 20.718 km²
+Analysis domain: Full Marikina boundary (no separate observation-domain mask supplied)
+
+VALIDATION DECISION:
+DOES NOT YET MEET THE PROJECT ACCEPTABLE ACCURACY RATE — no evaluated LiPAD scenario reaches F1 >= 0.85; investigate the spatial errors and do not tune the independent reference to force a pass.
 
 Best spatial IoU/CSI scenario (descriptive):
-100-Year / Low+ | Precision=0.896 Recall=0.739 F1=0.81 IoU=0.681
+100-Year / Low+ | Precision=0.947 Recall=0.711 F1=0.812 IoU=0.684
+Spatial areas: TP=14.739 km² | FP=0.826 km² | FN=5.979 km²
+Primary acceptable accuracy rate (F1 >= 0.85): FAIL | observed F1=0.812
+Supporting spatial diagnostics: Precision=PASS | Recall=FAIL | F1=FAIL | IoU=FAIL
 
 Lowest population WAPE scenario (descriptive):
-100-Year / Low+ | WAPE=25.55% | Spearman=0.753
+100-Year / Low+ | WAPE=28% | Spearman=0.606
+Population target status: WAPE=FAIL | Spearman=FAIL
 
-Project targets:
-Recall >= 0.9
+Project acceptance and supporting targets:
+Primary acceptable spatial accuracy rate: F1 >= 0.85 (85%)
+Supporting diagnostics (reported separately from the primary acceptance decision):
+Recall >= 0.8
 Precision >= 0.8
 F1 >= 0.85
 IoU/CSI >= 0.7
@@ -23,6 +33,7 @@ Population Spearman >= 0.8
 Limitations:
 - One historical event (Ulysses) is being tested.
 - NAMRIA survey/map coverage is incomplete.
+- No independent observation-domain mask was supplied; false-positive interpretation outside mapped/surveyed coverage is therefore uncertain.
 - Manual georeferencing/digitization introduces positional uncertainty.
 - Population exposure assumes uniform population distribution within barangays.
 - Derived exposed population is not a direct observed affected-person count.

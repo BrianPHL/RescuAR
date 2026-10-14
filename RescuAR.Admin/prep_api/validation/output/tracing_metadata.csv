@@ -1,0 +1,2 @@
+"evaluator_id","completed_at","outer_polygon_count","exclusion_hole_count","observed_flood_area_km2","georeferenced_source","automated_guide_used","guide_min_red","guide_max_blue","guide_min_rb_diff","guide_min_gb_diff","guide_red_green_tolerance","guide_smooth_window","guide_smooth_threshold"
+"unassigned","2026-10-13T20:43:10+0800",1,0,20.7180057614606,"ulysses_namria_georeferenced.tif",TRUE,0.55,0.88,0.08,0.03,0.08,7,0.3

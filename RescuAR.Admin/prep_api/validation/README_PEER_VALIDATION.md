@@ -320,16 +320,23 @@ This contains:
 - False-positive area
 - False-negative area
 
-Project evaluation targets currently used by the script are:
+The project now defines **85% as the acceptable flood-extent accuracy rate**, operationalized as **F1 >= 0.85**. F1 is used instead of raw pixel accuracy because flooded and non-flooded areas are spatially imbalanced.
 
-| Metric | Target |
+Primary acceptance criterion:
+
+| Metric | Acceptance target |
+|---|---:|
+| F1 (primary spatial accuracy measure) | **>= 0.85 (85%)** |
+
+Supporting spatial diagnostics are still reported to show *why* a scenario performs well or poorly:
+
+| Metric | Supporting target |
 |---|---:|
 | Precision | >= 0.80 |
-| Recall | >= 0.90 |
-| F1 | >= 0.85 |
+| Recall | >= 0.80 |
 | IoU / CSI | >= 0.70 |
 
-These are project-defined evaluation thresholds, not official NAMRIA standards.
+A scenario is considered to have reached the project's acceptable spatial accuracy rate when **F1 >= 0.85**. The supporting diagnostics do not override that primary PASS/FAIL decision. These are project-defined evaluation thresholds, not official NAMRIA standards.
 
 ---
 
@@ -348,12 +355,14 @@ This contains:
 - Top-5 barangay overlap
 - equivalent child-population metrics
 
-Current project targets include:
+Supporting population-exposure quality targets include:
 
 | Metric | Target |
 |---|---:|
 | Population WAPE | <= 20% |
 | Population Spearman | >= 0.80 |
+
+These population metrics are reported as secondary exposure-quality diagnostics and do not replace the primary F1 >= 0.85 spatial-accuracy acceptance gate.
 
 ---
 
