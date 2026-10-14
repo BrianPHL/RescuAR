@@ -39,3 +39,26 @@ Limitations:
 - Derived exposed population is not a direct observed affected-person count.
 - Areas outside the NAMRIA mapped extent must not be described as safe/non-flooded.
 - Internal consistency must be reported separately from external flood-model accuracy.
+
+SPATIAL PARTITION AND CONFUSION MATRIX (km2):
+Rows: predicted flooded / predicted dry; columns: reference flooded / reference dry.
+TN and overall-area accuracy are CONDITIONAL on complete observation coverage.
+Ulysses was previously used for scenario comparison: this spatial holdout is retrospective, NOT blind or independent event validation.
+Partition geometry: C:/Users/Josh/Documents/Project/RescuAR/RescuAR.Admin/prep_api/validation/partitions/ulysses_spatial_partition.gpkg
+full_city | F1=0.833 (FAIL) | Recall=0.749 (FAIL) | Precision=0.937 (PASS) | IoU=0.713 (PASS)
+  predicted flooded: TP=14.590 | FP=0.976 km2
+  predicted dry:     FN=4.887 | TN=2.226 km2
+development | F1=0.842 (FAIL) | Recall=0.763 (FAIL) | Precision=0.940 (PASS) | IoU=0.728 (PASS)
+  predicted flooded: TP=11.838 | FP=0.760 km2
+  predicted dry:     FN=3.673 | TN=1.837 km2
+holdout | F1=0.794 (FAIL) | Recall=0.694 (FAIL) | Precision=0.927 (PASS) | IoU=0.658 (FAIL)
+  predicted flooded: TP=2.752 | FP=0.216 km2
+  predicted dry:     FN=1.214 | TN=0.389 km2
+
+All nine scenarios and geographic subsets: spatial_partition_confusion_matrix.csv
+Threshold gap audit: spatial_partition_acceptance_review.csv
+Population split: spatial_partition_population_proxy.csv (derived proxy only; NOT counts of affected people).
+development population proxy (100-Year/Low+): WAPE=27.21% (FAIL); Spearman=0.618 (FAIL)
+holdout population proxy (100-Year/Low+): WAPE=27.59% (FAIL); Spearman=0.898 (PASS)
+Support thresholds never override F1-only PRIMARY acceptance. The all_targets_met field is now the conjunction of all six tests.
+The full-city 100-Year / Low+ example was selected descriptively from already inspected Ulysses data; do not select a new winning scenario using holdout results.

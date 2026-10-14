@@ -158,6 +158,13 @@ TARGET_IOU <- 0.70
 TARGET_WAPE <- 0.20
 TARGET_SPEARMAN <- 0.80
 
+# Frozen, retrospective 80/20 geographic partition. Create exactly once by
+# sourcing 06_create_spatial_partition.R. The historical Ulysses study has
+# already informed scenario comparisons; this is NOT an untouched blind test.
+REQUIRE_FROZEN_SPATIAL_PARTITION <- TRUE
+partition_path <- file.path(validation_dir, 'partitions', 'ulysses_spatial_partition.gpkg')
+partition_manifest_path <- file.path(validation_dir, 'partitions', 'ulysses_spatial_partition_manifest.csv')
+
 # ============================================================
 # 2. HELPERS
 # ============================================================
@@ -335,6 +342,64 @@ observed_flood <- suppressWarnings(
 observed_flood <- st_make_valid(
   observed_flood
 )
+
+# Load a separately frozen partition before evaluating any scenarios.
+# Validate its union against the actual observation domain to detect stale
+# partitions after a change to baseline boundaries or observation coverage.
+spatial_partition <- NULL
+if (file.exists(partition_path)) {
+  spatial_partition <- st_read(partition_path, layer = 'spatial_partition', quiet = TRUE) |>
+    st_make_valid() |> st_transform(32651)
+  if (!all(c('block_id', 'subset') %in% names(spatial_partition)) ||
+      anyDuplicated(spatial_partition$block_id) ||
+      !setequal(unique(spatial_partition$subset), c('development', 'holdout'))) {
+    stop('Frozen spatial partition contains invalid block IDs or subset labels.')
+  }
+  if (!file.exists(partition_manifest_path)) stop('Missing frozen spatial partition manifest.')
+  manifest <- read.csv(partition_manifest_path, stringsAsFactors = FALSE)
+  if (nrow(manifest) != 1 ||
+      tolower(as.character(manifest$prior_Ulysses_comparisons[[1]])) != 'true' ||
+      tolower(as.character(manifest$independent_blind_holdout[[1]])) != 'false') {
+    stop('Partition manifest is missing the retrospective/non-blind disclosure.')
+  }
+  current_mask <- observation_domain_candidates[file.exists(observation_domain_candidates)][1]
+  mask_name <- if (length(current_mask) == 0 || is.na(current_mask)) {
+    'full_city_UNCONFIRMED_SURVEY_COVERAGE'
+  } else basename(current_mask)
+  if (mask_name != manifest$observation_domain_source[[1]]) {
+    stop('Observation-domain source changed since the partition was frozen.')
+  }
+  if (!'partition_gpkg_md5' %in% names(manifest) ||
+      !identical(unname(tools::md5sum(partition_path)), manifest$partition_gpkg_md5[[1]])) {
+    stop('Frozen spatial partition geometry file changed. Do not adjust the holdout to improve its score.')
+  }
+  if (!identical(unname(tools::md5sum(spatial_gpkg)), manifest$baseline_spatial_md5[[1]])) {
+    stop('Baseline spatial dataset changed since frozen partition creation.')
+  }
+  if (length(current_mask) > 0 && !is.na(current_mask) &&
+      !identical(unname(tools::md5sum(current_mask)), manifest$observation_domain_md5[[1]])) {
+    stop('Observation-domain file changed since frozen partition creation.')
+  }
+  union_partition <- st_union(st_geometry(spatial_partition))
+  uncovered_m2 <- as.numeric(st_area(st_sym_difference(union_partition, analysis_domain)))
+  if (!is.finite(uncovered_m2) || uncovered_m2 > 10) {
+    stop('Frozen partition does not match the current analysis domain (m2): ', uncovered_m2)
+  }
+  # Area overlaps of distinct blocks would bias confusion-matrix totals.
+  summed_area <- sum(as.numeric(st_area(spatial_partition)))
+  if (abs(summed_area - as.numeric(st_area(union_partition))) > 10) {
+    stop('Frozen spatial blocks overlap in positive area.')
+  }
+} else if (REQUIRE_FROZEN_SPATIAL_PARTITION) {
+  stop('Spatial partition not found. Run 06_create_spatial_partition.R once before Script 02: ', partition_path)
+}
+
+# A fixed mask is used for each geographic subset and for the full city.
+partition_masks <- list(full_city = analysis_domain)
+if (!is.null(spatial_partition)) {
+  partition_masks$development <- st_union(st_geometry(spatial_partition[spatial_partition$subset == 'development', ]))
+  partition_masks$holdout <- st_union(st_geometry(spatial_partition[spatial_partition$subset == 'holdout', ]))
+}
 
 # ============================================================
 # STEP 3
@@ -980,6 +1045,80 @@ observed_geom <- st_union(
 spatial_results <- list()
 population_rows <- list()
 scenario_barangay_rows <- list()
+partition_spatial_rows <- list()
+partition_population_rows <- list()
+
+# Area-based, exhaustive 2x2 confusion matrix for each scenario/subset.
+# TN is CONDITIONAL on documented observation coverage; if the full city is
+# used without a coverage mask, no claim of confirmed non-flooding is made.
+evaluate_partition_spatial <- function(model_geom, observed_geom, mask, subset, rp, mh) {
+  model_clip <- suppressWarnings(st_intersection(model_geom, mask))
+  observed_clip <- suppressWarnings(st_intersection(observed_geom, mask))
+  intersection <- suppressWarnings(st_intersection(model_clip, observed_clip))
+  tp <- area_m2(intersection)
+  pred <- area_m2(model_clip)
+  obs <- area_m2(observed_clip)
+  domain <- area_m2(mask)
+  fp <- max(0, pred - tp)
+  fn <- max(0, obs - tp)
+  tn <- domain - tp - fp - fn
+  if (!is.finite(tn) || tn < -10) stop('Invalid confusion matrix (negative TN) for ', subset)
+  tn <- max(0, tn)
+  if (abs((tp + fp + fn + tn) - domain) > 10) stop('Confusion matrix areas do not sum to domain.')
+  precision <- safe_div(tp, tp + fp)
+  recall <- safe_div(tp, tp + fn)
+  f1 <- if (is.na(precision) || is.na(recall) || precision + recall == 0) NA_real_ else {
+    2 * precision * recall / (precision + recall)
+  }
+  iou <- safe_div(tp, tp + fp + fn)
+  data.frame(
+    subset = subset, return_period = rp, minimum_hazard = mh,
+    domain_km2 = domain / 1e6, observed_flood_km2 = obs / 1e6,
+    predicted_flood_km2 = pred / 1e6,
+    tp_km2 = tp / 1e6, fp_km2 = fp / 1e6,
+    fn_km2 = fn / 1e6, tn_km2 = tn / 1e6,
+    precision = precision, recall = recall, f1 = f1, iou_csi = iou,
+    specificity = safe_div(tn, tn + fp),
+    overall_area_accuracy = safe_div(tp + tn, domain),
+    precision_pass = !is.na(precision) && precision >= TARGET_PRECISION,
+    recall_pass = !is.na(recall) && recall >= TARGET_RECALL,
+    f1_pass = !is.na(f1) && f1 >= TARGET_F1,
+    iou_pass = !is.na(iou) && iou >= TARGET_IOU,
+    precision_gap = precision - TARGET_PRECISION,
+    recall_gap = recall - TARGET_RECALL,
+    f1_gap = f1 - TARGET_F1,
+    iou_gap = iou - TARGET_IOU,
+    observation_mask_supplied = !is.null(observation_domain),
+    retrospective_partition = TRUE,
+    independent_blind_event_holdout = FALSE,
+    stringsAsFactors = FALSE
+  )
+}
+
+# For population diagnostics, allocate each barangay's 2020 population to
+# the fraction of its ORIGINAL area intersecting the respective subset's
+# hazard/reference polygons. This is only a derived uniform-density PROXY.
+partition_exposure_by_barangay <- function(geom, mask) {
+  clipped <- suppressWarnings(st_intersection(geom, mask))
+  intersects <- suppressWarnings(st_intersection(
+    barangay_area_table[, c('name_key')], st_sf(geometry = clipped)
+  ))
+  if (nrow(intersects) > 0) {
+    areas <- intersects |> mutate(flood_area_m2 = as.numeric(st_area(intersects))) |>
+      st_drop_geometry() |> group_by(name_key) |>
+      summarise(flood_area_m2 = sum(flood_area_m2), .groups = 'drop')
+  } else {
+    areas <- data.frame(name_key = character(), flood_area_m2 = numeric())
+  }
+  barangay_area_table |> st_drop_geometry() |>
+    select(name_key, barangay_area_m2) |>
+    left_join(areas, by = 'name_key') |>
+    mutate(flood_area_m2 = coalesce(flood_area_m2, 0),
+           flooded_fraction_of_barangay = pmin(1, pmax(0, flood_area_m2 / barangay_area_m2))) |>
+    left_join(demographics |> select(name_key, population_2020), by = 'name_key') |>
+    mutate(exposed_population_proxy = population_2020 * flooded_fraction_of_barangay)
+}
+
 
 for (
   i in seq_len(
@@ -1015,6 +1154,35 @@ for (
       model_sf
     )
   )
+
+  # Evaluate the same fixed scenario on ALL precommitted geographic subsets.
+  for (subset in names(partition_masks)) {
+    sm <- evaluate_partition_spatial(
+      model_geom, observed_geom, partition_masks[[subset]], subset, rp, mh
+    )
+    partition_spatial_rows[[length(partition_spatial_rows) + 1L]] <- sm
+    if (subset != 'full_city') {
+      reference_pop <- partition_exposure_by_barangay(observed_geom, partition_masks[[subset]])
+      model_pop <- partition_exposure_by_barangay(model_geom, partition_masks[[subset]])
+      pp <- reference_pop |> select(name_key, exposed_population_proxy) |>
+        rename(reference_proxy = exposed_population_proxy) |>
+        left_join(model_pop |> select(name_key, exposed_population_proxy) |>
+                    rename(modeled_proxy = exposed_population_proxy), by = 'name_key')
+      wape <- safe_div(sum(abs(pp$modeled_proxy - pp$reference_proxy)),
+                       sum(pp$reference_proxy))
+      spearman <- suppressWarnings(cor(pp$modeled_proxy, pp$reference_proxy, method = 'spearman'))
+      partition_population_rows[[length(partition_population_rows) + 1L]] <- data.frame(
+        subset = subset, return_period = rp, minimum_hazard = mh,
+        population_proxy_wape = wape, population_proxy_spearman = spearman,
+        population_wape_pass = !is.na(wape) && wape <= TARGET_WAPE,
+        population_spearman_pass = !is.na(spearman) && spearman >= TARGET_SPEARMAN,
+        wape_gap = wape - TARGET_WAPE,
+        spearman_gap = spearman - TARGET_SPEARMAN,
+        reference_type = 'derived_uniform_barangay_density_proxy_NOT_observed_affected_people',
+        stringsAsFactors = FALSE
+      )
+    }
+  }
 
   tp_geom <- suppressWarnings(
     st_intersection(
@@ -1408,9 +1576,9 @@ combined_results <- spatial_results |>
       iou_csi >= TARGET_IOU &
       population_wape <= TARGET_WAPE &
       population_spearman >= TARGET_SPEARMAN,
-    # Backward-compatible field used by downstream calibration/promotion.
-    # It now represents the project's primary 85% F1 acceptance gate.
-    all_targets_met = accuracy_rate_met
+    # Distinguish actual compliance with ALL six thresholds from the
+    # primary F1-only acceptance decision. Do not conflate the two.
+    all_targets_met = accuracy_rate_met & supporting_targets_met
   )
 
 # ============================================================
@@ -1463,6 +1631,48 @@ write.csv(
   combined_output,
   row.names = FALSE
 )
+
+partition_spatial <- dplyr::bind_rows(partition_spatial_rows)
+partition_population <- dplyr::bind_rows(partition_population_rows)
+write.csv(partition_spatial, file.path(validation_output_dir, 'spatial_partition_confusion_matrix.csv'), row.names = FALSE)
+write.csv(partition_population, file.path(validation_output_dir, 'spatial_partition_population_proxy.csv'), row.names = FALSE)
+
+# Explicitly show every compliance gap versus the declared NEW thresholds.
+full_city_pop_review <- population_results |>
+  transmute(subset = 'full_city', return_period, minimum_hazard,
+            population_proxy_wape = population_wape,
+            population_proxy_spearman = population_spearman)
+all_pop_review <- bind_rows(
+  partition_population |> select(subset, return_period, minimum_hazard,
+                                 population_proxy_wape, population_proxy_spearman),
+  full_city_pop_review
+)
+partition_review <- partition_spatial |>
+  left_join(all_pop_review, by = c('subset', 'return_period', 'minimum_hazard')) |>
+  dplyr::mutate(
+    population_wape_pass = !is.na(population_proxy_wape) & population_proxy_wape <= TARGET_WAPE,
+    population_spearman_pass = !is.na(population_proxy_spearman) & population_proxy_spearman >= TARGET_SPEARMAN,
+    population_wape_gap = population_proxy_wape - TARGET_WAPE,
+    population_spearman_gap = population_proxy_spearman - TARGET_SPEARMAN,
+    primary_F1_acceptance = ifelse(f1_pass, 'PASS', 'FAIL'),
+    supporting_spatial_all_pass = precision_pass & recall_pass & iou_pass,
+    all_six_thresholds_pass = f1_pass & precision_pass & recall_pass & iou_pass &
+                              population_wape_pass & population_spearman_pass,
+    interpretation = ifelse(
+      subset == 'holdout',
+      'Retrospective Ulysses spatial holdout; NOT a blind/independent event',
+      ifelse(subset == 'development', 'Retrospective development area', 'Original full-city sensitivity analysis')
+    )
+  )
+write.csv(partition_review, file.path(validation_output_dir, 'spatial_partition_acceptance_review.csv'), row.names = FALSE)
+
+# Verify the new full-city 2x2 matrix reproduces the legacy TP, FP and FN.
+control <- partition_spatial |> filter(subset == 'full_city') |>
+  left_join(spatial_results, by = c('return_period', 'minimum_hazard'), suffix = c('_matrix', '_legacy'))
+for (field in c('tp_km2', 'fp_km2', 'fn_km2', 'f1', 'iou_csi')) {
+  diff <- abs(control[[paste0(field, '_matrix')]] - control[[paste0(field, '_legacy')]])
+  if (any(!is.finite(diff)) || any(diff > 1e-5)) stop('Matrix mismatch with existing validation: ', field)
+}
 
 cat(
   "\nSPATIAL VALIDATION RESULTS\n"
@@ -1540,8 +1750,9 @@ validation_decision <- data.frame(
   acceptable_accuracy_rate_met = spatial_target_pass,
   spatial_targets_met_for_best_spatial_scenario = spatial_target_pass,
   population_targets_met_for_lowest_wape_scenario = population_target_pass,
-  any_single_scenario_meets_all_targets = overall_target_pass,
-  overall_targets_met = overall_target_pass,
+  any_single_scenario_meets_all_targets = any(combined_results$all_targets_met %in% TRUE, na.rm = TRUE),
+  overall_targets_met = any(combined_results$all_targets_met %in% TRUE, na.rm = TRUE),
+  primary_F1_acceptance_met = overall_target_pass,
   analysis_domain = analysis_domain_label,
   stringsAsFactors = FALSE
 )
@@ -1695,6 +1906,46 @@ report_lines <- c(
   "- Derived exposed population is not a direct observed affected-person count.",
   "- Areas outside the NAMRIA mapped extent must not be described as safe/non-flooded.",
   "- Internal consistency must be reported separately from external flood-model accuracy."
+)
+
+# One explicit 2x2 example (not a raster count): 100-Year / Low+.
+example <- partition_spatial |> filter(return_period == 100, minimum_hazard == 'Low')
+report_lines <- c(
+  report_lines,
+  '',
+  'SPATIAL PARTITION AND CONFUSION MATRIX (km2):',
+  'Rows: predicted flooded / predicted dry; columns: reference flooded / reference dry.',
+  'TN and overall-area accuracy are CONDITIONAL on complete observation coverage.',
+  'Ulysses was previously used for scenario comparison: this spatial holdout is retrospective, NOT blind or independent event validation.',
+  paste0('Partition geometry: ', partition_path),
+  unlist(lapply(seq_len(nrow(example)), function(k) {
+    x <- example[k, ]
+    c(
+      sprintf('%s | F1=%.3f (%s) | Recall=%.3f (%s) | Precision=%.3f (%s) | IoU=%.3f (%s)',
+              x$subset, x$f1, ifelse(x$f1_pass, 'PASS', 'FAIL'),
+              x$recall, ifelse(x$recall_pass, 'PASS', 'FAIL'),
+              x$precision, ifelse(x$precision_pass, 'PASS', 'FAIL'),
+              x$iou_csi, ifelse(x$iou_pass, 'PASS', 'FAIL')),
+      sprintf('  predicted flooded: TP=%.3f | FP=%.3f km2', x$tp_km2, x$fp_km2),
+      sprintf('  predicted dry:     FN=%.3f | TN=%.3f km2', x$fn_km2, x$tn_km2)
+    )
+  })),
+  '',
+  'All nine scenarios and geographic subsets: spatial_partition_confusion_matrix.csv',
+  'Threshold gap audit: spatial_partition_acceptance_review.csv',
+  'Population split: spatial_partition_population_proxy.csv (derived proxy only; NOT counts of affected people).',
+  unlist(lapply(c('development', 'holdout'), function(sub) {
+    x <- partition_population |>
+      filter(subset == sub, return_period == 100, minimum_hazard == 'Low')
+    if (!nrow(x)) return(character(0))
+    sprintf('%s population proxy (100-Year/Low+): WAPE=%.2f%% (%s); Spearman=%.3f (%s)',
+            sub, x$population_proxy_wape * 100,
+            ifelse(x$population_wape_pass, 'PASS', 'FAIL'),
+            x$population_proxy_spearman,
+            ifelse(x$population_spearman_pass, 'PASS', 'FAIL'))
+  })),
+  'Support thresholds never override F1-only PRIMARY acceptance. The all_targets_met field is now the conjunction of all six tests.',
+  'The full-city 100-Year / Low+ example was selected descriptively from already inspected Ulysses data; do not select a new winning scenario using holdout results.'
 )
 
 writeLines(

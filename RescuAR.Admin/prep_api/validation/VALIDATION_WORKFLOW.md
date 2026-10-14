@@ -125,3 +125,9 @@ event_status = ready (role remains reference_only)
 
 The Ulysses tracing script also now supports a UTM reference grid and manually selected numbered high-confidence trace markers. These are tracing aids only; they do not change independent reference geometry or validation thresholds.
 
+
+## Frozen spatial partition and confusion matrices (2026-10-14 update)
+
+See [`SPATIAL_PARTITION_AND_CONFUSION_MATRIX.md`](SPATIAL_PARTITION_AND_CONFUSION_MATRIX.md). The supplied 1-km coordinate-only partition is frozen at `partitions/ulysses_spatial_partition.gpkg` (approximately 80% development / 20% holdout). Running Script 02 now emits a full-city + partitioned 2x2 km² confusion matrix for all nine hazard scenarios, explicit metric gaps, and partitioned population **proxy** diagnostics. Script 06 can create a partition for a genuinely new, documented study but refuses silent replacement.
+
+Ulysses was already inspected while selecting descriptive scenarios, so this is retrospective geographic robustness, **not a blind independent test**. A future independent event remains necessary.

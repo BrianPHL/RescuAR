@@ -1,0 +1,40 @@
+RESCUAR / PREP — FROZEN SPATIAL PARTITION VALIDATION SNAPSHOT
+
+Computed from the ZIP uploaded 2026-10-14; independent Python geometry cross-check.
+R script 02 was modified, but cannot be executed in this environment (no R runtime).
+Rerun Script 02 locally after copying the patch to regenerate these CSV files natively in R.
+
+ANALYSIS DOMAIN: Marikina city, 22.679082 km2, no independent observation-coverage mask.
+FROZEN GEOGRAPHIC SPLIT: development=18.1083 km2 (33 blocks); holdout=4.5708 km2 (9 blocks).
+Holdout share=20.15% by geographic area; 1-km UTM tiles; coordinate-based ranking only.
+
+STUDY-DEFINED THRESHOLDS: F1>=0.85 (primary), Precision>=0.80, Recall>=0.80,
+IoU>=0.70, Population WAPE<=20%, Population Spearman>=0.80.
+
+100-Year / Low+ SCENARIO (historically best descriptive IoU scenario):
+Columns: subset | TP | FP | FN | TN (km2) | F1 | Precision | Recall | IoU | WAPE proxy | Spearman proxy
+full_city    14.590  0.976  4.887  2.226  0.833  0.937  0.749  0.713  26.84%  0.641
+development  11.838  0.760  3.673  1.837  0.842  0.940  0.763  0.728  27.21%  0.618
+holdout       2.752  0.216  1.214  0.389  0.794  0.927  0.694  0.658  27.59%  0.898
+
+FULL CITY: F1 deficit 0.0173; recall deficit 0.0509; population WAPE exceeds target by 6.84 percentage points; Spearman deficit 0.1588.
+HOLDOUT: F1 deficit 0.0562; recall deficit 0.1062; IoU deficit 0.0419; population WAPE excess 7.59 percentage points.
+
+COMPLETE 9-SCENARIO SUMMARY:
+Full city: 0/9 pass F1, 9/9 pass precision, 0/9 pass recall, 1/9 pass IoU.
+Development: 0/9 pass F1, 9/9 pass precision, 0/9 pass recall, 2/9 pass IoU.
+Holdout: 0/9 pass F1, 9/9 pass precision, 0/9 pass recall, 0/9 pass IoU.
+All-six acceptance: 0/27 scenario/subset combinations.
+
+INTERNAL CONSISTENCY: All 9 full-city TP/FP/FN/F1/IoU reproduce the existing saved CSV.
+CHECK: positive-area overlap between split blocks = 0, partition union covers city.
+
+IMPORTANT LIMITATIONS:
+1. This is a retrospective geographic robustness split of Ulysses; scenarios were already inspected.
+2. It is NOT a blind event-level holdout. Do not tune or reselect based on holdout results.
+3. No independent observation-domain mask was supplied; TN is only a conditional area residual.
+4. Population reference is 2020 demographics × observed flooded area fraction; proxy, not measured affected people.
+5. The apparent area accuracy (TP+TN)/domain is NOT the accepted 85% F1 metric.
+6. 100-Year/Low+ was NOT independently established as the actual Ulysses recurrence class.
+
+NEXT: Verify exact NAMRIA observation coverage and obtain independent future event reference.

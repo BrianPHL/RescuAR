@@ -362,9 +362,12 @@ evaluate_event_candidate <- function(event, rp, minimum_hazard) {
   supporting_targets_met <- spatial_supporting_targets_met &&
     (is.na(population_supporting_targets_met) || population_supporting_targets_met)
 
-  # Kept for downstream compatibility. This field is the primary
-  # 85% F1 acceptance gate, not a claim that every diagnostic passed.
-  all_targets_met <- accuracy_rate_met
+  # Keep the primary F1 acceptance distinct from all supporting targets.
+  # All-six compliance is indeterminate when independent population metrics
+  # are unavailable; holdout promotion still uses the separate primary F1 flag.
+  all_targets_met <- if (!population_metrics_available) NA else {
+    isTRUE(accuracy_rate_met) && isTRUE(supporting_targets_met)
+  }
 
   data.frame(
     event_id = event$event_id,
@@ -648,7 +651,7 @@ rule_config <- list(
 candidate_json <- file.path(calibration_dir, "selected_rules_unapproved.json")
 jsonlite::write_json(rule_config, candidate_json, auto_unbox = TRUE, pretty = TRUE, null = "null")
 
-holdout_pass_rate <- if (nrow(holdout) > 0) mean(holdout$all_targets_met, na.rm = TRUE) else NA_real_
+holdout_pass_rate <- if (nrow(holdout) > 0) mean(holdout$accuracy_rate_met, na.rm = TRUE) else NA_real_
 
 report <- c(
   "RESCUAR / PREP — CONTROLLED MULTI-EVENT CALIBRATION REPORT",

@@ -97,9 +97,10 @@ if (!file.exists(holdout_path)) {
 
 holdout <- readr::read_csv(holdout_path, show_col_types = FALSE, progress = FALSE)
 if (nrow(holdout) == 0) stop("Promotion blocked: no held-out scores are available.")
+if (!'accuracy_rate_met' %in% names(holdout)) stop('Promotion blocked: missing explicit primary F1 pass column.')
 
-if (REQUIRE_ALL_HOLDOUT_ROWS_TO_MEET_TARGETS && !all(holdout$all_targets_met %in% TRUE)) {
-  failed <- holdout |> filter(!all_targets_met)
+if (REQUIRE_ALL_HOLDOUT_ROWS_TO_MEET_TARGETS && !all(holdout$accuracy_rate_met %in% TRUE)) {
+  failed <- holdout |> filter(!accuracy_rate_met)
   print(failed)
   stop("Promotion blocked: one or more held-out events do not meet the project acceptable accuracy rate (F1 >= 0.85).")
 }
