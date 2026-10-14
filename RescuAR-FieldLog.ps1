@@ -376,7 +376,9 @@ function Get-FieldLogMarkerCommand {
     )
 
     $priority = Get-FieldLogMarkerPriority -MinimumPriority $MinimumPriority
-    $padding = 'x' * 1024
+    # Toybox log truncates messages >=1024 bytes and returns exit 1, including
+    # when it still writes the truncated text. Leave room for the prefix/index.
+    $padding = 'x' * 512
     # Native Logcat -f uses buffered stdio. Sleeping or running sync does not
     # flush that userspace buffer. Emit the marker FIRST, then >32 KiB of
     # distinct same-UID/priority records so quiet AppOnly captures persist it.
@@ -384,7 +386,7 @@ function Get-FieldLogMarkerCommand {
     return (@"
 log -p $priority -t RescuAR-FieldLog '$Marker' || exit `$?
 rescuar_flush_index=0
-while [ "`$rescuar_flush_index" -lt 32 ]; do
+while [ "`$rescuar_flush_index" -lt 64 ]; do
     log -p $priority -t RescuAR-FieldLog "RESCUAR_FIELDLOG_FLUSH_`${rescuar_flush_index}_$padding" || exit `$?
     rescuar_flush_index=`$((rescuar_flush_index + 1))
 done
@@ -400,16 +402,20 @@ function Confirm-FieldLogMarker {
     $command = Get-FieldLogMarkerCommand -Marker $Marker -MinimumPriority $MinimumPriority
     $emission = Invoke-AdbShellResult -Serial $Serial -Command $command
     if ($emission.ExitCode -ne 0) {
-        throw "Marker emission failed (ADB/device exit $($emission.ExitCode)): $($emission.Output)"
+        throw "Marker/flush write failed (ADB/device exit $($emission.ExitCode)): $($emission.Output)"
     }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
-        $lines = Invoke-AdbShellText -Serial $Serial `
-            -Command "grep -h -F '$Marker' '$BaseLogPath' '$BaseLogPath'.* 2>/dev/null"
-        foreach ($line in ($lines -split "`n")) {
-            if (Test-FieldLogMarkerLine -Line $line -Marker $Marker) {
-                return (Test-RemotePidAlive -Serial $Serial -PidText $PidText)
+        # Check the active file first; a freshly written marker usually lives
+        # there. Avoid scanning up to 2 GiB of rotated logs on every poll.
+        foreach ($searchPaths in @("'$BaseLogPath'", "'$BaseLogPath'.*")) {
+            $lines = Invoke-AdbShellText -Serial $Serial `
+                -Command "grep -h -F '$Marker' $searchPaths 2>/dev/null"
+            foreach ($line in ($lines -split "`n")) {
+                if (Test-FieldLogMarkerLine -Line $line -Marker $Marker) {
+                    return (Test-RemotePidAlive -Serial $Serial -PidText $PidText)
+                }
             }
         }
         if (-not (Test-RemotePidAlive -Serial $Serial -PidText $PidText)) { return $false }
@@ -432,6 +438,8 @@ echo 'Logger command line:'
 $processCommand
 echo 'Native log file sizes:'
 ls -ln '$BaseLogPath' '$BaseLogPath'.* 2>/dev/null
+echo 'Marker persisted in native log files:'
+grep -h -F '$Marker' '$BaseLogPath' '$BaseLogPath'.* 2>/dev/null
 echo 'Marker in main buffer without UID filter:'
 logcat -d -b main -v threadtime -v year 'RescuAR-FieldLog:V' '*:S' | grep -F '$Marker'
 echo 'Marker in main buffer with capture UID filter:'
@@ -447,7 +455,7 @@ getprop persist.log.tag
 }
 
 function Get-FieldCaptureQuality {
-    param([string[]]$Paths, [string]$Session, [bool]$LoggerAliveBeforeStop)
+    param([string[]]$Paths, [string]$Session, [bool]$LoggerAliveBeforeStop, [bool]$CompletionVerified = $true)
     $startMarker = "RESCUAR_FIELDLOG_VERIFY_$Session"
     $endMarker = "RESCUAR_FIELDLOG_COMPLETE_$Session"
     $startFound = $false
@@ -476,13 +484,14 @@ function Get-FieldCaptureQuality {
     return [PSCustomObject]@{
         Session = $Session
         LoggerAliveBeforeStop = $LoggerAliveBeforeStop
+        CompletionVerified = $CompletionVerified
         StartMarkerFound = $startFound
         EndMarkerFound = $endFound
         FirstLogTime = $firstTime
         LastLogTime = $lastTime
         ApplicationEvents = $appEvents
         NavigationEvents = $navigationEvents
-        CaptureComplete = ($LoggerAliveBeforeStop -and $startFound -and $endFound)
+        CaptureComplete = ($LoggerAliveBeforeStop -and $CompletionVerified -and $startFound -and $endFound)
         HasNavigationEvidence = ($navigationEvents -gt 0)
     }
 }
@@ -520,6 +529,23 @@ function Test-RemotePidAlive {
     return ($result -eq "alive")
 }
 
+function Test-RemoteLogcatIdentity {
+    param([string]$Serial, [string]$PidText)
+
+    if ($PidText -notmatch '^\d+$') { return $false }
+    $session = Read-RemoteFile -Serial $Serial -Path $RemoteSessionFile
+    if ($session -notmatch '^\d{8}_\d{6}$') { return $false }
+    $commandLine = Invoke-AdbShellText -Serial $Serial `
+        -Command "cat '/proc/$PidText/cmdline' 2>/dev/null | tr '\000' '\n'"
+    $arguments = @($commandLine -split "`n")
+    if ($arguments[0] -notmatch '^(?:.*/)?logcat$') { return $false }
+    for ($index = 1; $index -lt $arguments.Count - 1; $index++) {
+        if ($arguments[$index] -eq '-f' -and
+            $arguments[$index + 1] -ceq "$RemoteRoot/$session/logcat") { return $true }
+    }
+    return $false
+}
+
 function Wait-ForRemoteFileContent {
     param(
         [Parameter(Mandatory = $true)]
@@ -549,17 +575,26 @@ function Wait-ForRemoteFileContent {
 function Stop-RemoteCapture {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Serial
+        [string]$Serial,
+        [int]$TimeoutSeconds = 4
     )
 
     $pidText = Read-RemoteFile -Serial $Serial -Path $RemoteLogcatPidFile
 
     if ($pidText -match '^\d+$') {
         if (Test-RemotePidAlive -Serial $Serial -PidText $pidText) {
+            # A PID can be reused after a reboot or process exit. Never signal
+            # an unrelated process just because the old PID file still exists.
+            if (-not (Test-RemoteLogcatIdentity -Serial $Serial -PidText $pidText)) {
+                throw "PID $pidText is alive but is not the registered RescuAR Logcat capture; it was not stopped."
+            }
             Write-Host "Stopping on-device Logcat (PID $pidText)..."
-            & adb -s $Serial shell "kill -TERM $pidText 2>/dev/null" | Out-Null
+            $stopResult = Invoke-AdbShellResult -Serial $Serial -Command "kill -TERM $pidText"
+            if ($stopResult.ExitCode -ne 0 -and (Test-RemotePidAlive -Serial $Serial -PidText $pidText)) {
+                throw "Could not stop Logcat PID $pidText (exit $($stopResult.ExitCode)): $($stopResult.Output)"
+            }
 
-            $deadline = (Get-Date).AddSeconds(4)
+            $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
             do {
                 Start-Sleep -Milliseconds 250
                 $alive = Test-RemotePidAlive -Serial $Serial -PidText $pidText
@@ -568,14 +603,24 @@ function Stop-RemoteCapture {
 
             if ($alive) {
                 Write-Warning "Logcat did not stop after SIGTERM; forcing it to stop."
-                & adb -s $Serial shell "kill -KILL $pidText 2>/dev/null" | Out-Null
+                # Recheck ownership before the second signal as well.
+                if (-not (Test-RemoteLogcatIdentity -Serial $Serial -PidText $pidText)) {
+                    throw "Logcat PID $pidText changed identity during shutdown; no further signal was sent."
+                }
+                $stopResult = Invoke-AdbShellResult -Serial $Serial -Command "kill -KILL $pidText"
                 Start-Sleep -Milliseconds 500
+                if (Test-RemotePidAlive -Serial $Serial -PidText $pidText) {
+                    throw "Logcat PID $pidText remains alive after shutdown (exit $($stopResult.ExitCode)): $($stopResult.Output)"
+                }
             }
         }
     }
 
-    & adb -s $Serial shell "rm -f '$RemoteLogcatPidFile'" | Out-Null
-    & adb -s $Serial shell "echo 'STOPPED' > '$RemoteStatusFile'" | Out-Null
+    $stateResult = Invoke-AdbShellResult -Serial $Serial `
+        -Command "rm -f '$RemoteLogcatPidFile' && echo 'STOPPED' > '$RemoteStatusFile'"
+    if ($stateResult.ExitCode -ne 0) {
+        throw "Capture stopped, but logger state could not be updated: $($stateResult.Output)"
+    }
 }
 
 function Get-CaptureStatus {
@@ -935,6 +980,8 @@ exec logcat \
         if (-not $markerCaptured) {
             throw "The startup marker did not reach the native log files after the flush burst."
         }
+        $capture = Get-CaptureStatus -Serial $serial
+        if (-not $capture.LogcatAlive) { throw "Logcat exited after writing the startup marker." }
     }
     catch {
         $failureMessage = $_.Exception.Message
@@ -950,12 +997,12 @@ exec logcat \
             Write-Host "Failure diagnostics saved to: $((Resolve-Path -LiteralPath $diagnosticPath).Path)"
         }
         catch { Write-Warning "Could not save failure diagnostics locally: $($_.Exception.Message)" }
-        Stop-RemoteCapture -Serial $serial
+        try { Stop-RemoteCapture -Serial $serial }
+        catch { throw "$failureDetails`nShutdown also failed: $($_.Exception.Message)" }
         # Keep the pointer and session files available for -Status/-Collect.
         throw $failureDetails
     }
 
-    $capture = Get-CaptureStatus -Serial $serial
     $initialKB = [Math]::Round([double]$capture.Bytes / 1KB, 1)
 
     Write-Host ""
@@ -1005,6 +1052,7 @@ if ($Collect) {
     $completionMinimum = if ($completionMeta -match '(?m)^MinimumPriority=([VDIWEF])') {
         $Matches[1]
     } else { "I" }
+    $completionCaptured = $false
     if ($captureBeforeStop.LogcatAlive) {
         try {
             $completionCaptured = Confirm-FieldLogMarker -Serial $serial -BaseLogPath "$remoteSessionDir/logcat" `
@@ -1116,10 +1164,10 @@ if ($Collect) {
 
     $totalMB = [Math]::Round([double]$totalBytes / 1MB, 2)
     $quality = Get-FieldCaptureQuality -Paths @($logFiles.FullName) -Session $session `
-        -LoggerAliveBeforeStop $captureBeforeStop.LogcatAlive
+        -LoggerAliveBeforeStop $captureBeforeStop.LogcatAlive -CompletionVerified $completionCaptured
     $quality | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $localSessionDir "CaptureQuality.json") -Encoding UTF8
     if (-not $quality.CaptureComplete -or -not $quality.HasNavigationEvidence) {
-        Write-Warning "Field evidence is incomplete: loggerAlive=$($quality.LoggerAliveBeforeStop), startMarker=$($quality.StartMarkerFound), endMarker=$($quality.EndMarkerFound), navigationEvents=$($quality.NavigationEvents). Last captured event: $($quality.LastLogTime)."
+        Write-Warning "Field evidence is incomplete: loggerAlive=$($quality.LoggerAliveBeforeStop), completionVerified=$($quality.CompletionVerified), startMarker=$($quality.StartMarkerFound), endMarker=$($quality.EndMarkerFound), navigationEvents=$($quality.NavigationEvents). Last captured event: $($quality.LastLogTime)."
     }
 
     $manufacturer = Get-AndroidProperty -Serial $serial -Property "ro.product.manufacturer"
@@ -1238,6 +1286,7 @@ Log Files        : $($logFiles.Count)
 Log Data         : $totalMB MB
 Largest Segment  : $largestSegmentBytes bytes
 Logger Alive     : $($quality.LoggerAliveBeforeStop)
+Completion Check : $($quality.CompletionVerified)
 Capture Complete : $($quality.CaptureComplete)
 First Log Event  : $($quality.FirstLogTime)
 Last Log Event   : $($quality.LastLogTime)
