@@ -4,20 +4,20 @@ IMPORTANT INTERPRETATION:
 This evaluates LiPAD reference hazard scenarios against a NAMRIA-derived Ulysses flood reference.
 Because Ulysses is not independently assigned here to one specific LiPAD return-period/severity scenario, the 9-scenario comparison is a sensitivity analysis, not proof that the best-scoring scenario is the true Ulysses return period.
 
-Observed NAMRIA flood area inside analysis domain: 20.718 km²
+Observed NAMRIA flood area inside analysis domain: 19.4772 km²
 Analysis domain: Full Marikina boundary (no separate observation-domain mask supplied)
 
 VALIDATION DECISION:
 DOES NOT YET MEET THE PROJECT ACCEPTABLE ACCURACY RATE — no evaluated LiPAD scenario reaches F1 >= 0.85; investigate the spatial errors and do not tune the independent reference to force a pass.
 
 Best spatial IoU/CSI scenario (descriptive):
-100-Year / Low+ | Precision=0.947 Recall=0.711 F1=0.812 IoU=0.684
-Spatial areas: TP=14.739 km² | FP=0.826 km² | FN=5.979 km²
-Primary acceptable accuracy rate (F1 >= 0.85): FAIL | observed F1=0.812
-Supporting spatial diagnostics: Precision=PASS | Recall=FAIL | F1=FAIL | IoU=FAIL
+100-Year / Low+ | Precision=0.937 Recall=0.749 F1=0.833 IoU=0.713
+Spatial areas: TP=14.59 km² | FP=0.976 km² | FN=4.887 km²
+Primary acceptable accuracy rate (F1 >= 0.85): FAIL | observed F1=0.833
+Supporting spatial diagnostics: Precision=PASS | Recall=FAIL | F1=FAIL | IoU=PASS
 
 Lowest population WAPE scenario (descriptive):
-100-Year / Low+ | WAPE=28% | Spearman=0.606
+100-Year / Low+ | WAPE=26.84% | Spearman=0.641
 Population target status: WAPE=FAIL | Spearman=FAIL
 
 Project acceptance and supporting targets:

@@ -2,29 +2,44 @@
 
 `events.csv` is used by `validation/scripts/04_calibrate_scenario_rules.R`.
 
-One row represents one independently observed historical flood event.
+One row represents one independently sourced historical flood event or event reference.
 
-Required columns:
+## Core columns
 
-- `event_id`: unique ID, e.g. `ulysses_2020`
-- `event_name`: readable event name
-- `event_date`: ISO date (`YYYY-MM-DD`)
-- `role`: `calibration`, `validation`, `test`, or `reference_only`
-- `trigger_state`: `Alert`, `Alarm`, `Critical`, or blank if no defensible historical PAGASA state is available
-- `observed_flood_path`: path to independent observed flood GPKG/GeoJSON, relative to `prep_api` unless absolute
-- `demographics_path`: historical barangay demographics CSV used for both reference and modeled exposure
-- `observation_domain_path`: optional survey/observation coverage GPKG/GeoJSON; leave blank if unavailable
+- `event_id`: unique ID.
+- `event_name`: readable event name.
+- `event_date`: ISO date when known; may be blank when the source gives only a year/period.
+- `event_year`: explicit year for source-only records.
+- `role`: `calibration`, `validation`, `test`, or `reference_only`.
+- `trigger_state`: `Alert`, `Alarm`, `Critical`, or blank if no defensible historical PAGASA state is available.
+- `event_status`: `ready` when an observed geometry exists, otherwise a descriptive pending state such as `source_ready_digitization_pending`.
+- `spatial_scope`: city/barangay scope of the observation.
+- `observed_flood_path`: independent observed-flood GPKG/GeoJSON, relative to `prep_api` unless absolute.
+- `demographics_path`: optional historical demographics CSV. Spatial-only historical events may leave this blank.
+- `observation_domain_path`: optional mapped/surveyed coverage polygon.
 
-Example only (do not add unless the provenance is defensible):
+## Provenance columns
 
-```text
-ulysses_2020,Typhoon Ulysses,2020-11-12,validation,Critical,validation/events/ulysses_2020/observed_flood.gpkg,validation/input/demographics_2020.csv,
-```
+- `source_map_path`: source raster/image used to build the event reference.
+- `supplementary_map_path`: non-event-exclusive supporting map, if any.
+- `evidence_path`: event evidence table.
+- `context_path`: supporting context/cross-check data.
+- `calibration_eligible`: provenance flag only; calibration still requires `role=calibration`, a valid trigger state, and a ready observed geometry.
+- `notes`: limitations and provenance notes.
+
+## Included records
+
+- `ulysses_2020`: current NAMRIA-derived citywide validation reference.
+- `ondoy_2009_tumana`: Espina historical source map for Tumana; digitization pending.
+- `monsoon_2013_tumana`: Espina historical source map for Tumana; digitization pending.
+
+The Espina maps are intentionally registered as `reference_only` until their embedded figures are georeferenced, digitized, and QC-checked. The Marikina City Ecological Profile contributes contextual population, household, density, topographic, river, and hazard-inventory information; it does **not** replace an observed flood polygon.
 
 ## Separation rules
 
-- Calibration events may be used to select the best candidate mapping.
+- Calibration events may be used to select candidate scenario mappings.
 - Validation/test events must not be used to choose the mapping.
+- `reference_only` events may be evaluated descriptively once their geometry is ready, but do not select automatic trigger mappings.
 - Do not duplicate the same observed flood map across calibration and holdout roles.
-- Do not create synthetic "ground truth" from PREP outputs.
-- An event with no defensible Alert/Alarm/Critical historical state can still be `reference_only` for scenario sensitivity, but cannot calibrate the automatic status mapping.
+- Do not create synthetic ground truth from PREP outputs.
+- Do not substitute 2020 Ecological Profile demographics for 2009/2013 event demographics.

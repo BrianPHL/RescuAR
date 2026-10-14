@@ -70,3 +70,58 @@ Admin Flood Hazard Exposure automatic mapping
 ## Population-exposure improvement
 
 If a population weighting/grid layer is installed in `baseline_spatial.gpkg`, PREP uses it to weight within-barangay exposure. Otherwise the established uniform area-weighted method remains in use and is identified in API metadata.
+
+## Historical event sources from Espina + Marikina Ecological Profile
+
+The event registry now includes two additional independently published Tumana flood references:
+
+```text
+Ondoy 2009 — Tumana
+    source map extracted
+    ↓
+source_ready_digitization_pending
+
+2013 Monsoon — Tumana
+    source map extracted
+    ↓
+source_ready_digitization_pending
+```
+
+The sources are stored under:
+
+```text
+validation/events/ondoy_2009_tumana/
+validation/events/monsoon_2013_tumana/
+validation/events/context/
+```
+
+These records are intentionally `reference_only` until the embedded map figures are georeferenced and digitized into independent `observed_flood` geometries. `04_calibrate_scenario_rules.R` now writes `calibration/event_registry_status.csv` and automatically skips source-only rows whose observed geometry is still pending.
+
+Historical spatial events may be evaluated without population demographics. Population WAPE/Spearman remain `NA` when event-year demographics are unavailable; the calibration script no longer borrows 2020 demographics for 2009/2013 events.
+
+The Ecological Profile context tables support cross-checking of population, households, density, topography, river conditions, and administrative flood-hazard records. They are not used to modify the independent observed flood polygon.
+
+## Historical source-map activation
+
+For registered Espina events whose status is `source_ready_digitization_pending`:
+
+```text
+00_prepare_historical_event_reference.R
+        ↓
+paired source/UTM GCP markers
+        ↓
+affine RMSE + leave-one-out QC
+        ↓
+numbered flood-boundary markers
+        ↓
+independent manual trace
+        ↓
+observed_flood.gpkg + observation_domain.gpkg
+        ↓
+explicit evaluator confirmation
+        ↓
+event_status = ready (role remains reference_only)
+```
+
+The Ulysses tracing script also now supports a UTM reference grid and manually selected numbered high-confidence trace markers. These are tracing aids only; they do not change independent reference geometry or validation thresholds.
+

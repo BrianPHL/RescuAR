@@ -1,0 +1,4 @@
+evidence_id,evidence_type,spatial_scope,measure,source_document,source_page,source_figure,observation,notes
+ondoy_map,historical_flood_map,Tumana,Flooded Areas in Barangay Tumana from 2009 Typhoon Ketsana/Ondoy,Espina (2018),10,Figure 4.1.1.7,Source map shows multiple flood-depth classes across Tumana.,Map image extracted into source_map_ondoy_2009.png.
+ondoy_depth_statement,text_observation,Tumana/eastern portion of Marikina River,Observed inundation depth,Espina (2018),10,,Whole eastern portion was reported inundated by more than 2.5 m of floodwater.,Use as supporting event evidence; the map must still be georeferenced/digitized independently.
+ondoy_river_level,hydrologic_context,Marikina River,Reported peak river level,Espina (2018),2,,22.8 m on 2009-09-26.,Historical context only; do not automatically map to Alert/Alarm/Critical.

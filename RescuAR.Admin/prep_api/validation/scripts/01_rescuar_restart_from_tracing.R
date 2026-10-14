@@ -63,6 +63,20 @@ GUIDE_SMOOTH_WINDOW <- 7
 GUIDE_SMOOTH_THRESHOLD <- 0.30
 GUIDE_MAX_POINTS <- 5000
 
+# Additional tracing aids. These are visual/reference aids only; they are
+# not independent ground truth and must not be used to force a target score.
+SHOW_TRACE_COORDINATE_GRID <- TRUE
+TRACE_GRID_SPACING_M <- 250
+
+# Before tracing the polygon, click a small set of HIGH-CONFIDENCE points
+# that clearly lie on the flood boundary (for example, a sharp color-edge
+# corner or a flood edge crossing a recognizable road/river feature).
+# These numbered magenta X markers remain visible during tracing and improve
+# repeatability between tracing passes. Set to 0 to disable.
+NUMBER_OF_MANUAL_TRACE_MARKERS <- 12
+TRACE_MARKER_COLOR <- "magenta"
+TRACE_MARKER_CEX <- 1.15
+
 # ============================================================
 # 1. PATHS
 # ============================================================
@@ -632,7 +646,151 @@ if (SHOW_AUTOMATED_TRACE_GUIDE) {
 }
 
 # ============================================================
-# 7. GENERIC POLYGON TRACING FUNCTION
+# 7. MANUAL HIGH-CONFIDENCE TRACE MARKERS
+#
+# These markers are selected from the SAME independent reference map.
+# They are a repeatability/visual aid, not a new source of ground truth.
+# ============================================================
+
+trace_markers <- data.frame(
+  marker_id = integer(0),
+  x = numeric(0),
+  y = numeric(0)
+)
+
+add_trace_grid <- function() {
+  if (!isTRUE(SHOW_TRACE_COORDINATE_GRID)) return(invisible(NULL))
+
+  ex <- terra::ext(preview)
+  x_start <- floor(ex$xmin / TRACE_GRID_SPACING_M) * TRACE_GRID_SPACING_M
+  x_end <- ceiling(ex$xmax / TRACE_GRID_SPACING_M) * TRACE_GRID_SPACING_M
+  y_start <- floor(ex$ymin / TRACE_GRID_SPACING_M) * TRACE_GRID_SPACING_M
+  y_end <- ceiling(ex$ymax / TRACE_GRID_SPACING_M) * TRACE_GRID_SPACING_M
+
+  abline(
+    v = seq(x_start, x_end, by = TRACE_GRID_SPACING_M),
+    h = seq(y_start, y_end, by = TRACE_GRID_SPACING_M),
+    col = grDevices::adjustcolor("white", alpha.f = 0.25),
+    lty = 3,
+    lwd = 0.7
+  )
+
+  invisible(NULL)
+}
+
+add_trace_markers <- function() {
+  if (nrow(trace_markers) == 0) return(invisible(NULL))
+
+  points(
+    trace_markers$x,
+    trace_markers$y,
+    pch = 4,
+    col = TRACE_MARKER_COLOR,
+    cex = TRACE_MARKER_CEX,
+    lwd = 2
+  )
+
+  text(
+    trace_markers$x,
+    trace_markers$y,
+    labels = trace_markers$marker_id,
+    pos = 3,
+    cex = 0.72,
+    col = TRACE_MARKER_COLOR
+  )
+
+  invisible(NULL)
+}
+
+if (NUMBER_OF_MANUAL_TRACE_MARKERS > 0) {
+  graphics.off()
+  windows(width = 12, height = 10)
+
+  plotRGB(
+    preview,
+    r = 1,
+    g = 2,
+    b = 3,
+    stretch = "lin",
+    axes = TRUE
+  )
+
+  add_trace_grid()
+
+  plot(
+    st_geometry(barangays_utm),
+    add = TRUE,
+    border = "cyan",
+    lwd = 0.8
+  )
+
+  if (SHOW_AUTOMATED_TRACE_GUIDE && nrow(guide_points) > 0) {
+    points(
+      guide_points$x,
+      guide_points$y,
+      pch = 20,
+      col = "limegreen",
+      cex = 0.35
+    )
+  }
+
+  title(
+    main = "Select High-Confidence Flood-Boundary Markers",
+    sub = paste0(
+      "Click up to ", NUMBER_OF_MANUAL_TRACE_MARKERS,
+      " unambiguous boundary points; right-click/Esc to finish early"
+    )
+  )
+
+  cat(
+    "\nSelect high-confidence flood-boundary markers.\n",
+    "Use points where the flood color edge is unambiguous or crosses a recognizable feature.\n",
+    "These markers are visual aids only and do not alter the reference map.\n",
+    sep = ""
+  )
+
+  marker_clicks <- locator(
+    n = NUMBER_OF_MANUAL_TRACE_MARKERS,
+    type = "p",
+    pch = 4,
+    col = TRACE_MARKER_COLOR,
+    cex = TRACE_MARKER_CEX,
+    lwd = 2
+  )
+
+  if (!is.null(marker_clicks) && length(marker_clicks$x) > 0) {
+    trace_markers <- data.frame(
+      marker_id = seq_along(marker_clicks$x),
+      x = marker_clicks$x,
+      y = marker_clicks$y
+    )
+
+    add_trace_markers()
+
+    marker_csv <- file.path(
+      validation_work_dir,
+      "manual_trace_anchor_markers.csv"
+    )
+
+    write.csv(
+      trace_markers,
+      marker_csv,
+      row.names = FALSE
+    )
+
+    cat(
+      "Saved ", nrow(trace_markers),
+      " trace marker(s) to: ", marker_csv, "\n",
+      sep = ""
+    )
+  }
+
+  invisible(readline("Press ENTER to begin polygon tracing..."))
+  graphics.off()
+}
+
+# ============================================================
+# 8. GENERIC POLYGON TRACING FUNCTION
 # ============================================================
 
 trace_polygon <- function(
@@ -653,6 +811,8 @@ trace_polygon <- function(
     stretch = "lin",
     axes = TRUE
   )
+
+  add_trace_grid()
 
   plot(
     st_geometry(
@@ -675,6 +835,8 @@ trace_polygon <- function(
       cex = 0.4
     )
   }
+
+  add_trace_markers()
 
   if (mode == "outer") {
     plot_title <- paste(
@@ -1285,6 +1447,8 @@ plotRGB(
   axes = TRUE
 )
 
+add_trace_grid()
+
 plot(
   st_geometry(
     barangays_utm
@@ -1293,6 +1457,8 @@ plot(
   border = "cyan",
   lwd = 1.2
 )
+
+add_trace_markers()
 
 plot(
   st_geometry(
@@ -1322,6 +1488,9 @@ trace_metadata <- data.frame(
   observed_flood_area_km2 = total_observed_flood_m2 / 1e6,
   georeferenced_source = basename(georef_tif),
   automated_guide_used = SHOW_AUTOMATED_TRACE_GUIDE,
+  coordinate_grid_used = SHOW_TRACE_COORDINATE_GRID,
+  trace_grid_spacing_m = TRACE_GRID_SPACING_M,
+  manual_trace_marker_count = nrow(trace_markers),
   guide_min_red = GUIDE_MIN_RED,
   guide_max_blue = GUIDE_MAX_BLUE,
   guide_min_rb_diff = GUIDE_MIN_RB_DIFF,

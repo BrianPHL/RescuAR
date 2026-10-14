@@ -6,7 +6,9 @@
 # is reached. It exhaustively evaluates the legitimate 9 LiPAD
 # scenario combinations against independent historical events.
 # Calibration events select candidates; validation/test events are
-# held out and scored only after candidate selection.
+# held out and scored only after candidate selection. Source-only
+# historical records remain registered and are skipped until a QC'd
+# observed flood geometry is available.
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -65,6 +67,34 @@ normalize_name <- function(x) {
 }
 
 safe_div <- function(a, b) ifelse(is.na(b) | b == 0, NA_real_, a / b)
+
+mean_na <- function(x) {
+  if (length(x) == 0 || all(is.na(x))) return(NA_real_)
+  mean(x, na.rm = TRUE)
+}
+
+detect_demo_column <- function(names_vec, stem) {
+  exact <- which(tolower(names_vec) == tolower(stem))
+  if (length(exact) > 0) return(names_vec[exact[1]])
+  dated <- grep(paste0("^", stem, "_[0-9]{4}$"), names_vec, ignore.case = TRUE, value = TRUE)
+  if (length(dated) > 0) return(dated[1])
+  NA_character_
+}
+
+weighted_candidate_score <- function(precision, recall, f1, iou, wape, spearman) {
+  scores <- c(
+    score_ratio(precision, TARGET_PRECISION, TRUE),
+    score_ratio(recall, TARGET_RECALL, TRUE),
+    score_ratio(f1, TARGET_F1, TRUE),
+    score_ratio(iou, TARGET_IOU, TRUE),
+    score_ratio(wape, TARGET_WAPE, FALSE),
+    score_ratio(spearman, TARGET_SPEARMAN, TRUE)
+  )
+  weights <- c(0.15, 0.25, 0.20, 0.15, 0.15, 0.10)
+  ok <- is.finite(scores)
+  if (!any(ok)) return(NA_real_)
+  sum(scores[ok] * weights[ok]) / sum(weights[ok])
+}
 
 area_m2 <- function(x) {
   if (length(x) == 0 || all(st_is_empty(x))) return(0)
@@ -215,46 +245,122 @@ evaluate_event_candidate <- function(event, rp, minimum_hazard) {
   f1 <- if (is.na(precision) || is.na(recall) || precision + recall == 0) NA_real_ else 2 * precision * recall / (precision + recall)
   iou <- safe_div(tp_m2, tp_m2 + fp_m2 + fn_m2)
 
-  demographics <- readr::read_csv(demographics_path, show_col_types = FALSE, progress = FALSE)
-  required_demo <- c("barangay_name", "population_2020", "children_2020")
-  if (!all(required_demo %in% names(demographics))) {
-    stop("Demographics file must contain: ", paste(required_demo, collapse = ", "), " | ", demographics_path)
-  }
-  demographics$name_key <- normalize_name(demographics$barangay_name)
+  # Population/exposure metrics are optional for historical events.
+  # This allows older spatial references (e.g. Ondoy/2013 Tumana)
+  # to contribute spatial skill metrics without incorrectly reusing
+  # modern demographics as event-year ground truth.
+  pop_wape <- NA_real_
+  pop_spearman <- NA_real_
+  child_wape <- NA_real_
+  child_spearman <- NA_real_
+  population_metrics_available <- FALSE
+  children_metrics_available <- FALSE
+  demographics_supplied <- !is.na(demographics_path) && file.exists(demographics_path)
 
-  observed_frac <- barangay_fraction(observed_geom) |>
-    select(name_key, observed_fraction = fraction)
-  model_frac <- barangay_fraction(model_geom) |>
-    select(name_key, model_fraction = fraction)
-
-  comparison <- demographics |>
-    select(name_key, population_2020, children_2020) |>
-    left_join(observed_frac, by = "name_key") |>
-    left_join(model_frac, by = "name_key") |>
-    mutate(
-      observed_fraction = coalesce(observed_fraction, 0),
-      model_fraction = coalesce(model_fraction, 0),
-      reference_population = round(population_2020 * observed_fraction),
-      modeled_population = round(population_2020 * model_fraction),
-      reference_children = round(children_2020 * observed_fraction),
-      modeled_children = round(children_2020 * model_fraction),
-      population_error = modeled_population - reference_population,
-      children_error = modeled_children - reference_children
+  if (demographics_supplied) {
+    demographics <- readr::read_csv(
+      demographics_path,
+      show_col_types = FALSE,
+      progress = FALSE
     )
 
-  pop_wape <- safe_div(sum(abs(comparison$population_error)), sum(comparison$reference_population))
-  pop_spearman <- suppressWarnings(cor(comparison$modeled_population, comparison$reference_population, method = "spearman"))
-  child_wape <- safe_div(sum(abs(comparison$children_error)), sum(comparison$reference_children))
-  child_spearman <- suppressWarnings(cor(comparison$modeled_children, comparison$reference_children, method = "spearman"))
+    if (!"barangay_name" %in% names(demographics)) {
+      stop("Demographics file must contain barangay_name: ", demographics_path)
+    }
+
+    population_col <- detect_demo_column(names(demographics), "population")
+    children_col <- detect_demo_column(names(demographics), "children")
+
+    if (is.na(population_col)) {
+      stop(
+        "Demographics file must contain population or population_YYYY: ",
+        demographics_path
+      )
+    }
+
+    demographics$name_key <- normalize_name(demographics$barangay_name)
+    demographics$population_value <- as.numeric(demographics[[population_col]])
+    demographics$children_value <- if (!is.na(children_col)) {
+      as.numeric(demographics[[children_col]])
+    } else {
+      NA_real_
+    }
+
+    observed_frac <- barangay_fraction(observed_geom) |>
+      select(name_key, observed_fraction = fraction)
+    model_frac <- barangay_fraction(model_geom) |>
+      select(name_key, model_fraction = fraction)
+
+    comparison <- demographics |>
+      select(name_key, population_value, children_value) |>
+      left_join(observed_frac, by = "name_key") |>
+      left_join(model_frac, by = "name_key") |>
+      mutate(
+        observed_fraction = coalesce(observed_fraction, 0),
+        model_fraction = coalesce(model_fraction, 0),
+        reference_population = round(population_value * observed_fraction),
+        modeled_population = round(population_value * model_fraction),
+        reference_children = round(children_value * observed_fraction),
+        modeled_children = round(children_value * model_fraction),
+        population_error = modeled_population - reference_population,
+        children_error = modeled_children - reference_children
+      )
+
+    pop_denominator <- sum(comparison$reference_population, na.rm = TRUE)
+    if (is.finite(pop_denominator) && pop_denominator > 0) {
+      population_metrics_available <- TRUE
+      pop_wape <- safe_div(
+        sum(abs(comparison$population_error), na.rm = TRUE),
+        pop_denominator
+      )
+      if (sum(is.finite(comparison$modeled_population) & is.finite(comparison$reference_population)) >= 3) {
+        pop_spearman <- suppressWarnings(
+          cor(
+            comparison$modeled_population,
+            comparison$reference_population,
+            method = "spearman",
+            use = "complete.obs"
+          )
+        )
+      }
+    }
+
+    child_denominator <- sum(comparison$reference_children, na.rm = TRUE)
+    if (!is.na(children_col) && is.finite(child_denominator) && child_denominator > 0) {
+      children_metrics_available <- TRUE
+      child_wape <- safe_div(
+        sum(abs(comparison$children_error), na.rm = TRUE),
+        child_denominator
+      )
+      if (sum(is.finite(comparison$modeled_children) & is.finite(comparison$reference_children)) >= 3) {
+        child_spearman <- suppressWarnings(
+          cor(
+            comparison$modeled_children,
+            comparison$reference_children,
+            method = "spearman",
+            use = "complete.obs"
+          )
+        )
+      }
+    }
+  }
 
   accuracy_rate_met <- isTRUE(f1 >= TARGET_ACCURACY)
 
-  supporting_targets_met <-
+  spatial_supporting_targets_met <-
     isTRUE(precision >= TARGET_PRECISION) &&
     isTRUE(recall >= TARGET_RECALL) &&
-    isTRUE(iou >= TARGET_IOU) &&
+    isTRUE(iou >= TARGET_IOU)
+
+  population_supporting_targets_met <- if (population_metrics_available) {
     isTRUE(pop_wape <= TARGET_WAPE) &&
-    isTRUE(pop_spearman >= TARGET_SPEARMAN)
+      isTRUE(pop_spearman >= TARGET_SPEARMAN)
+  } else {
+    NA
+  }
+
+  supporting_targets_met <- spatial_supporting_targets_met &&
+    (is.na(population_supporting_targets_met) || population_supporting_targets_met)
 
   # Kept for downstream compatibility. This field is the primary
   # 85% F1 acceptance gate, not a claim that every diagnostic passed.
@@ -280,6 +386,11 @@ evaluate_event_candidate <- function(event, rp, minimum_hazard) {
     population_spearman = pop_spearman,
     children_wape = child_wape,
     children_spearman = child_spearman,
+    demographics_supplied = demographics_supplied,
+    population_metrics_available = population_metrics_available,
+    children_metrics_available = children_metrics_available,
+    spatial_supporting_targets_met = spatial_supporting_targets_met,
+    population_supporting_targets_met = population_supporting_targets_met,
     accuracy_rate_met = accuracy_rate_met,
     supporting_targets_met = supporting_targets_met,
     all_targets_met = all_targets_met,
@@ -311,10 +422,65 @@ if (any(!events$role %in% valid_roles)) {
 events$trigger_state <- tools::toTitleCase(tolower(trimws(events$trigger_state)))
 events$trigger_state[!events$trigger_state %in% c("Alert", "Alarm", "Critical")] <- NA_character_
 
-cat("Evaluating ", nrow(events), " historical event(s) across 9 scenario candidates...\n", sep = "")
+# Registry rows may be source-only until a published map is georeferenced and digitized.
+# Keep those records visible, but do not pretend they are evaluable spatial geometry.
+if (!"event_status" %in% names(events)) {
+  events$event_status <- ifelse(
+    is.na(events$observed_flood_path) | trimws(events$observed_flood_path) == "",
+    "pending_observed_geometry",
+    "ready"
+  )
+}
+if (!"spatial_scope" %in% names(events)) events$spatial_scope <- NA_character_
 
-all_metrics <- bind_rows(lapply(seq_len(nrow(events)), function(i) {
-  event <- as.list(events[i, ])
+resolved_observed_paths <- vapply(
+  events$observed_flood_path,
+  resolve_path,
+  FUN.VALUE = character(1)
+)
+observed_geometry_exists <- !is.na(resolved_observed_paths) & file.exists(resolved_observed_paths)
+
+registry_status <- events |>
+  mutate(
+    resolved_observed_flood_path = resolved_observed_paths,
+    observed_geometry_exists = observed_geometry_exists,
+    evaluation_status = ifelse(
+      observed_geometry_exists,
+      "ready_for_spatial_evaluation",
+      "source_registered_geometry_pending"
+    )
+  )
+
+registry_status_path <- file.path(calibration_dir, "event_registry_status.csv")
+write.csv(registry_status, registry_status_path, row.names = FALSE)
+
+ready_events <- events[observed_geometry_exists, , drop = FALSE]
+pending_events <- events[!observed_geometry_exists, , drop = FALSE]
+
+if (nrow(pending_events) > 0) {
+  cat(
+    "Skipping ", nrow(pending_events),
+    " source-only/pending event(s) with no observed geometry yet: ",
+    paste(pending_events$event_id, collapse = ", "), "\n",
+    sep = ""
+  )
+}
+
+if (nrow(ready_events) == 0) {
+  stop(
+    "No event registry rows currently have an observed_flood geometry. ",
+    "Georeference/digitize a registered source event or restore an existing observed reference."
+  )
+}
+
+cat(
+  "Evaluating ", nrow(ready_events),
+  " ready historical event(s) across 9 scenario candidates...\n",
+  sep = ""
+)
+
+all_metrics <- bind_rows(lapply(seq_len(nrow(ready_events)), function(i) {
+  event <- as.list(ready_events[i, ])
   bind_rows(lapply(seq_len(nrow(scenario_grid)), function(j) {
     evaluate_event_candidate(
       event,
@@ -328,7 +494,7 @@ metrics_path <- file.path(calibration_dir, "event_candidate_metrics.csv")
 write.csv(all_metrics, metrics_path, row.names = FALSE)
 
 score_ratio <- function(value, target, higher_is_better = TRUE) {
-  if (is.na(value) || !is.finite(value)) return(0)
+  if (is.na(value) || !is.finite(value)) return(NA_real_)
   if (higher_is_better) min(value / target, 1) else min(target / max(value, .Machine$double.eps), 1)
 }
 
@@ -342,28 +508,49 @@ candidate_scores <- bind_rows(lapply(c("Alert", "Alarm", "Critical"), function(s
     group_by(return_period, minimum_hazard) |>
     summarise(
       event_count = n_distinct(event_id),
+      population_event_count = n_distinct(event_id[population_metrics_available %in% TRUE]),
       target_pass_rate = mean(accuracy_rate_met, na.rm = TRUE),
-      mean_precision = mean(precision, na.rm = TRUE),
-      mean_recall = mean(recall, na.rm = TRUE),
-      mean_f1 = mean(f1, na.rm = TRUE),
-      mean_iou = mean(iou_csi, na.rm = TRUE),
-      mean_population_wape = mean(population_wape, na.rm = TRUE),
-      mean_population_spearman = mean(population_spearman, na.rm = TRUE),
+      mean_precision = mean_na(precision),
+      mean_recall = mean_na(recall),
+      mean_f1 = mean_na(f1),
+      mean_iou = mean_na(iou_csi),
+      mean_population_wape = mean_na(population_wape),
+      mean_population_spearman = mean_na(population_spearman),
       .groups = "drop"
     ) |>
     rowwise() |>
     mutate(
       trigger_state = state,
-      composite_score =
-        0.15 * score_ratio(mean_precision, TARGET_PRECISION, TRUE) +
-        0.25 * score_ratio(mean_recall, TARGET_RECALL, TRUE) +
-        0.20 * score_ratio(mean_f1, TARGET_F1, TRUE) +
-        0.15 * score_ratio(mean_iou, TARGET_IOU, TRUE) +
-        0.15 * score_ratio(mean_population_wape, TARGET_WAPE, FALSE) +
-        0.10 * score_ratio(mean_population_spearman, TARGET_SPEARMAN, TRUE)
+      composite_score = weighted_candidate_score(
+        mean_precision,
+        mean_recall,
+        mean_f1,
+        mean_iou,
+        mean_population_wape,
+        mean_population_spearman
+      )
     ) |>
     ungroup()
 }))
+
+if (nrow(candidate_scores) == 0) {
+  candidate_scores <- data.frame(
+    return_period = numeric(),
+    minimum_hazard = character(),
+    event_count = integer(),
+    population_event_count = integer(),
+    target_pass_rate = numeric(),
+    mean_precision = numeric(),
+    mean_recall = numeric(),
+    mean_f1 = numeric(),
+    mean_iou = numeric(),
+    mean_population_wape = numeric(),
+    mean_population_spearman = numeric(),
+    trigger_state = character(),
+    composite_score = numeric(),
+    stringsAsFactors = FALSE
+  )
+}
 
 candidate_scores_path <- file.path(calibration_dir, "calibration_candidate_scores.csv")
 write.csv(candidate_scores, candidate_scores_path, row.names = FALSE)
@@ -401,7 +588,11 @@ for (state in c("Alert", "Alarm", "Critical")) {
   )
 }
 
-selected_table <- bind_rows(selected_rows)
+selected_table <- if (length(selected_rows) > 0) {
+  bind_rows(selected_rows)
+} else {
+  candidate_scores[0, , drop = FALSE]
+}
 selected_table_path <- file.path(calibration_dir, "selected_calibration_rules.csv")
 write.csv(selected_table, selected_table_path, row.names = FALSE)
 
@@ -421,6 +612,10 @@ write.csv(holdout, holdout_path, row.names = FALSE)
 
 calibration_event_count <- length(unique(all_metrics$event_id[all_metrics$role == "calibration"]))
 holdout_event_count <- length(unique(all_metrics$event_id[all_metrics$role %in% c("validation", "test")]))
+reference_only_event_count <- length(unique(all_metrics$event_id[all_metrics$role == "reference_only"]))
+registered_event_count <- nrow(events)
+ready_event_count <- nrow(ready_events)
+pending_event_count <- nrow(pending_events)
 
 rule_config <- list(
   version = paste0("candidate-", format(Sys.time(), "%Y%m%d-%H%M%S")),
@@ -428,6 +623,10 @@ rule_config <- list(
   source = "controlled_multi_event_calibration",
   calibration_event_count = calibration_event_count,
   holdout_event_count = holdout_event_count,
+  reference_only_event_count = reference_only_event_count,
+  registered_event_count = registered_event_count,
+  ready_event_count = ready_event_count,
+  pending_event_count = pending_event_count,
   generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
   validation_acceptance = list(
     metric = ACCEPTANCE_METRIC,
@@ -436,8 +635,10 @@ rule_config <- list(
   ),
   notes = paste(
     "UNAPPROVED candidate configuration.",
-    "Calibration used only events with role=calibration.",
+    "Calibration used only ready events with role=calibration.",
     "Validation/test events were held out from candidate selection.",
+    "Reference-only and source-only records never select automatic trigger mappings.",
+    "Spatial-only historical events may omit demographics; missing population metrics are not treated as zero skill.",
     "Use 05_promote_calibrated_rules.R for explicit gated promotion."
   ),
   selection_notes = selection_notes,
@@ -452,9 +653,12 @@ holdout_pass_rate <- if (nrow(holdout) > 0) mean(holdout$all_targets_met, na.rm 
 report <- c(
   "RESCUAR / PREP — CONTROLLED MULTI-EVENT CALIBRATION REPORT",
   "",
-  paste0("Historical events evaluated: ", length(unique(all_metrics$event_id))),
-  paste0("Calibration events: ", calibration_event_count),
-  paste0("Held-out validation/test events: ", holdout_event_count),
+  paste0("Event registry records: ", registered_event_count),
+  paste0("Ready events evaluated: ", ready_event_count),
+  paste0("Source-only/pending geometry events: ", pending_event_count),
+  paste0("Calibration events evaluated: ", calibration_event_count),
+  paste0("Held-out validation/test events evaluated: ", holdout_event_count),
+  paste0("Reference-only events evaluated: ", reference_only_event_count),
   "",
   "Selected candidate mappings (NOT YET APPROVED FOR PRODUCTION):",
   paste0("Alert -> ", selected_rules$Alert$return_period, "-Year / ", selected_rules$Alert$minimum_hazard, "+"),
@@ -469,13 +673,16 @@ report <- c(
   "",
   paste0("Primary acceptance criterion: ", ACCEPTANCE_METRIC, " >= ", TARGET_ACCURACY, " (85%)."),
   "Precision, recall, IoU/CSI, WAPE, and Spearman remain supporting diagnostics/calibration signals.",
-  "This process searches only legitimate LiPAD scenario combinations. It does not generate synthetic ground truth, alter NAMRIA observations, or recursively change data to force a target score."
+  "Historical source records without observed geometry remain registered but are skipped until georeferencing/digitization is complete.",
+  "Spatial-only events can be scored without event-year demographics; population metrics remain NA rather than borrowing modern demographics.",
+  "This process searches only legitimate LiPAD scenario combinations. It does not generate synthetic ground truth, alter independent observations, or recursively change data to force a target score."
 )
 
 writeLines(report, file.path(calibration_dir, "multi_event_calibration_report.txt"))
 
 cat(
   "\nCalibration analysis complete.\n",
+  "Event registry status: ", registry_status_path, "\n",
   "All event/candidate metrics: ", metrics_path, "\n",
   "Candidate summary: ", candidate_scores_path, "\n",
   "Unapproved selected rules: ", candidate_json, "\n",

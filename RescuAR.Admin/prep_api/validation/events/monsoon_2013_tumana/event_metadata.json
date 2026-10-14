@@ -1,0 +1,29 @@
+{
+  "event_id": "monsoon_2013_tumana",
+  "event_name": "2013 Monsoon Rains — Tumana",
+  "event_date": null,
+  "event_year": 2013,
+  "role": "reference_only",
+  "event_status": "source_ready_digitization_pending",
+  "spatial_scope": "Barangay Tumana",
+  "calibration_eligible": false,
+  "source_document": "Espina (2018), Planning for Climate Resilient Barangays in the Philippines: The Case of Barangay Tumana in Marikina City, Metro Manila",
+  "source_page": 9,
+  "source_figure": "Figure 4.1.1.5",
+  "source_map": "source_map_monsoon_2013_depth.png",
+  "supplementary_map": "source_map_frequently_flooded.png",
+  "reported_depth_note": "Eastern Tumana reported >2 m inundation during the 2013 monsoons; exact event date not stated in the source. Page 9 map-panel titles/captions are internally inconsistent, so both panels are retained for manual review.",
+  "context_files": [
+    "../context/ecological_profile_population_2020.csv",
+    "../context/ecological_profile_city_context.csv",
+    "../context/ecological_profile_flood_hazard_inventory_2018.csv"
+  ],
+  "limitations": [
+    "Source map is a published/embedded figure rather than original GIS data.",
+    "Spatial coverage is Tumana, not citywide Marikina.",
+    "The extracted image has no native CRS/georeferencing metadata.",
+    "Do not use as calibration geometry until georeferencing and digitization are QC-checked.",
+    "Ecological Profile 2020 demographics are context/cross-check data and must not be treated as 2009/2013 historical demographics.",
+    "Page 9 contains internally inconsistent figure-title/map-caption labeling; evaluator must document which panel is digitized and why."
+  ]
+}

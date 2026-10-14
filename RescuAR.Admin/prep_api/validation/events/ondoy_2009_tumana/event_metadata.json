@@ -1,0 +1,29 @@
+{
+  "event_id": "ondoy_2009_tumana",
+  "event_name": "Typhoon Ketsana / Ondoy 2009 — Tumana",
+  "event_date": "2009-09-26",
+  "event_year": 2009,
+  "role": "reference_only",
+  "event_status": "source_ready_digitization_pending",
+  "spatial_scope": "Barangay Tumana",
+  "calibration_eligible": false,
+  "source_document": "Espina (2018), Planning for Climate Resilient Barangays in the Philippines: The Case of Barangay Tumana in Marikina City, Metro Manila",
+  "source_page": 10,
+  "source_figure": "Figure 4.1.1.7",
+  "source_map": "source_map_ondoy_2009.png",
+  "reported_river_level_m": 22.8,
+  "reported_depth_note": "Eastern portion reported inundated by >2.5 m floodwater.",
+  "context_files": [
+    "../context/espina_historical_river_levels.csv",
+    "../context/ecological_profile_population_2020.csv",
+    "../context/ecological_profile_city_context.csv",
+    "../context/ecological_profile_flood_hazard_inventory_2018.csv"
+  ],
+  "limitations": [
+    "Source map is a published/embedded figure rather than original GIS data.",
+    "Spatial coverage is Tumana, not citywide Marikina.",
+    "The extracted image has no native CRS/georeferencing metadata.",
+    "Do not use as calibration geometry until georeferencing and digitization are QC-checked.",
+    "Ecological Profile 2020 demographics are context/cross-check data and must not be treated as 2009/2013 historical demographics."
+  ]
+}
