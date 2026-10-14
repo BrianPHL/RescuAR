@@ -17,6 +17,7 @@ public partial class CameraPage
     private RoadApproachCue? roadApproachCue;
     private DateTimeOffset nextRoadApproachRetryAt;
     private bool initialRoadApproachPending;
+    private bool approachRoutePreviewPublished;
     private readonly RoadEntryConfirmationPolicy roadEntryConfirmation = new();
     private Task? roadApproachUpdateTask;
     private long roadApproachEpoch;
@@ -160,8 +161,7 @@ public partial class CameraPage
             !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
             arrivalRoadGraph is null ||
             arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate) ||
-            !RoadApproachCuePolicy.TryGetDirection(reading.Coordinate, update.SnappedCoordinate,
-                activeMapToArYawDegrees, out _, out _)) return false;
+            reading.Coordinate.DistanceTo(update.SnappedCoordinate) > 50) return false;
         lock (routeProgressFusionSync)
             roadApproachCue = new(reading, update.SnappedCoordinate, destination.Coordinate,
                 activeMapToArYawDegrees, frame.Generation.SessionGeneration, returningToRoute, true);
@@ -219,8 +219,21 @@ public partial class CameraPage
         }
         var rotation = new Quaternion(frame.Pose.RotationX, frame.Pose.RotationY,
             frame.Pose.RotationZ, frame.Pose.RotationW);
+        double distance = cue.Reading.Coordinate.DistanceTo(cue.Target);
+        if (!RoadApproachCuePolicy.IsAccessDirectionReliable(distance, cue.Reading.AccuracyMeters))
+        {
+            ARRoadApproachBridge.Clear();
+            routeLocatorIcon.IsVisible = false;
+            routeLocatorLabel.Text = cue.ConnectsToDestination
+                ? $"Mapped route nearby (~{distance:0} m). Check walking access."
+                : "Mapped road nearby. Route connection pending.";
+            routeLocatorPanel.IsVisible = true;
+            if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
+                turnGuidancePanel.IsVisible = false;
+            return true;
+        }
         if (!RoadApproachCuePolicy.TryGetAngle(cue.Reading.Coordinate, cue.Target,
-                cue.Yaw, rotation, out double angle, out double distance))
+                cue.Yaw, rotation, out double angle, out distance))
         {
             ARRoadApproachBridge.Clear();
             return false;
@@ -233,10 +246,11 @@ public partial class CameraPage
         routeLocatorLabel.Text = cue.ReturningToRoute
             ? $"Return to mapped route (~{distance:0} m). Check access."
             : cue.ConnectsToDestination
-                ? $"Approach mapped road (~{distance:0} m). Check access."
+                ? $"Approach mapped route (~{distance:0} m). Check access."
                 : $"Nearest mapped road (~{distance:0} m). Route connection pending.";
         routeLocatorPanel.IsVisible = true;
-        turnGuidancePanel.IsVisible = false;
+        if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
+            turnGuidancePanel.IsVisible = false;
         return true;
     }
 

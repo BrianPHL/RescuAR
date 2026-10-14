@@ -1353,12 +1353,21 @@ namespace RescuAR.App.Views.Camera
 
             if (activeRoute is not null && arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
             {
+                bool previewReady = approachRoutePreviewPublished && initialRoadApproachPending &&
+                    !verifiedRecoveryConnector && latestGpsCoordinate.HasValue && latestGpsTimestamp.HasValue &&
+                    MappedRoutePreviewPolicy.CanPublish(progress.HasProgress, progress.IsOffRoute,
+                        routeMatchConfidence, latestGpsAccuracy, latestGpsCoordinate.Value,
+                        progress.SnappedCoordinate, latestGpsTimestamp.Value, now,
+                        arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
+                            latestGpsCoordinate.Value, progress.SnappedCoordinate));
                 policyConfidence = policyConfidence with
                 {
                     State = policyConfidence.State == ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden
                         ? policyConfidence.State : ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
-                    AllowsRouteGeometry = false,
-                    DisplayMessage = gpsFresh && headingTrusted &&
+                    AllowsRouteGeometry = previewReady && policyConfidence.AllowsRouteGeometry,
+                    DisplayMessage = previewReady && policyConfidence.AllowsRouteGeometry
+                        ? "Mapped route nearby — check walking access"
+                        : gpsFresh && headingTrusted &&
                         gpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
                         routeMatchConfidence >= RouteMatchConfidence.Medium &&
                         continuity.State == ARCameraSpatialController.SpatialContinuityState.Live
@@ -3784,10 +3793,9 @@ namespace RescuAR.App.Views.Camera
                 LogDetailedDebug(HeadingLogTag,
                     $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
 
-                // Retain the complete calculated route, but publish no cyan
-                // corridor until independent GPS observations confirm road entry.
-                // This also keeps a route calculated from a road >20 m away
-                // available while the floor arrow guides the approach.
+                // Keep physical road-entry confirmation separate from a short
+                // preview of the actual mapped geometry. The next fresh GPS
+                // update can publish that preview using the placement checks.
                 ARRouteBridge.Clear();
                 Log.Info(RoutingLogTag,
                     $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
@@ -9779,6 +9787,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 false;
+            approachRoutePreviewPublished = false;
             initialRoadApproachPending = false;
             ClearRoadApproachCue();
 
@@ -9809,6 +9818,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 true;
+            approachRoutePreviewPublished = false;
 
             if (arRouteVisualMode ==
                 ArRouteVisualMode.ApproachOrOffCourseShort)
@@ -9883,6 +9893,7 @@ namespace RescuAR.App.Views.Camera
             arRouteVisualMode =
                 ArRouteVisualMode.RoadFollowingLong;
             initialRoadApproachPending = false;
+            approachRoutePreviewPublished = false;
             ClearRoadApproachCue();
 
             roadFollowingReentryConfirmationCount =
@@ -9904,9 +9915,9 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
-        /// Holds mapped route geometry until independent fixes confirm road entry.
-        /// Confirmed off-route observations use a floor arrow and screen cue;
-        /// they never create a straight GPS-to-road cyan connector.
+        /// Previews the actual nearby route before independent road-entry fixes.
+        /// Confirmed off-route observations retain access cues without creating
+        /// a straight GPS-to-road cyan connector.
         /// </summary>
         private bool TryPublishApproachToRouteVisual(
             RouteResult route,
@@ -9917,6 +9928,10 @@ namespace RescuAR.App.Views.Camera
             if (initialRoadApproachPending)
             {
                 TrySetRouteRoadApproachCue(update, returningToRoute: false);
+                if (TryPublishMovingRouteWindow(route, update,
+                        $"{progressSource}/MAPPED-ROUTE-PREVIEW", allowApproachPreview: true))
+                    return true;
+                approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;
             }
@@ -9935,11 +9950,23 @@ namespace RescuAR.App.Views.Camera
         private bool TryPublishMovingRouteWindow(
             RouteResult route,
             RouteProgressTracker.RouteProgressUpdate update,
-            string progressSource = "GPS")
+            string progressSource = "GPS",
+            bool allowApproachPreview = false)
         {
+            DateTimeOffset fixTimestamp;
+            lock (routeProgressFusionSync)
+                fixTimestamp = latestGpsTimestampForRouting ?? DateTimeOffset.MinValue;
+            bool approachPreview = allowApproachPreview && initialRoadApproachPending &&
+                !recoveryConnectorVerified &&
+                MappedRoutePreviewPolicy.CanPublish(update.IsAccepted, update.IsOffRoute,
+                    update.MatchConfidence, update.AccuracyMeters, update.GpsCoordinate,
+                    update.SnappedCoordinate, fixTimestamp, DateTimeOffset.UtcNow,
+                    arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
+                        update.GpsCoordinate, update.SnappedCoordinate));
             if (!HasCurrentRouteHeading() ||
-                arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+                (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong && !approachPreview))
             {
+                approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;
             }
@@ -9980,7 +10007,8 @@ namespace RescuAR.App.Views.Camera
              * Rebase the active local route window horizontally near the
              * current AR camera position so the guidance moves with the user.
              *
-             * This publisher is used after mapped road entry is confirmed.
+             * Before confirmed entry only a short, access-checked section of
+             * the mapped polyline is shown. Confirmed entry enables the longer window.
              * Neither GPS nor PDR drives the Evergine camera; they
              * only advance route progress and republish route geometry.
              */
@@ -10035,6 +10063,13 @@ namespace RescuAR.App.Views.Camera
             {
                 return false;
             }
+
+            if (approachPreview && !approachRoutePreviewPublished)
+                AndroidLog.Info(ProgressLogTag,
+                    $"MAPPED ROUTE PREVIEW: algorithm='{route.Algorithm}', " +
+                    $"window={ApproachRouteVisualWindowMeters:F1}m, crossTrack={update.CrossTrackErrorMeters:F1}m. " +
+                    "Physical road entry remains unconfirmed.");
+            approachRoutePreviewPublished = approachPreview;
 
             if (routeStartupPublishedVersion < 0 && activeDestinationCoordinate.HasValue)
             {
