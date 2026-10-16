@@ -14,6 +14,12 @@ namespace RescuAR.App.Views.Map
             BindingContext = ViewModel;
         }
 
+        protected override void OnDisappearing()
+        {
+            ViewModel.Stop();
+            base.OnDisappearing();
+        }
+
         protected override async void OnAppearing()
         {
             base.OnAppearing();
@@ -21,7 +27,7 @@ namespace RescuAR.App.Views.Map
             if (BindingContext is SafetyCircleViewModel vm)
             {
                 await vm.InitializeMapAsync(MapControl);
-                await vm.LoadMyCirclesAsync();
+                await vm.StartAsync();
             }
         }
     }

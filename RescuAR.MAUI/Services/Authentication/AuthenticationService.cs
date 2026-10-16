@@ -8,19 +8,13 @@ namespace RescuAR.App.Services.Authentication
 {
     public class AuthenticationService
     {
-        private Supabase.Client GetClient()
-        {
-            var client = SupabaseService.Instance.Client;
-            if (client == null)
-            {
-                throw new InvalidOperationException("Supabase client is not initialized. Please configure the Supabase URL and Key.");
-            }
-            return client;
-        }
+        private async Task<Supabase.Client> GetClientAsync() =>
+            await SupabaseService.Instance.GetClientAsync()
+                ?? throw new InvalidOperationException("Supabase is not configured.");
 
-        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber)
+        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber, RescuAR.App.Models.ResidentProfileDraft? draft = null)
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
 
             var options = new SignUpOptions
             {
@@ -43,6 +37,11 @@ namespace RescuAR.App.Services.Authentication
                 options.Data.Add("contact_number", contactNumber);
             }
 
+            if (draft != null)
+            {
+                options.Data["address"] = draft.Address;
+                options.Data["birthday"] = draft.Birthday.ToString("yyyy-MM-dd");
+            }
             var session = await client.Auth.SignUp(email, password, options);
             return session
                 ?? throw new InvalidOperationException("Supabase sign-up completed without returning an authentication session.");
@@ -50,7 +49,7 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task<Session> SignInWithEmailAsync(string email, string password)
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
             var session = await client.Auth.SignIn(email, password);
             return session
                 ?? throw new InvalidOperationException("Supabase sign-in completed without returning an authentication session.");
@@ -58,9 +57,9 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task<Session> SignInWithGoogleAsync()
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
 
-            // Set up OAuth sign-in options. 
+            // Set up OAuth sign-in options.
             // In modern OAuth, PKCE flow is highly recommended for mobile clients.
             var options = new SignInOptions
             {
@@ -111,8 +110,16 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task SignOutAsync()
         {
-            var client = GetClient();
-            await client.Auth.SignOut();
+            try
+            {
+                var client = await GetClientAsync();
+                await client.Auth.SignOut();
+            }
+            finally
+            {
+                await SupabaseService.Instance.ClearSessionAsync();
+                RescuAR.App.Services.Profile.UserProfileService.ClearIdentity();
+            }
         }
     }
 }

@@ -5,8 +5,8 @@ using RescuAR.Navigation.Models;
 namespace RescuAR.Navigation.Data;
 
 /// <summary>
-/// Builds a pedestrian graph from walkable LineStrings and explicit crossing
-/// evidence. Lines connect at shared source coordinates; a visual crossing
+/// Builds an evacuation graph from mapped passages and shared junctions.
+/// Lines connect at shared source coordinates; a visual crossing
 /// without a shared source vertex does not create a routing connection.
 /// </summary>
 public sealed class RoadGraphBuilder
@@ -43,9 +43,12 @@ public sealed class RoadGraphBuilder
 
         Dictionary<CoordinateKey, RoadNode> byCoordinate =
             new();
-        var crossingPolicy = new MajorRoadCrossingPolicy(features, points);
-        int rejectedCrossingEdges = 0;
-        int retainedJunctionEdges = 0;
+        var crossingPolicy = new MajorRoadCrossingPolicy(features);
+        var blockedPoints = new HashSet<(double Lat, double Lon)>();
+        foreach (var point in points)
+            if (EvacuationRoutingPolicy.IsBlockedPoint(point.Barrier, point.Tags))
+                blockedPoints.Add((Math.Round(point.Coordinate.Latitude, CoordinatePrecision),
+                    Math.Round(point.Coordinate.Longitude, CoordinatePrecision)));
 
         Dictionary<int, RoadNode> nodes =
             new();
@@ -60,9 +63,9 @@ public sealed class RoadGraphBuilder
         int nextEdgeId =
             1;
 
-        foreach (GeoJsonRoadFeature feature in
-                 features)
+        for (int featureIndex = 0; featureIndex < features.Count; featureIndex++)
         {
+            GeoJsonRoadFeature feature = features[featureIndex];
             if (!filter.IsWalkable(
                     feature))
             {
@@ -85,13 +88,6 @@ public sealed class RoadGraphBuilder
                     !seenSourceSegments.Add(SegmentIdentity.From(
                         feature.OsmId, fromCoordinate, toCoordinate)))
                     continue;
-                if (crossingPolicy.BlocksSegment(feature,
-                        fromCoordinate, toCoordinate))
-                {
-                    rejectedCrossingEdges++;
-                    continue;
-                }
-
                 // At the ends of a bridge/tunnel feature the mapped way
                 // rejoins the ground network; intermediate crossings remain
                 // separated by grade.
@@ -99,12 +95,13 @@ public sealed class RoadGraphBuilder
                 int fromLayer = i == 0 ? 0 : featureLayer;
                 int toLayer = i + 1 == feature.Coordinates.Count - 1
                     ? 0 : featureLayer;
-                string fromSide = crossingPolicy.EndpointSide(
-                    fromCoordinate, toCoordinate, fromLayer);
-                string toSide = crossingPolicy.EndpointSide(
-                    toCoordinate, fromCoordinate, toLayer);
-                if (fromSide.Length > 0 || toSide.Length > 0)
-                    retainedJunctionEdges++;
+                // A blocked node keeps approaches on either side usable but
+                // cannot join them. The same segment's two directions share a port.
+                string port = $"barrier/{featureIndex}/{i}";
+                string fromSide = blockedPoints.Contains((Math.Round(fromCoordinate.Latitude, CoordinatePrecision),
+                    Math.Round(fromCoordinate.Longitude, CoordinatePrecision))) ? port : string.Empty;
+                string toSide = blockedPoints.Contains((Math.Round(toCoordinate.Latitude, CoordinatePrecision),
+                    Math.Round(toCoordinate.Longitude, CoordinatePrecision))) ? port : string.Empty;
                 RoadNode from =
                     GetOrCreateNode(
                         fromCoordinate,
@@ -133,45 +130,24 @@ public sealed class RoadGraphBuilder
                     continue;
                 }
 
-                /*
-                 * Pedestrian routing is bidirectional by default even when
-                 * the road's OSM "oneway" tag applies to motor vehicles.
-                 * Explicit pedestrian direction restrictions can be added
-                 * later if present in the source data.
-                 */
-                RoadEdge forward =
-                    CreateEdge(
-                        nextEdgeId++,
-                        from,
-                        to,
-                        length,
-                        feature);
-
-                RoadEdge reverse =
-                    CreateEdge(
-                        nextEdgeId++,
-                        to,
-                        from,
-                        length,
-                        feature);
-
-                edges.Add(
-                    forward);
-
-                edges.Add(
-                    reverse);
-
-                from.AddEdge(
-                    forward);
-
-                to.AddEdge(
-                    reverse);
+                if (EvacuationRoutingPolicy.IsDirectionAllowed(feature, true))
+                {
+                    RoadEdge forward = CreateEdge(nextEdgeId++, from, to, length, feature);
+                    edges.Add(forward);
+                    from.AddEdge(forward);
+                }
+                if (EvacuationRoutingPolicy.IsDirectionAllowed(feature, false))
+                {
+                    RoadEdge reverse = CreateEdge(nextEdgeId++, to, from, length, feature);
+                    edges.Add(reverse);
+                    to.AddEdge(reverse);
+                }
             }
         }
 
         RescuAR.Diagnostics.AndroidLog.Warn("RescuAR-RoadGraph",
-            $"Walkable junction segments retained: {retainedJunctionEdges}; " +
-            $"interior/overlap major-road crossings excluded: {rejectedCrossingEdges}.");
+            $"Evacuation graph: {nodes.Count} nodes, {edges.Count} directed edges, " +
+            $"{blockedPoints.Count} mapped blocked points.");
         return new RoadGraph(
             nodes,
             edges,

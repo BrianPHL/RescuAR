@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MapPin, Waves, Lock, Mail, AlertCircle } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-export default function Auth({ onLogin }) {
+export default function Auth() {
   const [isHovered, setIsHovered] = useState(false);
   const [focusedInput, setFocusedInput] = useState(null);
   
@@ -21,37 +21,16 @@ export default function Auth({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
       
-      // Verify if the user is an admin
-      const { data: adminData, error: adminError } = await supabase
-        .from('admin_roles')
-        .select('*')
-        .eq('user_id', data.user.id)
-        .maybeSingle();
-
-      if (adminError) {
-        await supabase.auth.signOut();
-        throw new Error('Error verifying admin privileges. Please try again.');
-      }
-      
-      if (!adminData) {
-        // Not an admin, sign them out immediately
-        await supabase.auth.signOut();
-        throw new Error('Unauthorized. You do not have administrator access.');
-      }
-
+      // AuthWrapper verifies administrator access before mounting the dashboard.
       setFailedAttempts(0);
-      
-      // On success, we don't necessarily need to call onLogin if AuthWrapper is listening to state changes,
-      // but we can call it to instantly trigger a local state flip if AuthWrapper expects it.
-      if (onLogin) onLogin();
-    } catch (error) {
+    } catch {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
       

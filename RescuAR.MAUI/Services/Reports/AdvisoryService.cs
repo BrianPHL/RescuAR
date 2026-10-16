@@ -147,8 +147,35 @@ public static class RealtimeAdvisoryManager
     public static event Action<DisasterAdvisory>?
         OnNewAdvisoryPushed;
 
+    public static event Action<DisasterAdvisory>? OnAdvisoryPopupRequested;
+
+    static RealtimeAdvisoryManager()
+    {
+        RescuAR.MAUI.Services.Settings.AppPreferences.Current.Changed += setting =>
+        {
+            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.EmergencySiren &&
+                !RescuAR.MAUI.Services.Settings.AppPreferences.Current.Get(setting))
+                MainThread.BeginInvokeOnMainThread(StopAlarmAudio);
+        };
+    }
+
+    public static bool IsAlarmPlaying
+    {
+        get
+        {
+#if ANDROID
+            try { return _activePlayer?.IsPlaying == true; }
+            catch { return false; }
+#else
+            return false;
+#endif
+        }
+    }
+
     public static void PlayAlarmAudio()
     {
+        if (!RescuAR.MAUI.Services.Settings.AppPreferences.Current.Get(
+                RescuAR.MAUI.Services.Settings.AppSetting.EmergencySiren)) return;
 #if ANDROID
         try
         {
@@ -167,8 +194,8 @@ public static class RealtimeAdvisoryManager
                 return;
             }
 
-            _activePlayer =
-                new Android.Media.MediaPlayer();
+            var player = new Android.Media.MediaPlayer();
+            _activePlayer = player;
 
             _activePlayer.SetDataSource(
                 asset.FileDescriptor,
@@ -183,20 +210,20 @@ public static class RealtimeAdvisoryManager
                 {
                     try
                     {
-                        _activePlayer?.Release();
+                        player.Release();
                     }
                     catch
                     {
                     }
                     finally
                     {
-                        _activePlayer =
-                            null;
+                        if (ReferenceEquals(_activePlayer, player)) _activePlayer = null;
                     }
                 };
         }
         catch (Exception exception)
         {
+            StopAlarmAudio();
             Android.Util.Log.Warn(
                 LogTag,
                 $"Unable to play NDRRMC alarm audio: {exception.Message}");
@@ -326,6 +353,10 @@ public static class RealtimeAdvisoryManager
 
                             OnNewAdvisoryPushed?.Invoke(
                                 latest);
+                            RescuAR.MAUI.Services.Settings.AppPreferences.VibrateForAdvisory();
+                            if (RescuAR.MAUI.Services.Settings.AppPreferences.Current.Get(
+                                    RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+                                OnAdvisoryPopupRequested?.Invoke(latest);
                         });
                 }
                 catch (Exception exception)

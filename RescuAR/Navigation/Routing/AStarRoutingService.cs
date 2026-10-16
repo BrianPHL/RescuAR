@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using RescuAR.Diagnostics;
+using RescuAR.Navigation.Data;
 using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Models;
 
@@ -11,10 +12,8 @@ namespace RescuAR.Navigation.Routing;
 
 /// <summary>
 /// Offline A* (A-Star) routing service implementation.
-/// Calculates shortest pedestrian paths using the in-memory RoadGraph.
-///
-/// Stage 10 adds an explicit hazard-aware route entry point while preserving
-/// the original IRoutingService behavior unchanged for ordinary navigation.
+/// Calculates evacuation paths using shared access rules and weighted road
+/// preferences. Route distances remain physical meters for AR guidance.
 /// </summary>
 public sealed class AStarRoutingService : IHazardAwareRoutingService
 {
@@ -24,15 +23,9 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
     private const string HazardAwareAlgorithmName =
         "AStar (Hazard-Aware)";
 
-    private const double OriginHazardEscapeAllowanceMeters =
-        12.0;
-
-    private const double EscapeProgressEpsilonMeters =
-        0.25;
-
-    // AR refuses to align GPS to route geometry beyond this distance.
-    private const double MaximumOriginSnapMeters = 20.0;
-    private const double MaximumDestinationSnapMeters = 50.0;
+    // Routing endpoints share these limits with MLD. AR placement remains stricter.
+    private static double MaximumOriginSnapMeters => EvacuationRoutingPolicy.MaximumOriginSnapMeters;
+    private static double MaximumDestinationSnapMeters => EvacuationRoutingPolicy.MaximumDestinationSnapMeters;
     private const double DestinationCandidateBandMeters = 12.0;
     private const int MaximumDestinationCandidates = 12;
 
@@ -169,98 +162,22 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         Dictionary<int, double> startSeedCosts =
             new();
 
-        GeoCoordinate snappedStartCoordinate;
+        EdgeProjection startProjection = FindNearestEdgeProjection(origin,
+            destinationComponents, MaximumOriginSnapMeters, hazards);
+        if (!startProjection.IsAvailable || startProjection.Edge is null) return null;
+        RoadEdge startEdge = startProjection.Edge;
+        GeoCoordinate snappedStartCoordinate = startProjection.SnappedCoordinate;
+        double factor = startEdge.Cost / startEdge.LengthMeters;
 
-        if (hazardAware)
-        {
-            /*
-             * Preserve the previously validated hazard escape behavior. A
-             * virtual partial-edge start needs separate segment-level hazard
-             * clipping before it can safely be enabled for exclusion routes.
-             */
-            RoadNode? startNode =
-                FindNearestNode(
-                    origin, destinationComponents);
-
-            double originSnapMeters =
-                startNode?.Coordinate.DistanceTo(origin) ??
-                double.PositiveInfinity;
-
-            if (startNode is null ||
-                originSnapMeters > MaximumOriginSnapMeters)
-            {
-                AndroidLog.Warn(
-                    LogTag,
-                    $"Origin node snap rejected: distance={originSnapMeters:F1} m, " +
-                    $"limit={MaximumOriginSnapMeters:F1} m.");
-                return null;
-            }
-
-            snappedStartCoordinate =
-                startNode.Coordinate;
-
-            if (graph.AccessCrossesMajorRoad(origin, snappedStartCoordinate))
-            {
-                AndroidLog.Warn(LogTag, "Origin node snap crosses a major road.");
-                return null;
-            }
-
-            startSeedCosts[startNode.Id] =
-                0.0;
-        }
-        else
-        {
-            EdgeProjection startProjection =
-                FindNearestEdgeProjection(
-                    origin, destinationComponents);
-
-            if (!startProjection.IsAvailable ||
-                startProjection.Edge is null ||
-                startProjection.CrossTrackMeters > MaximumOriginSnapMeters)
-            {
-                AndroidLog.Warn(
-                    LogTag,
-                    $"Origin edge snap rejected: distance={startProjection.CrossTrackMeters:F1} m, " +
-                    $"limit={MaximumOriginSnapMeters:F1} m.");
-                return null;
-            }
-
-            RoadEdge startEdge =
-                startProjection.Edge;
-
-            snappedStartCoordinate =
-                startProjection.SnappedCoordinate;
-
-            if (graph.AccessCrossesMajorRoad(origin, snappedStartCoordinate))
-            {
-                AndroidLog.Warn(LogTag, "Origin edge snap crosses a major road.");
-                return null;
-            }
-
-            double costToFrom =
-                startEdge.LengthMeters *
-                startProjection.FractionFromStart;
-
-            double costToTo =
-                startEdge.LengthMeters *
-                (1.0 -
-                 startProjection.FractionFromStart);
-
-            startSeedCosts[startEdge.From.Id] =
-                costToFrom;
-
+        // A partial edge can only seed endpoints reachable in its allowed direction.
+        // Hazard checks cover the partial segment before it enters the search.
+        if (CanSeedEndpoint(startEdge, snappedStartCoordinate, false, origin, hazards))
             startSeedCosts[startEdge.To.Id] =
-                costToTo;
-
-            AndroidLog.Debug(
-                LogTag,
-                "A* origin snapped to nearest traversable edge: " +
-                $"edge={startEdge.Id}, " +
-                $"crossTrack={startProjection.CrossTrackMeters:F1} m, " +
-                $"fraction={startProjection.FractionFromStart:F3}, " +
-                $"seedFrom={costToFrom:F1} m, " +
-                $"seedTo={costToTo:F1} m.");
-        }
+                startEdge.LengthMeters * (1.0 - startProjection.FractionFromStart) * factor;
+        if (CanSeedEndpoint(startEdge, snappedStartCoordinate, true, origin, hazards))
+            startSeedCosts[startEdge.From.Id] =
+                startEdge.LengthMeters * startProjection.FractionFromStart * factor;
+        if (startSeedCosts.Count == 0) return null;
 
         // The closest node to a map pin may be isolated or across a road.
         // Search only access points on the origin's connected network, and
@@ -305,7 +222,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         int blockedEdgeCount = 0;
         RoadNode? bestTarget = null;
         double bestTargetScore = double.PositiveInfinity;
-        double bestGraphDistance = double.PositiveInfinity;
+        double bestGraphCost = double.PositiveInfinity;
         while (openSet.TryDequeue(out int currentId, out double lowerBound))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -325,7 +242,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                 {
                     bestTarget = currentNode;
                     bestTargetScore = score;
-                    bestGraphDistance = currentG;
+                    bestGraphCost = currentG;
                 }
             }
             foreach (RoadEdge edge in currentNode.Edges)
@@ -352,22 +269,17 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
             }
         }
 
-        double direct = origin.DistanceTo(destination);
-        double maximumReasonableDetour = Math.Max(150.0, direct * 3.0);
-        if (bestTarget is not null && bestGraphDistance <= maximumReasonableDetour)
+        if (bestTarget is not null)
         {
             RouteResult result = ReconstructRoute(cameFrom, bestTarget,
-                snappedStartCoordinate, startSeedCosts, bestGraphDistance,
-                algorithmName);
+                snappedStartCoordinate, algorithmName);
+            if (hazardAware && !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(result, origin, hazards!))
+                return null;
             AndroidLog.Debug(LogTag,
                 $"Selected connected facility access: snap={targets[bestTarget.Id]:F1} m, " +
-                $"graph={bestGraphDistance:F1} m, candidates={targets.Count}.");
+                $"distance={result.TotalDistanceMeters:F1} m, weightedCost={bestGraphCost:F1}.");
             return result;
         }
-        if (bestTarget is not null)
-            AndroidLog.Warn(LogTag,
-                $"Implausible destination detour rejected: graph={bestGraphDistance:F1} m, " +
-                $"direct={direct:F1} m, limit={maximumReasonableDetour:F1} m.");
 
         if (hazardAware)
         {
@@ -414,98 +326,42 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
     /// current position are temporarily allowed so A* can lead the user out
     /// instead of trapping the start node.
     /// </summary>
-    private static bool IsEdgeBlockedByHazards(
-        RoadEdge edge,
-        GeoCoordinate origin,
-        IReadOnlyList<RouteHazard> hazards)
+    private static bool IsEdgeBlockedByHazards(RoadEdge edge, GeoCoordinate origin,
+        IReadOnlyList<RouteHazard> hazards) =>
+        !RouteHazardGeometry.IsSegmentSafeFromOrigin(edge.From.Coordinate,
+            edge.To.Coordinate, origin, hazards);
+
+    private static bool CanSeedEndpoint(RoadEdge edge, GeoCoordinate snapped,
+        bool from, GeoCoordinate origin, IReadOnlyList<RouteHazard>? hazards)
     {
-        for (int i = 0;
-             i < hazards.Count;
-             i++)
-        {
-            RouteHazard hazard =
-                hazards[i];
-
-            double originDistance =
-                origin.DistanceTo(
-                    hazard.Coordinate);
-
-            double fromDistance =
-                edge.From.Coordinate.DistanceTo(
-                    hazard.Coordinate);
-
-            double toDistance =
-                edge.To.Coordinate.DistanceTo(
-                    hazard.Coordinate);
-
-            bool originInsideHazard =
-                originDistance <=
-                    hazard.RadiusMeters;
-
-            if (originInsideHazard &&
-                fromDistance <=
-                    hazard.RadiusMeters +
-                    OriginHazardEscapeAllowanceMeters &&
-                toDistance >
-                    fromDistance +
-                    EscapeProgressEpsilonMeters)
-            {
-                // Permit only movement that clearly increases separation from
-                // the hazard while escaping its immediate start-area buffer.
-                continue;
-            }
-
-            if (RouteHazardGeometry.EdgeIntersectsHazard(
-                    edge,
-                    hazard))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private RoadNode? FindNearestNode(GeoCoordinate point,
-        IReadOnlySet<int> destinationComponents)
-    {
-        RoadNode? nearest = null;
-        double minDistance = double.MaxValue;
-
-        foreach (var node in graph.Nodes.Values)
-        {
-            double dist = node.Coordinate.DistanceTo(point);
-            if (dist < minDistance && dist <= MaximumOriginSnapMeters &&
-                destinationComponents.Contains(componentByNode[node.Id]) &&
-                !graph.AccessCrossesMajorRoad(point, node.Coordinate))
-            {
-                minDistance = dist;
-                nearest = node;
-            }
-        }
-
-        return nearest;
+        GeoCoordinate endpoint = from ? edge.From.Coordinate : edge.To.Coordinate;
+        if (from && snapped.DistanceTo(endpoint) > 0.05 &&
+            !edge.To.Edges.Any(reverse => reverse.To.Id == edge.From.Id)) return false;
+        return hazards is null || RouteHazardGeometry.IsSegmentSafeFromOrigin(
+            snapped, endpoint, origin, hazards);
     }
 
     private static Dictionary<int, int> BuildComponents(RoadGraph graph)
     {
-        var components = new Dictionary<int, int>(graph.Nodes.Count);
-        var pending = new Queue<RoadNode>();
-        int nextComponent = 0;
-        foreach (RoadNode node in graph.Nodes.Values)
+        // Weak connectivity only selects candidates. Directed A* still decides
+        // reachability; reverse-only ways must not be split by iteration order.
+        var neighbors = graph.Nodes.Keys.ToDictionary(id => id, _ => new List<int>());
+        foreach (RoadEdge edge in graph.Edges)
         {
-            if (components.ContainsKey(node.Id)) continue;
-            components[node.Id] = ++nextComponent;
-            pending.Enqueue(node);
-            while (pending.TryDequeue(out RoadNode? current))
-            {
-                if (current is null) continue;
-                foreach (RoadEdge edge in current.Edges)
-                {
-                    if (!components.TryAdd(edge.To.Id, nextComponent)) continue;
-                    pending.Enqueue(edge.To);
-                }
-            }
+            neighbors[edge.From.Id].Add(edge.To.Id);
+            neighbors[edge.To.Id].Add(edge.From.Id);
+        }
+        var components = new Dictionary<int, int>(graph.Nodes.Count);
+        var pending = new Queue<int>();
+        int next = 0;
+        foreach (int id in graph.Nodes.Keys)
+        {
+            if (components.ContainsKey(id)) continue;
+            components.Add(id, ++next);
+            pending.Enqueue(id);
+            while (pending.TryDequeue(out int current))
+                foreach (int neighbor in neighbors[current])
+                    if (components.TryAdd(neighbor, next)) pending.Enqueue(neighbor);
         }
         return components;
     }
@@ -552,7 +408,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
 
     private EdgeProjection FindNearestEdgeProjection(
         GeoCoordinate point, IReadOnlySet<int>? destinationComponents,
-        double maximumSnapMeters = MaximumOriginSnapMeters)
+        double? maximumSnapMeters = null,
+        IReadOnlyList<RouteHazard>? hazards = null)
     {
         EdgeProjection nearest =
             EdgeProjection.Unavailable;
@@ -569,11 +426,13 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                     edge);
 
             if (!candidate.IsAvailable ||
-                candidate.CrossTrackMeters > maximumSnapMeters ||
+                candidate.CrossTrackMeters > (maximumSnapMeters ?? MaximumOriginSnapMeters) ||
                 (nearest.IsAvailable &&
                  candidate.CrossTrackMeters >=
                     nearest.CrossTrackMeters) ||
-                graph.AccessCrossesMajorRoad(point, candidate.SnappedCoordinate))
+                graph.AccessCrossesMajorRoad(point, candidate.SnappedCoordinate) ||
+                (!CanSeedEndpoint(edge, candidate.SnappedCoordinate, false, point, hazards) &&
+                 !CanSeedEndpoint(edge, candidate.SnappedCoordinate, true, point, hazards)))
             {
                 continue;
             }
@@ -707,8 +566,6 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         Dictionary<int, (int ParentId, RoadEdge UsedEdge)> cameFrom,
         RoadNode targetNode,
         GeoCoordinate snappedStartCoordinate,
-        IReadOnlyDictionary<int, double> startSeedCosts,
-        double totalDistance,
         string algorithmName)
     {
         var reversedNodes = new List<RoadNode>();
@@ -750,13 +607,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         RoadNode firstGraphNode =
             reversedNodes[0];
 
-        double accumulatedDistance =
-            startSeedCosts.TryGetValue(
-                firstGraphNode.Id,
-                out double seedCost)
-                ? seedCost
-                : snappedStartCoordinate.DistanceTo(
-                    firstGraphNode.Coordinate);
+        double accumulatedDistance = snappedStartCoordinate.DistanceTo(firstGraphNode.Coordinate);
 
         if (snappedStartCoordinate.DistanceTo(
                 firstGraphNode.Coordinate) >
@@ -785,7 +636,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                     accumulatedDistance));
         }
 
-        return new RouteResult(routePoints, totalDistance, algorithmName);
+        return new RouteResult(routePoints, accumulatedDistance, algorithmName);
     }
 
     private readonly record struct EdgeProjection(

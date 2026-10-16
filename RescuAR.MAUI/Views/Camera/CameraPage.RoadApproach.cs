@@ -136,6 +136,7 @@ public partial class CameraPage
     private bool TrySetRouteRoadApproachCue(RouteProgressTracker.RouteProgressUpdate update,
         bool returningToRoute)
     {
+        if (currentCameraModuleView == CameraModuleViewMode.Map2D || arRouteAlignmentRequired) return false;
         var frame = ARCameraPoseBridge.CurrentFrame;
         var destination = NavigationDestinationBridge.Current;
         LocationReading reading;

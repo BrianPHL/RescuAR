@@ -101,8 +101,8 @@ public partial class SummaryViewModel : ObservableObject
         _ = LoadLiveSummaryAsync();
 
         // Subscribe to real-time admin advisory updates from Supabase (unsubscribe first to prevent listener leaks)
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested -= HandleNewAdvisoryPushed;
+        RealtimeAdvisoryManager.OnAdvisoryPopupRequested += HandleNewAdvisoryPushed;
     }
 
     private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)

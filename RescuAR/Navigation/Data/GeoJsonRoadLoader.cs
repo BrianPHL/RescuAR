@@ -72,6 +72,7 @@ public sealed class GeoJsonRoadLoader
 
             List<GeoCoordinate> coordinates =
                 new();
+            bool invalidCoordinates = false;
 
             foreach (JsonElement pair in
                      geometry.GetProperty(
@@ -81,6 +82,7 @@ public sealed class GeoJsonRoadLoader
                 if (pair.GetArrayLength() <
                     2)
                 {
+                    invalidCoordinates = true;
                     continue;
                 }
 
@@ -102,18 +104,14 @@ public sealed class GeoJsonRoadLoader
                     coordinates.Add(
                         coordinate);
                 }
+                else invalidCoordinates = true;
             }
 
-            if (coordinates.Count <
+            if (invalidCoordinates || coordinates.Count <
                 2)
             {
                 continue;
             }
-
-            string? otherTags =
-                TryGetString(
-                    properties,
-                    "other_tags");
 
             result.Add(
                 new GeoJsonRoadFeature
@@ -139,8 +137,7 @@ public sealed class GeoJsonRoadLoader
                             "highway"),
 
                     Tags =
-                        OsmOtherTagsParser.Parse(
-                            otherTags),
+                        ReadTags(properties),
 
                     Coordinates =
                         coordinates
@@ -254,14 +251,27 @@ public sealed class GeoJsonRoadLoader
                         coordinate,
 
                     Tags =
-                        OsmOtherTagsParser.Parse(
-                            TryGetString(
-                                properties,
-                                "other_tags"))
+                        ReadTags(properties)
                 });
         }
 
         return result;
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadTags(JsonElement properties)
+    {
+        var tags = new Dictionary<string, string>(
+            OsmOtherTagsParser.Parse(TryGetString(properties, "other_tags")),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var property in properties.EnumerateObject())
+        {
+            if (property.Name is "id" or "osm_id" or "name" or "highway" or "other_tags" ||
+                property.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Object or JsonValueKind.Array)
+                continue;
+            string value = property.Value.ToString();
+            if (!string.IsNullOrWhiteSpace(value)) tags[property.Name] = value;
+        }
+        return tags;
     }
 
     private static void ValidateFeatureCollection(

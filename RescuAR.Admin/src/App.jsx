@@ -22,6 +22,7 @@ import EmergencyHotlines from './components/EmergencyHotlines';
 // System Components
 import SystemSettings from './components/SystemSettings';
 import SystemLogs from './components/SystemLogs';
+import AuditLogs from './components/AuditLogs';
 import Documentation from './components/Documentation';
 
 // Modals
@@ -31,7 +32,7 @@ import {
   PredictModal
 } from './components/Modals';
 
-export default function App({ session }) {
+export default function App({ session, onAccessDenied }) {
   const [activeView, setActiveView] = useState('monitoring-stations');
 
   // Modal states
@@ -63,7 +64,7 @@ export default function App({ session }) {
       case 'monitoring-inundation':
         return <InundationPrediction />;
       case 'community-reports-moderation':
-        return <ReportsModeration />;
+        return <ReportsModeration onAccessDenied={onAccessDenied} />;
       case 'community-residents':
         return <div style={{ padding: '20px' }}>Residents Directory View (Placeholder)</div>;
       case 'community-sms-parser':
@@ -81,6 +82,8 @@ export default function App({ session }) {
         return <SystemSettings />;
       case 'system-logs':
         return <SystemLogs />;
+      case 'audit-logs':
+        return <AuditLogs onAccessDenied={onAccessDenied} />;
       case 'documentation':
         return <Documentation />;
       default:
@@ -89,7 +92,7 @@ export default function App({ session }) {
   };
 
   return (
-    <div className="app-container">
+    <div className={`app-container${activeView === 'audit-logs' ? ' audit-workspace' : ''}`}>
       {/* Top Header */}
       <Header session={session} />
 

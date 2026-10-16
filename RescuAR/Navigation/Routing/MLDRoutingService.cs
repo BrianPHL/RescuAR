@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Hazards;
+using RescuAR.Navigation.Data;
 using RescuAR.Navigation.Models;
 
 namespace RescuAR.Navigation.Routing;
@@ -666,10 +667,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             if (TryReadOsrmCode(
                     json,
                     out string code) &&
-                string.Equals(
-                    code,
-                    "NoRoute",
-                    StringComparison.OrdinalIgnoreCase))
+                IsNoRouteCode(code))
             {
                 return Array.Empty<RouteResult>();
             }
@@ -705,10 +703,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                   string.Empty
                 : string.Empty;
 
-        if (string.Equals(
-                code,
-                "NoRoute",
-                StringComparison.OrdinalIgnoreCase))
+        if (IsNoRouteCode(code))
         {
             return Array.Empty<RouteResult>();
         }
@@ -754,6 +749,10 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         return routes;
     }
 
+    private static bool IsNoRouteCode(string code) =>
+        string.Equals(code, "NoRoute", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(code, "NoSegment", StringComparison.OrdinalIgnoreCase);
+
     private static RouteResult? ParseRouteElement(
         JsonElement route,
         string algorithmName)
@@ -797,7 +796,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 pair.GetArrayLength() <
                     2)
             {
-                continue;
+                return null;
             }
 
             GeoCoordinate coordinate =
@@ -809,7 +808,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
             if (!coordinate.IsValid)
             {
-                continue;
+                return null;
             }
 
             if (previous is GeoCoordinate prior)
@@ -1078,10 +1077,17 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 ? $"&alternatives={alternatives}"
                 : string.Empty;
 
+        // First/last endpoints use the same bounds as A*. Intermediate hazard
+        // bypass points are steering hints, so retain OSRM's default search there.
+        string radiuses = string.Join(";", coordinates.Select((_, index) =>
+            index == 0 ? EvacuationRoutingPolicy.MaximumOriginSnapMeters.ToString(CultureInfo.InvariantCulture) :
+            index == coordinates.Count - 1 ? EvacuationRoutingPolicy.MaximumDestinationSnapMeters.ToString(CultureInfo.InvariantCulture) :
+            "unlimited"));
+
         return
             $"{baseUrl}/route/v1/foot/{coordinatePath}" +
             "?overview=full&geometries=geojson&steps=true" +
-            alternativesQuery;
+            alternativesQuery + "&radiuses=" + radiuses;
     }
 
     private static bool TryReadOsrmCode(

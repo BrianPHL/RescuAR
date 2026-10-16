@@ -113,17 +113,18 @@ public class DashboardDataService : IDashboardDataService
         try
         {
             var service = new RescuAR.App.Services.Cloud.SafetyCircleService();
-            var circles = await service.GetMyCirclesAsync();
+            var snapshot = await service.Sync.GetCirclesAsync();
+            var circles = snapshot.Items;
             if (circles != null && circles.Count > 0)
             {
                 foreach (var circle in circles)
                 {
-                    var members = await service.GetCircleMembersAsync(circle.Id);
-                    int count = members?.Count ?? 0;
+                    var members = await service.Sync.GetMembersAsync(circle.Id);
+                    int count = members.Items.Count;
                     overview.Groups.Add(new SafetyCircleGroupItem
                     {
                         Name = circle.Name,
-                        StatusText = $"{count} member{(count == 1 ? "" : "s")} connected",
+                        StatusText = $"{count} member{(count == 1 ? "" : "s")}{(snapshot.IsCached || members.IsCached ? " · saved list" : "")}",
                         IsAlert = false
                     });
                 }
@@ -131,6 +132,7 @@ public class DashboardDataService : IDashboardDataService
         }
         catch (System.Exception ex)
         {
+            overview.Groups.Clear();
             System.Diagnostics.Debug.WriteLine($"GetSafetyCircleDataAsync error: {ex.Message}");
         }
 

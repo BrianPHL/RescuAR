@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Data;
 
 namespace RescuAR.Navigation.Hazards;
 
@@ -149,123 +150,24 @@ public static class RouteHazardGeometry
     /// any re-entry is treated as unsafe.
     /// </summary>
     public static RouteHazardIntersection FindFirstUnsafeIntersectionFromOrigin(
-        RouteResult route,
-        GeoCoordinate origin,
-        IReadOnlyList<RouteHazard> hazards)
+        RouteResult route, GeoCoordinate origin, IReadOnlyList<RouteHazard> hazards)
     {
-        ArgumentNullException.ThrowIfNull(
-            route);
-
-        ArgumentNullException.ThrowIfNull(
-            hazards);
-
-        if (route.Points.Count < 2 ||
-            hazards.Count == 0)
+        ArgumentNullException.ThrowIfNull(route);
+        ArgumentNullException.ThrowIfNull(hazards);
+        RouteHazardIntersection best = RouteHazardIntersection.None;
+        for (int index = 1; index < route.Points.Count; index++)
         {
-            return RouteHazardIntersection.None;
-        }
-
-        RouteHazardIntersection best =
-            RouteHazardIntersection.None;
-
-        IReadOnlyList<RoutePoint> points =
-            route.Points;
-
-        for (int hazardIndex = 0;
-             hazardIndex < hazards.Count;
-             hazardIndex++)
-        {
-            RouteHazard hazard =
-                hazards[hazardIndex];
-
-            bool originInsideHazard =
-                origin.DistanceTo(hazard.Coordinate) <=
-                    hazard.RadiusMeters;
-
-            bool hasExitedOriginHazard =
-                !originInsideHazard;
-
-            for (int segmentIndex = 1;
-                 segmentIndex < points.Count;
-                 segmentIndex++)
+            RoutePoint from = route.Points[index - 1], to = route.Points[index];
+            foreach (var hazard in hazards)
             {
-                RoutePoint from =
-                    points[segmentIndex - 1];
-
-                RoutePoint to =
-                    points[segmentIndex];
-
-                if (originInsideHazard &&
-                    !hasExitedOriginHazard)
-                {
-                    double fromDistance =
-                        from.Coordinate.DistanceTo(
-                            hazard.Coordinate);
-
-                    double toDistance =
-                        to.Coordinate.DistanceTo(
-                            hazard.Coordinate);
-
-                    if (fromDistance <= hazard.RadiusMeters &&
-                        toDistance <= hazard.RadiusMeters)
-                    {
-                        // Still within the starting hazard. Allow this initial
-                        // portion so navigation can lead the user outward.
-                        continue;
-                    }
-
-                    if (fromDistance <= hazard.RadiusMeters &&
-                        toDistance > hazard.RadiusMeters)
-                    {
-                        // This is the outward boundary-crossing segment. It is
-                        // intentionally allowed once.
-                        hasExitedOriginHazard =
-                            true;
-
-                        continue;
-                    }
-
-                    hasExitedOriginHazard =
-                        true;
-                }
-
-                SegmentDistanceResult distance =
-                    DistancePointToSegmentMeters(
-                        hazard.Coordinate,
-                        from.Coordinate,
-                        to.Coordinate);
-
-                if (distance.DistanceMeters >
-                    hazard.RadiusMeters)
-                {
-                    continue;
-                }
-
-                double segmentSpanMeters =
-                    Math.Max(
-                        0.0,
-                        to.DistanceFromStartMeters -
-                        from.DistanceFromStartMeters);
-
-                double projectedRouteDistance =
-                    from.DistanceFromStartMeters +
-                    (segmentSpanMeters * distance.SegmentFraction);
-
-                if (!best.IsAffected ||
-                    projectedRouteDistance <
-                        best.DistanceAheadMeters)
-                {
-                    best =
-                        new RouteHazardIntersection(
-                            true,
-                            hazard,
-                            distance.DistanceMeters,
-                            projectedRouteDistance,
-                            segmentIndex - 1);
-                }
+                if (IsSegmentSafeFromOrigin(from.Coordinate, to.Coordinate, origin, new[] { hazard })) continue;
+                var nearest = DistancePointToSegmentMeters(hazard.Coordinate, from.Coordinate, to.Coordinate);
+                double along = from.DistanceFromStartMeters +
+                    Math.Max(0, to.DistanceFromStartMeters - from.DistanceFromStartMeters) * nearest.SegmentFraction;
+                if (!best.IsAffected || along < best.DistanceAheadMeters)
+                    best = new(true, hazard, nearest.DistanceMeters, along, index - 1);
             }
         }
-
         return best;
     }
 
@@ -274,11 +176,32 @@ public static class RouteHazardGeometry
         GeoCoordinate origin,
         IReadOnlyList<RouteHazard> hazards)
     {
-        return !FindFirstUnsafeIntersectionFromOrigin(
-                route,
-                origin,
-                hazards)
-            .IsAffected;
+        for (int i = 1; i < route.Points.Count; i++)
+            if (!IsSegmentSafeFromOrigin(route.Points[i - 1].Coordinate,
+                    route.Points[i].Coordinate, origin, hazards)) return false;
+        return true;
+    }
+
+    /// <summary>Shared A*/MLD escape rule: move outward, then never re-enter.</summary>
+    public static bool IsSegmentSafeFromOrigin(GeoCoordinate from, GeoCoordinate to,
+        GeoCoordinate origin, IReadOnlyList<RouteHazard> hazards)
+    {
+        foreach (var hazard in hazards)
+        {
+            var nearest = DistancePointToSegmentMeters(hazard.Coordinate, from, to);
+            if (nearest.DistanceMeters > hazard.RadiusMeters) continue;
+            double startDistance = from.DistanceTo(hazard.Coordinate);
+            double endDistance = to.DistanceTo(hazard.Coordinate);
+            double epsilon = EvacuationRoutingPolicy.EscapeProgressMeters;
+            if (origin.DistanceTo(hazard.Coordinate) <= hazard.RadiusMeters &&
+                startDistance <= hazard.RadiusMeters &&
+                endDistance > startDistance + epsilon &&
+                nearest.DistanceMeters >= startDistance - epsilon) continue;
+            if (from.DistanceTo(to) <= 0.01 && startDistance <= hazard.RadiusMeters &&
+                origin.DistanceTo(hazard.Coordinate) <= hazard.RadiusMeters) continue;
+            return false;
+        }
+        return true;
     }
 
     public static bool EdgeIntersectsHazard(

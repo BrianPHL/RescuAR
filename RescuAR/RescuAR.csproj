@@ -21,6 +21,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<EmbeddedResource Include="Navigation\Data\evacuation-policy.json" />
 		<EmbeddedResource Include="Navigation\Data\Resources\*ROADS.geojson;Navigation\Data\Resources\*POINTS.geojson" />
 	</ItemGroup>
 

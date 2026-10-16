@@ -171,8 +171,8 @@ namespace RescuAR.App.ViewModels.Reports
             // Fetch reports initially when VM is created
             _ = LoadReportsAsync();
 
-            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnAdvisoryPopupRequested -= HandleNewAdvisoryPushed;
+            RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnAdvisoryPopupRequested += HandleNewAdvisoryPushed;
         }
 
         private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
