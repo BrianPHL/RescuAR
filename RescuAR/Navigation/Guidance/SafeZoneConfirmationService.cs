@@ -57,6 +57,9 @@ public sealed class SafeZoneConfirmationService
 
     private int confirmationCount;
     private bool confirmed;
+    private readonly object sync = new();
+    private GeoCoordinate? currentDestination;
+    private long currentDestinationVersion;
 
     private DateTimeOffset? lastCountedObservationTime;
     private DateTimeOffset? firstCountedObservationTime;
@@ -64,8 +67,7 @@ public sealed class SafeZoneConfirmationService
     private SafeZoneDecision current =
         SafeZoneDecision.Unavailable;
 
-    public SafeZoneDecision Current =>
-        current;
+    public SafeZoneDecision Current { get { lock (sync) return current; } }
 
     /// <summary>
     /// Compatibility overload using the default facility radius.
@@ -100,8 +102,27 @@ public sealed class SafeZoneConfirmationService
         double remainingRouteMeters,
         DateTimeOffset observedAt,
         bool majorRoadBarrier = false,
-        DateTimeOffset? evaluatedAt = null)
+        DateTimeOffset? evaluatedAt = null,
+        long destinationVersion = 0)
     {
+        lock (sync)
+            return EvaluateCore(currentCoordinate, destinationCoordinate, arrivalRadiusMeters,
+                accuracyMeters, remainingRouteMeters, observedAt, majorRoadBarrier,
+                evaluatedAt, destinationVersion);
+    }
+
+    private SafeZoneDecision EvaluateCore(GeoCoordinate currentCoordinate,
+        GeoCoordinate destinationCoordinate, double arrivalRadiusMeters,
+        double? accuracyMeters, double remainingRouteMeters, DateTimeOffset observedAt,
+        bool majorRoadBarrier, DateTimeOffset? evaluatedAt, long destinationVersion)
+    {
+        if (destinationVersion > 0 && destinationVersion < currentDestinationVersion)
+            return SafeZoneDecision.Unavailable with { DestinationVersion = destinationVersion };
+        if (currentDestination != destinationCoordinate || currentDestinationVersion != destinationVersion)
+        {
+            Reset(destinationVersion);
+            currentDestination = destinationCoordinate;
+        }
         double effectiveArrivalRadiusMeters =
             Math.Min(NormalizeArrivalRadius(arrivalRadiusMeters),
                 MaximumAutomaticConfirmationRadiusMeters);
@@ -129,7 +150,8 @@ public sealed class SafeZoneConfirmationService
                     MaximumRemainingRouteMeters: effectiveMaximumRemainingRouteMeters,
                     AccuracyMeters: accuracyMeters,
                     ObservedAt: observedAt,
-                    Reason: "Current or destination coordinate is invalid.");
+                    Reason: "Current or destination coordinate is invalid.",
+                    DestinationVersion: destinationVersion);
 
             return current;
         }
@@ -179,7 +201,8 @@ public sealed class SafeZoneConfirmationService
                     MaximumRemainingRouteMeters: effectiveMaximumRemainingRouteMeters,
                     AccuracyMeters: accuracyMeters,
                     ObservedAt: observedAt,
-                    Reason: "Evacuation-center vicinity has already been confirmed; entry is unverified.");
+                    Reason: "Evacuation-center vicinity has already been confirmed; entry is unverified.",
+                    DestinationVersion: destinationVersion);
 
             return current;
         }
@@ -229,7 +252,8 @@ public sealed class SafeZoneConfirmationService
                         ? "Repeated accurate GPS fixes confirm the evacuation-center vicinity; facility entry has not been verified."
                         : isNewGpsObservation
                             ? "Remain near the destination while repeated accurate GPS fixes confirm arrival."
-                            : "Duplicate or stale GPS observation held; waiting for a newer fix.");
+                            : "Duplicate or stale GPS observation held; waiting for a newer fix.",
+                    DestinationVersion: destinationVersion);
 
             return current;
         }
@@ -274,25 +298,31 @@ public sealed class SafeZoneConfirmationService
                 Reason: holdObservations
                     ? "GPS shifted near the destination; earlier arrival observations are held while waiting for another accurate fix."
                     : reason,
-                IsObservationHeld: holdObservations);
+                IsObservationHeld: holdObservations,
+                DestinationVersion: destinationVersion);
 
         return current;
     }
 
-    public void Reset()
+    public void Reset(long destinationVersion = 0)
     {
-        confirmationCount =
-            0;
+        lock (sync)
+        {
+            currentDestination = null;
+            currentDestinationVersion = destinationVersion;
+            confirmationCount =
+                0;
 
-        confirmed =
-            false;
+            confirmed =
+                false;
 
-        lastCountedObservationTime =
-            null;
-        firstCountedObservationTime = null;
+            lastCountedObservationTime =
+                null;
+            firstCountedObservationTime = null;
 
-        current =
-            SafeZoneDecision.Unavailable;
+            current =
+                SafeZoneDecision.Unavailable;
+        }
     }
 
     private void ResetCandidate()
@@ -332,7 +362,8 @@ public sealed class SafeZoneConfirmationService
         double? AccuracyMeters,
         DateTimeOffset ObservedAt,
         string Reason,
-        bool IsObservationHeld = false)
+        bool IsObservationHeld = false,
+        long DestinationVersion = 0)
     {
         public static SafeZoneDecision Unavailable =>
             new(

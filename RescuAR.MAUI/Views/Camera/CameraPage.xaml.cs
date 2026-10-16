@@ -887,6 +887,7 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshCameraModuleDynamicUi()
         {
+            confirmUserArrivalButton.IsVisible = CanOfferUserArrival();
             RefreshLowLightFallbackState();
             RefreshFloodGroundTrustState();
 
@@ -2792,6 +2793,10 @@ namespace RescuAR.App.Views.Camera
 #endif
 
             SubscribeDestinationChanged();
+            // Shell retains Camera while other tabs can select or clear a trip.
+            // Reconcile missed events before reusing a route or arrival latch.
+            if (NavigationDestinationBridge.Current.Version != observedDestinationVersion)
+                OnNavigationDestinationChanged(this, EventArgs.Empty);
             SubscribeEmergencyAdvisories();
             SubscribeConnectivityChanges();
             _arCoreService.LifecycleChanged -=
@@ -2828,6 +2833,7 @@ namespace RescuAR.App.Views.Camera
 
         protected override void OnDisappearing()
         {
+            Interlocked.Increment(ref arrivalSessionGeneration);
 #if RESCUAR_DIAGNOSTICS
             ARRouteRenderer.HideRoadDiagnostics();
 #endif
@@ -2911,8 +2917,11 @@ namespace RescuAR.App.Views.Camera
                     snapshot.Failure))
             {
                 Dispatcher.Dispatch(
-                    () => ApplyTerminalCameraPipelineFailure(
-                        snapshot.Failure));
+                    () =>
+                    {
+                        if (_arCoreService.LifecycleSnapshot != snapshot) return;
+                        ApplyTerminalCameraPipelineFailure(snapshot.Failure);
+                    });
 
                 return;
             }
@@ -2926,6 +2935,7 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
+                    if (_arCoreService.LifecycleSnapshot != snapshot) return;
                     cameraPipelineTerminalFailureVisible =
                         false;
 
@@ -3409,6 +3419,7 @@ namespace RescuAR.App.Views.Camera
         /// </summary>
         public async Task<bool> TryRequestNavigationRouteAsync()
         {
+            if (safeZoneConfirmed || userArrivalPromptOpen) return false;
 #if ANDROID
             if (!pageIsVisible)
             {
@@ -3491,6 +3502,8 @@ namespace RescuAR.App.Views.Camera
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
+
                 if (locationReading is null)
                 {
                     routeStartupGpsRetryPending = true;
@@ -3541,22 +3554,7 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                /*
-                 * Re-read destination after GPS acquisition in case the user
-                 * changed the selected center while location was resolving.
-                 */
-                destination =
-                    NavigationDestinationBridge.Current;
-
-                if (!destination.IsAvailable)
-                {
-                    Log.Warn(
-                        RoutingLogTag,
-                        "navigation route cancelled: destination was cleared.");
-
-                    return false;
-                }
-
+                activeDestinationVersion = destination.Version;
                 activeDestinationName = destination.Name;
                 activeDestinationCoordinate = destination.Coordinate;
                 activeDestinationSafeZoneRadiusMeters =
@@ -3573,7 +3571,8 @@ namespace RescuAR.App.Views.Camera
                     double.PositiveInfinity,
                     locationReading.Timestamp,
                     majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
-                        origin, destination.Coordinate));
+                        origin, destination.Coordinate),
+                    destinationVersion: destination.Version);
                 if (initialArrival.IsCandidate)
                 {
                     pendingInitialRoute = null;
@@ -3651,12 +3650,15 @@ namespace RescuAR.App.Views.Camera
                     $"algorithm='{route?.Algorithm ?? "<none>"}', " +
                     $"points={route?.Points.Count ?? 0}.");
 
+                if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
+
                 if (route is null || route.Points.Count < 2)
                 {
                     pendingInitialRoute = null;
                     // A failed graph result does not invalidate independent
                     // heading work. Reuse it for the nearest-road cue.
                     var approachHeading = await headingWork;
+                    if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
 
                     _mldArIntegrationService.PublishInitialRoute(
                         null,
@@ -3681,7 +3683,7 @@ namespace RescuAR.App.Views.Camera
                     NavigationDestinationBridge.Current;
 
                 if (!currentDestination.IsAvailable ||
-                    currentDestination.Coordinate != destination.Coordinate)
+                    currentDestination.Version != destination.Version)
                 {
                     Log.Warn(
                         RoutingLogTag,
@@ -3761,8 +3763,7 @@ namespace RescuAR.App.Views.Camera
                 ArHeadingAlignmentService.HeadingAlignmentResult?
                     headingAlignment = await headingWork;
                 if (!ReferenceEquals(activeRoute, route) ||
-                    !NavigationDestinationBridge.Current.IsAvailable ||
-                    NavigationDestinationBridge.Current.Coordinate != destination.Coordinate)
+                    !CanApplyRouteRequest(destination.Version, cancellationToken))
                     return false;
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -3842,8 +3843,8 @@ namespace RescuAR.App.Views.Camera
             }
             catch (Exception ex)
             {
-                routeStartupFailureMessage =
-                    "Pedestrian route unavailable — use the 2D map";
+                if (CanApplyRouteRequest(destination.Version, cancellationToken))
+                    routeStartupFailureMessage = "Pedestrian route unavailable — use the 2D map";
                 Log.Error(
                     RoutingLogTag,
                     $"navigation route request FAILED: {ex}");
@@ -3854,7 +3855,11 @@ namespace RescuAR.App.Views.Camera
             {
                 routeRequestInProgress =
                     false;
-                if (activeDestinationCoordinate.HasValue &&
+                if (pageIsVisible && !safeZoneConfirmed &&
+                    NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
+                    nextDestination.Version != destination.Version)
+                    Dispatcher.Dispatch(StartRouteRequestIfPossible);
+                else if (activeDestinationCoordinate.HasValue &&
                     routeProgressTask is null && pageIsVisible && !safeZoneConfirmed)
                     StartRouteProgress();
             }
@@ -3862,6 +3867,14 @@ namespace RescuAR.App.Views.Camera
             await Task.CompletedTask;
             return false;
 #endif
+        }
+
+        private bool CanApplyRouteRequest(long destinationVersion, CancellationToken cancellationToken)
+        {
+            var destination = NavigationDestinationBridge.Current;
+            return pageIsVisible && !safeZoneConfirmed &&
+                !cancellationToken.IsCancellationRequested && destination.IsAvailable &&
+                destination.Version == destinationVersion;
         }
 
         private void OnLowLightFlashlightClicked(
@@ -3975,7 +3988,7 @@ namespace RescuAR.App.Views.Camera
                     activeDestinationName,
                     StringComparison.Ordinal);
 
-            return sameCoordinate &&
+            return destination.Version == activeDestinationVersion && sameCoordinate &&
                 sameName;
         }
 
@@ -4041,8 +4054,7 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            if (activeRoute is not null && NavigationDestinationBridge.Current.IsAvailable &&
-                activeDestinationCoordinate == NavigationDestinationBridge.Current.Coordinate)
+            if (activeRoute is not null && CanResumeRetainedRoute())
             {
                 if (routeProgressTask is null && !safeZoneConfirmed) StartRouteProgress();
                 return;
@@ -4220,10 +4232,17 @@ namespace RescuAR.App.Views.Camera
             object? sender,
             EventArgs e)
         {
-#if ANDROID
+            if (Dispatcher.IsDispatchRequired)
+            {
+                Dispatcher.Dispatch(() => OnNavigationDestinationChanged(sender, e));
+                return;
+            }
             NavigationDestinationBridge.DestinationSnapshot destination =
                 NavigationDestinationBridge.Current;
+            if (destination.Version == observedDestinationVersion) return;
+            observedDestinationVersion = destination.Version;
 
+#if ANDROID
             LogDetailedDebug(
                 RoutingLogTag,
                 destination.IsAvailable
@@ -4250,6 +4269,7 @@ namespace RescuAR.App.Views.Camera
 
             activeDestinationCoordinate =
                 null;
+            activeDestinationVersion = 0;
 
             activeDestinationSafeZoneRadiusMeters =
                 SafeZoneConfirmationService.ArrivalRadiusMeters;
@@ -4558,10 +4578,12 @@ namespace RescuAR.App.Views.Camera
         private async Task RunRouteProgressLoopAsync(
             CancellationToken cancellationToken)
         {
+            var tripDestination = NavigationDestinationBridge.Current;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    if (NavigationDestinationBridge.Current.Version != tripDestination.Version) return;
                     if (safeZoneConfirmed)
                     {
                         await Task.Delay(
@@ -4590,6 +4612,7 @@ namespace RescuAR.App.Views.Camera
                     {
                         LocationReading? arrivalReading =
                             await TryGetRouteLocationAsync(cancellationToken);
+                        if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
                         if (arrivalReading is not null &&
                             activeDestinationCoordinate.HasValue &&
                             DateTimeOffset.UtcNow - arrivalReading.Timestamp <=
@@ -4606,7 +4629,8 @@ namespace RescuAR.App.Views.Camera
                                 arrivalReading.Timestamp,
                                 majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                     arrivalReading.Coordinate,
-                                    activeDestinationCoordinate.Value));
+                                    activeDestinationCoordinate.Value),
+                                destinationVersion: tripDestination.Version);
                             HandleSafeZoneDecision(arrival);
                             lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
@@ -4635,6 +4659,8 @@ namespace RescuAR.App.Views.Camera
                         await TryGetRouteLocationAsync(cancellationToken);
 
                     cancellationToken.ThrowIfCancellationRequested();
+
+                    if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
 
                     if (reading is not null &&
                         (DateTimeOffset.UtcNow - reading.Timestamp >
@@ -4953,12 +4979,10 @@ namespace RescuAR.App.Views.Camera
                                         majorRoadBarrier: !developerArrivalTest &&
                                             (arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                                 reading.Coordinate,
-                                                safeZoneEvaluationCoordinate)));
+                                                safeZoneEvaluationCoordinate)),
+                                        destinationVersion: tripDestination.Version);
 
                                 safeZoneDecision =
-                                    decision;
-
-                                lastSafeZoneDecision =
                                     decision;
 
                                 /*
@@ -5842,6 +5866,8 @@ namespace RescuAR.App.Views.Camera
 
             GeoCoordinate destination =
                 activeDestinationCoordinate.Value;
+            long destinationVersion = activeDestinationVersion;
+            if (!CanApplyRouteRequest(destinationVersion, CancellationToken.None)) return false;
 
             string destinationName =
                 activeDestinationName;
@@ -5927,7 +5953,7 @@ namespace RescuAR.App.Views.Camera
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!pageIsVisible || safeZoneConfirmed)
+                if (!CanApplyRouteRequest(destinationVersion, cancellationToken))
                 {
                     lastRerouteResult = "Cancelled";
                     return false;
@@ -5970,6 +5996,7 @@ namespace RescuAR.App.Views.Camera
                 bool routeAccepted = false;
                 RoadGraph? replacementGraph = await GetArrivalGraphSafelyAsync().WaitAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (!CanApplyRouteRequest(destinationVersion, cancellationToken)) return false;
                 if (replacementGraph is null)
                 {
                     lastRerouteResult = "ReplacementAccessUnverified";
@@ -5992,6 +6019,7 @@ namespace RescuAR.App.Views.Camera
                 lock (routeProgressFusionSync)
                 {
                     destinationStillCurrent =
+                        CanApplyRouteRequest(destinationVersion, cancellationToken) &&
                         activeDestinationCoordinate.HasValue &&
                         activeDestinationCoordinate.Value ==
                             destination &&
@@ -6174,6 +6202,11 @@ namespace RescuAR.App.Views.Camera
                 routeRequestInProgress =
                     false;
 
+                if (pageIsVisible && !safeZoneConfirmed &&
+                    NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
+                    nextDestination.Version != destinationVersion)
+                    Dispatcher.Dispatch(StartRouteRequestIfPossible);
+
                 if (lastRerouteResult !=
                         "Complete" &&
                     lastRerouteResult !=
@@ -6187,6 +6220,7 @@ namespace RescuAR.App.Views.Camera
                         {
                             if (currentCameraModuleView ==
                                     CameraModuleViewMode.ArCamera &&
+                                CanApplyRouteRequest(destinationVersion, cancellationToken) &&
                                 !emergencyAdvisoryVisible &&
                                 !safeZoneConfirmed)
                             {
@@ -7440,8 +7474,18 @@ namespace RescuAR.App.Views.Camera
         }
 
         private void HandleSafeZoneDecision(
-            SafeZoneConfirmationService.SafeZoneDecision decision)
+            SafeZoneConfirmationService.SafeZoneDecision decision,
+            bool userReported = false)
         {
+            if (Dispatcher.IsDispatchRequired)
+            {
+                Dispatcher.Dispatch(() => HandleSafeZoneDecision(decision, userReported));
+                return;
+            }
+            var selectedDestination = NavigationDestinationBridge.Current;
+            if (safeZoneConfirmed || !selectedDestination.IsAvailable ||
+                decision.DestinationVersion != selectedDestination.Version) return;
+            long arrivalGeneration = Interlocked.Read(ref arrivalSessionGeneration);
             // Both routed and unrouted trips publish the same arrival state.
             // Otherwise an unrouted trip evaluates proximity but its UI keeps
             // displaying the initial unavailable decision.
@@ -7455,7 +7499,7 @@ namespace RescuAR.App.Views.Camera
             if (arrivalStatusChanged && !decision.IsConfirmed)
                 Dispatcher.Dispatch(RefreshCameraModuleDynamicUi);
 #if ANDROID
-            if ((!decision.IsCandidate || decision.IsObservationHeld) && decision.IsAvailable &&
+            if (!decision.IsConfirmed && (!decision.IsCandidate || decision.IsObservationHeld) && decision.IsAvailable &&
                 decision.DistanceToDestinationMeters <= SafeZoneConfirmationService.CandidateResetDistanceMeters &&
                 (lastArrivalHoldReason != decision.Reason ||
                  DateTimeOffset.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
@@ -7516,19 +7560,25 @@ namespace RescuAR.App.Views.Camera
 
             safeZoneConfirmed =
                 true;
+            arrivalWasUserReported = userReported;
+
+            CancelRouteRequest("arrival confirmed");
+            pendingInitialRoute = null;
+            ClearRoadApproachCue();
 
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
 
             StopRouteProgress(
-                "destination vicinity confirmed");
+                userReported ? "arrival reported by user" : "destination vicinity confirmed");
 
             ResetTurnGuidance();
 
 #if ANDROID
             Log.Info(
                 SafeZoneLogTag,
-                "DESTINATION VICINITY CONFIRMED: " +
+                (userReported ? "USER ARRIVAL CONFIRMED: " : "DESTINATION VICINITY CONFIRMED: ") +
+                $"source={(userReported ? "USER_REPORTED" : "GPS_VICINITY")}, " +
                 $"destination='{DiagnosticPrivacyPolicy.FormatRouteLabel(activeDestinationName)}', " +
                 $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
                 $"safeZoneRadius={decision.ArrivalRadiusMeters:F1} m, " +
@@ -7555,11 +7605,15 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
-                    turnGuidancePanel.IsVisible =
-                        false;
-
+                    if (Interlocked.Read(ref arrivalSessionGeneration) != arrivalGeneration ||
+                        NavigationDestinationBridge.Current.Version != selectedDestination.Version ||
+                        !safeZoneConfirmed) return;
+                    turnGuidancePanel.IsVisible = false;
                     safeZoneDestinationLabel.Text =
                         destinationName;
+                    safeZoneTitleLabel.Text = userReported
+                        ? "Arrival Confirmed by You"
+                        : "You're Near the\nEvacuation Center";
 
                     RouteProgressTracker.ProgressSnapshot safeZoneProgress =
                         _routeProgressTracker.Current;
@@ -7586,8 +7640,9 @@ namespace RescuAR.App.Views.Camera
                         $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
-                        "Your GPS position is near the destination. " +
-                        "Follow posted signs to its entrance and check local advisories.";
+                        userReported
+                            ? "You reported that you are at this destination. GPS has not verified your arrival. Follow on-site instructions and local advisories."
+                            : "Your GPS position is near the destination. Follow posted signs to its entrance and check local advisories.";
 
                     safeZoneConfirmationOverlay.IsVisible =
                         true;
@@ -7597,12 +7652,14 @@ namespace RescuAR.App.Views.Camera
         private void ResetSafeZoneConfirmation(
             string reason)
         {
+            Interlocked.Increment(ref arrivalSessionGeneration);
+            arrivalWasUserReported = false;
             bool hadArrivalState =
                 safeZoneConfirmed ||
                 lastSafeZoneDecision.ConfirmationCount >
                     0;
 
-            _safeZoneConfirmationService.Reset();
+            _safeZoneConfirmationService.Reset(NavigationDestinationBridge.Current.Version);
             _destinationProximityReroutePolicy.Reset();
             lastArrivalHoldReason = null;
             lastArrivalHoldLogAt = default;
@@ -7644,6 +7701,7 @@ namespace RescuAR.App.Views.Camera
 
                     safeZoneDestinationLabel.Text =
                         "Evacuation Center";
+                    safeZoneTitleLabel.Text = "You're Near the\nEvacuation Center";
 
                     safeZoneDetailsLabel.Text =
                         "Follow posted signs to the entrance and check local advisories.";
@@ -11104,6 +11162,7 @@ namespace RescuAR.App.Views.Camera
                 $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +
                 $"{lastSafeZoneDecision.RequiredConfirmationCount}, " +
                 $"safeZoneConfirmed={safeZoneConfirmed}, " +
+                $"arrivalSource={(safeZoneConfirmed ? (arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY") : "UNCONFIRMED")}, " +
                 $"safeZoneDistance=" +
                 $"{(lastSafeZoneDecision.IsAvailable && double.IsFinite(lastSafeZoneDecision.DistanceToDestinationMeters) ? lastSafeZoneDecision.DistanceToDestinationMeters.ToString("F1") : "<none>")}m, " +
                 $"devSafeZoneValidation={EnableDeveloperSafeZoneValidation}, " +

@@ -300,29 +300,9 @@ public sealed partial class ArCoreService
         ReleasePendingCameraFrame();
         InvalidatePublishedSessionState();
 
-        IArCameraFrameImporter? failedImporter =
-            importer;
-
-        try
-        {
-            failedImporter?.Dispose();
-        }
-        catch (Exception cleanupException)
-        {
-            Log.Error(
-                Tag,
-                "AR camera importer cleanup failed after terminal error: " +
-                $"{cleanupException.GetType().Name}: " +
-                $"{cleanupException.Message}");
-        }
-
-        if (ReferenceEquals(
-                importer,
-                failedImporter))
-        {
-            importer =
-                null;
-        }
+        // Keep the importer and its references alive until the existing
+        // graphics-generation teardown reaches GPU idle. A timeout or device
+        // loss does not authorize destroying images still owned by the GPU.
 
         ARCameraSpatialController.SetRouteRenderingEnabled(
             false,

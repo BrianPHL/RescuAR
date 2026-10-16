@@ -535,7 +535,11 @@ internal unsafe sealed class VulkanCameraConversionPipeline : IDisposable
                 pPreserveAttachments = null
             };
 
-        VkSubpassDependency dependency =
+        // The persistent target was sampled by Evergine's previous draw.
+        // Submission order alone does not stop that fragment read overlapping
+        // this conversion's attachment overwrite/layout transition.
+        VkSubpassDependency* dependencies = stackalloc VkSubpassDependency[2];
+        dependencies[0] =
             new()
             {
                 srcSubpass =
@@ -545,13 +549,15 @@ internal unsafe sealed class VulkanCameraConversionPipeline : IDisposable
 
                 srcStageMask =
                     VkPipelineStageFlags
-                        .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        .VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                    VkPipelineStageFlags.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 
                 dstStageMask =
                     VkPipelineStageFlags
                         .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 
-                srcAccessMask = 0,
+                srcAccessMask = VkAccessFlags.VK_ACCESS_SHADER_READ_BIT |
+                    VkAccessFlags.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 
                 dstAccessMask =
                     VkAccessFlags
@@ -559,6 +565,19 @@ internal unsafe sealed class VulkanCameraConversionPipeline : IDisposable
 
                 dependencyFlags = 0
             };
+
+        // Publish the converted color writes to Evergine's subsequent texture
+        // sampling, including the final shader-read-only layout transition.
+        dependencies[1] = new VkSubpassDependency
+        {
+            srcSubpass = 0,
+            dstSubpass = uint.MaxValue,
+            srcStageMask = VkPipelineStageFlags.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            dstStageMask = VkPipelineStageFlags.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            srcAccessMask = VkAccessFlags.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            dstAccessMask = VkAccessFlags.VK_ACCESS_SHADER_READ_BIT,
+            dependencyFlags = 0
+        };
 
         VkRenderPassCreateInfo renderPassInfo =
             new()
@@ -576,8 +595,8 @@ internal unsafe sealed class VulkanCameraConversionPipeline : IDisposable
                 subpassCount = 1,
                 pSubpasses = &subpass,
 
-                dependencyCount = 1,
-                pDependencies = &dependency
+                dependencyCount = 2,
+                pDependencies = dependencies
             };
 
         VkRenderPass createdRenderPass =

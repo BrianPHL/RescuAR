@@ -12,6 +12,7 @@ public sealed class ArCoreRunIntent
     private volatile bool shutdown;
 
     public bool Requested => requested && !shutdown;
+    public bool IsShutdown => shutdown;
     public bool ActivityResumed => activityResumed;
     public bool SurfaceReady => surfaceReady;
     public bool ShouldRun => Requested && activityResumed && surfaceReady;

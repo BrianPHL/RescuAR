@@ -152,6 +152,20 @@ public static class ARCameraPoseBridge
                 nearPlane,
                 farPlane);
 
+        double rotationLengthSquared = (double)rotationX * rotationX +
+            (double)rotationY * rotationY + (double)rotationZ * rotationZ +
+            (double)rotationW * rotationW;
+        if (!float.IsFinite(positionX) || !float.IsFinite(positionY) || !float.IsFinite(positionZ) ||
+            !double.IsFinite(rotationLengthSquared) || rotationLengthSquared < 0.0001 ||
+            !projection.IsAvailable)
+        {
+            PublishTrackingUnavailable("Invalid camera pose or projection", metadata);
+            return;
+        }
+        if (groundState.HasGroundReference &&
+            (!float.IsFinite(anchorX) || !float.IsFinite(anchorY) || !float.IsFinite(anchorZ)))
+            groundState = groundState with { Trust = ARGroundTrust.None };
+
         PoseSnapshot pose =
             new(
                 isTracking,
@@ -179,7 +193,7 @@ public static class ARCameraPoseBridge
             new(
                 nextVersion,
                 metadata,
-                Environment.TickCount64,
+                metadata.AcquiredAtMonotonicMilliseconds,
                 isTracking,
                 trackingFailureReason ?? string.Empty,
                 pose,
@@ -231,7 +245,7 @@ public static class ARCameraPoseBridge
             new(
                 nextVersion,
                 metadata,
-                Environment.TickCount64,
+                metadata.AcquiredAtMonotonicMilliseconds,
                 false,
                 trackingFailureReason ?? string.Empty,
                 PoseSnapshot.Unavailable,
@@ -423,10 +437,13 @@ public static class ARCameraPoseBridge
         float farPlane)
     {
         if (columnMajorValues is null ||
-            columnMajorValues.Length < 16)
+            columnMajorValues.Length < 16 || !float.IsFinite(nearPlane) ||
+            !float.IsFinite(farPlane) || nearPlane <= 0 || farPlane <= nearPlane)
         {
             return ProjectionSnapshot.Unavailable;
         }
+        for (int index = 0; index < 16; index++)
+            if (!float.IsFinite(columnMajorValues[index])) return ProjectionSnapshot.Unavailable;
 
         /*
          * ARCore supplies column-major storage. Store named mathematical

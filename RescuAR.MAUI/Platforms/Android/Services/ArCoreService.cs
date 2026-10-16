@@ -78,6 +78,13 @@ public sealed partial class ArCoreService : IArCoreService
         new();
 
     private PendingCameraFrame? pendingCameraFrame;
+    // Accessed only on the owning draw thread; metadata belongs to the actual
+    // submitted conversion, never to a newer frame waiting in the producer slot.
+    private ARFrameMetadata? pendingCameraConversionMetadata;
+    private long cameraConversionStartedAt;
+    private long completedCameraConversions;
+    private long deferredCameraConversions;
+    private long maximumCameraConversionMilliseconds;
 
     private CancellationTokenSource? frameLoopCancellation;
     private volatile Task? frameLoopTask;
@@ -1068,6 +1075,7 @@ public sealed partial class ArCoreService : IArCoreService
         if (ReferenceEquals(importer, currentImporter))
         {
             importer = null;
+            pendingCameraConversionMetadata = null;
         }
 
         lastProcessedTimestamp = long.MinValue;
@@ -1531,8 +1539,32 @@ public sealed partial class ArCoreService : IArCoreService
         replacedFrame?.Dispose();
     }
 
-    private void ProcessPendingCameraFrameOnDrawThread()
+    private bool ProcessPendingCameraFrameOnDrawThread()
     {
+        if (pendingCameraConversionMetadata is { } submittedMetadata)
+        {
+            try
+            {
+                var completedTexture = importer?.TryCompletePendingImport();
+                if (completedTexture is null) return true;
+                pendingCameraConversionMetadata = null;
+                RecordCameraConversionCompleted();
+                if (Environment.TickCount64 - cameraConversionStartedAt >
+                    ARCameraTextureBridge.MaximumTextureAgeMilliseconds)
+                {
+                    ARCameraTextureBridge.Clear();
+                    return true;
+                }
+                RecordCameraImportSuccess();
+                return !ARCameraTextureBridge.Publish(submittedMetadata, completedTexture);
+            }
+            catch (Exception exception)
+            {
+                HandleCameraImportFailure(exception, submittedMetadata.Generation.GraphicsGeneration);
+                return true;
+            }
+        }
+
         PendingCameraFrame? pendingFrame;
 
         lock (pendingCameraFrameLock)
@@ -1546,7 +1578,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (pendingFrame is null)
         {
-            return;
+            return false;
         }
 
         if (!ARRenderGenerationBridge.TryAcceptCallback(
@@ -1554,14 +1586,14 @@ public sealed partial class ArCoreService : IArCoreService
                 "pending-camera-import"))
         {
             pendingFrame.Dispose();
-            return;
+            return false;
         }
 
         if (!CanAttemptCameraImport(
                 pendingFrame.Metadata.Generation.GraphicsGeneration))
         {
             pendingFrame.Dispose();
-            return;
+            return false;
         }
 
         try
@@ -1571,7 +1603,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (currentGraphicsContext is null)
             {
-                return;
+                return false;
             }
 
             importer ??=
@@ -1580,6 +1612,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             try
             {
+                cameraConversionStartedAt = Environment.TickCount64;
                 var texture =
                     importer.Import(
                         pendingFrame.HardwareBuffer,
@@ -1587,9 +1620,20 @@ public sealed partial class ArCoreService : IArCoreService
                         pendingFrame.OutputWidth,
                         pendingFrame.OutputHeight);
 
+                if (texture is null)
+                {
+                    Interlocked.Increment(ref deferredCameraConversions);
+                    pendingCameraConversionMetadata = pendingFrame.Metadata;
+                    ARCameraTextureBridge.Clear();
+                    // Do not sample the single RGBA target while its conversion
+                    // is pending. Later draw callbacks poll without blocking.
+                    return true;
+                }
+
+                RecordCameraConversionCompleted();
                 RecordCameraImportSuccess();
 
-                ARCameraTextureBridge.Publish(
+                return !ARCameraTextureBridge.Publish(
                     pendingFrame.Metadata,
                     texture);
             }
@@ -1598,6 +1642,7 @@ public sealed partial class ArCoreService : IArCoreService
                 HandleCameraImportFailure(
                     exception,
                     pendingFrame.Metadata.Generation.GraphicsGeneration);
+                return true;
             }
         }
         finally
@@ -1620,6 +1665,19 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         pendingFrame?.Dispose();
+    }
+
+    private void RecordCameraConversionCompleted()
+    {
+        Interlocked.Increment(ref completedCameraConversions);
+        long elapsed = Math.Max(0, Environment.TickCount64 - cameraConversionStartedAt);
+        long previous = Interlocked.Read(ref maximumCameraConversionMilliseconds);
+        while (elapsed > previous)
+        {
+            long observed = Interlocked.CompareExchange(ref maximumCameraConversionMilliseconds, elapsed, previous);
+            if (observed == previous) break;
+            previous = observed;
+        }
     }
 
     private static void CloseHardwareBuffer(
@@ -4071,6 +4129,9 @@ public sealed partial class ArCoreService : IArCoreService
             processedFrameCount *
             1000.0 /
             elapsedMilliseconds;
+        long converted = Interlocked.Exchange(ref completedCameraConversions, 0);
+        long deferred = Interlocked.Exchange(ref deferredCameraConversions, 0);
+        long maximumConversionMs = Interlocked.Exchange(ref maximumCameraConversionMilliseconds, 0);
 
         string temperatureText =
             float.IsFinite(
@@ -4082,6 +4143,8 @@ public sealed partial class ArCoreService : IArCoreService
             Tag,
             "Camera pipeline telemetry: " +
             $"fps={fps:F1}, " +
+            $"convertedFps={converted * 1000.0 / elapsedMilliseconds:F1}, " +
+            $"deferredConversions={deferred}, maxConversionMs={maximumConversionMs}, " +
             $"targetMaxFps={powerThermalDecision.TargetMaximumFramesPerSecond}, " +
             $"powerMode={powerThermalDecision.Mode}, " +
             $"batteryTemperature={temperatureText}, " +

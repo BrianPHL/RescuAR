@@ -392,6 +392,23 @@
             <!-- ========================================================= -->
             <!-- FLOOD DEPTH SUB-TAB                                      -->
             <!-- ========================================================= -->
+            <Button
+                x:Name="confirmUserArrivalButton"
+                Text="I'm at the destination"
+                IsVisible="False"
+                ZIndex="24"
+                Margin="72,0,72,100"
+                HeightRequest="44"
+                MaximumWidthRequest="320"
+                HorizontalOptions="Fill"
+                VerticalOptions="End"
+                BackgroundColor="#087F89"
+                TextColor="White"
+                FontSize="12"
+                FontAttributes="Bold"
+                CornerRadius="12"
+                Clicked="OnConfirmUserArrivalClicked" />
+
             <Border
                 x:Name="floodWaitingBanner"
                 IsVisible="False"
@@ -975,6 +992,7 @@
                         HorizontalOptions="Center" />
 
                     <Label
+                        x:Name="safeZoneTitleLabel"
                         Text="You're Near the&#10;Evacuation Center"
                         TextColor="White"
                         FontSize="27"

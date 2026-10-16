@@ -14,11 +14,13 @@ internal interface IArCameraFrameImporter : IDisposable
     // Called only while the handler excludes every old/new render callback.
     void RebindDrawThread();
 
-    Texture Import(
+    Texture? Import(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
         uint outputHeight);
+
+    Texture? TryCompletePendingImport();
 }
 
 /// <summary>
@@ -38,7 +40,7 @@ internal sealed class EvergineArCameraFrameImporter : IArCameraFrameImporter
                 graphicsContext);
     }
 
-    public Texture Import(
+    public Texture? Import(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
@@ -48,6 +50,8 @@ internal sealed class EvergineArCameraFrameImporter : IArCameraFrameImporter
             cameraUv,
             outputWidth,
             outputHeight);
+
+    public Texture? TryCompletePendingImport() => inner.TryCompletePendingImport();
 
     public void Dispose() =>
         inner.Dispose();

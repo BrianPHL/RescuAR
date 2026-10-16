@@ -11,7 +11,7 @@ Statuses in this matrix are deliberately conservative. Code implementation does 
 | 5 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Diagnostic build policy and Camera diagnostics split | Release APK contains no production route override. |
 | 6 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Conditional diagnostic compilation | Release build exposes no developer-only Camera action. |
 | 7 | 9 | IMPLEMENTED — NEEDS FIELD VALIDATION | `AndroidManifest.xml`, compatibility verifier | Store/device eligibility matches AR Required policy. |
-| 8 | 10 | PARTIALLY RESOLVED | Package and ADB validation scripts retained; standalone unit suite removed | Manual/device evidence plus future authorized automated coverage if required. |
+| 8 | 10 | PARTIALLY RESOLVED | Existing regression runner now has 476 passing checks; package and ADB validation scripts retained | Physical-device evidence is still required; see `AR_SYSTEM_AUDIT_20261016.md`. |
 | 9 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Bounded asynchronous lifecycle operations | No lifecycle stall or ANR during interruption testing. |
 | 10 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Request generation and idempotent transitions | Duplicate page/activity events do not duplicate session work. |
 | 11 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Generation checks and bounded gates | No stale queued work or unbounded wait under rapid transitions. |
@@ -61,4 +61,4 @@ Statuses in this matrix are deliberately conservative. Code implementation does 
 
 ## Final release rule
 
-Do not mark RescuAR AR release-ready while Finding 38 remains intentionally open unless the owner accepts that support risk, or while any blocker lacks physical-device evidence. Finding 8 remains partially resolved after removal of the automated test project.
+Do not mark RescuAR AR release-ready while Finding 38 remains intentionally open unless the owner accepts that support risk, or while any blocker lacks physical-device evidence. Finding 8 has current local regression coverage but remains partially resolved pending the required device evidence.

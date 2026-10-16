@@ -58,8 +58,20 @@ public sealed class ARCameraBackgroundBehavior : Behavior
         return true;
     }
 
-    protected override void Update(
-        TimeSpan gameTime)
+    public static void ProcessDrawThreadWork(long graphicsGeneration)
+    {
+        ARCameraBackgroundBehavior? behavior;
+        lock (activeSync) behavior = activeBehavior;
+        if (behavior is not null && behavior.boundGraphicsGeneration == graphicsGeneration)
+            behavior.ApplyCurrentTexture();
+    }
+
+    protected override void Update(TimeSpan gameTime)
+    {
+        // The texture is bound after conversion on the draw thread.
+    }
+
+    private void ApplyCurrentTexture()
     {
         if (backgroundImage is null)
         {

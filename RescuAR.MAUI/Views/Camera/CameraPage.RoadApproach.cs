@@ -209,7 +209,9 @@ public partial class CameraPage
             : decision.AccuracyMeters is not double accuracy || !double.IsFinite(accuracy)
                 ? "Arrival not confirmed. GPS accuracy is unavailable."
             : accuracy > RescuAR.Navigation.Guidance.SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters
-                ? $"GPS too uncertain to confirm arrival (±{accuracy:0} m)."
+                ? CanOfferUserArrival()
+                    ? $"GPS cannot confirm arrival (±{accuracy:0} m). If you are there, confirm your arrival below."
+                    : $"GPS too uncertain to confirm arrival (±{accuracy:0} m)."
             : decision.Reason.StartsWith("A mapped major road", StringComparison.Ordinal)
                 ? "Arrival not confirmed. Check the mapped road crossing."
                 : $"Arrival not confirmed (~{decision.DistanceToDestinationMeters:0} m from the selected pin).";

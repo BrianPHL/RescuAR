@@ -89,6 +89,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
     private bool disposed;
     private readonly SemaphoreSlim captureGate = new(1, 1);
     private IDisposable? orientationLease;
+    private long sensorGeneration;
 
     /*
      * The map<->AR relationship belongs to the retained ARCore Session, not
@@ -164,73 +165,69 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
     public void Start()
     {
-        ThrowIfDisposed();
-
         lock (sync)
         {
+            ThrowIfDisposed();
             if (started)
             {
                 return;
             }
-        }
-
-        if (!OrientationSensor.Default.IsSupported)
-        {
+            if (!OrientationSensor.Default.IsSupported)
+            {
 #if ANDROID
-            Log.Warn(
-                LogTag,
-                "Device orientation sensor is not supported. " +
-                "Directional AR guidance will wait for verified alignment.");
+                Log.Warn(
+                    LogTag,
+                    "Device orientation sensor is not supported. " +
+                    "Directional AR guidance will wait for verified alignment.");
 #endif
 
-            return;
-        }
-
-        try
-        {
-            orientationLease =
-                SharedMotionSensorLeaseManager.AcquireOrientation(
-                    nameof(ArHeadingAlignmentService),
-                    OnOrientationReadingChanged,
-                    SensorSpeed.UI);
-
-            lock (sync)
-            {
-                started =
-                    true;
+                return;
             }
 
-#if ANDROID
-            Log.Debug(
-                LogTag,
-                "Earth-referenced orientation sensor started.");
-#endif
-        }
-        catch (Exception exception)
-        {
-            Interlocked.Exchange(
-                ref orientationLease,
-                null)?.Dispose();
+            try
+            {
+                long generation = ++sensorGeneration;
+                orientationLease =
+                    SharedMotionSensorLeaseManager.AcquireOrientation(
+                        nameof(ArHeadingAlignmentService),
+                        (sender, args) => OnOrientationReadingChanged(sender, args, generation),
+                        SensorSpeed.UI);
+
+                started = true;
 
 #if ANDROID
-            Log.Error(
-                LogTag,
-                $"Failed to start orientation sensor: {exception}");
+                Log.Debug(
+                    LogTag,
+                    "Earth-referenced orientation sensor started.");
 #endif
+            }
+            catch (Exception exception)
+            {
+                orientationLease?.Dispose();
+                orientationLease = null;
+
+#if ANDROID
+                Log.Error(
+                    LogTag,
+                    $"Failed to start orientation sensor: {exception}");
+#else
+                System.Diagnostics.Debug.WriteLine(exception);
+#endif
+            }
         }
     }
 
     public void Stop()
     {
-        bool wasStarted;
+        IDisposable? lease;
 
         lock (sync)
         {
-            wasStarted =
-                started;
-
             started =
                 false;
+            sensorGeneration++;
+            lease = orientationLease;
+            orientationLease = null;
 
             hasOrientationReading =
                 false;
@@ -239,14 +236,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 DateTimeOffset.MinValue;
         }
 
-        if (!wasStarted)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(
-            ref orientationLease,
-            null)?.Dispose();
+        lease?.Dispose();
 
 #if ANDROID
         Log.Debug(
@@ -575,7 +565,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
     private void OnOrientationReadingChanged(
         object? sender,
-        OrientationSensorChangedEventArgs e)
+        OrientationSensorChangedEventArgs e,
+        long generation)
     {
         Quaternion orientation =
             e.Reading.Orientation;
@@ -597,6 +588,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
         lock (sync)
         {
+            if (!started || disposed || generation != sensorGeneration)
+                return;
+
             latestDeviceOrientation =
                 orientation;
 
@@ -1019,15 +1013,13 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        lock (sync)
         {
-            return;
+            if (disposed) return;
+            disposed = true;
         }
 
         Stop();
-
-        disposed =
-            true;
     }
 
     public readonly record struct HeadingAlignmentResult(

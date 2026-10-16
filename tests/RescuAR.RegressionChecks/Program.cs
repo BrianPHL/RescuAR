@@ -8,6 +8,7 @@ using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
 using RescuAR.Navigation.Hazards;
 using System.Text.Json;
+using RescuAR.MAUI.Platforms.Android.Services;
 
 int passed = 0;
 void Check(bool condition, string name)
@@ -44,7 +45,7 @@ foreach (bool activityFirst in new[] { true, false })
     intent.SetActivityResumed(true);
     intent.SetSurfaceReady(true);
     intent.Request(true);
-    Check(!intent.ShouldRun, "late callbacks cannot revive shutdown");
+    Check(intent.IsShutdown && !intent.ShouldRun, "late callbacks cannot revive shutdown");
 }
 ArHorizontalRoutePoint P(float x, float z, double d) => new(x, z, d);
 Check(ARRouteGeometrySanitizer.Prepare(
@@ -460,7 +461,7 @@ var now = DateTimeOffset.UtcNow;
 var arrival = new SafeZoneConfirmationService();
 SafeZoneConfirmationService.SafeZoneDecision ObserveArrival(double seconds,
     double distance = 1, double? accuracy = 5, bool barrier = false,
-    double? fixAge = null) => arrival.Evaluate(C(0), C(distance), 75, accuracy,
+    double? fixAge = null) => arrival.Evaluate(C(distance), C(0), 75, accuracy,
         double.PositiveInfinity, now.AddSeconds(seconds - (fixAge ?? 0)),
         majorRoadBarrier: barrier, evaluatedAt: now.AddSeconds(seconds));
 Check(!ObserveArrival(0).IsConfirmed, "arrival starts a proximity observation sequence");
@@ -1048,6 +1049,66 @@ Check(RouteAnchorRecoveryPolicy.Evaluate(false,false,true) == RouteAnchorRecover
     RouteAnchorRecoveryPolicy.Evaluate(false,true,false) == RouteAnchorRecoveryAction.WaitForFloor,
     "stale tracking or mismatched ground generation cannot complete an approach anchor handoff");
 
+Check(UserArrivalConfirmationPolicy.CanOffer(C(0),C(29.8),27,now,now),
+    "the indoor screenshot's nearby uncertain fix can offer user-reported arrival");
+arrival.Reset();
+Check(!ObserveArrival(0,distance:29.8,accuracy:27).IsConfirmed &&
+    !ObserveArrival(8,distance:29.8,accuracy:27).IsConfirmed,
+    "manual arrival eligibility does not relax automatic GPS confirmation");
+Check(!UserArrivalConfirmationPolicy.CanOffer(C(0),C(76),5,now,now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),51,now,now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),null,now,now),
+    "manual arrival is unavailable for distant pins or unbounded GPS uncertainty");
+Check(!UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),27,now.AddSeconds(-121),now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),27,now.AddSeconds(3),now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(new(double.NaN,0),C(10),27,now,now),
+    "manual arrival rejects stale, future and invalid location evidence");
+
+var cameraTarget = ARCameraConversionPolicy.GetTargetSize(1080,1901);
+Check(cameraTarget.Width == 727 && cameraTarget.Height == 1280 &&
+    (long)cameraTarget.Width * cameraTarget.Height < 1080L * 1901 / 2,
+    "TIP camera conversion uses less than half the former output pixels");
+Check(Math.Abs(cameraTarget.Width/(double)cameraTarget.Height - 1080.0/1901) < 0.001 &&
+    ARCameraConversionPolicy.GetTargetSize(1901,1080) == (1280u,727u) &&
+    ARCameraConversionPolicy.GetTargetSize(640,480) == (640u,480u),
+    "conversion preserves portrait and landscape proportions without upscaling");
+Check(ArCameraImportFailurePolicy.Classify(new TimeoutException(
+    "ARCORE_CAMERA_GPU_TIMEOUT: pending conversion")) == ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new InvalidOperationException(
+        "ARCORE_CAMERA_GPU_FAILURE: vkWaitForFences failed")) == ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new InvalidOperationException("VK_ERROR_DEVICE_LOST")) ==
+        ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new TimeoutException("unrelated transient timeout")) ==
+        ArCameraImportFailureDisposition.RetryWithBackoff,
+    "uncertain GPU ownership is terminal while unrelated transient import failures retain bounded retries");
+
+bool conversionPending = true;
+int cameraCallbacks = 0;
+ARCameraTextureBridge.SetDrawThreadProcessor(987, () => { cameraCallbacks++; return conversionPending; });
+ARCameraTextureBridge.ResumeProcessing(987);
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987) && cameraCallbacks == 1,
+    "a pending conversion skips drawing its unfinished target");
+conversionPending = false;
+Check(!ARCameraTextureBridge.ProcessDrawThreadWork(987) && cameraCallbacks == 2,
+    "drawing resumes after the conversion callback reports completion");
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(986) && cameraCallbacks == 2,
+    "an old draw generation cannot consume current camera work");
+ARCameraTextureBridge.SetDrawThreadProcessor(987, () =>
+{
+    ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
+    return false;
+});
+ARCameraTextureBridge.ResumeProcessing(987);
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987),
+    "terminal suspension inside import prevents presentation in the same draw callback");
+var cameraTeardown = ARCameraTextureBridge.RequestDrawThreadTeardownAsync(987, () => { });
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987) && !cameraTeardown.IsCompleted,
+    "pending conversion support preserves the draw-boundary teardown barrier");
+ARCameraTextureBridge.CompleteDrawThreadFrame(987);
+Check(cameraTeardown.IsCompletedSuccessfully,
+    "graphics teardown completes only after the skipped draw is acknowledged");
+
+await ARSystemAuditChecks.RunAsync(Check);
 Console.WriteLine($"{passed} regression checks passed.");
 
 sealed class FixedRoutingService(RouteResult route) : IRoutingService
