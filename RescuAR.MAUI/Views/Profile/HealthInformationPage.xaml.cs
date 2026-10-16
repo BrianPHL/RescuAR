@@ -45,13 +45,10 @@ namespace RescuAR.App.Views.Profile
             BindingContext = new ProfileViewModel();
         }
 
-        protected override async void OnAppearing()
+        protected override void OnAppearing()
         {
             base.OnAppearing();
-            IsEnabled = false;
-            try { await ((ProfileViewModel)BindingContext).LoadUserProfileAsync(); }
-            finally { IsEnabled = true; }
-
+            
             bool hasSeenTutorial = Preferences.Default.Get("HasSeenHealthTutorial", false);
             if (!hasSeenTutorial)
             {

@@ -531,8 +531,8 @@ public partial class SafetyCircleViewModel : ObservableObject
                     if (words.Length >= 2) initials = $"{words[0][0]}{words[1][0]}".ToUpper();
                     else if (words.Length == 1 && words[0].Length >= 2) initials = words[0].Substring(0, 2).ToUpper();
 
-                    string sinceTime = userLoc != null && userLoc.LastUpdated != default
-                        ? $"Since {userLoc.LastUpdated.ToLocalTime():h:mm tt}"
+                    string sinceTime = userLoc != null && userLoc.LastUpdated.HasValue && userLoc.LastUpdated.Value != default
+                        ? $"Since {userLoc.LastUpdated.Value.ToLocalTime():h:mm tt}"
                         : $"Since {DateTime.Now:h:mm tt}";
 
                     string locationSubtitle = await GetEstimatedLocationSubtitleAsync(memberLat, memberLon);

@@ -5,13 +5,10 @@ namespace RescuAR.App.Views.Map;
 
 public partial class CircleChatPage : ContentPage
 {
-    public CircleChatViewModel ViewModel { get; }
-
     public CircleChatPage(CircleChatViewModel viewModel)
     {
-        ViewModel = viewModel;
         InitializeComponent();
-        BindingContext = ViewModel;
+        BindingContext = viewModel;
 
         viewModel.MessageAdded += (item) =>
         {
@@ -31,7 +28,7 @@ public partial class CircleChatPage : ContentPage
         base.OnAppearing();
         if (BindingContext is CircleChatViewModel vm)
         {
-            await vm.StartAsync();
+            await vm.LoadMessagesAsync();
         }
     }
 
