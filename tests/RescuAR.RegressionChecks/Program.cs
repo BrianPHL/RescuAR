@@ -478,8 +478,9 @@ Check(!ObserveArrival(0, distance: 60, accuracy: 8.5).IsCandidate &&
     !ObserveArrival(4, distance: 60, accuracy: 8.5).IsConfirmed,
     "field-test fixes sixty metres from the pin cannot confirm arrival inside a broad facility profile");
 Check(ObserveArrival(5, distance: 24, accuracy: 5).IsCandidate &&
-    !ObserveArrival(6, distance: 26, accuracy: 5).IsCandidate && arrival.Current.ConfirmationCount == 0,
-    "GPS uncertainty must fit entirely inside the thirty metre confirmation boundary");
+    ObserveArrival(6, distance: 26, accuracy: 5).IsObservationHeld &&
+    !arrival.Current.IsConfirmed && arrival.Current.ConfirmationCount == 1,
+    "boundary uncertainty pauses arrival without counting a fix outside the thirty metre margin");
 ObserveArrival(7);
 Check(ObserveArrival(8, accuracy: 30).ConfirmationCount == 0,
     "weak arrival fixes reset the consecutive sequence");
@@ -990,6 +991,62 @@ foreach (string algorithm in new[] { "AStar", "MLD (Railway OSRM)" })
         $"{algorithm} preview starts on mapped geometry and never draws a GPS-to-road connector");
 }
 ARRouteBridge.Clear();
+
+arrival.Reset();
+ObserveArrival(0,distance:14.5,accuracy:11);
+var tipBoundaryNoise = ObserveArrival(4.935,distance:22.4,accuracy:9);
+Check(tipBoundaryNoise.IsObservationHeld && tipBoundaryNoise.ConfirmationCount == 1 &&
+    !tipBoundaryNoise.IsConfirmed,
+    "TIP boundary jitter holds earlier arrival evidence without confirming the uncertain position");
+Check(!ObserveArrival(9.490,distance:2.8,accuracy:14).IsConfirmed &&
+    ObserveArrival(13.964,distance:8.1,accuracy:10).IsConfirmed,
+    "three qualifying TIP observations can complete arrival across a brief uncertain boundary sample");
+arrival.Reset();
+ObserveArrival(0);
+Check(ObserveArrival(4,distance:9.7,accuracy:25.5).IsObservationHeld &&
+    !ObserveArrival(13,distance:9.7,accuracy:25.5).IsCandidate &&
+    ObserveArrival(14).ConfirmationCount == 1,
+    "weak nearby fixes cannot extend the arrival evidence timeout");
+arrival.Reset();
+ObserveArrival(0);
+Check(!ObserveArrival(4,distance:52.7,accuracy:27.9).IsCandidate &&
+    ObserveArrival(5).ConfirmationCount == 1,
+    "a large GPS departure resets arrival instead of bridging separate visits");
+arrival.Reset();
+ObserveArrival(0);
+Check(!ObserveArrival(4,barrier:true).IsCandidate && arrival.Current.ConfirmationCount == 0,
+    "a mapped major-road barrier cancels held arrival evidence immediately");
+
+var nearDestination = new DestinationProximityReroutePolicy();
+bool HoldNear(double seconds,double distance,double accuracy=12,bool access=true) =>
+    nearDestination.ShouldHold(C(distance),C(0),accuracy,now.AddSeconds(seconds),
+        now.AddSeconds(seconds),access);
+Check(HoldNear(0,17.5,21.5) && HoldNear(4,52.7,27.9),
+    "a nearby destination observation suppresses a brief TIP GPS jump");
+var nearOffRoute = new RouteProgressTracker.RouteProgressUpdate(true,true,false,0,0,0,10,
+    52.8,10,C(52.8),C(0),"OFF_ROUTE",15,RouteMatchConfidence.High,double.NaN,52.8);
+var nearRerouteDecision = new OffRouteReroutePolicy().Evaluate(nearOffRoute,now,true);
+Check(!nearRerouteDecision.ShouldReroute && nearRerouteDecision.ConfirmationCount == 0,
+    "near-destination drift cannot build an off-route rerouting sequence");
+Check(HoldNear(8,80,10) && !HoldNear(10,85,10),
+    "two independent accurate departures restore normal routing away from the destination");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!HoldNear(31,50,29), "destination proximity hold expires without new nearby evidence");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!HoldNear(2,20,12,access:false), "major-road access uncertainty cannot suppress necessary rerouting");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!nearDestination.ShouldHold(C(20),C(500),12,now.AddSeconds(1),now.AddSeconds(1)),
+    "changing the destination discards the previous proximity hold");
+
+Check(RouteAnchorRecoveryPolicy.Evaluate(false,true,true) == RouteAnchorRecoveryAction.DiscardPreview &&
+    RouteAnchorRecoveryPolicy.Evaluate(true,true,true) == RouteAnchorRecoveryAction.RebaseRoute,
+    "a tracked replacement anchor releases approach recovery without waiting for physical road entry");
+Check(RouteAnchorRecoveryPolicy.Evaluate(false,false,true) == RouteAnchorRecoveryAction.WaitForFloor &&
+    RouteAnchorRecoveryPolicy.Evaluate(false,true,false) == RouteAnchorRecoveryAction.WaitForFloor,
+    "stale tracking or mismatched ground generation cannot complete an approach anchor handoff");
 
 Console.WriteLine($"{passed} regression checks passed.");
 

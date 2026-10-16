@@ -93,6 +93,7 @@ namespace RescuAR.App.Views.Camera
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly PdrHeadingSmoother _pdrHeadingSmoother;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
+        private readonly DestinationProximityReroutePolicy _destinationProximityReroutePolicy = new();
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
         private readonly HeadingRevalidationPolicy _headingRevalidationPolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
@@ -4713,7 +4714,14 @@ namespace RescuAR.App.Views.Camera
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 _offRouteReroutePolicy.Evaluate(
                                     matchedGps,
-                                    reading.Timestamp);
+                                    reading.Timestamp,
+                                    destinationProximityUncertain: activeDestinationCoordinate.HasValue &&
+                                        _destinationProximityReroutePolicy.ShouldHold(reading.Coordinate,
+                                            activeDestinationCoordinate.Value, reading.AccuracyMeters,
+                                            reading.Timestamp, DateTimeOffset.UtcNow,
+                                            accessVerified: arrivalRoadGraph is not null &&
+                                                !arrivalRoadGraph.AccessCrossesMajorRoad(reading.Coordinate,
+                                                    activeDestinationCoordinate.Value)));
 
                             lastOffRouteCandidate =
                                 offRouteDecision.IsCandidate;
@@ -7447,7 +7455,7 @@ namespace RescuAR.App.Views.Camera
             if (arrivalStatusChanged && !decision.IsConfirmed)
                 Dispatcher.Dispatch(RefreshCameraModuleDynamicUi);
 #if ANDROID
-            if (!decision.IsCandidate && decision.IsAvailable &&
+            if ((!decision.IsCandidate || decision.IsObservationHeld) && decision.IsAvailable &&
                 decision.DistanceToDestinationMeters <= SafeZoneConfirmationService.CandidateResetDistanceMeters &&
                 (lastArrivalHoldReason != decision.Reason ||
                  DateTimeOffset.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
@@ -7595,6 +7603,7 @@ namespace RescuAR.App.Views.Camera
                     0;
 
             _safeZoneConfirmationService.Reset();
+            _destinationProximityReroutePolicy.Reset();
             lastArrivalHoldReason = null;
             lastArrivalHoldLogAt = default;
 
@@ -10116,7 +10125,8 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial,
             ARCameraSpatialController.RouteWorldCorrectionRequest request)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+                return CompleteApproachAnchorRecovery(spatial);
 
 #if ANDROID
             RouteResult? route =
@@ -10286,7 +10296,8 @@ namespace RescuAR.App.Views.Camera
         private bool TryRebaseRouteAfterAnchorRecovery(
             ARCameraPoseBridge.SpatialSnapshot spatial)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+                return CompleteApproachAnchorRecovery(spatial);
 
 #if ANDROID
             RouteResult? route =
@@ -10792,6 +10803,8 @@ namespace RescuAR.App.Views.Camera
                                 false,
                                 activeRoute is null
                                     ? "no active route requires recovery rebasing"
+                                    : arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong
+                                        ? "approach handoff complete; waiting for a fresh mapped preview"
                                     : "current route window republished in the replacement local frame");
 
                         handledGroundAnchorReplacementGeneration =

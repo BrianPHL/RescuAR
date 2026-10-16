@@ -78,8 +78,16 @@ public sealed class OffRouteReroutePolicy
 
     public OffRouteDecision Evaluate(
         RouteProgressTracker.RouteProgressUpdate update,
-        DateTimeOffset timestampUtc)
+        DateTimeOffset timestampUtc,
+        bool destinationProximityUncertain = false)
     {
+        if (destinationProximityUncertain)
+        {
+            ResetConfirmation();
+            return new(false, false, 0, RequiredConsecutiveOffRouteSamples,
+                update.CrossTrackErrorMeters, update.AccuracyMeters, update.MatchConfidence,
+                "near destination; holding reroute while GPS position settles");
+        }
         return EvaluateCore(
             update.IsOffRoute && (!double.IsFinite(update.NearestRouteDistanceMeters) ||
                 update.NearestRouteDistanceMeters > update.CorridorRadiusMeters),
