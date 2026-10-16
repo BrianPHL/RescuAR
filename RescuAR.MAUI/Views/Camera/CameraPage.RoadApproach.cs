@@ -19,6 +19,23 @@ public partial class CameraPage
     private bool initialRoadApproachPending;
     private bool approachRoutePreviewPublished;
     private readonly RoadEntryConfirmationPolicy roadEntryConfirmation = new();
+
+    private bool CompleteApproachAnchorRecovery(ARCameraPoseBridge.SpatialSnapshot frame)
+    {
+        var action = RouteAnchorRecoveryPolicy.Evaluate(
+            arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong,
+            frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking,
+            frame.Anchor.IsAvailable && frame.Anchor.Trust != ARGroundTrust.None &&
+                frame.Anchor.GroundState.RenderGeneration == frame.Generation);
+        if (action != RouteAnchorRecoveryAction.DiscardPreview) return false;
+        ARRouteBridge.Clear();
+        approachRoutePreviewPublished = false;
+        ClearRoadApproachCue();
+        AndroidLog.Info("RescuAR-AnchorRecovery",
+            "Tracked anchor handoff completed during route approach; stale preview cleared. " +
+            "The next fresh, access-checked GPS observation may publish mapped geometry.");
+        return true;
+    }
     private Task? roadApproachUpdateTask;
     private long roadApproachEpoch;
     private sealed record RoadApproachCue(LocationReading Reading, GeoCoordinate Target,
@@ -185,6 +202,8 @@ public partial class CameraPage
             ? "Arrival not confirmed. Waiting for a fresh GPS fix."
             : arrivalRoadGraph is null
                 ? "Arrival check waiting for mapped access data."
+            : decision.IsObservationHeld
+                ? $"GPS shifted. Holding arrival checks ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}); waiting for an accurate fix."
             : decision.IsCandidate
                 ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the destination."
             : decision.AccuracyMeters is not double accuracy || !double.IsFinite(accuracy)

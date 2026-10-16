@@ -176,7 +176,8 @@
 			<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == 'unavailable' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
 		</PropertyGroup>
 		<ItemGroup>
-			<AssemblyMetadata Update="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
+			<AssemblyMetadata Remove="RescuAR.SourceRevision" />
+			<AssemblyMetadata Include="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
 			<_RescuArBuildProfileLine Include="sourceRevision=$(RescuArSourceRevision)" />
 			<_RescuArBuildProfileLine Include="configuration=$(Configuration)" />
 		</ItemGroup>

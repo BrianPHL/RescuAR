@@ -234,9 +234,16 @@ public sealed class SafeZoneConfirmationService
             return current;
         }
 
-        // Confirmation must be continuous: an inaccurate/outside fix cannot
-        // bridge two isolated visits to the edge of the geofence.
-        ResetCandidate();
+        // Brief boundary noise supplies no new arrival evidence. Retain earlier
+        // qualifying observations for the existing bounded gap, without counting
+        // this fix or confirming arrival from its uncertainty circle.
+        bool holdObservations = confirmationCount > 0 && observationIsFresh &&
+            !majorRoadBarrier && accuracyIsFinite && accuracyMeters!.Value < 30.0 &&
+            distanceToDestinationMeters <= CandidateResetDistanceMeters &&
+            distanceToDestinationMeters - accuracyMeters.Value <= effectiveArrivalRadiusMeters &&
+            lastCountedObservationTime.HasValue && observedAt >= lastCountedObservationTime.Value &&
+            (evaluatedAt ?? DateTimeOffset.UtcNow) - lastCountedObservationTime.Value <= MaximumObservationGap;
+        if (!holdObservations) ResetCandidate();
 
         string reason =
             majorRoadBarrier
@@ -254,7 +261,7 @@ public sealed class SafeZoneConfirmationService
         current =
             new SafeZoneDecision(
                 IsAvailable: true,
-                IsCandidate: false,
+                IsCandidate: holdObservations,
                 IsConfirmed: false,
                 ConfirmationCount: confirmationCount,
                 RequiredConfirmationCount: RequiredConfirmationCount,
@@ -264,7 +271,10 @@ public sealed class SafeZoneConfirmationService
                 MaximumRemainingRouteMeters: effectiveMaximumRemainingRouteMeters,
                 AccuracyMeters: accuracyMeters,
                 ObservedAt: observedAt,
-                Reason: reason);
+                Reason: holdObservations
+                    ? "GPS shifted near the destination; earlier arrival observations are held while waiting for another accurate fix."
+                    : reason,
+                IsObservationHeld: holdObservations);
 
         return current;
     }
@@ -321,7 +331,8 @@ public sealed class SafeZoneConfirmationService
         double MaximumRemainingRouteMeters,
         double? AccuracyMeters,
         DateTimeOffset ObservedAt,
-        string Reason)
+        string Reason,
+        bool IsObservationHeld = false)
     {
         public static SafeZoneDecision Unavailable =>
             new(
