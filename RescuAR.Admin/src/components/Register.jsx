@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Mail, Lock, AlertCircle, MapPin, Waves, Loader2 } from 'lucide-react';
+import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import BrandLogo from './BrandLogo';
 
 export default function Register({ onSwitchToLogin }) {
   const [email, setEmail] = useState('');
@@ -32,14 +33,7 @@ export default function Register({ onSwitchToLogin }) {
     <div className="auth-wrapper">
       <div className="auth-card">
         <div className="auth-header">
-          <div className="auth-logo">
-            <div className="auth-logo-icon-container">
-              <div style={{ display: 'flex', alignItems: 'center', color: '#0284c7' }}>
-                <MapPin size={28} style={{ marginRight: '-12px', zIndex: 2 }} />
-                <Waves size={18} style={{ marginTop: '12px', color: '#10b981', zIndex: 1 }} />
-              </div>
-            </div>
-          </div>
+          <BrandLogo variant="card" />
           <h1 className="auth-title">Create Account</h1>
           <p className="auth-subtitle">Sign up to access RescuAR system</p>
         </div>

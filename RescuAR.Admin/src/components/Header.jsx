@@ -1,5 +1,6 @@
 import React from 'react';
-import { MapPin, Waves, LogOut, Menu, X } from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 import { supabase } from '../supabaseClient';
 
 export default function Header({ session, onMenuToggle, isMenuOpen, menuButtonRef }) {
@@ -25,14 +26,7 @@ export default function Header({ session, onMenuToggle, isMenuOpen, menuButtonRe
         >
           {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
-        <div className="logo-text">
-          {/* Map Pin + River Waves Icon combination */}
-          <div style={{ display: 'flex', alignItems: 'center', marginRight: '8px', color: '#0284c7' }}>
-            <MapPin size={24} style={{ marginRight: '-12px', zIndex: 2 }} />
-            <Waves size={16} style={{ marginTop: '12px', color: '#10b981', zIndex: 1 }} />
-          </div>
-          Rescu<span>AR</span>
-        </div>
+        <BrandLogo variant="header" />
       </div>
       
       <button type="button" className="user-profile-badge" onClick={handleLogout} title="Sign Out" aria-label={`Sign out ${userEmail}`}>

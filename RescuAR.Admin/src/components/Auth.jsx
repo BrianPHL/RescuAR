@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import {
-  MapPin,
-  Waves,
   Lock,
   Mail,
   AlertCircle,
@@ -10,6 +8,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import BrandLogo from './BrandLogo';
 import loginFloodHero from '../assets/login-flood-hero.png';
 import '../auth-login-layout.css';
 
@@ -102,17 +101,9 @@ export default function Auth({ onLogin }) {
           <div className="auth-panel-inner">
             <div className="auth-content-anchor">
               <div className="auth-brand-block">
-              <div className="auth-brand-mark">
-                <div className="auth-brand-icon" aria-hidden="true">
-                  <MapPin size={28} style={{ marginRight: '-12px', zIndex: 2 }} />
-                  <Waves size={18} style={{ marginTop: '12px', color: '#10b981', zIndex: 1 }} />
-                </div>
-                <div>
-                  <div className="auth-brand-title">Rescu<span>AR</span></div>
-                  <div className="auth-brand-subtitle">AR-Based Evacuation Guidance System</div>
-                </div>
+                <BrandLogo variant="auth" />
+                <div className="auth-brand-subtitle">AR-Based Evacuation Guidance System</div>
               </div>
-            </div>
 
             <form className="auth-form-card" onSubmit={handleSubmit}>
               {errorMsg && (
