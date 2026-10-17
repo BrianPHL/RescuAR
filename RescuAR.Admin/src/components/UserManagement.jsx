@@ -283,13 +283,13 @@ export default function UserManagement() {
       </div>
 
       {/* SUMMARY CARDS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+      <div className="admin-summary-grid row g-3" style={{ marginBottom: '24px' }}>
         {[
           { label: 'Total Users', value: users.length, icon: <UserCog size={18} />, color: '#0284c7', bg: '#e0f2fe' },
           { label: 'Admins', value: users.filter(u => u.role === 'admin').length, icon: <ShieldCheck size={18} />, color: '#7c3aed', bg: '#ede9fe' },
           { label: 'Regular Users', value: users.filter(u => u.role === 'user').length, icon: <Users size={18} />, color: '#16a34a', bg: '#dcfce7' }
         ].map((card, i) => (
-          <div key={i} style={{
+          <div key={i} className="col-12 col-sm-6 col-xl-4"><div className="h-100" style={{
             backgroundColor: '#fff', borderRadius: '8px', padding: '18px 20px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '14px'
           }}>
@@ -304,20 +304,20 @@ export default function UserManagement() {
               <div style={{ fontSize: '22px', fontWeight: '700', color: '#0f172a' }}>{card.value}</div>
               <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '500' }}>{card.label}</div>
             </div>
-          </div>
+          </div></div>
         ))}
       </div>
 
       {/* CONTENT LAYOUT */}
-      <div style={styles.panelContainer}>
+      <div className="admin-responsive-panels" style={styles.panelContainer}>
 
         {/* LEFT PANEL: USER TABLE */}
-        <div style={styles.leftPanel}>
-          <div style={styles.headerFlex}>
+        <div className="admin-panel-list" style={styles.leftPanel}>
+          <div className="admin-list-header" style={styles.headerFlex}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: 0 }}>Registered Users</h2>
           </div>
 
-          <div style={styles.controlsFlex}>
+          <div className="admin-controls" style={styles.controlsFlex}>
             <input
               type="text"
               style={styles.searchInput}
@@ -332,6 +332,7 @@ export default function UserManagement() {
             </select>
           </div>
 
+          <div className="admin-table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -393,8 +394,9 @@ export default function UserManagement() {
               )}
             </tbody>
           </table>
+          </div>
 
-          <div style={styles.pagination}>
+          <div className="admin-pagination" style={styles.pagination}>
             <span>
               {filteredUsers.length === 0
                 ? '0 records'
@@ -434,7 +436,7 @@ export default function UserManagement() {
         </div>
 
         {/* RIGHT PANEL: USER DETAILS */}
-        <div style={styles.rightPanel}>
+        <div className="admin-panel-details" style={styles.rightPanel}>
           <h2 style={{ fontSize: '15px', fontWeight: '600', color: '#0f172a', margin: '0 0 16px 0' }}>
             User Details
           </h2>

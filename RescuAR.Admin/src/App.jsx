@@ -32,6 +32,41 @@ import {
 
 export default function App({ session }) {
   const [activeView, setActiveView] = useState('monitoring-stations');
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [mobileViewport, setMobileViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 991.98px)').matches
+  );
+  const menuButtonRef = useRef(null);
+
+  // Keep the mobile drawer and keyboard interaction in sync with Bootstrap's lg breakpoint.
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 991.98px)');
+    const updateViewport = () => {
+      setMobileViewport(query.matches);
+      if (!query.matches) setMobileNavigationOpen(false);
+    };
+    updateViewport();
+    query.addEventListener('change', updateViewport);
+    return () => query.removeEventListener('change', updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileNavigationOpen || !mobileViewport) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setMobileNavigationOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.getElementById('admin-sidebar')?.querySelector('button')?.focus();
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileNavigationOpen, mobileViewport]);
+
+  const navigateTo = (view) => {
+    setActiveView(view);
+    setMobileNavigationOpen(false);
+  };
   const workspaceRef = useRef(null);
 
   // Each page begins at the top of its own scrollable workspace.
@@ -51,7 +86,7 @@ export default function App({ session }) {
     } else if (actionType === 'notify') {
       setIsNotifyOpen(true);
     } else if (actionType === 'predict') {
-      setActiveView('monitoring-hazard-exposure');
+      navigateTo('monitoring-hazard-exposure');
     }
   };
 
@@ -59,7 +94,7 @@ export default function App({ session }) {
   const renderView = () => {
     switch (activeView) {
       case 'dashboard':
-        return <Dashboard onViewChange={setActiveView} onActionClick={handleActionClick} />;
+        return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} />;
       case 'monitoring-stations':
         return <MonitoringStations />;
       case 'monitoring-river-level':
@@ -95,12 +130,30 @@ export default function App({ session }) {
   return (
     <div className="app-container">
       {/* Top Header */}
-      <Header session={session} />
+      <Header
+        session={session}
+        onMenuToggle={() => setMobileNavigationOpen((open) => !open)}
+        isMenuOpen={mobileNavigationOpen}
+        menuButtonRef={menuButtonRef}
+      />
 
       {/* Main Layout Content */}
       <div className="app-content">
         {/* Sidebar Nav */}
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
+        {mobileViewport && mobileNavigationOpen && (
+          <button
+            type="button"
+            className="mobile-sidebar-backdrop"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavigationOpen(false)}
+          />
+        )}
+        <Sidebar
+          activeView={activeView}
+          onViewChange={navigateTo}
+          isMobileViewport={mobileViewport}
+          isMobileOpen={mobileNavigationOpen}
+        />
 
         {/* Only the workspace scrolls; the header and sidebar stay stationary. */}
         <main className="app-workspace" ref={workspaceRef} id="admin-workspace">
@@ -113,7 +166,7 @@ export default function App({ session }) {
         isOpen={isAdvisoryOpen}
         onClose={() => setIsAdvisoryOpen(false)}
         stationData={activeStationData}
-        onViewAdvisories={() => setActiveView('content-advisories')}
+        onViewAdvisories={() => navigateTo('content-advisories')}
       />
       <NotifyModal
         isOpen={isNotifyOpen}

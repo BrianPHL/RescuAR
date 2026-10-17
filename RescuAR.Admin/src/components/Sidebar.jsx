@@ -14,7 +14,7 @@ import {
   Gavel
 } from 'lucide-react';
 
-export default function Sidebar({ activeView, onViewChange }) {
+export default function Sidebar({ activeView, onViewChange, isMobileViewport = false, isMobileOpen = false }) {
   // Determine initial active group from activeView
   const getInitialGroup = () => {
     if (activeView.startsWith('monitoring-')) return 'monitoring';
@@ -56,16 +56,22 @@ export default function Sidebar({ activeView, onViewChange }) {
   };
 
   return (
-    <aside className="app-sidebar" aria-label="Primary navigation">
+    <aside
+      id="admin-sidebar"
+      className={`app-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}
+      aria-label="Primary navigation"
+      aria-hidden={isMobileViewport && !isMobileOpen}
+      inert={isMobileViewport && !isMobileOpen}
+    >
       <div className="sidebar-menu-list">
         {/* Dashboard Link */}
-        <div 
+        <button type="button"
           className={`sidebar-link ${activeView === 'dashboard' ? 'active' : ''}`}
           onClick={() => onViewChange('dashboard')}
         >
           <LayoutDashboard size={18} />
           <span>Dashboard</span>
-        </div>
+        </button>
 
         {/* Monitoring Section */}
         <div>
@@ -90,27 +96,27 @@ export default function Sidebar({ activeView, onViewChange }) {
             inert={!expandedGroups.monitoring}
           >
             <div className="menu-group-sublist">
-              <div 
+              <button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-stations' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-stations')}
               >
                 <Radio size={16} />
                 <span>Monitoring Stations</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-river-level' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-river-level')}
               >
                 <Waves size={16} />
                 <span>Marikina River Level</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-hazard-exposure' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-hazard-exposure')}
               >
                 <AlertTriangle size={16} />
                 <span>Flood Hazard Exposure</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -138,18 +144,18 @@ export default function Sidebar({ activeView, onViewChange }) {
             inert={!expandedGroups.community}
           >
             <div className="menu-group-sublist">
-              <div 
+              <button type="button"
                 className={`sidebar-link ${activeView === 'community-reports-moderation' ? 'active' : ''}`}
                 onClick={() => onViewChange('community-reports-moderation')}
               >
                 <span>Reports Moderation</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'community-user-management' ? 'active' : ''}`}
                 onClick={() => onViewChange('community-user-management')}
               >
                 <span>User Management</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -177,24 +183,24 @@ export default function Sidebar({ activeView, onViewChange }) {
             inert={!expandedGroups.content}
           >
             <div className="menu-group-sublist">
-              <div 
+              <button type="button"
                 className={`sidebar-link ${activeView === 'content-advisories' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-advisories')}
               >
                 <span>Advisories</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'content-evacuation' || activeView === 'content-news' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-evacuation')}
               >
                 <span>Evacuation Centers</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'content-hotlines' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-hotlines')}
               >
                 <span>Emergency Hotlines</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -222,18 +228,18 @@ export default function Sidebar({ activeView, onViewChange }) {
             inert={!expandedGroups.system}
           >
             <div className="menu-group-sublist">
-              <div 
+              <button type="button"
                 className={`sidebar-link ${activeView === 'system-settings' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-settings')}
               >
                 <span>Settings</span>
-              </div>
-              <div 
+              </button>
+              <button type="button"
                 className={`sidebar-link ${activeView === 'system-logs' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-logs')}
               >
                 <span>System Logs</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>

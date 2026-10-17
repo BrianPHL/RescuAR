@@ -624,9 +624,10 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
       </div>
 
       {/* Top Stats Grid */}
-      <div className="stats-grid">
+      <div className="stats-grid row g-3">
         {analytics.map((stat, idx) => (
-          <div key={idx} onClick={() => onViewChange(stat.target)} className="stat-card">
+          <div key={idx} className="col-12 col-md-6 col-xxl-3">
+          <button type="button" onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100">
             <div className={`stat-icon-wrapper ${stat.colorClass}`}>
               {stat.icon}
             </div>
@@ -637,6 +638,7 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
                 <ArrowUpRight size={24} className="stat-arrow" />
               </div>
             </div>
+          </button>
           </div>
         ))}
       </div>

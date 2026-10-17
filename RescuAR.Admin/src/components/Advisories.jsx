@@ -691,6 +691,7 @@ export default function Advisories() {
           onClick={() => setIsModalOpen(false)}
         >
           <div
+            className="admin-form-drawer"
             style={{ width: '420px', backgroundColor: '#fff', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)' }}
             onClick={(e) => e.stopPropagation()}
           >

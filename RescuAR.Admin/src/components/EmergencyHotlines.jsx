@@ -164,18 +164,18 @@ export default function EmergencyHotlines() {
       </div>
 
       {/* CONTENT LAYOUT */}
-      <div style={styles.panelContainer}>
+      <div className="admin-responsive-panels" style={styles.panelContainer}>
 
         {/* LEFT PANEL: LIST OF HOTLINES */}
-        <div style={styles.leftPanel}>
-          <div style={styles.headerFlex}>
+        <div className="admin-panel-list" style={styles.leftPanel}>
+          <div className="admin-list-header" style={styles.headerFlex}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: 0 }}>List of Emergency Hotlines</h2>
             <button style={styles.addButton} onClick={() => setIsDrawerOpen(true)}>
               <Plus size={16} /> Add New Hotline
             </button>
           </div>
 
-          <div style={styles.controlsFlex}>
+          <div className="admin-controls" style={styles.controlsFlex}>
             <input
               type="text"
               style={styles.searchInput}
@@ -191,6 +191,7 @@ export default function EmergencyHotlines() {
             </select>
           </div>
 
+          <div className="admin-table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -224,8 +225,9 @@ export default function EmergencyHotlines() {
               )}
             </tbody>
           </table>
+          </div>
 
-          <div style={styles.pagination}>
+          <div className="admin-pagination" style={styles.pagination}>
             <span>1 of {filteredHotlines.length || 1} record</span>
             <div style={styles.pageControls}>
               <button style={styles.pageBtn}><ChevronLeft size={14} /></button>
@@ -236,7 +238,7 @@ export default function EmergencyHotlines() {
         </div>
 
         {/* RIGHT PANEL: DETAILS */}
-        <div style={styles.rightPanel}>
+        <div className="admin-panel-details" style={styles.rightPanel}>
           <h2 style={{ fontSize: '15px', fontWeight: '600', color: '#0f172a', margin: '0 0 16px 0' }}>
             Emergency Hotline Details
           </h2>
@@ -304,7 +306,7 @@ export default function EmergencyHotlines() {
       {/* ADD NEW HOTLINE DRAWER */}
       {isDrawerOpen && (
         <div style={styles.overlay}>
-          <div style={styles.drawer}>
+          <div className="admin-form-drawer" style={styles.drawer}>
             <div style={styles.drawerHeader}>
               <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>Add New Hotline</h2>
               <button

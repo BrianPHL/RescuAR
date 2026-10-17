@@ -214,14 +214,15 @@ export default function MonitoringStations() {
         </div>
       )}
 
-      <div className="station-points-grid">
-        {renderPointCard('TUMANA MONITORING POINT', getStation('Tumana'), Droplet)}
-        {renderPointCard('NANGKA MONITORING POINT', getStation('Nangka'), Waves)}
-        {renderPointCard('STO. NIÑO (MAIN NODE)', getStation('Sto. Niño'), AlertTriangle)}
+      <div className="station-points-grid row g-3">
+        <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('TUMANA MONITORING POINT', getStation('Tumana'), Droplet)}</div>
+        <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('NANGKA MONITORING POINT', getStation('Nangka'), Waves)}</div>
+        <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('STO. NIÑO (MAIN NODE)', getStation('Sto. Niño'), AlertTriangle)}</div>
       </div>
 
-      <div className="stations-split-layout">
-        <div className="stations-card">
+      <div className="stations-split-layout monitoring-stations-layout row g-3">
+        <div className="col-12 col-xl-7">
+        <div className="stations-card h-100">
           <h2 className="stations-card-title">Verified Station Water Levels</h2>
           <div className="chart-container-wrapper" style={{ height: 300, marginTop: 16 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -247,8 +248,10 @@ export default function MonitoringStations() {
             </div>
           )}
         </div>
+        </div>
 
-        <div className="stations-card">
+        <div className="col-12 col-xl-5">
+        <div className="stations-card h-100">
           <h2 className="stations-card-title">PAGASA Telemetry Database</h2>
           <div className="table-container" style={{ marginTop: 16 }}>
             <table className="data-table">
@@ -279,6 +282,7 @@ export default function MonitoringStations() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
     </div>

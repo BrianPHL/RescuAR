@@ -265,8 +265,9 @@ export default function RiverLevel({ onActionClick }) {
 
       {errorMessage && <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c' }}>{errorMessage}</div>}
 
-      <div className="river-metrics-grid">
-        <div className="river-card current-level-card">
+      <div className="river-metrics-grid row g-3">
+        <div className="col-12 col-md-6 col-xl-4">
+        <div className="river-card current-level-card h-100">
           <div className="card-top-label"><Waves size={16} className="text-brand" /><span>CURRENT VERIFIED WATER-LEVEL ELEVATION</span></div>
           <div className="level-hero-group">
             <div className="hero-number-wrapper"><span className="hero-number">{Number.isFinite(currentLevel) ? currentLevel.toFixed(2) : '--'}</span><span className="hero-unit">m EL</span></div>
@@ -279,8 +280,10 @@ export default function RiverLevel({ onActionClick }) {
           {Number.isFinite(Number(selectedStation?.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
           <div className="elevation-definition">PAGASA reports WL [EL.m] as water-level elevation at the station datum; it is not river depth.</div>
         </div>
+        </div>
 
-        <div className="river-card thresholds-card">
+        <div className="col-12 col-md-6 col-xl-4">
+        <div className="river-card thresholds-card h-100">
           <div className="card-top-label"><ShieldAlert size={16} className="text-brand" /><span>PAGASA SOURCE THRESHOLDS</span></div>
           <div className="thresholds-progress-stack">
             {thresholdRows.length ? thresholdRows.map(([name, value, color]) => (
@@ -292,8 +295,10 @@ export default function RiverLevel({ onActionClick }) {
           </div>
           <div style={{ marginTop: 10, color: '#64748b', fontSize: 12 }}>Threshold source: {thresholds.source}</div>
         </div>
+        </div>
 
-        <div className="river-card actions-card">
+        <div className="col-12 col-md-6 col-xl-4">
+        <div className="river-card actions-card h-100">
           <div className="card-top-label"><Zap size={16} className="text-brand" /><span>DISPATCH & ACTIONS</span></div>
           <div className={`dispatch-condition dispatch-condition-${levelContext.tone}`}>
             <div className="dispatch-condition-title">{levelContext.title}</div>
@@ -314,6 +319,7 @@ export default function RiverLevel({ onActionClick }) {
             ><div className="tile-icon-box amber"><Bell size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.notify.title}</span><span className="tile-sub">{dispatchActions.notify.subtitle}</span></div>{dispatchActions.notify.enabled && <ChevronRight size={16} className="tile-arrow" />}</button>
             <button className="action-tile predict" onClick={() => onActionClick?.('predict')}><div className="tile-icon-box teal"><Compass size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.exposure.title}</span><span className="tile-sub">{dispatchActions.exposure.subtitle}</span></div><ChevronRight size={16} className="tile-arrow" /></button>
           </div>
+        </div>
         </div>
       </div>
 

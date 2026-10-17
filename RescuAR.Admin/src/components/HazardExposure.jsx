@@ -561,19 +561,19 @@ export default function HazardExposure() {
         <div className="inundation-card map-card" style={{ minHeight: 560 }}>
           <div className="card-header-bar"><div className="card-title-container"><Waves size={18} className="text-brand" /><h2 className="card-heading">Current PAGASA Hydrological Context</h2></div></div>
           <div style={{ padding: 22 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
-              <div style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
+            <div className="inundation-context-grid row g-3">
+              <div className="col-12 col-md-6"><div className="h-100" style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
                 <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>STO. NIÑO (MMDA)</div>
                 <div style={{ fontSize: 34, fontWeight: 800, marginTop: 5 }}>{liveLevel == null ? '--' : `${liveLevel.toFixed(2)} m EL`}</div>
                 <div style={{ marginTop: 8, color: alert.color, fontWeight: 700 }}>{alert.label}</div>
                 <div style={{ marginTop: 6, color: '#64748b', fontSize: 12 }}>Trend: {liveTelemetry?.trend || 'Unknown'}</div>
-              </div>
-              <div style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
+              </div></div>
+              <div className="col-12 col-md-6"><div className="h-100" style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
                 <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>OBSERVATION FRESHNESS</div>
                 <div style={{ fontSize: 22, fontWeight: 800, marginTop: 8, color: freshness.color }}>{freshness.label}</div>
                 <div style={{ marginTop: 6, color: '#64748b' }}>{freshness.ageText}</div>
                 <div style={{ marginTop: 6, color: '#64748b', fontSize: 12 }}>{freshness.description}</div>
-              </div>
+              </div></div>
             </div>
 
             <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13, color: '#475569' }}>
@@ -590,13 +590,13 @@ export default function HazardExposure() {
 
             <div style={{ marginTop: 18 }}>
               <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{automaticRuleHeading}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+              <div className="inundation-rules-grid row g-2">
                 {rules.map((rule) => (
-                  <div key={rule.condition} style={{ padding: 10, border: '1px solid #e2e8f0', borderRadius: 9, background: '#fff' }}>
+                  <div key={rule.condition} className="col-12 col-sm-6 col-xxl-3"><div className="h-100" style={{ padding: 10, border: '1px solid #e2e8f0', borderRadius: 9, background: '#fff' }}>
                     <div style={{ fontWeight: 800, fontSize: 12 }}>{rule.condition}</div>
                     <div style={{ marginTop: 4, fontSize: 12 }}>{rule.scenario}</div>
                     <div style={{ marginTop: 2, fontSize: 11, color: '#64748b' }}>{rule.severity}</div>
-                  </div>
+                  </div></div>
                 ))}
               </div>
             </div>

@@ -385,7 +385,7 @@ export default function ReportsModeration({ service = reportsModerationService, 
         </div>
 
         {/* Right Column: Detailed Inspector Card */}
-        <div style={{ width: '380px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="reports-details-column" style={{ width: '380px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-main)', margin: 0 }}>
               Report Details

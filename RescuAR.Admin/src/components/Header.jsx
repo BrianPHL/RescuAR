@@ -1,8 +1,8 @@
 import React from 'react';
-import { MapPin, Waves, LogOut } from 'lucide-react';
+import { MapPin, Waves, LogOut, Menu, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-export default function Header({ session }) {
+export default function Header({ session, onMenuToggle, isMenuOpen, menuButtonRef }) {
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
@@ -14,6 +14,17 @@ export default function Header({ session }) {
   return (
     <header className="app-header">
       <div className="logo-section">
+        <button
+          type="button"
+          className="mobile-menu-toggle"
+          onClick={onMenuToggle}
+          ref={menuButtonRef}
+          aria-controls="admin-sidebar"
+          aria-expanded={isMenuOpen}
+          aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        >
+          {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
         <div className="logo-text">
           {/* Map Pin + River Waves Icon combination */}
           <div style={{ display: 'flex', alignItems: 'center', marginRight: '8px', color: '#0284c7' }}>
@@ -24,14 +35,14 @@ export default function Header({ session }) {
         </div>
       </div>
       
-      <div className="user-profile-badge" onClick={handleLogout} title="Sign Out">
+      <button type="button" className="user-profile-badge" onClick={handleLogout} title="Sign Out" aria-label={`Sign out ${userEmail}`}>
         <div className="avatar-circle">{initials}</div>
         <div className="user-info">
           <span className="user-name">System Admin</span>
           <span className="user-email">{userEmail}</span>
         </div>
         <LogOut size={16} className="dropdown-arrow" style={{ marginLeft: '8px', color: '#ef4444' }} />
-      </div>
+      </button>
     </header>
   );
 }
