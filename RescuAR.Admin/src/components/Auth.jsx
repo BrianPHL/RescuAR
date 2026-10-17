@@ -190,9 +190,7 @@ export default function Auth({ onLogin }) {
                 {!loading && !isLocked && <ArrowRight size={16} />}
               </button>
 
-              <p className="auth-bottom-copy">
-                Don&apos;t have an account yet? <span>Sign up</span>
-              </p>
+
             </form>
             </div>
           </div>
