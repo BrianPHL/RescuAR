@@ -39,25 +39,9 @@ function formatDateTime(value) {
 function formatChartLabel(value, range) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  if (range === '24h') return date.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-  if (range === '7d') return date.toLocaleDateString('en-PH', { weekday: 'short', hour: '2-digit' });
-  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-}
-
-function aggregateDaily(rows) {
-  const groups = new Map();
-  rows.forEach((row) => {
-    const date = new Date(row.observed_at);
-    const level = Number(row.level);
-    if (Number.isNaN(date.getTime()) || !Number.isFinite(level)) return;
-    const key = date.toISOString().slice(0, 10);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(level);
-  });
-  return [...groups.entries()].map(([day, values]) => ({
-    observed_at: `${day}T12:00:00+08:00`,
-    level: values.reduce((sum, value) => sum + value, 0) / values.length
-  }));
+  if (range === '24h') return date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' });
+  if (range === '7d') return date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', hour: '2-digit' });
+  return date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' });
 }
 
 function finiteNumberOrNull(value) {
@@ -180,13 +164,15 @@ export default function RiverLevel({ onActionClick }) {
   const fetchHistory = useCallback(async (stationCode, range) => {
     if (!stationCode) return [];
     const since = new Date(Date.now() - RANGE_OPTIONS[range].ms).toISOString();
-    const { data, error } = await supabase
-      .from('river_level_history')
-      .select('station_code, station_name, level, status, source, observed_at')
-      .eq('station_code', stationCode)
-      .eq('source', SOURCE_ID)
-      .gte('observed_at', since)
-      .order('observed_at', { ascending: true });
+    // RPC aggregates long ranges on the server and includes null buckets for missing days.
+    // Execute database/migrations/003_pagasa_river_chart.sql before deploying this UI.
+    const bucket = range === '24h' ? 'raw' : range === '7d' ? 'hour' : 'day';
+    const { data, error } = await supabase.rpc('pagasa_river_chart', {
+      p_station_code: stationCode,
+      p_since: since,
+      p_until: new Date().toISOString(),
+      p_bucket: bucket
+    });
     if (error) throw error;
     return data || [];
   }, []);
@@ -229,13 +215,14 @@ export default function RiverLevel({ onActionClick }) {
   }, [selectedStationCode, timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chartData = useMemo(() => {
-    const rows = ['30d', '6mo'].includes(timeRange) ? aggregateDaily(history) : history;
-    return rows.map((row) => ({
+    return history.map((row) => ({
       time: formatChartLabel(row.observed_at, timeRange),
-      observed: Number(row.level),
+      observed: row.level == null ? null : Number(row.level),
       observed_at: row.observed_at
     }));
   }, [history, timeRange]);
+
+  const hasMeasurements = chartData.some((row) => Number.isFinite(row.observed));
 
   const yDomain = useMemo(() => {
     const values = chartData.map((row) => row.observed).filter(Number.isFinite);
@@ -336,7 +323,7 @@ export default function RiverLevel({ onActionClick }) {
           <div className="chart-controls"><div className="pill-selector">{Object.entries(RANGE_OPTIONS).map(([key, option]) => <button key={key} className={`pill-btn ${timeRange === key ? 'active' : ''}`} onClick={() => setTimeRange(key)}>{option.label}</button>)}</div></div>
         </div>
         <div className="chart-canvas-container">
-          {!chartData.length ? <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No verified PAGASA observations are available for this range.</div> : (
+          {!hasMeasurements ? <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No verified PAGASA observations are available for this range.</div> : (
             <ResponsiveContainer width="100%" height={380}>
               <AreaChart data={chartData} margin={{ top: 20, right: 65, left: 0, bottom: 10 }}>
                 <defs><linearGradient id="gradientObserved" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} /><stop offset="95%" stopColor="#0284c7" stopOpacity={0.02} /></linearGradient></defs>
@@ -348,7 +335,7 @@ export default function RiverLevel({ onActionClick }) {
                 {Number.isFinite(thresholds.ALARM_1) && <ReferenceLine y={thresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" label={{ value: `ALERT ${thresholds.ALARM_1.toFixed(1)} m EL`, position: 'right', fill: '#ca8a04', fontSize: 10 }} />}
                 {Number.isFinite(thresholds.ALARM_2) && <ReferenceLine y={thresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" label={{ value: `ALARM ${thresholds.ALARM_2.toFixed(1)} m EL`, position: 'right', fill: '#ea580c', fontSize: 10 }} />}
                 {Number.isFinite(thresholds.ALARM_3) && <ReferenceLine y={thresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" label={{ value: `CRITICAL ${thresholds.ALARM_3.toFixed(1)} m EL`, position: 'right', fill: '#dc2626', fontSize: 10 }} />}
-                <Area type="monotone" dataKey="observed" stroke="#0284c7" strokeWidth={3} fill="url(#gradientObserved)" dot={timeRange === '24h' ? { r: 3 } : false} connectNulls />
+                <Area type="monotone" connectNulls={false} dataKey="observed" stroke="#0284c7" strokeWidth={3} fill="url(#gradientObserved)" dot={timeRange === '24h' ? { r: 3 } : false} />
               </AreaChart>
             </ResponsiveContainer>
           )}
