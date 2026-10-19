@@ -76,7 +76,8 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
     private long requestedDepthVersion = long.MinValue;
     private long requestedFloodVersion = long.MinValue;
-    private long requestedSpatialVersion = long.MinValue;
+    private string? lastCompositionMode;
+    private long lastCompositionLogTimestamp = long.MinValue;
 
     private bool depthActiveLogged;
     private long lastLoggedFloodVersion = -1;
@@ -88,6 +89,16 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
     private long maskStorageAllocationCount;
     private long mappingAllocationCount;
     private long lastAllocationMetricsLogTimestamp = long.MinValue;
+
+    public static readonly BindableProperty PreviewStatusTextProperty =
+        BindableProperty.Create(nameof(PreviewStatusText), typeof(string),
+            typeof(FloodDepthOcclusionView), string.Empty);
+
+    public string PreviewStatusText
+    {
+        get => (string)GetValue(PreviewStatusTextProperty);
+        private set => SetValue(PreviewStatusTextProperty, value);
+    }
 
     public FloodDepthOcclusionView()
     {
@@ -130,6 +141,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         }
 
         DisposeMask();
+        PreviewStatusText = string.Empty;
     }
 
     private void OnRedrawTimerTick(object? sender, EventArgs e)
@@ -162,52 +174,36 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         // publishes at <=10 Hz, so the UI cannot accidentally spin at the
         // device display refresh rate while the camera itself remains smooth.
         if (flood.Version == requestedFloodVersion &&
-            depth.Version == requestedDepthVersion &&
-            (!flood.IsSimulation || spatialFrame.Version == requestedSpatialVersion))
+            depth.Version == requestedDepthVersion)
         {
             return;
         }
 
         requestedFloodVersion = flood.Version;
         requestedDepthVersion = depth.Version;
-        requestedSpatialVersion = spatialFrame.Version;
         InvalidateSurface();
     }
 
-    private static void DrawSimulationOutline(SKCanvas canvas,
-        ARCameraPoseBridge.SpatialSnapshot frame, ARFloodDepthBridge.FloodDepthSnapshot flood,
-        int width, int height)
+    private void UpdateCompositionStatus(string mode, string text,
+        ARFloodDepthBridge.FloodDepthSnapshot flood, ARDepthOcclusionBridge.DepthSnapshot depth)
     {
-        if (!frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
-            !frame.Anchor.IsAvailable || frame.Generation != flood.Generation ||
-            frame.Anchor.ReferenceGeneration != flood.GroundReferenceGeneration ||
-            frame.Anchor.Trust != flood.GroundTrust || width <= 0 || height <= 0) return;
-        var camera = new Vector3(frame.Pose.PositionX, frame.Pose.PositionY, frame.Pose.PositionZ);
-        var rotation = new Quaternion(frame.Pose.RotationX, frame.Pose.RotationY,
-            frame.Pose.RotationZ, frame.Pose.RotationW);
-        float y = frame.Anchor.PositionY + flood.LocalDepthMeters;
-        using var paint = new SKPaint { Color = new SKColor(0, 166, 200, 160),
-            StrokeWidth = 2, IsAntialias = true, Style = SKPaintStyle.Stroke };
-        void Draw(Vector3 a, Vector3 b)
-        {
-            if (FloodSimulationProjection.TryProjectSegment(a, b, camera, rotation,
-                    frame.Projection, out var start, out var end))
-                canvas.DrawLine(start.X * width, start.Y * height,
-                    end.X * width, end.Y * height, paint);
-        }
-        // A 6 m floor-referenced grid, with no opaque fill or claimed object masking.
-        for (int i = -3; i <= 3; i++)
-        {
-            Draw(new(camera.X + i, y, camera.Z - 3), new(camera.X + i, y, camera.Z + 3));
-            Draw(new(camera.X - 3, y, camera.Z + i), new(camera.X + 3, y, camera.Z + i));
-        }
-        using var font = new SKFont { Size = 14 };
-        using var textPaint = new SKPaint { Color = SKColors.White,
-            IsAntialias = true, Style = SKPaintStyle.Fill };
-        using var background = new SKPaint { Color = new SKColor(0, 40, 50, 190) };
-        canvas.DrawRect(6, height - 52, Math.Max(1, width - 12), 46, background);
-        canvas.DrawText($"Simulated water height: {flood.LocalDepthMeters:0.0#} m", 14, height - 32, SKTextAlign.Left, font, textPaint);
-        canvas.DrawText("Floor preview — objects are not masked", 14, height - 12, SKTextAlign.Left, font, textPaint);
+        PreviewStatusText = text;
+        long now = Environment.TickCount64;
+        bool logDue = mode != lastCompositionMode;
+#if RESCUAR_DIAGNOSTICS
+        logDue |= lastCompositionLogTimestamp == long.MinValue ||
+            now - lastCompositionLogTimestamp >= 5_000;
+#endif
+        if (!logDue) return;
+        lastCompositionMode = mode;
+        lastCompositionLogTimestamp = now;
+        AndroidLog.Info(LogTag, $"FLOOD_COMPOSITION mode={mode}; " +
+            $"depthEnabled={ARTrackingStateBridge.Current.DepthEnabled}; " +
+            $"floodVersion={flood.Version}; depthVersion={depth.Version}; " +
+            $"depthAvailable={depth.IsAvailable}; depthSize={depth.Width}x{depth.Height}; " +
+            $"ground={flood.GroundTrust}; groundRef={flood.GroundReferenceGeneration}; " +
+            $"depthGroundRef={depth.GroundReferenceGeneration}; " +
+            $"depthFrame={depth.FrameTimestamp}; waterHeight={flood.LocalDepthMeters:F2}m.");
     }
 
     private void OnPaintSurface(
@@ -227,6 +223,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             renderedFloodVersion = -1;
             renderedDepthVersion = -1;
             hasDisplayedGroundWorldY = false;
+            PreviewStatusText = string.Empty;
             return;
         }
 
@@ -246,13 +243,21 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             depth.DepthMillimeters.Length < depth.Width * depth.Height ||
             depth.ViewToTextureUv.Length < 8)
         {
-            // Only user-selected simulations get a clearly labelled outline.
-            // Measured/local depth still requires scene depth for composition.
+            // A depth preview needs real scene samples. Do not substitute a
+            // wire grid for water when Depth is disabled or still warming up.
             hasDisplayedGroundWorldY = false;
-            if (flood.IsSimulation)
-                DrawSimulationOutline(canvas, spatialFrame, flood, e.Info.Width, e.Info.Height);
+            bool enabled = ARTrackingStateBridge.Current.DepthEnabled;
+            string mode = !enabled ? "DEPTH_DISABLED" : !depth.IsAvailable
+                ? "WAITING_FOR_DEPTH" : "WAITING_FOR_COHERENT_GROUND";
+            UpdateCompositionStatus(mode, enabled
+                ? "Preparing water preview — move the phone slowly with the ground visible."
+                : "Water preview unavailable while scene depth is disabled.", flood, depth);
             return;
         }
+
+        UpdateCompositionStatus("DEPTH_WATER", depth.GroundIsProvisional
+            ? "Estimated floor — keep moving slowly to confirm the ground."
+            : string.Empty, flood, depth);
 
         int canvasWidth = Math.Max(1, e.Info.Width);
         int canvasHeight = Math.Max(1, e.Info.Height);

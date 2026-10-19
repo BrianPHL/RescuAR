@@ -55,7 +55,7 @@ public static class ARPowerThermalPolicy
                     false,
                     60_000,
                     8,
-                    1,
+                    ARGroundProbePlan.MinimumSpatialSamples,
                     48,
                     500,
                     batteryTemperatureCelsius,

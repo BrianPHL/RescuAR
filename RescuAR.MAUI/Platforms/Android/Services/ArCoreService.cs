@@ -208,8 +208,9 @@ public sealed partial class ArCoreService : IArCoreService
      * confidence window before an Anchor is created.
      *
      * When several sweeps contain no DepthPoint, intermediate sweeps retain
-     * only the lower-center probe. A complete nine-ray Plane/Depth sweep still
-     * runs every sixth interval. This limits ARCore's repeated
+     * two lower-view probes so same-frame floor support remains possible.
+     * A complete Plane/Depth sweep still runs every sixth interval.
+     * This limits ARCore's repeated
      * depth-not-yet-available work without stopping floor verification.
      */
     private static readonly (float XOffset, float ZOffset)[]
@@ -247,7 +248,7 @@ public sealed partial class ArCoreService : IArCoreService
     };
 
     private const int GroundDepthCandidateSampleCount = 3;
-    private const int GroundDepthRequiredSpatialSamples = 2;
+    private const int GroundDepthRequiredSpatialSamples = ARGroundProbePlan.MinimumSpatialSamples;
 
     private const long GroundPlaneSearchIntervalMilliseconds =
         250;
@@ -277,7 +278,7 @@ public sealed partial class ArCoreService : IArCoreService
         0.35f;
 
     private const int GroundPlaneRequiredSpatialSamples =
-        2;
+        ARGroundProbePlan.MinimumSpatialSamples;
 
     private const float GroundPlaneMaximumYDeltaMeters =
         0.12f;
@@ -563,13 +564,9 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 8: Configuring DepthMode when supported.");
 
-            forceDepthDisabledForExperiment =
-                IsDepthDisabledForControlledRetest();
-
-            depthExperimentMode =
-                forceDepthDisabledForExperiment
-                    ? "FORCED_DEPTH_OFF"
-                    : "DEPTH_SESSION_STABLE";
+            var depthConfiguration = GetDepthConfigurationDecision();
+            forceDepthDisabledForExperiment = depthConfiguration.DisableDepth;
+            depthExperimentMode = depthConfiguration.Mode;
 
             depthModeSupported =
                 TryConfigureAutomaticDepth(
@@ -1976,6 +1973,7 @@ public sealed partial class ArCoreService : IArCoreService
             anchorAvailable =
                 TryGetProvisionalGroundReference(
                     translation,
+                    frameMetadata.Generation,
                     out anchorX,
                     out anchorY,
                     out anchorZ);
@@ -2149,17 +2147,13 @@ public sealed partial class ArCoreService : IArCoreService
         float[] worldRayOrigin =
             new float[3];
 
-        int worldProbeLimit = Math.Min(
-            3,
-            Math.Max(
-                1,
-                powerThermalDecision.MaximumGroundProbesPerSweep -
-                    GroundDepthRequiredSpatialSamples));
+        ARGroundProbePlan probePlan = ARGroundProbePlan.Create(
+            powerThermalDecision.MaximumGroundProbesPerSweep,
+            reducedProbeSweep);
 
         for (int sampleIndex = 0;
-             !reducedProbeSweep &&
              sampleIndex <
-                worldProbeLimit;
+                probePlan.WorldDownProbes;
              sampleIndex++)
         {
             if (!TryConsumeGroundProbeBudget(now))
@@ -2207,15 +2201,13 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         /*
-         * Lower-view samples. Every sample may acquire a real Plane. Only the
-         * first/central-lower sample is used for Depth confidence so successive
-         * depth candidates describe approximately the same physical patch.
+         * Lower-view samples. Every sample may acquire a real Plane. The
+         * nearby lower-view samples support rolling Depth confidence for
+         * approximately the same physical patch.
          */
         for (int sampleIndex = 0;
              sampleIndex <
-                (reducedProbeSweep
-                    ? 1
-                    : GroundPlaneSearchPattern.Length);
+                probePlan.ScreenProbes;
              sampleIndex++)
         {
             if (!TryConsumeGroundProbeBudget(now))
@@ -2988,6 +2980,7 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool TryGetProvisionalGroundReference(
         float[] cameraTranslation,
+        ARRenderGenerationToken renderGeneration,
         out float anchorX,
         out float anchorY,
         out float anchorZ)
@@ -3036,10 +3029,6 @@ public sealed partial class ArCoreService : IArCoreService
                 ref isGroundAnchorProvisional,
                 1);
 
-            ARGroundStateBridge.PublishProvisional(
-                ARRenderGenerationBridge.Current,
-                "camera-relative provisional ground");
-
             Log.Warn(
                 SpatialPoseTag,
                 "PROVISIONAL ground reference published for emergency-start " +
@@ -3051,6 +3040,13 @@ public sealed partial class ArCoreService : IArCoreService
                 "Plane/Depth verification remains active; do not treat this " +
                 "estimate as a verified physical floor.");
         }
+
+        // Tracking loss suspends trust without discarding this fixed estimate.
+        // Restore its provisional state on every tracked return, including
+        // recovery before a real Plane/Depth anchor has been acquired.
+        ARGroundStateBridge.PublishProvisional(
+            renderGeneration,
+            "camera-relative provisional ground");
 
         anchorX =
             provisionalGroundX;
@@ -3419,6 +3415,13 @@ public sealed partial class ArCoreService : IArCoreService
         float zoomRatio,
         ARFrameMetadata frameMetadata)
     {
+        if (!depthModeEnabled)
+        {
+            if (ARDepthOcclusionBridge.Current.IsAvailable)
+                ARDepthOcclusionBridge.Clear();
+            return;
+        }
+
         long timestamp =
             frameMetadata.FrameTimestamp;
 

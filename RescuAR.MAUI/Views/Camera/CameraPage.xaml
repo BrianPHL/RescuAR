@@ -464,6 +464,11 @@
                                 FontAttributes="Bold"
                                 LineBreakMode="WordWrap"
                                 LineHeight="1.05" />
+                            <Label
+                                Text="{Binding PreviewStatusText, Source={x:Reference floodDepthOcclusionView}, x:DataType=camera:FloodDepthOcclusionView}"
+                                TextColor="#0876B9"
+                                FontSize="11"
+                                LineBreakMode="WordWrap" />
                             <!-- Service fields retained but intentionally hidden from Figma UI. -->
                             <Label x:Name="floodVisualizationTitleLabel" IsVisible="False" />
                             <Label x:Name="floodVisualizationSecondaryLabel" IsVisible="False" />

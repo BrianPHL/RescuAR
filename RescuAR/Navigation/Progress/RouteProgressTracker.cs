@@ -509,7 +509,8 @@ public sealed class RouteProgressTracker
                 string.Empty,
                 corridorRadiusMeters,
                 matchConfidence,
-                best.CourseAlignmentErrorDegrees);
+                best.CourseAlignmentErrorDegrees,
+                IndependentCorridorScoreGap: best.MatchScoreGap);
 
         lock (sync)
         {
@@ -1145,7 +1146,7 @@ public sealed class RouteProgressTracker
 
         if (!best.IsAvailable) return best;
 
-        // Two adjoining segments of one planned road are the same corridor.
+        // Consecutive pieces of one planned road are the same corridor.
         // Treat a genuinely separate branch (or an immediate reversal) as
         // competition; ordinary vertex proximity must not lower confidence.
         double secondBestScore = double.PositiveInfinity;
@@ -1166,12 +1167,23 @@ public sealed class RouteProgressTracker
     private static bool IsSameCorridorNeighbor(
         RouteResult route, int first, int second)
     {
-        if (Math.Abs(first - second) != 1) return false;
+        if (first == second) return true;
         double firstBearing = CalculateInitialBearingDegrees(
             route.Points[first].Coordinate, route.Points[first + 1].Coordinate);
-        double secondBearing = CalculateInitialBearingDegrees(
-            route.Points[second].Coordinate, route.Points[second + 1].Coordinate);
-        return AbsoluteHeadingDifferenceDegrees(firstBearing, secondBearing) < 140.0;
+        int start = Math.Min(first, second), end = Math.Max(first, second);
+        if (end - start > 64 || route.Points[end].DistanceFromStartMeters -
+            route.Points[start + 1].DistanceFromStartMeters > 30.0) return false;
+        // An adjacent junction is continuous; a separated competitor must
+        // belong to the same uninterrupted, approximately straight stretch.
+        double maximumTurn = end - start == 1 ? 140.0 : 35.0;
+        for (int index = start; index <= end; index++)
+        {
+            double bearing = CalculateInitialBearingDegrees(
+                route.Points[index].Coordinate, route.Points[index + 1].Coordinate);
+            if (AbsoluteHeadingDifferenceDegrees(firstBearing, bearing) >= maximumTurn)
+                return false;
+        }
+        return true;
     }
 
     private static SegmentMatch ScoreCandidate(
@@ -1658,7 +1670,8 @@ public sealed class RouteProgressTracker
         double CorridorRadiusMeters,
         RouteMatchConfidence MatchConfidence,
         double CourseAlignmentErrorDegrees,
-        double NearestRouteDistanceMeters = double.NaN);
+        double NearestRouteDistanceMeters = double.NaN,
+        double IndependentCorridorScoreGap = double.NaN);
 
     public readonly record struct ProgressSnapshot(
         bool HasRoute,

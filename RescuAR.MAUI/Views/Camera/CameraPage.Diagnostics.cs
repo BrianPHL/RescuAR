@@ -202,6 +202,8 @@ public partial class CameraPage
                 $"gpsAccuracy={reading.AccuracyMeters:F1}m, " +
                 $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds):F1}s, " +
                 $"headingRepeatability={heading.Value.MaxSampleDeviationDegrees:F2}deg, " +
+                $"mapToArYaw={heading.Value.MapToArYawDegrees:F2}deg, " +
+                $"calibratedAt={heading.Value.Timestamp:O}, " +
                 $"segments={lines.Count}, radius={RoadLineDiagnosticRadiusMeters:0}m, basis=EUS.");
             ARRouteRenderer.ShowRoadDiagnostics(lines, frame.Pose.PositionX, frame.Pose.PositionZ,
                 frame.Anchor.ReferenceGeneration, frame.Generation.SessionGeneration);

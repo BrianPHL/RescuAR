@@ -187,34 +187,29 @@ public partial class CameraPage
 
     private bool TryShowArrivalStatus()
     {
+        var destination = NavigationDestinationBridge.Current;
         var decision = lastSafeZoneDecision;
         if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
-            !NavigationDestinationBridge.Current.IsAvailable || !decision.IsAvailable ||
-            !double.IsFinite(decision.DistanceToDestinationMeters) ||
-            (!decision.IsCandidate && decision.DistanceToDestinationMeters >
-                RescuAR.Navigation.Guidance.SafeZoneConfirmationService.CandidateResetDistanceMeters))
+            !destination.IsAvailable)
             return false;
-        TimeSpan age = DateTimeOffset.UtcNow - decision.ObservedAt;
-        bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(5);
+        LocationReading? reading;
+        lock (routeProgressFusionSync) reading = latestRouteStartupReading;
+        TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+        bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
+        double distance = reading is null ? double.PositiveInfinity :
+            reading.Coordinate.DistanceTo(destination.Coordinate);
+        if (!fresh || !CanOfferUserArrival()) return false;
         routeLocatorIcon.IsVisible = false;
-        routeLocatorLabel.Text = !fresh
-            ? "Arrival not confirmed. Waiting for a fresh GPS fix."
-            : arrivalRoadGraph is null
-                ? "Arrival check waiting for mapped access data."
-            : decision.IsObservationHeld
-                ? $"GPS shifted. Holding arrival checks ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}); waiting for an accurate fix."
-            : decision.IsCandidate
-                ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the destination."
-            : decision.AccuracyMeters is not double accuracy || !double.IsFinite(accuracy)
-                ? "Arrival not confirmed. GPS accuracy is unavailable."
-            : accuracy > RescuAR.Navigation.Guidance.SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters
-                ? CanOfferUserArrival()
-                    ? $"GPS cannot confirm arrival (±{accuracy:0} m). If you are there, confirm your arrival below."
-                    : $"GPS too uncertain to confirm arrival (±{accuracy:0} m)."
-            : decision.Reason.StartsWith("A mapped major road", StringComparison.Ordinal)
-                ? "Arrival not confirmed. Check the mapped road crossing."
-                : $"Arrival not confirmed (~{decision.DistanceToDestinationMeters:0} m from the selected pin).";
+        routeLocatorPanel.VerticalOptions = LayoutOptions.Start;
+        routeLocatorPanel.Margin = new Thickness(8, 104, 8, 0);
+        routeLocatorLabel.FontSize = 16;
+        string detail = decision.IsCandidate && !decision.IsObservationHeld
+            ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the entrance."
+            : decision.Reason?.StartsWith("A mapped major road", StringComparison.Ordinal) == true
+                ? "Check the mapped road crossing before entering."
+                : "Look for the entrance. If you are there, confirm your arrival below.";
+        routeLocatorLabel.Text = $"You're near {destination.Name} (~{distance:0} m).\n{detail}";
         routeLocatorPanel.IsVisible = true;
         turnGuidancePanel.IsVisible = false;
         return true;
@@ -288,13 +283,30 @@ public partial class CameraPage
             reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
             DateTimeOffset.UtcNow, cached: true);
         // A distance summary survives brief AR/floor acquisition interruptions.
-        // It has no directional arrow and does not extend AR fix freshness.
+        // A direction-only cue additionally requires fresh GPS and camera pose;
+        // it never advances progress or constructs walking geometry.
         routeLocatorIcon.IsVisible = false;
+        routeLocatorIcon.Rotation = 0;
         routeLocatorLabel.Text = lastSafeZoneDecision.IsCandidate
             ? "Confirming destination proximity. Remain near the entrance."
             : fresh
                 ? $"Destination ~{reading!.Coordinate.DistanceTo(destination.Coordinate):0} m away. Use the map to check walking access."
                 : "Waiting for accurate GPS. Use the map to check walking access.";
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+        if (fresh && reading is not null && reading.AccuracyMeters is double accuracy &&
+            accuracy <= 30 && age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10) &&
+            HasCurrentRouteHeading() && frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
+            lastHeadingAlignment!.Value.SessionGeneration == frame.Generation.SessionGeneration &&
+            DestinationBearingCuePolicy.TryGetAngle(reading.Coordinate, destination.Coordinate,
+                activeMapToArYawDegrees, new Quaternion(frame.Pose.RotationX, frame.Pose.RotationY,
+                    frame.Pose.RotationZ, frame.Pose.RotationW), out double angle))
+        {
+            routeLocatorIcon.IsVisible = true;
+            routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
+            routeLocatorIcon.Rotation = angle;
+            routeLocatorLabel.Text = $"Destination direction • ~{reading.Coordinate.DistanceTo(destination.Coordinate):0} m. Check walking access.";
+        }
         routeLocatorPanel.IsVisible = true;
         turnGuidancePanel.IsVisible = false;
         return true;
