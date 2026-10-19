@@ -695,3 +695,146 @@ test. Record approximate elapsed times for each maneuver in the next report.
    depth/ground acquisition. Expect no stale-trip line, repeated replans,
    premature arrival, or black camera. Return actual results and both complete
    captures before further fixes that depend on device behavior.
+
+## 14:25/14:26 labeled captures: road alignment and offline shelter positioning
+
+The supplied findings were read before either archive. Both labeled ZIPs are
+complete, with verified start/end markers: MLD contains 4,342 application / 265
+navigation records and 11 images; A* contains 6,335 application / 300 navigation
+records and 13 images. All 24 images were inspected. Both installed APKs have
+SHA-256 `e7ba140131d9608dfe33b5bff849b8b903b0a75dd34a86ed1bb742591b739648`,
+source revision `524d748572c59ef7b421288b755653c326c744de`, diagnostics enabled,
+and the route visibility override disabled. The earlier shared guidance fixes
+are present in this revision and the current checkout.
+
+### Evidence and confirmed findings
+
+| Evidence | Finding |
+| --- | --- |
+| A* `logcat-001.txt:3284-3298`, 14:29:56 | Fresh CURRENT location, 16 m accuracy; offline A* selected a six-point, 278.6 m mapped route. |
+| MLD `logcat-001.txt:3742-3906`, 14:29:56-14:29:59 | Fresh CURRENT location, 13 m accuracy; MLD selected a six-point, 270.0 m route. Later replacements were hazard-triggered. |
+| A* `logcat-002.txt:1857` and `:2923`, 14:32:53 / 14:33:20 | Separate 1/3 heading candidates propose roughly 18-19 degrees of correction; no correction was applied during the capture. |
+| Both captures' ground/recovery records | A* replaces its ground reference 22 times by arrival; MLD 11 times. Ordinary moving-ground retirement happens around 15 m of walking. |
+| MLD `logcat-002.txt:7831-8001`, 14:34:51-14:34:55 | Two qualified proximity fixes confirm the destination vicinity at 28.2 m. Preserve this working arrival behavior. |
+| A* `logcat-003.txt:3278`, 14:36:48 | Arrival was confirmed by the user, with 36.3 m geographic distance and 25.5 m reported accuracy. This is separate from automatic GPS confirmation. |
+| A* `logcat-005.txt:120`, 14:42:01 | Arrival is still USER_REPORTED; the old route remains in memory, GPS polling is stopped, and rendering is disabled. The user confirmed they were checking this earlier trip, not starting a new trip. |
+| `ASTAR_3` through `ASTAR_9`, `ASTAR_12-13`; `MLD_4-5`, `MLD_9` | Cyan guidance visibly crosses walls, fronts of houses, or other objects. Other images show the line along the street; this is an alignment failure, not universal absence of geometry. |
+
+Many images are screenshots of video playback. The gallery clock is not the
+original navigation time; visible playback offsets and remaining distances
+allow approximate correlation only. Images have no EXIF acquisition times.
+GPS coordinates and destination labels in the logs are consent-redacted.
+These captures cannot establish a surveyed road/building offset or identify
+an exact geographic translation to apply to the dataset.
+
+The shared heading policy incorrectly treated a floor-anchor generation as
+a change of camera world frame. Every ordinary floor handoff restarted the
+movement baseline and discarded heading candidates. Camera poses remain in
+the same AR session world during these handoffs. Three independent movement
+windows often require more travel than the 15 m anchor retirement interval,
+so the error-correction path could repeatedly restart before completing.
+This is a confirmed source defect shared by both providers. Its precise share
+of the observed building intersections still requires a physical retest.
+
+The shelter-selection screen had a separate confirmed defect: it initialized
+the user's location to fixed city coordinates, used an unchecked OS last-known
+reading, and attempted only a one-second Low-accuracy update. Reentering that
+screen offline did not refresh positioning. Catalog download methods also
+carried location arguments/defaults and could apply distances for an earlier
+position after a newer GPS observation. Its map could draw a fixed fallback
+point labeled as the user's location. These defects are independent of A*.
+
+The active offline A* trip itself received 127 current GPS samples; the median
+reported accuracy was 7.5 m. The logs do not show an offline GPS acquisition
+failure during active navigation. Nor do they show a new A* request at 14:42.
+After arrival, hundreds of pointless anchor-rebase retries produced recovery
+messages for completed guidance. Clearing completed visual state fixes this
+misleading state without restarting the trip or changing arrival criteria.
+
+### Implementation and preserved boundaries
+
+- `HeadingRevalidationPolicy.cs` and `CameraPage.xaml.cs`: retain movement
+  evidence across ordinary floor-anchor swaps. New AR sessions and explicit
+  ARCore world corrections still invalidate movement evidence. Three qualified
+  consistent windows, accuracy limits, disagreement checks, expiry, bounded
+  correction sizes, and cooldowns remain required.
+- `ReliableLocationCache.cs` and `MauiLocationService.cs`: retain only actual
+  qualified readings in the shared location service and local preferences.
+  Cache display is limited to two minutes and 30 m reported accuracy, with the
+  original acquisition timestamp. Weak/older observations do not overwrite a
+  newer qualified reading. Current-location requests still ask the device for
+  a fresh fix; cached coordinates never acquire a new timestamp. Persistence
+  omits walking course/speed and is rate-limited. Access remains permission-gated.
+- `EvacuationCenterInfoViewModel.cs`: use that shared service online and offline,
+  reacquire positioning when the page appears, and recompute distances against
+  the latest eligible reading when catalog data is applied. No default user
+  coordinate remains. Unknown/expired location removes distance/nearest claims
+  and lists shelters by name. Last-known positions are labeled with their time
+  and accuracy; distance is explicitly a straight-line estimate. A foreground
+  display timer expires old distance claims and stops when the page leaves.
+- `EvacuationCenterInfoPage.xaml` / `.xaml.cs`: expose positioning status and
+  omit a user pin when positioning is unavailable. Cached pins are labeled
+  last-known. Missing/invalid live shelter coordinates are skipped instead of
+  replaced with a common city point; an all-invalid response preserves the
+  existing saved catalog.
+- `CameraPage.xaml.cs`: clear route visuals and suppress route-recovery work
+  after either arrival path, while retaining geographic progress/destination
+  for the arrival summary. A new destination selection still starts a new
+  versioned trip normally.
+
+The A* planner, MLD HTTP geometry, road graph/data, road-entry confirmation,
+PDR budgets, reverse/off-route reroute thresholds, hazard checks, destination
+persistence, automatic arrival policy, native bridge, flood renderer, and
+compiled startup scene configuration were not changed. A* reconstruction uses
+mapped source vertices; MLD requests full GeoJSON geometry; the local projector
+preserves intermediate route vertices. No building-avoidance geometry, road
+offset, guessed connector, or confidence override was introduced.
+
+### Build and manual field acceptance
+
+Android Release completed with **zero warnings and zero errors**:
+
+```powershell
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False
+```
+
+No additional automated suites, readiness/package test scripts, device
+installation, or UI interaction were run. Log/image analysis is investigation,
+not a behavioral test. Build log:
+`artifacts/field-test-20261019-road-alignment-offline/android-release-build.log`.
+
+Candidate: [RescuAR-20261019-Road-Alignment-Offline.apk](artifacts/field-test-20261019-road-alignment-offline/RescuAR-20261019-Road-Alignment-Offline.apk)
+(60,268,977 bytes). SHA-256:
+`184b9509ee0923e0e3d933187010a210308a8dc47e459f8d546852648a58daaa`.
+Source base: `8e026de65fec1101c1d2ea36f382b80282643ce9` plus these uncommitted
+changes. No Git commit was created.
+
+1. At the same safe street position, open the shelter list online and then
+   offline with Location still enabled. Check acquisition time/accuracy, the
+   same selected shelter, and comparable straight-line distances. Route distance
+   can legitimately differ between providers and from straight-line distance.
+2. After a qualified location is acquired, close/reopen the app offline within
+   two minutes. Expect an explicitly last-known position until a fresh fix
+   arrives. With no new usable fix, wait beyond two minutes: distance/nearest
+   claims and the user pin must disappear, with no jump to a default city point.
+   A stale cache must not start AR placement or confirm arrival.
+3. Start separate online MLD and new offline A* trips to the same chosen center.
+   Walk a safe straight section for at least 60 m, including several ground
+   handoffs. Expect consistent heading confirmations to survive floor swaps,
+   and bounded corrections when independent signals agree. Compare the cyan
+   line with visible street edges throughout, at a corner, and when facing back.
+4. Recheck reverse walking, leaving/rejoining the road, camera exit/reentry,
+   and a destination change. Expect current-position confirmed replans, stable
+   destination assignment, and no reroute from standing still or rotating the
+   phone. Fresh placement must still recover safely after actual tracking loss.
+5. Finish MLD by qualified proximity confirmation and separately exercise manual
+   arrival. Expect the arrival summary and completed guidance: no cyan route,
+   stale instructions, or repeated AR recovery warnings. Select a destination
+   again to start a new trip; confirm its cyan geometry recovers from fresh data.
+   Recheck flood depth and ground acquisition for regression.
+
+Return both complete captures and original navigation footage or timestamped
+screenshots. Physical road alignment, offline cache persistence on each phone,
+and UI layout remain unverified by the build. If building intersections persist,
+obtain a consented synchronized position trace and a reliable road reference
+before changing geographic data or applying an offset.

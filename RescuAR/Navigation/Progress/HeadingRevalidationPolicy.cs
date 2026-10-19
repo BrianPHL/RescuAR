@@ -73,7 +73,7 @@ public sealed class HeadingRevalidationPolicy
     private DateTimeOffset? lastCandidateUtc;
     private DateTimeOffset? lastObservationUtc;
     private long trackingSession;
-    private long groundReference;
+    private long worldFrame;
 
     public void Reset()
     {
@@ -84,7 +84,7 @@ public sealed class HeadingRevalidationPolicy
             null;
         lastObservationUtc = null;
         trackingSession = 0;
-        groundReference = 0;
+        worldFrame = 0;
 
         ResetCandidateEvidence();
     }
@@ -108,13 +108,16 @@ public sealed class HeadingRevalidationPolicy
         float arPositionZ,
         DateTimeOffset timestampUtc,
         long sessionGeneration = 0,
-        long groundGeneration = 0)
+        long worldFrameGeneration = 0)
     {
-        if (trackingSession != sessionGeneration || groundReference != groundGeneration)
+        // Camera positions are session-world coordinates. Replacing a floor
+        // anchor does not change that frame and must not erase walking windows.
+        // A genuine world correction or a new session still invalidates them.
+        if (trackingSession != sessionGeneration || worldFrame != worldFrameGeneration)
         {
             Reset();
             trackingSession = sessionGeneration;
-            groundReference = groundGeneration;
+            worldFrame = worldFrameGeneration;
         }
         if (lastObservationUtc.HasValue && timestampUtc <= lastObservationUtc.Value)
             return CreateDecision(HeadingRevalidationDisposition.Unavailable,

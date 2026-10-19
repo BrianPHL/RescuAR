@@ -1187,6 +1187,12 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshArTrackingStatusBanner()
         {
+            if (safeZoneConfirmed)
+            {
+                arTrackingStatusBanner.IsVisible = false;
+                ARCameraSpatialController.SetRouteRenderingEnabled(false, "arrival already confirmed");
+                return;
+            }
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active &&
                 !cameraPipelineTerminalFailureVisible)
@@ -7599,6 +7605,16 @@ namespace RescuAR.App.Views.Camera
             StopRouteProgress(
                 userReported ? "arrival reported by user" : "destination vicinity confirmed");
 
+            ARRouteBridge.Clear();
+            _verifiedRouteWindowHoldPolicy.Reset();
+            lastArGuidanceConfidence = ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot.NotReady with
+            {
+                DisplayMessage = "Arrival confirmed — guidance completed"
+            };
+            ARCameraSpatialController.SetRouteRenderingEnabled(false, "arrival confirmed; guidance completed");
+            ARCameraSpatialController.SetRouteRecoveryRebasePending(false, "completed trip needs no route rebase");
+            anchorRecoveryInProgress = false;
+
             ResetTurnGuidance();
 
 #if ANDROID
@@ -9341,8 +9357,7 @@ namespace RescuAR.App.Views.Camera
                     spatial.Pose.PositionX,
                     spatial.Pose.PositionZ,
                     reading.Timestamp,
-                    spatial.Generation.SessionGeneration,
-                    spatial.Anchor.ReferenceGeneration);
+                    spatial.Generation.SessionGeneration);
 
             long headingLogTimestamp = Environment.TickCount64;
             if (decision.Disposition != lastLoggedHeadingDisposition ||
@@ -10822,7 +10837,15 @@ namespace RescuAR.App.Views.Camera
             long serviceReplacementGeneration =
                 _arCoreService.GroundAnchorReplacementGeneration;
 
-            if (serviceReplacementGeneration >
+            if (safeZoneConfirmed)
+            {
+                handledGroundAnchorReplacementGeneration = serviceReplacementGeneration;
+                anchorRecoveryInProgress = false;
+                activeGroundAnchorReplacementGeneration = -1;
+                ARCameraSpatialController.SetRouteRecoveryRebasePending(false,
+                    "arrival confirmed; completed guidance has no geometry to rebase");
+            }
+            else if (serviceReplacementGeneration >
                 handledGroundAnchorReplacementGeneration)
             {
                 if (!anchorRecoveryInProgress ||
@@ -10938,6 +10961,10 @@ namespace RescuAR.App.Views.Camera
 
             if (worldCorrectionRequest.IsPending)
             {
+                // Unlike an ordinary floor handoff, this changes the frame in
+                // which the walking displacement was measured. Reset before
+                // acknowledging the correction, including superseded requests.
+                lock (routeProgressFusionSync) _headingRevalidationPolicy.Reset();
                 ARRouteBridge.RouteSnapshot correctionRoute =
                     ARRouteBridge.Current;
 

@@ -6,6 +6,7 @@ using Mapsui.Nts;
 using Mapsui.Styles;
 using NetTopologySuite.Geometries;
 using RescuAR.App.ViewModels.Prepare;
+using RescuAR.Navigation.Models;
 
 namespace RescuAR.App.Views.Prepare
 {
@@ -23,7 +24,8 @@ namespace RescuAR.App.Views.Prepare
             {
                 vm.PropertyChanged += (s, e) =>
                 {
-                    if (e.PropertyName == nameof(EvacuationCenterInfoViewModel.SelectedCenter))
+                    if (e.PropertyName == nameof(EvacuationCenterInfoViewModel.SelectedCenter) ||
+                        e.PropertyName == nameof(EvacuationCenterInfoViewModel.LocationStatusDescription))
                     {
                         if (vm.SelectedCenter != null)
                         {
@@ -69,33 +71,35 @@ namespace RescuAR.App.Views.Prepare
                 map.Layers.Add(osmLayer);
 
                 // 2. Project Evacuation Shelter Coordinates
-                double shelterLat = center.Latitude != 0 ? center.Latitude : 14.6502;
-                double shelterLng = center.Longitude != 0 ? center.Longitude : 121.0944;
+                double shelterLat = center.Latitude;
+                double shelterLng = center.Longitude;
+                if (!new GeoCoordinate(shelterLat, shelterLng).IsValid ||
+                    (shelterLat == 0 && shelterLng == 0)) return map;
                 var (shelterX, shelterY) = Mapsui.Projections.SphericalMercator.FromLonLat(shelterLng, shelterLat);
                 var shelterPoint = new MPoint(shelterX, shelterY);
 
-                // 3. Project User Coordinates (fallback to Marikina center if GPS unavailable)
-                double userLat = ViewModel.UserLatitude != 0 ? ViewModel.UserLatitude : 14.6612;
-                double userLng = ViewModel.UserLongitude != 0 ? ViewModel.UserLongitude : 121.0963;
-                var (userX, userY) = Mapsui.Projections.SphericalMercator.FromLonLat(userLng, userLat);
-                var userPoint = new MPoint(userX, userY);
-
-                // 4. User Location Point (Vibrant Blue Marker)
-                var userFeature = new Mapsui.Layers.PointFeature(userPoint);
-                userFeature["Name"] = "Your Location";
-
-                var userLayer = new Mapsui.Layers.MemoryLayer
+                MPoint? userPoint = null;
+                if (ViewModel.HasUsableUserLocation)
                 {
-                    Name = "UserLocationPin",
-                    Features = new[] { userFeature },
-                    Style = new SymbolStyle
+                    var (userX, userY) = Mapsui.Projections.SphericalMercator.FromLonLat(
+                        ViewModel.UserLongitude, ViewModel.UserLatitude);
+                    userPoint = new MPoint(userX, userY);
+                    var userFeature = new Mapsui.Layers.PointFeature(userPoint);
+                    userFeature["Name"] = ViewModel.HasCurrentUserLocation ? "Your Location" : "Last known location";
+
+                    var userLayer = new Mapsui.Layers.MemoryLayer
                     {
-                        Fill = new Mapsui.Styles.Brush(Mapsui.Styles.Color.FromString("#0284C7")),
-                        Outline = new Pen(Mapsui.Styles.Color.White, 3),
-                        SymbolScale = 0.85
-                    }
-                };
-                map.Layers.Add(userLayer);
+                        Name = "UserLocationPin",
+                        Features = new[] { userFeature },
+                        Style = new SymbolStyle
+                        {
+                            Fill = new Mapsui.Styles.Brush(Mapsui.Styles.Color.FromString("#0284C7")),
+                            Outline = new Pen(Mapsui.Styles.Color.White, 3),
+                            SymbolScale = 0.85
+                        }
+                    };
+                    map.Layers.Add(userLayer);
+                }
 
                 // 5. Evacuation Center Point (RescuAR Teal Marker)
                 var shelterFeature = new Mapsui.Layers.PointFeature(shelterPoint);
@@ -115,7 +119,7 @@ namespace RescuAR.App.Views.Prepare
                 map.Layers.Add(shelterLayer);
 
                 // 6. Center and Zoom to frame both location pin points
-                CenterAndZoomToPins(map, userPoint, shelterPoint);
+                CenterAndZoomToPins(map, userPoint ?? shelterPoint, shelterPoint);
             }
             catch (Exception ex)
             {
@@ -163,12 +167,14 @@ namespace RescuAR.App.Views.Prepare
         {
             if (BindingContext is EvacuationCenterInfoViewModel vm && vm.SelectedCenter != null && EnlargedMapControl.Map != null)
             {
-                double shelterLat = vm.SelectedCenter.Latitude != 0 ? vm.SelectedCenter.Latitude : 14.6502;
-                double shelterLng = vm.SelectedCenter.Longitude != 0 ? vm.SelectedCenter.Longitude : 121.0944;
+                double shelterLat = vm.SelectedCenter.Latitude;
+                double shelterLng = vm.SelectedCenter.Longitude;
+                if (!new GeoCoordinate(shelterLat, shelterLng).IsValid ||
+                    (shelterLat == 0 && shelterLng == 0)) return;
                 var (sX, sY) = Mapsui.Projections.SphericalMercator.FromLonLat(shelterLng, shelterLat);
 
-                double uLat = vm.UserLatitude != 0 ? vm.UserLatitude : 14.6612;
-                double uLng = vm.UserLongitude != 0 ? vm.UserLongitude : 121.0963;
+                double uLat = vm.HasUsableUserLocation ? vm.UserLatitude : shelterLat;
+                double uLng = vm.HasUsableUserLocation ? vm.UserLongitude : shelterLng;
                 var (uX, uY) = Mapsui.Projections.SphericalMercator.FromLonLat(uLng, uLat);
 
                 CenterAndZoomToPins(EnlargedMapControl.Map, new MPoint(uX, uY), new MPoint(sX, sY));

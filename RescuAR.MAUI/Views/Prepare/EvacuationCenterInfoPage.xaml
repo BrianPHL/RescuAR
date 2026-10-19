@@ -57,6 +57,7 @@
                             <VerticalStackLayout Grid.Column="0" Spacing="2">
                                 <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
                                 <Label Text="{Binding ShelterSectionSubtitle}" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                                <Label Text="{Binding LocationStatusDescription}" TextColor="#475569" FontSize="12" />
                             </VerticalStackLayout>
                             <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
                                     Command="{Binding NavigateToMapCommand}" />

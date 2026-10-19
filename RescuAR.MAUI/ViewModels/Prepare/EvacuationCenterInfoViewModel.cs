@@ -5,6 +5,7 @@ using Android.Util;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -14,10 +15,13 @@ using Microsoft.Maui.Devices.Sensors;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Storage;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Navigation;
+using RescuAR.MAUI.Services.Location;
+using GeoCoordinate = RescuAR.Navigation.Models.GeoCoordinate;
 using RescuAR.Services;
 
 namespace RescuAR.App.ViewModels.Prepare;
@@ -195,8 +199,20 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 {
     private const string MldLogTag = "RescuAR-MLD";
     private readonly List<EvacuationCenterItem> _masterCentersList = new();
-    private double _userLat = 14.6612;
-    private double _userLng = 121.0963;
+    private readonly ILocationService _locationService;
+    private LocationReading? _selectionLocation;
+    private bool _locationWasCurrent;
+    private bool _locationRefreshInProgress;
+    private Microsoft.Maui.Dispatching.IDispatcherTimer? _locationExpiryTimer;
+    private double _userLat = double.NaN;
+    private double _userLng = double.NaN;
+
+    public bool HasUsableUserLocation => LocationReadingQuality.CanDisplay(_selectionLocation, DateTimeOffset.UtcNow);
+    public bool HasCurrentUserLocation => _locationWasCurrent &&
+        LocationReadingQuality.IsFresh(_selectionLocation, DateTimeOffset.UtcNow);
+
+    [ObservableProperty]
+    private string _locationStatusDescription = "Finding your location — distances are unavailable.";
 
     public ObservableCollection<EmergencyHotlineItem> Hotlines { get; } = new();
     public ObservableCollection<EvacuationCenterItem> EvacuationCenters { get; } = new();
@@ -254,11 +270,9 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public EvacuationCenterInfoViewModel()
     {
+        _locationService = RescuAR.MAUI.MauiProgram.Services.GetRequiredService<ILocationService>();
         InitializeCategoryFilters();
         LoadData();
-        _ = FetchHotlinesFromSupabaseAsync();
-        _ = FetchEvacuationCentersFromSupabaseAsync();
-        _ = FilterEvacuationCentersByGpsAsync();
     }
 
     partial void OnEmergencyTypeChanged(string value)
@@ -560,7 +574,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         return dt.ToString("MMM d, yyyy 'at' h:mm tt");
     }
 
-    private static EvacuationCenterItem CreateItemFromCached(CachedEvacuationCenterItem cached, Location userLoc)
+    private static EvacuationCenterItem CreateItemFromCached(CachedEvacuationCenterItem cached)
     {
         var item = new EvacuationCenterItem
         {
@@ -585,16 +599,6 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         };
 
         item.LoadBookmarkState();
-
-        if (item.Latitude != 0 && item.Longitude != 0)
-        {
-            var centerLoc = new Location(item.Latitude, item.Longitude);
-            double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
-            item.DistanceKm = distKm;
-            item.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
-            int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
-            item.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
-        }
 
         return item;
     }
@@ -622,21 +626,40 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         };
     }
 
-    private void RecalculateDistances(double userLat, double userLng)
+    private void RecalculateDistances()
     {
-        var userLoc = new Location(userLat, userLng);
+        bool usable = HasUsableUserLocation;
+        bool current = usable && HasCurrentUserLocation;
         foreach (var center in _masterCentersList)
         {
-            if (center.Latitude != 0 && center.Longitude != 0)
+            if (usable && new GeoCoordinate(center.Latitude, center.Longitude).IsValid &&
+                (center.Latitude != 0 || center.Longitude != 0))
             {
-                var centerLoc = new Location(center.Latitude, center.Longitude);
-                double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
+                double distKm = _selectionLocation!.Coordinate.DistanceTo(
+                    new GeoCoordinate(center.Latitude, center.Longitude)) / 1000.0;
                 center.DistanceKm = distKm;
-                center.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
-                int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
-                center.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
+                string distance = distKm < 1 ? $"{distKm * 1000:F0} meters" : $"{distKm:F1} km";
+                center.Distance = $"{(current ? "" : "About ")}{distance} away";
+                center.DetailedDistanceString = $"{distance} in a straight line; walking distance may be longer";
+            }
+            else
+            {
+                center.DistanceKm = double.PositiveInfinity;
+                center.Distance = "Distance unavailable";
+                center.DetailedDistanceString = "A recent location is needed to estimate distance";
             }
         }
+        LocationStatusDescription = usable
+            ? $"{(current ? "Location" : "Last known location")} at {_selectionLocation!.Timestamp.ToLocalTime():h:mm:ss tt} " +
+              $"(±{_selectionLocation.AccuracyMeters:F0} m). Distances are straight-line estimates."
+            : "Location unavailable — keep Location enabled and refresh. Shelters are listed by name.";
+        OnPropertyChanged(nameof(HasUsableUserLocation));
+        OnPropertyChanged(nameof(HasCurrentUserLocation));
+        OnPropertyChanged(nameof(UserLatitude));
+        OnPropertyChanged(nameof(UserLongitude));
+        UpdateOfflineStatusInfo();
+        if (!usable) ShelterSectionSubtitle = "Location unavailable • Listed by name";
+        else if (!current) ShelterSectionSubtitle = "Distances from last known position";
         ApplyFilterAndSorting();
     }
 
@@ -645,11 +668,10 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         var cached = CacheService.LoadEvacuationCenters();
         if (cached != null && cached.Centers != null && cached.Centers.Count > 0)
         {
-            var userLoc = new Location(_userLat, _userLng);
             _masterCentersList.Clear();
             foreach (var c in cached.Centers)
             {
-                _masterCentersList.Add(CreateItemFromCached(c, userLoc));
+                _masterCentersList.Add(CreateItemFromCached(c));
             }
 
             if (cached.Hotlines != null && cached.Hotlines.Count > 0)
@@ -674,7 +696,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             LastSuccessfulUpdate = cached.LastUpdatedUtc;
             IsOfflineData = !IsConnectedToInternet();
             UpdateOfflineStatusInfo();
-            ApplyFilterAndSorting();
+            RecalculateDistances();
         }
         else
         {
@@ -684,12 +706,19 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             LastSuccessfulUpdate = CacheService.GetLastUpdatedTime();
             IsOfflineData = !IsConnectedToInternet();
             UpdateOfflineStatusInfo();
-            ApplyFilterAndSorting();
+            RecalculateDistances();
         }
     }
 
     public void OnAppearing()
     {
+        if (_locationExpiryTimer is null && Application.Current?.Dispatcher is { } dispatcher)
+        {
+            _locationExpiryTimer = dispatcher.CreateTimer();
+            _locationExpiryTimer.Interval = TimeSpan.FromSeconds(10);
+            _locationExpiryTimer.Tick += (_, _) => RecalculateDistances();
+        }
+        _locationExpiryTimer?.Start();
         if (!_isConnectivitySubscribed)
         {
             try
@@ -700,19 +729,12 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             catch { }
         }
 
-        if (IsConnectedToInternet())
-        {
-            _ = RefreshDataAsync();
-        }
-        else
-        {
-            IsOfflineData = true;
-            UpdateOfflineStatusInfo();
-        }
+        _ = RefreshDataAsync();
     }
 
     public void OnDisappearing()
     {
+        _locationExpiryTimer?.Stop();
         if (_isConnectivitySubscribed)
         {
             try
@@ -736,7 +758,8 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             else
             {
                 IsOfflineData = true;
-                UpdateOfflineStatusInfo();
+                RecalculateDistances();
+                await FilterEvacuationCentersByGpsAsync();
             }
         });
     }
@@ -758,30 +781,30 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public async Task RefreshDataAsync()
     {
+        Task locationRefresh = FilterEvacuationCentersByGpsAsync();
         if (!IsConnectedToInternet())
         {
             IsOfflineData = true;
             UpdateOfflineStatusInfo();
-            RecalculateDistances(_userLat, _userLng);
+            await locationRefresh;
+            RecalculateDistances();
             return;
         }
 
         await Task.WhenAll(
+            locationRefresh,
             FetchHotlinesFromSupabaseAsync(),
-            FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng)
+            FetchEvacuationCentersFromSupabaseAsync()
         );
     }
 
-    public async Task FetchEvacuationCentersFromSupabaseAsync(double userLat = 14.6612, double userLng = 121.0963)
+    public async Task FetchEvacuationCentersFromSupabaseAsync()
     {
-        _userLat = userLat;
-        _userLng = userLng;
-
         if (!IsConnectedToInternet())
         {
             IsOfflineData = true;
             UpdateOfflineStatusInfo();
-            RecalculateDistances(_userLat, _userLng);
+            RecalculateDistances();
             return;
         }
 
@@ -799,19 +822,14 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 #if ANDROID
                     Android.Util.Log.Info(MldLogTag, $"Fetched {response.Models.Count} evacuation centers from Supabase.");
 #endif
-                    var userLoc = new Location(userLat, userLng);
                     var updatedList = new List<EvacuationCenterItem>();
 
                     foreach (var model in response.Models)
                     {
-                        double.TryParse(model.Latitude, out var lat);
-                        double.TryParse(model.Longitude, out var lng);
-
-                        if (lat == 0 && lng == 0)
-                        {
-                            lat = 14.6502;
-                            lng = 121.0944;
-                        }
+                        if (!double.TryParse(model.Latitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
+                            !double.TryParse(model.Longitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lng) ||
+                            !new GeoCoordinate(lat, lng).IsValid || (lat == 0 && lng == 0))
+                            continue;
 
                         var facilitiesList = ParseFacilities(model.Facilities);
                         string resolvedImage = (model.ImageUrl ?? string.Empty).Trim();
@@ -838,18 +856,19 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
                         item.LoadBookmarkState();
 
-                        if (lat != 0 && lng != 0)
-                        {
-                            var centerLoc = new Location(lat, lng);
-                            double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
-                            item.DistanceKm = distKm;
-                            item.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
-                            int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
-                            item.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
-                        }
-
                         updatedList.Add(item);
                     }
+
+                    if (updatedList.Count == 0)
+                    {
+                        AndroidLog.Warn(MldLogTag,
+                            "Live shelter catalog contained no valid coordinates; saved catalog retained.");
+                        IsOfflineData = true;
+                        RecalculateDistances();
+                        return;
+                    }
+                    AndroidLog.Info(MldLogTag,
+                        $"SHELTER_CATALOG source=LIVE; received={response.Models.Count}; valid={updatedList.Count}.");
 
                     // Save latest successfully loaded data to local storage (Requirements 1, 3, 4)
                     var now = DateTimeOffset.UtcNow;
@@ -871,7 +890,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                         LastSuccessfulUpdate = now;
                         IsOfflineData = false;
                         UpdateOfflineStatusInfo();
-                        ApplyFilterAndSorting();
+                        RecalculateDistances();
                     });
                 }
             }
@@ -959,41 +978,51 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     private async Task FilterEvacuationCentersByGpsAsync()
     {
+        if (_locationRefreshInProgress) return;
+        _locationRefreshInProgress = true;
         try
         {
-            var location = await Geolocation.Default.GetLastKnownLocationAsync();
-            if (location != null)
-            {
-                _userLat = location.Latitude;
-                _userLng = location.Longitude;
-                RecalculateDistances(_userLat, _userLng);
-                _ = FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng);
-            }
+            // The same singleton retains qualified Camera readings. Internet
+            // connectivity controls catalog downloads, not device positioning.
+            var cached = await _locationService.GetLastKnownLocationAsync();
+            if (LocationReadingQuality.CanDisplay(cached, DateTimeOffset.UtcNow))
+                await ApplySelectionLocationAsync(cached!, current: false);
 
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var freshLoc = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Low, TimeSpan.FromSeconds(1)));
-                    if (freshLoc != null)
-                    {
-                        _userLat = freshLoc.Latitude;
-                        _userLng = freshLoc.Longitude;
-                        MainThread.BeginInvokeOnMainThread(() =>
-                        {
-                            RecalculateDistances(_userLat, _userLng);
-                            _ = FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng);
-                        });
-                    }
-                }
-                catch { }
-            });
+            var fresh = await _locationService.GetCurrentLocationAsync();
+            if (LocationReadingQuality.IsFresh(fresh, DateTimeOffset.UtcNow) &&
+                LocationReadingQuality.CanDisplay(fresh, DateTimeOffset.UtcNow))
+                await ApplySelectionLocationAsync(fresh!, current: true);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"GPS location error: {ex.Message}");
+            AndroidLog.Warn("RescuAR-LocationSelection",
+                "Shelter location refresh unavailable; retaining only eligible last-known positioning: " +
+                DiagnosticPrivacyPolicy.FormatException(ex));
+        }
+        finally
+        {
+            await MainThread.InvokeOnMainThreadAsync(RecalculateDistances);
+            _locationRefreshInProgress = false;
         }
     }
+
+    private Task ApplySelectionLocationAsync(LocationReading reading, bool current) =>
+        MainThread.InvokeOnMainThreadAsync(() =>
+        {
+            if (_selectionLocation is null || reading.Timestamp > _selectionLocation.Timestamp ||
+                (current && reading.Timestamp == _selectionLocation.Timestamp))
+            {
+                _selectionLocation = reading;
+                _locationWasCurrent = current;
+                _userLat = reading.Coordinate.Latitude;
+                _userLng = reading.Coordinate.Longitude;
+                AndroidLog.Info("RescuAR-LocationSelection", $"SHELTER_LOCATION source={(current ? "CURRENT" : "LAST_RELIABLE")}; " +
+                    $"accuracy={reading.AccuracyMeters:F1}m; ageSec={(DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds:F1}; " +
+                    $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(_userLat, _userLng)}; " +
+                    "distances=straight-line; route-start and arrival freshness gates remain separate.");
+            }
+            RecalculateDistances();
+        });
 
     private void ApplyFilterAndSorting()
     {
@@ -1004,7 +1033,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         if (string.Equals(activeFilter, "Within 5 km", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(activeFilter, "Within 5 km radius", StringComparison.OrdinalIgnoreCase))
         {
-            filtered = filtered.Where(c => c.DistanceKm <= 5.0);
+            if (HasUsableUserLocation) filtered = filtered.Where(c => c.DistanceKm <= 5.0);
         }
         else if (string.Equals(activeFilter, "Flood-Safe All", StringComparison.OrdinalIgnoreCase) ||
             (!string.IsNullOrWhiteSpace(EmergencyType) && EmergencyType.ToLowerInvariant().Contains("flood")))
@@ -1031,13 +1060,15 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 c.HeadOfficer.ToLowerInvariant().Contains(query));
         }
 
-        // ALWAYS sort by distance ascending so the VERY FIRST ITEM is the NEAREST evacuation center!
-        var sortedList = filtered.OrderBy(c => c.DistanceKm).ToList();
+        var sortedList = HasUsableUserLocation
+            ? filtered.OrderBy(c => c.DistanceKm).ToList()
+            : filtered.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
         // Mark first element as Nearest Shelter
+        foreach (var center in _masterCentersList) center.IsNearestShelter = false;
         for (int i = 0; i < sortedList.Count; i++)
         {
-            sortedList[i].IsNearestShelter = (i == 0);
+            sortedList[i].IsNearestShelter = HasCurrentUserLocation && i == 0;
         }
 
         MainThread.BeginInvokeOnMainThread(() =>
