@@ -208,7 +208,7 @@ public partial class CameraPage
             ARRouteRenderer.ShowRoadDiagnostics(lines, frame.Pose.PositionX, frame.Pose.PositionZ,
                 frame.Anchor.ReferenceGeneration, frame.Generation.SessionGeneration);
             developerRoadLinesButton.Text = "DEV: Hide GeoJSON roads";
-            turnGuidancePanel.IsVisible = false;
+            SetTurnGuidanceVisible(false);
             routeLocatorPanel.IsVisible = false;
             navigationAwarenessSheet.IsVisible = false;
             RefreshArTrackingStatusBanner();

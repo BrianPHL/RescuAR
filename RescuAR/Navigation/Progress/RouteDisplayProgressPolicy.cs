@@ -1,5 +1,6 @@
 using System;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Projection;
 
 namespace RescuAR.Navigation.Progress;
 
@@ -16,6 +17,18 @@ public sealed class RouteDisplayProgressPolicy
     private DateTimeOffset? observedAt;
     private DisplayPosition gpsPosition;
     private double committedAtGps;
+    private RegistrationObservation? registration;
+    private RegistrationObservation? pendingRegistration;
+    private DateTimeOffset? registrationSupportedAt;
+    private DateTimeOffset? lastRegistrationObservation;
+    public RegistrationDecision LastRegistrationDecision { get; private set; }
+
+    private readonly record struct RegistrationObservation(GeoCoordinate Coordinate,
+        double Accuracy, DateTimeOffset At, RouteBacktrackingPolicy.TrackedMotion Motion);
+    public readonly record struct RegistrationDecision(string State, double InnovationMeters, bool Changed);
+    public readonly record struct RegisteredReference(GeoCoordinate Coordinate, float WorldX, float WorldZ,
+        long Session, long TrackingEpoch, long WorldFrame, double YawDegrees, DateTimeOffset RegisteredAt,
+        DateTimeOffset SupportedAt);
 
     public void Reset()
     {
@@ -23,6 +36,9 @@ public sealed class RouteDisplayProgressPolicy
         observedAt = null;
         gpsPosition = default;
         committedAtGps = 0;
+        registration = pendingRegistration = null;
+        registrationSupportedAt = lastRegistrationObservation = null;
+        LastRegistrationDecision = default;
     }
 
     public void ObserveGps(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
@@ -57,6 +73,94 @@ public sealed class RouteDisplayProgressPolicy
             gpsPosition.AlignmentCoordinate.Longitude + position.RoadCoordinate.Longitude - gpsPosition.RoadCoordinate.Longitude) };
         return position.AlignmentCoordinate.IsValid;
     }
+
+    public bool TryGetObservedPosition(RouteResult route, DateTimeOffset now, out DisplayPosition position)
+    {
+        position = gpsPosition;
+        return ReferenceEquals(currentRoute, route) && observedAt.HasValue && now >= observedAt.Value &&
+            now - observedAt.Value <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds);
+    }
+
+    /// <summary>GPS eligibility and permission to move the world registration are separate decisions.</summary>
+    public RegistrationDecision ObserveRegistration(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
+        DateTimeOffset at, DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion? acquisitionMotion)
+    {
+        if (!ReferenceEquals(currentRoute, route) || !TryResolveGps(route, update, out _) ||
+            now < at || now - at > TimeSpan.FromSeconds(3) || acquisitionMotion is not { IsValid: true } motion)
+            return LastRegistrationDecision = new("UNPAIRED_OR_UNQUALIFIED", double.NaN, false);
+        if (lastRegistrationObservation.HasValue && at <= lastRegistrationObservation.Value)
+            return LastRegistrationDecision;
+        lastRegistrationObservation = at;
+        var next = new RegistrationObservation(update.GpsCoordinate, update.AccuracyMeters!.Value, at, motion);
+        bool continuous = registration is { } previous && SameFrame(previous.Motion, motion) &&
+            registrationSupportedAt.HasValue && at >= registrationSupportedAt.Value &&
+            at - registrationSupportedAt.Value <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds);
+        if (!continuous)
+        {
+            registration = next;
+            pendingRegistration = null;
+            registrationSupportedAt = at;
+            return LastRegistrationDecision = new("ACQUISITION_SEEDED", 0, true);
+        }
+
+        double innovation = RegistrationResidual(registration!.Value, next);
+        if (innovation <= RoutePositionObservationPolicy.MotionAllowanceMeters)
+        {
+            // Keep the same transform. A fresh consistent fix renews support,
+            // rather than attaching a stationary road to the current camera.
+            pendingRegistration = null;
+            registrationSupportedAt = at;
+            return LastRegistrationDecision = new("REFERENCE_SUPPORTED", innovation, false);
+        }
+        bool correctionConfirmed = pendingRegistration is { } candidate && SameFrame(candidate.Motion, motion) &&
+            at - candidate.At >= TimeSpan.FromSeconds(1) &&
+            at - candidate.At <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) &&
+            RegistrationResidual(candidate, next) <= RoutePositionObservationPolicy.MotionAllowanceMeters;
+        if (correctionConfirmed)
+        {
+            registration = next;
+            pendingRegistration = null;
+            registrationSupportedAt = at;
+            return LastRegistrationDecision = new("COHERENT_CORRECTION", innovation, true);
+        }
+
+        pendingRegistration = next;
+        // An uncertainty-overlapping fix supports retaining the old reference,
+        // but cannot independently establish a different physical placement.
+        if (innovation <= registration.Value.Accuracy + next.Accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
+            registrationSupportedAt = at;
+        return LastRegistrationDecision = new("CORRECTION_AWAITING_EVIDENCE", innovation, false);
+    }
+
+    public bool TryGetRegisteredReference(RouteResult route, GeoCoordinate coordinate, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion current, out RegisteredReference reference)
+    {
+        reference = default;
+        if (!ReferenceEquals(currentRoute, route) || registration is not { } retained ||
+            !coordinate.IsValid || !SameFrame(retained.Motion, current) || !registrationSupportedAt.HasValue ||
+            now < registrationSupportedAt.Value ||
+            now - registrationSupportedAt.Value > TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds)) return false;
+        var offset = Offset(retained.Coordinate, coordinate, retained.Motion.YawDegrees);
+        float x = retained.Motion.X + (float)offset.X, z = retained.Motion.Z + (float)offset.Z;
+        if (!float.IsFinite(x) || !float.IsFinite(z)) return false;
+        reference = new(coordinate, x, z, current.Session, current.TrackingEpoch, current.WorldFrame,
+            retained.Motion.YawDegrees, retained.At, registrationSupportedAt.Value);
+        return true;
+    }
+
+    private static bool SameFrame(RouteBacktrackingPolicy.TrackedMotion a, RouteBacktrackingPolicy.TrackedMotion b) =>
+        a.IsContinuousWith(b) && Math.Abs(Math.IEEERemainder(a.YawDegrees - b.YawDegrees, 360)) < 0.001;
+
+    private static double RegistrationResidual(RegistrationObservation from, RegistrationObservation to)
+    {
+        var offset = Offset(from.Coordinate, to.Coordinate, to.Motion.YawDegrees);
+        return Math.Sqrt(Math.Pow(to.Motion.X - from.Motion.X - offset.X, 2) +
+            Math.Pow(to.Motion.Z - from.Motion.Z - offset.Z, 2));
+    }
+
+    private static (double X, double Z) Offset(GeoCoordinate from, GeoCoordinate to, double yaw) =>
+        MapToArCoordinates.Rotate((to.Longitude - from.Longitude) * Math.PI / 180 * 6371008.8 *
+            Math.Cos(from.Latitude * Math.PI / 180), (to.Latitude - from.Latitude) * Math.PI / 180 * 6371008.8, yaw);
 
     public static bool TryResolveGps(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
         out DisplayPosition position)

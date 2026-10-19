@@ -1224,3 +1224,123 @@ Return actual results and complete captures for both providers before further
 behavior-dependent corrections. Absolute road/GPS translation and unobserved
 world-frame changes still need independent reference and new capture evidence;
 unit, build, and package checks cannot establish physical alignment.
+
+## 21:19 capture: retained registration and selected-destination notices
+
+The approved investigation found changing AR registration while A* retained the
+same geographic route. Between 21:31:46 and 21:31:50, a fresh accepted GPS pair
+changed the lateral registration by 7.72 m despite unchanged route segment,
+heading, tracking epoch, and reference. PDR also moved the published world line
+between fixes. The selected MLD destination was detected, but isolated qualifying
+arrival fixes were followed by weak/conflicting positions; no automatic arrival
+was confirmed. The actual near-message panel was missing from diagnostics.
+
+### Implemented correction
+
+- GPS registration and continuous-motion comparison now use the historical
+  acquisition-time pose. An unavailable pair cannot silently substitute the
+  current camera or renew verified display support. Rendering still uses the
+  current camera and existing freshness checks.
+- `RouteDisplayProgressPolicy` retains a geographic-to-world reference separate
+  from physical map match and fused trip progress. A fresh navigation fix does
+  not automatically relocate the road. Independent observations must agree with
+  tracked motion before a candidate correction replaces the reference. This
+  reuses the existing 2 m motion allowance and bounded confirmation timing;
+  navigation accuracy thresholds were not relaxed.
+- Fresh observations whose uncertainty overlaps the reference can support its
+  continued use while a proposed correction waits. Last supporting GPS evidence
+  still expires after eight seconds. A stable reference can persist through a
+  longer walk when qualifying fresh observations continue to support it.
+- Normal GPS, PDR, and floor-recovery publications use that same registered world
+  reference. PDR clips/advances the mapped window without attaching its lateral
+  placement to each new camera position. Floor renewal changes local coordinates
+  while preserving world geometry. Session, epoch, known world, route, or yaw
+  changes cannot reuse the old registration. No unmeasured world transform is
+  transported across an actual frame change.
+- The shared publisher records the qualified reference and acquisition sample
+  explicitly. The existing synthetic indoor diagnostic path remains separate.
+  Road coordinates, graph routing, mapped turns, destination ownership, hazard
+  checks, heading recovery, ground acquisition, and flood rendering are preserved.
+
+Selected-destination notice eligibility now has one common priority check at
+every turn-card visibility writer. An eligible near message cannot be immediately
+overridden by a queued turn-card update. Its layout is no longer reset to the
+ordinary locator layout before being restored on each refresh. Uncertain fixes
+produce explicit unconfirmed wording. The notice disappears when its existing
+eligibility/freshness conditions cease to hold; it does not manufacture a nearby
+position from PDR or hold contradictory coordinates as proof of arrival.
+
+Automatic arrival remains two distinct qualifying fixes, at least three seconds
+apart, within the selected radius, accuracy at most 25 m, with the existing age,
+gap, crossing, and destination-version requirements. Manual arrival remains
+separate. No safe-zone radius, dataset, or automatic confirmation filter changed.
+
+Diagnostic events now include near-panel visibility/category, source fix,
+eligibility, age, layout, held-position state, and arrival decision reason without
+logging destination labels. Registration events distinguish raw GPS-to-road
+displacement from the retained world reference and report pending versus accepted
+corrections. Absolute-location consent controls remain intact.
+
+### Verification and candidate
+
+**579 focused alignment-recovery regression checks passed.** New cases exercise
+both provider identities with the captured 21:31:46/50 and 21:30:47/55 pairs,
+acquisition/receipt separation, lateral walking, real registered publication,
+floor rebasing, missing/duplicate observations, coherent correction of an initial
+bias, route/session/epoch/world/yaw invalidation, sustained fresh support beyond
+60 m, reverse walking, and the eight-second outage boundary. Arrival fixtures
+replay MLD's unconfirmed sequence and A*'s confirmed pair for both providers.
+The selected run retains existing heading, routing, arrival, hazard, ground/flood,
+startup-scene, and sensor-lifetime checks. No new testing dependency was added.
+
+The initial regression compile found an interface-property mismatch in the new
+fixture (`Name` instead of `AlgorithmName`). One correction and retry passed.
+Final review added the second captured boundary pair and reverse walking; the
+expanded run passed. Those last changes affect tests only, not the built APK.
+
+```powershell
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj --no-restore -p:GenerateEvergineContent=False -- --alignment-recovery
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False -p:RescuArDiagnosticBuild=true -p:AndroidPackageFormats=apk
+```
+
+Android Release passed with **zero warnings and zero errors**. Release-readiness,
+native-bridge checks, and equivalent manifest/ABI/build-profile package assertions
+passed. As in the previous candidate, the standard package script was not run;
+artifact-local assertions used installed `aapt`. The unchanged stripped ARM64
+bridge retains 16 KiB load alignment. Readelf used NDK 30; provenance toolchain
+fields describe pinned configuration, not a native rebuild.
+
+Evidence: `artifacts/field-test-20261019-registration/`, including regression and
+build logs, release readiness, native provenance, package checks, and source
+hashes. Candidate: [RescuAR-20261019-Registration.apk](artifacts/field-test-20261019-registration/RescuAR-20261019-Registration.apk)
+(60,748,343 bytes). SHA-256:
+`b3a0f0c638a5219c2ecb79b61249b69aaf650c9e6d2380b6016c418706265db3`.
+Source base: `f9d6c8a` plus these uncommitted changes. Diagnostics are enabled;
+the route visibility override is disabled. No commit, device installation,
+application/UI interaction, integration test, or E2E test was performed.
+
+### Required phone retest and remaining limits
+
+1. Start new comparable A* and MLD trips on the same independently located
+   corridor. Record synchronized footage and capture markers at 5/10/20 m,
+   including a centered view and any displaced view. Expect a stationary mapped
+   road during ordinary GPS jitter and sideways camera movement, and qualified
+   corrections to be explicitly logged. Measure lateral and angular error
+   separately; proposed acceptance remains at most 2 m and 5 degrees, with
+   reference uncertainty recorded.
+2. Continue beyond 60 m, through safe covered frontage and into open conditions.
+   Include turns, reverse walking, floor renewal, and camera exit/reentry. Expect
+   valid mapped guidance to persist or recover under its existing safeguards,
+   without a sideways reset on every step or accepted GPS update.
+3. Approach each selected destination. Expect the eligible near message to keep
+   priority over the turn card. Weak/conflicting GPS must explain that arrival is
+   unconfirmed; only qualifying observations or explicit manual confirmation
+   complete guidance. Recheck hazard warnings and a short indoor ground/flood
+   session. Return actual results and complete captures for both providers.
+
+This candidate fixes the demonstrated registration and notice-priority mechanisms.
+It does not establish surveyed road/pin accuracy or resolve the independent
+heading discrepancy from the capture. A persistent coherent GPS bias can still
+be accepted as a qualified correction. Unobserved frame changes, absolute map/GPS
+bias, MLD server dataset identity, device timing, and final text layout remain
+field acceptance questions. Do not infer those results from these local checks.

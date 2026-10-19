@@ -16,11 +16,11 @@ public partial class CameraPage
     private volatile bool positionObservationHeld;
 
     private ARRoutePlacement CaptureRoutePlacement(ARCameraPoseBridge.SpatialSnapshot frame,
-        string source, bool retainedObservation)
+        string source, bool retainedObservation, DateTimeOffset? capturedObservation = null)
     {
         DateTimeOffset? observation;
         lock (routeProgressFusionSync)
-            observation = retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.Timestamp;
+            observation = capturedObservation ?? (retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.Timestamp);
         var observed = ARCameraPoseBridge.SpatialSnapshot.Unavailable;
         long skew = long.MaxValue;
         bool paired = observation.HasValue && ARCameraPoseBridge.TryGetObservationFrame(observation.Value,
@@ -70,6 +70,17 @@ public partial class CameraPage
         return motion.IsValid ? motion : null;
     }
 
+    private RouteBacktrackingPolicy.TrackedMotion? GetAcquisitionMotion(LocationReading reading)
+    {
+        if (GetTrackedRouteMotion() is not { } current ||
+            !ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+                Environment.TickCount64, out var observed, out _)) return null;
+        var motion = new RouteBacktrackingPolicy.TrackedMotion(observed.Pose.PositionX, observed.Pose.PositionZ,
+            activeMapToArYawDegrees, observed.Generation.SessionGeneration, observed.Anchor.ReferenceGeneration,
+            observed.TrackingEpoch, observed.WorldFrame);
+        return motion.IsContinuousWith(current) ? motion : null;
+    }
+
     // The caller first applies the existing fusion confidence/identity gates.
     private void ObserveVerifiedGpsPosition(RouteResult route,
         RouteProgressTracker.RouteProgressUpdate update, LocationReading reading)
@@ -80,15 +91,46 @@ public partial class CameraPage
                 (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
                  reading.Timestamp <= previous.At) ||
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
+            if (GetAcquisitionMotion(reading) is not { } motion) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
-            TimeSpan age = DateTimeOffset.UtcNow - reading.Timestamp;
-            var motion = age >= TimeSpan.Zero && age <= TimeSpan.FromSeconds(3) ? GetTrackedRouteMotion() : null;
+            var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.Timestamp,
+                DateTimeOffset.UtcNow, motion);
+            LogDetailedDebug(ProgressLogTag,
+                $"NAV_REGISTRATION_DECISION sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                $"trip={activeDestinationVersion}; state={registration.State}; innovation={registration.InnovationMeters:F3}m; " +
+                $"changed={registration.Changed}; session={motion.Session}; epoch={motion.TrackingEpoch}; world={motion.WorldFrame}.");
             positionObservationPolicy.Seed(route, reading.Coordinate, reading.AccuracyMeters,
                 reading.Timestamp, DateTimeOffset.UtcNow, motion);
             LogPositionInnovation(verifiedPosition, route, reading, motion);
             verifiedPosition = new(route, reading.Timestamp, reading.AccuracyMeters!.Value,
                 update.CommittedProgressMeters, motion, reading.Coordinate);
         }
+    }
+
+    private bool PublishRegisteredRouteWindow(RouteResult route, RouteDisplayProgressPolicy.DisplayPosition position,
+        ARCameraPoseBridge.SpatialSnapshot frame, string source)
+    {
+        lock (routeProgressFusionSync)
+        {
+            if (!ReferenceEquals(route, activeRoute) || GetTrackedRouteMotion() is not { } current ||
+                current.Session != frame.Generation.SessionGeneration || current.TrackingEpoch != frame.TrackingEpoch ||
+                current.WorldFrame != frame.WorldFrame || verifiedPosition is not { } verified ||
+                !ReferenceEquals(verified.Route, route) ||
+                !_routeDisplayProgressPolicy.TryGetRegisteredReference(route, position.RoadCoordinate,
+                    DateTimeOffset.UtcNow, current, out var reference)) return false;
+            return _mldArIntegrationService.PublishProgressWindow(route, position.ProgressMeters,
+                position.RoadCoordinate, activeMapToArYawDegrees,
+                frame.Pose.PositionX - frame.Anchor.PositionX, frame.Pose.PositionZ - frame.Anchor.PositionZ,
+                arWindowMeters: GetCurrentArRouteVisualWindowMeters(), clearRouteOnFailure: false,
+                sourceSegmentIndex: position.SegmentIndex, userCoordinate: position.AlignmentCoordinate,
+                placement: CaptureRoutePlacement(frame, source, true, verified.At), registeredReference: reference);
+        }
+    }
+
+    private bool TryGetObservedDisplayPosition(RouteResult route, out RouteDisplayProgressPolicy.DisplayPosition position)
+    {
+        lock (routeProgressFusionSync)
+            return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
     }
 
     private bool TryGetBoundedDisplayPosition(RouteResult route, double committedProgress,
@@ -182,7 +224,7 @@ public partial class CameraPage
                 emergencyAdvisoryVisible || safeZoneConfirmed || lastSafeZoneDecision.IsCandidate) return;
             ApplyPrototypeTurnGuidance(guidance);
             turnDistanceLabel.Text = $"{guidance.RemainingRouteMeters:F0} m remaining · AR placement recovering";
-            turnGuidancePanel.IsVisible = true;
+            SetTurnGuidanceVisible(true);
         });
         return true;
     }

@@ -219,14 +219,31 @@ public sealed class MLDARIntegrationService
         bool clearRouteOnFailure = true,
         int sourceSegmentIndex = -1,
         GeoCoordinate? userCoordinate = null,
-        ARRoutePlacement placement = default)
+        ARRoutePlacement placement = default,
+        RouteDisplayProgressPolicy.RegisteredReference? registeredReference = null)
     {
         ArgumentNullException.ThrowIfNull(
             route);
         if (!IsCameraOffsetAcceptable(arOriginOffsetX, arOriginOffsetZ))
             return false;
-        float cameraOffsetX = arOriginOffsetX, cameraOffsetZ = arOriginOffsetZ;
-        if (userCoordinate.HasValue &&
+        if (registeredReference is { } retained)
+        {
+            if (!placement.IsAvailable || retained.Coordinate != snappedReference ||
+                retained.Session != placement.Generation.SessionGeneration ||
+                retained.TrackingEpoch != placement.TrackingEpoch || retained.WorldFrame != placement.WorldFrame ||
+                DateTimeOffset.UtcNow - retained.SupportedAt > TimeSpan.FromSeconds(
+                    RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds) ||
+                retained.SupportedAt > DateTimeOffset.UtcNow.AddSeconds(2) || retained.RegisteredAt > retained.SupportedAt ||
+                !double.IsFinite(retained.YawDegrees) ||
+                Math.Abs(Math.IEEERemainder(retained.YawDegrees - mapToArYawDegrees, 360)) >= 0.001 ||
+                !float.IsFinite(retained.WorldX) || !float.IsFinite(retained.WorldZ)) return false;
+            arOriginOffsetX = retained.WorldX - placement.AnchorX;
+            arOriginOffsetZ = retained.WorldZ - placement.AnchorZ;
+            placement = placement with { AlignmentSource = "QUALIFIED_ACQUISITION",
+                RegistrationSample = retained.RegisteredAt.ToUnixTimeMilliseconds(),
+                RegisteredWorldX = retained.WorldX, RegisteredWorldZ = retained.WorldZ };
+        }
+        else if (userCoordinate.HasValue &&
             !TryApplyGpsToRouteOffset(userCoordinate.Value, snappedReference,
                 mapToArYawDegrees, ref arOriginOffsetX, ref arOriginOffsetZ))
         {
@@ -237,8 +254,9 @@ public sealed class MLDARIntegrationService
         if (placement.IsAvailable)
         {
             var gpsOffset = userCoordinate.HasValue ? GeographicOffset(userCoordinate.Value, snappedReference) : (0.0, 0.0);
+            var rotatedOffset = MapToArCoordinates.Rotate(gpsOffset.Item1, gpsOffset.Item2, mapToArYawDegrees);
             placement = placement with { GpsToRoadEast = gpsOffset.Item1, GpsToRoadNorth = gpsOffset.Item2,
-                GpsToRoadX = arOriginOffsetX - cameraOffsetX, GpsToRoadZ = arOriginOffsetZ - cameraOffsetZ };
+                GpsToRoadX = (float)rotatedOffset.X, GpsToRoadZ = (float)rotatedOffset.Z };
         }
 
         bool published =

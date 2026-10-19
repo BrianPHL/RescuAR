@@ -1,0 +1,187 @@
+using RescuAR.AR;
+using RescuAR.Navigation.Guidance;
+using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Progress;
+using RescuAR.Navigation.Projection;
+using RescuAR.Navigation.Routing;
+
+internal static class ARRegistrationChecks
+{
+    private static GeoCoordinate C(double east, double north = 0) => new(
+        14.64 + north / 6371008.8 * 180 / Math.PI,
+        121.095 + east / (6371008.8 * Math.Cos(14.64 * Math.PI / 180)) * 180 / Math.PI);
+    private static RouteBacktrackingPolicy.TrackedMotion Motion(float x, float z, double yaw = -77.75) =>
+        new(x, z, yaw, 1, 82, 7, 0);
+    private static RouteResult Road(string provider, bool field = false)
+    {
+        var coordinates = field ? new[] { C(-182.659, 22.597), C(-105.393, 15.444), C(-89.019, 13.932), C(-4.071, 6.079) }
+            : new[] { C(0), C(120), C(120, 40) };
+        double d = 0;
+        var points = coordinates.Select((c, i) => { if (i > 0) d += coordinates[i - 1].DistanceTo(c); return new RoutePoint(c, d); }).ToArray();
+        return new(points, d, provider);
+    }
+    private static RouteProgressTracker.RouteProgressUpdate Fix(RouteResult route, GeoCoordinate coordinate, double accuracy = 8)
+    {
+        var tracker = new RouteProgressTracker(); tracker.SetRoute(route);
+        return tracker.Update(coordinate, accuracy);
+    }
+    private static void Observe(RouteDisplayProgressPolicy policy, RouteResult route,
+        RouteProgressTracker.RouteProgressUpdate fix, DateTimeOffset at, RouteBacktrackingPolicy.TrackedMotion motion)
+    {
+        policy.ObserveGps(route, fix, at);
+        policy.ObserveRegistration(route, fix, at, at.AddMilliseconds(600), motion);
+    }
+
+    public static void Run(Action<bool, string> check)
+    {
+        var previous = ARRenderGenerationBridge.Current;
+        bool accepting = ARRenderGenerationBridge.IsAcceptingFrames;
+        ARRenderGenerationBridge.Activate(new(1, 1, 1));
+        try
+        {
+            foreach (string provider in new[] { "AStar", "MLD (Railway OSRM)" })
+            {
+                FieldPair(check, provider);
+                CorrectionAndOwnership(check, provider);
+                Arrival(check, provider);
+            }
+        }
+        finally
+        {
+            ARRouteBridge.Clear();
+            if (accepting) ARRenderGenerationBridge.Activate(previous); else ARRenderGenerationBridge.Invalidate();
+        }
+    }
+
+    private static void FieldPair(Action<bool, string> check, string provider)
+    {
+        var route = Road(provider, true);
+        var at = DateTimeOffset.UtcNow.AddSeconds(-4);
+        var first = Fix(route, C(-61.995, 3.309), 7.5);
+        var next = Fix(route, C(-54.619, 9.306));
+        var policy = new RouteDisplayProgressPolicy();
+        var acquisition = Motion(-25.443f, -69.910f);
+        Observe(policy, route, first, at, acquisition);
+        var target = route.Points[2].Coordinate;
+        check(policy.TryGetRegisteredReference(route, target, at.AddMilliseconds(600), Motion(-25.482f, -69.303f), out var before),
+            $"{provider}: captured acquisition-time reference is available independently of receipt pose");
+        var expected = MapToArCoordinates.Rotate((target.Longitude - first.GpsCoordinate.Longitude) * Math.PI / 180 *
+            6371008.8 * Math.Cos(first.GpsCoordinate.Latitude * Math.PI / 180),
+            (target.Latitude - first.GpsCoordinate.Latitude) * Math.PI / 180 * 6371008.8, -77.75);
+        check(Math.Abs(before.WorldX - acquisition.X - expected.X) < .01 &&
+            Math.Abs(before.WorldZ - acquisition.Z - expected.Z) < .01,
+            $"{provider}: delayed GPS is registered at acquisition rather than half a metre ahead at receipt");
+        Observe(policy, route, next, at.AddSeconds(3.741), Motion(-26.063f, -65.893f));
+        var current = Motion(-26.065f, -65.263f);
+        check(policy.LastRegistrationDecision is { Changed: false, State: "CORRECTION_AWAITING_EVIDENCE" } &&
+            policy.TryGetRegisteredReference(route, target, at.AddSeconds(4), current, out var after) &&
+            Math.Abs(after.WorldX - before.WorldX) < .01 && Math.Abs(after.WorldZ - before.WorldZ) < .01,
+            $"{provider}: the field-test lateral innovation cannot instantly move the registered road");
+        check(policy.TryResolvePdr(route, next.CommittedProgressMeters + .7, at.AddSeconds(4.5), out var step),
+            $"{provider}: a held registration correction does not block bounded mapped progress");
+        var sideways = current with { X = current.X + 2 };
+        check(policy.TryGetRegisteredReference(route, target, at.AddSeconds(4.5), sideways, out after) &&
+            Math.Abs(after.WorldX - before.WorldX) < .01 && Math.Abs(after.WorldZ - before.WorldZ) < .01,
+            $"{provider}: lateral walking changes the camera relationship while the world road stays fixed");
+
+        var publisher = new MLDARIntegrationService(new UnusedRouter());
+        bool Publish(float anchorX, float anchorZ, long floor)
+        {
+            if (!policy.TryGetRegisteredReference(route, step.RoadCoordinate, at.AddSeconds(4.5),
+                    sideways with { GroundReference = floor }, out var reference)) return false;
+            var placement = new ARRoutePlacement(new(1, 1, 1), floor, 1, Environment.TickCount64,
+                anchorX, anchorZ, sideways.X, sideways.Z, at.AddSeconds(3.741), "PDR", -77.75,
+                TrackingEpoch: 7, WorldFrame: 0);
+            return publisher.PublishProgressWindow(route, step.ProgressMeters, step.RoadCoordinate, -77.75,
+                sideways.X - anchorX, sideways.Z - anchorZ, arWindowMeters: 40,
+                userCoordinate: step.AlignmentCoordinate, placement: placement, registeredReference: reference);
+        }
+        check(Publish(-25.04f, -68.12f, 82), $"{provider}: real publisher accepts the retained world registration");
+        var old = ARRouteBridge.Current;
+        float worldX = old.Points[0].X + old.Placement.AnchorX, worldZ = old.Points[0].Z + old.Placement.AnchorZ;
+        check(Publish(-27, -64, 83) &&
+            Math.Abs(ARRouteBridge.Current.Points[0].X + ARRouteBridge.Current.Placement.AnchorX - worldX) < .05 &&
+            Math.Abs(ARRouteBridge.Current.Points[0].Z + ARRouteBridge.Current.Placement.AnchorZ - worldZ) < .05 &&
+            ARRouteBridge.Current.Placement.AlignmentSource == "QUALIFIED_ACQUISITION",
+            $"{provider}: floor renewal changes local coordinates without moving the published world geometry");
+        check(!policy.TryGetRegisteredReference(route, target, at.AddSeconds(4.5), sideways with { TrackingEpoch = 8 }, out _) &&
+            !policy.TryGetRegisteredReference(route, target, at.AddSeconds(4.5), sideways with { WorldFrame = 1 }, out _) &&
+            !policy.TryGetRegisteredReference(route, target, at.AddSeconds(4.5), sideways with { Session = 2 }, out _) &&
+            !policy.TryGetRegisteredReference(route, target, at.AddSeconds(4.5), sideways with { YawDegrees = -77 }, out _),
+            $"{provider}: frame and calibration changes cannot reuse an earlier registration");
+
+        var longGap = new RouteDisplayProgressPolicy();
+        var earlier = Fix(route, C(-154.325, 14.945), 6.5);
+        Observe(longGap, route, earlier, at, Motion(-22.192f, -132.728f) with { GroundReference = 68 });
+        longGap.TryGetRegisteredReference(route, target, at.AddMilliseconds(600), Motion(-22.32f, -132.15f), out var retained);
+        var later = Fix(route, C(-146.868, 18.836), 6.5);
+        Observe(longGap, route, later, at.AddSeconds(7.841), Motion(-23.365f, -124.415f) with { GroundReference = 68 });
+        check(!longGap.LastRegistrationDecision.Changed && longGap.TryGetRegisteredReference(route, target,
+                at.AddSeconds(8.441), Motion(-23.37f, -123.86f) with { GroundReference = 68 }, out var supported) &&
+            Math.Abs(supported.WorldX - retained.WorldX) < .01 && Math.Abs(supported.WorldZ - retained.WorldZ) < .01,
+            $"{provider}: the second captured lateral shift near the eight-second boundary retains its supported reference");
+    }
+
+    private static void CorrectionAndOwnership(Action<bool, string> check, string provider)
+    {
+        var route = Road(provider); var policy = new RouteDisplayProgressPolicy();
+        var at = DateTimeOffset.UtcNow;
+        Observe(policy, route, Fix(route, C(0)), at, Motion(0, 0, 0));
+        Observe(policy, route, Fix(route, C(10, 5)), at.AddSeconds(3), Motion(10, 0, 0));
+        check(!policy.LastRegistrationDecision.Changed, $"{provider}: a single plausible GPS bias is a candidate only");
+        Observe(policy, route, Fix(route, C(14, 5)), at.AddSeconds(6), Motion(14, 0, 0));
+        check(policy.LastRegistrationDecision is { Changed: true, State: "COHERENT_CORRECTION" } &&
+            policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(6), Motion(14, 0, 0), out var corrected) &&
+            Math.Abs(corrected.WorldZ - 5) < .02,
+            $"{provider}: repeated independent motion-coherent GPS evidence can correct an initially biased registration");
+        var snapshot = policy.LastRegistrationDecision;
+        policy.ObserveRegistration(route, Fix(route, C(20, 10)), at.AddSeconds(6), at.AddSeconds(6), Motion(20, 0, 0));
+        check(policy.LastRegistrationDecision == snapshot, $"{provider}: duplicate callbacks do not apply another correction");
+        check(policy.ObserveRegistration(route, Fix(route, C(20)), at.AddSeconds(7), at.AddSeconds(7), null).State ==
+            "UNPAIRED_OR_UNQUALIFIED" && !policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(15), Motion(20, 0, 0), out _),
+            $"{provider}: an unavailable acquisition pair cannot extend stale registration support");
+        check(!policy.TryGetRegisteredReference(Road(provider), C(0), at.AddSeconds(6), Motion(14, 0, 0), out _),
+            $"{provider}: route replacement cannot inherit an unrelated geographic registration");
+
+        policy.Reset();
+        for (int i = 0; i <= 24; i++)
+        {
+            Observe(policy, route, Fix(route, C(3 * i)), at.AddSeconds(3 * i), Motion(3 * i, 0, 0));
+            check(policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(3 * i + .6), Motion(3 * i + .6f, 1, 0), out var reference) &&
+                Math.Abs(reference.WorldX) < .01 && Math.Abs(reference.WorldZ) < .01,
+                $"{provider}: fresh evidence sustains a fixed registration at {3 * i} metres without extending the GPS outage bound");
+        }
+        Observe(policy, route, Fix(route, C(69)), at.AddSeconds(75), Motion(69, 0, 0));
+        check(policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(75.6), Motion(68.4f, 1, 0), out var reversed) &&
+            Math.Abs(reversed.WorldX) < .01 && Math.Abs(reversed.WorldZ) < .01,
+            $"{provider}: reverse walking retains the same world registration while navigation progress changes separately");
+        policy.Reset();
+        check(!policy.TryGetRegisteredReference(route, C(0), at, Motion(0, 0, 0), out _),
+            $"{provider}: a reset trip requires a new qualified reference");
+    }
+
+    private static void Arrival(Action<bool, string> check, string provider)
+    {
+        var at = DateTimeOffset.UtcNow; var service = new SafeZoneConfirmationService();
+        SafeZoneConfirmationService.SafeZoneDecision Evaluate(double distance, double accuracy, double seconds, long trip = 1) =>
+            service.Evaluate(C(distance), C(0), 30, accuracy, 63, at.AddSeconds(seconds), false, at.AddSeconds(seconds), trip);
+        check(Evaluate(17.6, 15.3, 0).ConfirmationCount == 1 && !Evaluate(17.6, 30.3, 2.26).IsConfirmed &&
+            !Evaluate(94, 6.5, 8).IsCandidate && Evaluate(24.7, 21.6, 22.5).ConfirmationCount == 1 &&
+            !Evaluate(24.7, 38.5, 24.8).IsConfirmed,
+            $"{provider}: the MLD field sequence never fabricates automatic arrival from weak or conflicting positions");
+        check(Evaluate(27.9, 6.5, 30, 2).ConfirmationCount == 1 && Evaluate(23.5, 6.5, 33.723, 2).IsConfirmed,
+            $"{provider}: the captured AStar qualifying pair confirms vicinity under the same arrival rules");
+        check(UserArrivalConfirmationPolicy.CanShowNotice(C(17.6), C(0), 30.3, at, at) &&
+            !UserArrivalConfirmationPolicy.CanShowNotice(C(94), C(0), 6.5, at, at) &&
+            !UserArrivalConfirmationPolicy.CanShowNotice(C(17.6), C(0), 6.5, at, at.AddSeconds(11)) &&
+            UserArrivalConfirmationPolicy.CanOffer(C(17.6), C(0), 6.5, at, at.AddSeconds(11)),
+            $"{provider}: near-text eligibility and its freshness do not relax automatic or manual arrival evidence");
+    }
+
+    private sealed class UnusedRouter : IRoutingService
+    {
+        public string AlgorithmName => "unused fixture";
+        public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Registration fixtures never make routing requests.");
+    }
+}

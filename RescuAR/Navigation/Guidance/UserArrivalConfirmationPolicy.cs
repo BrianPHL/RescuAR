@@ -12,6 +12,12 @@ public static class UserArrivalConfirmationPolicy
     public const double MaximumDistanceMeters = 75;
     public const double MaximumAccuracyMeters = 50;
     public static readonly TimeSpan MaximumFixAge = TimeSpan.FromMinutes(2);
+    public static readonly TimeSpan MaximumNoticeFixAge = TimeSpan.FromSeconds(10);
+
+    public static bool CanShowNotice(GeoCoordinate position, GeoCoordinate destination,
+        double? accuracyMeters, DateTimeOffset observedAt, DateTimeOffset now) =>
+        CanOffer(position, destination, accuracyMeters, observedAt, now) &&
+        now - observedAt <= MaximumNoticeFixAge;
 
     public static bool CanOffer(GeoCoordinate position, GeoCoordinate destination,
         double? accuracyMeters, DateTimeOffset observedAt, DateTimeOffset now)

@@ -2,6 +2,7 @@ using RescuAR.MAUI.Services.Navigation;
 using RescuAR.AR;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
@@ -190,29 +191,39 @@ public partial class CameraPage
     {
         var destination = NavigationDestinationBridge.Current;
         var decision = lastSafeZoneDecision;
-        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
-            currentCameraModuleView != CameraModuleViewMode.ArCamera ||
-            !destination.IsAvailable)
+        if (!HasArrivalNoticePriority())
+        {
+            arrivalNoticeCategory = "HIDDEN";
+            LogNavigationUiState();
             return false;
+        }
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
         bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
         double distance = reading is null ? double.PositiveInfinity :
             reading.Coordinate.DistanceTo(destination.Coordinate);
-        if (!fresh || !CanOfferUserArrival()) return false;
+        if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
         routeLocatorPanel.VerticalOptions = LayoutOptions.Start;
         routeLocatorPanel.Margin = new Thickness(8, 104, 8, 0);
         routeLocatorLabel.FontSize = 16;
-        string detail = decision.IsCandidate && !decision.IsObservationHeld
+        bool uncertain = positionObservationHeld || decision.IsObservationHeld ||
+            reading.AccuracyMeters > SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters;
+        arrivalNoticeCategory = uncertain ? "NEAR_UNCONFIRMED_POSITION_UNCERTAIN" :
+            decision.IsCandidate ? "NEAR_CONFIRMING" : "NEAR_UNCONFIRMED";
+        string detail = uncertain
+            ? "Arrival is unconfirmed. GPS position is uncertain; check the entrance before confirming below."
+            : decision.IsCandidate && !decision.IsObservationHeld
             ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the entrance."
             : decision.Reason?.StartsWith("A mapped major road", StringComparison.Ordinal) == true
                 ? "Check the mapped road crossing before entering."
                 : "Look for the entrance. If you are there, confirm your arrival below.";
-        routeLocatorLabel.Text = $"You're near {destination.Name} (~{distance:0} m).\n{detail}";
+        routeLocatorLabel.Text = (uncertain ? "Location suggests you're near " : "You're near ") +
+            $"{destination.Name} (~{distance:0} m).\n{detail}";
         routeLocatorPanel.IsVisible = true;
-        turnGuidancePanel.IsVisible = false;
+        SetTurnGuidanceVisible(false);
+        LogNavigationUiState();
         return true;
     }
 
@@ -246,7 +257,7 @@ public partial class CameraPage
                 : "Mapped road nearby. Route connection pending.";
             routeLocatorPanel.IsVisible = true;
             if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
             return true;
         }
         if (!RoadApproachCuePolicy.TryGetAngle(cue.Reading.Coordinate, cue.Target,
@@ -267,7 +278,7 @@ public partial class CameraPage
                 : $"Nearest mapped road (~{distance:0} m). Route connection pending.";
         routeLocatorPanel.IsVisible = true;
         if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
-            turnGuidancePanel.IsVisible = false;
+            SetTurnGuidanceVisible(false);
         return true;
     }
 
@@ -309,7 +320,7 @@ public partial class CameraPage
             routeLocatorLabel.Text = $"Destination direction • ~{reading.Coordinate.DistanceTo(destination.Coordinate):0} m. Check walking access.";
         }
         routeLocatorPanel.IsVisible = true;
-        turnGuidancePanel.IsVisible = false;
+        SetTurnGuidanceVisible(false);
         return true;
     }
 

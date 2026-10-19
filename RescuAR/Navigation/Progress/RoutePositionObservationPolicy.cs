@@ -13,7 +13,7 @@ public sealed class RoutePositionObservationPolicy
     private DateTimeOffset? lastObservation;
     private static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds);
     // Small pose/timestamp uncertainty, used only to reject contradictory movement.
-    private const double MotionAllowanceMeters = 2;
+    public const double MotionAllowanceMeters = 2;
 
     private readonly record struct Observation(GeoCoordinate Coordinate, double Accuracy,
         DateTimeOffset At, RouteBacktrackingPolicy.TrackedMotion Motion);

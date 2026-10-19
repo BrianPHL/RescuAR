@@ -804,8 +804,7 @@ namespace RescuAR.App.Views.Camera
 
                     if (!arCameraMode)
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
                     }
                     else if (!emergencyAdvisoryVisible &&
                              !safeZoneConfirmed &&
@@ -815,8 +814,7 @@ namespace RescuAR.App.Views.Camera
                         ApplyPrototypeTurnGuidance(
                             lastTurnGuidance);
 
-                        turnGuidancePanel.IsVisible =
-                            true;
+                        SetTurnGuidanceVisible(true);
                     }
 
                     RefreshEmergencyStatusBanner();
@@ -1205,7 +1203,7 @@ namespace RescuAR.App.Views.Camera
                     (roadDiagnosticAccuracyMeters.HasValue
                         ? $" (GPS ±{roadDiagnosticAccuracyMeters.Value:0} m)" : "") +
                     " - not navigation guidance";
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -1836,18 +1834,19 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshRouteLocatorCue()
         {
-            routeLocatorPanel.VerticalOptions = LayoutOptions.Center;
-            routeLocatorPanel.Margin = new Thickness(24, 150, 24, 0);
-            routeLocatorLabel.FontSize = 12;
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
                 ARRoadApproachBridge.Clear();
+                arrivalNoticeCategory = "HIDDEN";
                 routeLocatorPanel.IsVisible = false;
                 return;
             }
 #endif
             if (TryShowArrivalStatus()) return;
+            routeLocatorPanel.VerticalOptions = LayoutOptions.Center;
+            routeLocatorPanel.Margin = new Thickness(24, 150, 24, 0);
+            routeLocatorLabel.FontSize = 12;
             if (TryShowRoadApproachCue()) return;
             if (TryShowNavigationFallback()) return;
             routeLocatorIcon.IsVisible = true;
@@ -2239,7 +2238,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -2292,8 +2291,7 @@ namespace RescuAR.App.Views.Camera
 
             if (!shouldShow)
             {
-                turnGuidancePanel.IsVisible =
-                    false;
+                SetTurnGuidanceVisible(false);
 
                 return;
             }
@@ -2301,8 +2299,7 @@ namespace RescuAR.App.Views.Camera
             ApplyPrototypeTurnGuidance(
                 lastTurnGuidance);
 
-            turnGuidancePanel.IsVisible =
-                true;
+            SetTurnGuidanceVisible(true);
         }
 
         private void RefreshEmergencyStatusBanner()
@@ -2934,8 +2931,7 @@ namespace RescuAR.App.Views.Camera
 
             Dispatcher.Dispatch(
                 () =>
-                    turnGuidancePanel.IsVisible =
-                        false);
+                    SetTurnGuidanceVisible(false));
 
             CancelRouteRequest(
                 "Camera tab exited.");
@@ -3026,8 +3022,7 @@ namespace RescuAR.App.Views.Camera
                 false,
                 $"terminal camera pipeline failure: {failure.Code}");
 
-            turnGuidancePanel.IsVisible =
-                false;
+            SetTurnGuidanceVisible(false);
 
             floodDepthOcclusionView.IsVisible =
                 false;
@@ -4780,7 +4775,7 @@ namespace RescuAR.App.Views.Camera
                                 _routeProgressTracker.Current;
 
                             var observation = positionObservationPolicy.Evaluate(route, reading.Coordinate,
-                                reading.AccuracyMeters, reading.Timestamp, DateTimeOffset.UtcNow, GetTrackedRouteMotion());
+                                reading.AccuracyMeters, reading.Timestamp, DateTimeOffset.UtcNow, GetAcquisitionMotion(reading));
                             positionObservationHeld = observation.IsHeld;
                             if (observation.IsConfirmedCorrection)
                             {
@@ -5379,8 +5374,7 @@ namespace RescuAR.App.Views.Camera
                 Dispatcher.Dispatch(
                     () =>
                     {
-                        turnGuidancePanel.IsVisible =
-                            true;
+                        SetTurnGuidanceVisible(true);
 
                         turnInstructionLabel.Text =
                             allPassed
@@ -6340,8 +6334,7 @@ namespace RescuAR.App.Views.Camera
                                 ApplyPrototypeTurnGuidance(
                                     lastTurnGuidance);
 
-                                turnGuidancePanel.IsVisible =
-                                    true;
+                                SetTurnGuidanceVisible(true);
                             }
                         });
                 }
@@ -6357,7 +6350,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                Dispatcher.Dispatch(() => turnGuidancePanel.IsVisible = false);
+                Dispatcher.Dispatch(() => SetTurnGuidanceVisible(false));
                 return;
             }
 #endif
@@ -6429,8 +6422,7 @@ namespace RescuAR.App.Views.Camera
                 Dispatcher.Dispatch(
                     () =>
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
                     });
 
                 return;
@@ -6585,8 +6577,7 @@ namespace RescuAR.App.Views.Camera
                         emergencyAdvisoryVisible ||
                         safeZoneConfirmed)
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
 
                         return;
                     }
@@ -6594,8 +6585,7 @@ namespace RescuAR.App.Views.Camera
                     ApplyPrototypeTurnGuidance(
                         guidance);
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
                 });
         }
 
@@ -7161,7 +7151,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -7465,8 +7455,7 @@ namespace RescuAR.App.Views.Camera
                     turnDistanceLabel.Text =
                         "Please wait while guidance is updated.";
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
                 });
         }
 
@@ -7511,8 +7500,7 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
-                    turnGuidancePanel.IsVisible =
-                        false;
+                    SetTurnGuidanceVisible(false);
 
                     turnDirectionIconLabel.Source =
                         "lucide_arrow_up_teal.png";
@@ -7686,7 +7674,7 @@ namespace RescuAR.App.Views.Camera
                     if (Interlocked.Read(ref arrivalSessionGeneration) != arrivalGeneration ||
                         NavigationDestinationBridge.Current.Version != selectedDestination.Version ||
                         !safeZoneConfirmed) return;
-                    turnGuidancePanel.IsVisible = false;
+                    SetTurnGuidanceVisible(false);
                     safeZoneDestinationLabel.Text =
                         destinationName;
                     safeZoneTitleLabel.Text = userReported
@@ -7732,6 +7720,7 @@ namespace RescuAR.App.Views.Camera
         {
             Interlocked.Increment(ref arrivalSessionGeneration);
             arrivalWasUserReported = false;
+            arrivalNoticeCategory = "HIDDEN";
             bool hadArrivalState =
                 safeZoneConfirmed ||
                 lastSafeZoneDecision.ConfirmationCount >
@@ -8410,8 +8399,7 @@ namespace RescuAR.App.Views.Camera
                      * Avoid competing navigation and emergency banners. AR,
                      * GPS, and PDR continue behind the full-screen treatment.
                      */
-                    turnGuidancePanel.IsVisible =
-                        false;
+                    SetTurnGuidanceVisible(false);
 
                     emergencyAdvisoryOverlay.IsVisible =
                         true;
@@ -9049,8 +9037,7 @@ namespace RescuAR.App.Views.Camera
                     ApplyPrototypeTurnGuidance(
                         lastTurnGuidance);
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
 
                     RefreshEmergencyStatusBanner();
                 });
@@ -10146,7 +10133,7 @@ namespace RescuAR.App.Views.Camera
                     DateTimeOffset.UtcNow, out displayPosition, out _)
                 : syntheticStep
                     ? RouteDisplayProgressPolicy.TryAtDistance(route, update.CommittedProgressMeters, out displayPosition)
-                    : RouteDisplayProgressPolicy.TryResolveGps(route, update, out displayPosition);
+                    : TryGetObservedDisplayPosition(route, out displayPosition);
             if (!positionReady) return false;
             bool approachPreview = allowApproachPreview &&
                 CanPublishMappedRoutePreview(route, update, displayPosition);
@@ -10191,8 +10178,8 @@ namespace RescuAR.App.Views.Camera
 
             /*
              * The route root remains attached to the retained ground anchor.
-             * Rebase the active local route window horizontally near the
-             * current AR camera position so the guidance moves with the user.
+             * Clip the active local window in the retained geographic-to-world
+             * registration. Camera movement must not translate the mapped road.
              *
              * Before confirmed entry only a short, access-checked section of
              * the mapped polyline is shown. Confirmed entry enables the longer window.
@@ -10215,7 +10202,7 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            bool published =
+            bool published = syntheticStep ?
                 _mldArIntegrationService.PublishProgressWindow(
                     route,
                     displayPosition.ProgressMeters,
@@ -10226,7 +10213,8 @@ namespace RescuAR.App.Views.Camera
                     arWindowMeters: GetCurrentArRouteVisualWindowMeters(),
                     sourceSegmentIndex: displayPosition.SegmentIndex,
                     userCoordinate: syntheticStep ? null : displayPosition.AlignmentCoordinate,
-                    placement: CaptureRoutePlacement(spatial, progressSource, pdrStep));
+                    placement: CaptureRoutePlacement(spatial, progressSource, pdrStep))
+                : PublishRegisteredRouteWindow(route, displayPosition, spatial, progressSource);
 
             if (!published)
             {
@@ -10330,24 +10318,8 @@ namespace RescuAR.App.Views.Camera
 
             double startDistanceMeters;
 
-            /*
-             * This is the same placement rule used by the normal GPS/PDR
-             * moving-window publisher:
-             *
-             * local route origin = current camera - current ground anchor.
-             *
-             * Therefore, after the new route version locks its root to the
-             * corrected Anchor, the first projected route point is again near
-             * the current camera instead of remaining in ARCore's old world
-             * coordinates.
-             */
-            float arOriginOffsetX =
-                spatial.Pose.PositionX -
-                spatial.Anchor.PositionX;
-
-            float arOriginOffsetZ =
-                spatial.Pose.PositionZ -
-                spatial.Anchor.PositionZ;
+            // A known frame change needs a newly qualified registration.
+            // Reusing a current camera offset would silently invent alignment.
 
             bool published;
 
@@ -10359,22 +10331,7 @@ namespace RescuAR.App.Views.Camera
                     !TryResolveRecentRouteDisplayPosition(route, out var displayPosition))
                     return false;
                 startDistanceMeters = displayPosition.ProgressMeters;
-                published =
-                    _mldArIntegrationService.PublishProgressWindow(
-                        route,
-                        startDistanceMeters,
-                        displayPosition.RoadCoordinate,
-                        activeMapToArYawDegrees,
-                        arOriginOffsetX,
-                        arOriginOffsetZ,
-                        arWindowMeters:
-                            GetCurrentArRouteVisualWindowMeters(),
-                        clearRouteOnFailure:
-                            false,
-                        sourceSegmentIndex:
-                            displayPosition.SegmentIndex,
-                        userCoordinate: displayPosition.AlignmentCoordinate,
-                        placement: CaptureRoutePlacement(spatial, "WORLD-CORRECTION", true));
+                published = PublishRegisteredRouteWindow(route, displayPosition, spatial, "WORLD-CORRECTION");
 
                 if (published)
                 {
@@ -10411,7 +10368,7 @@ namespace RescuAR.App.Views.Camera
                 $"oldLockedRoot=({request.LockedRootX:F2},{request.LockedRootZ:F2}), " +
                 $"correctedAnchor=({spatial.Anchor.PositionX:F2},{spatial.Anchor.PositionZ:F2}), " +
                 $"camera=({spatial.Pose.PositionX:F2},{spatial.Pose.PositionZ:F2}), " +
-                $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m, " +
+                "placement=QUALIFIED_ACQUISITION, " +
                 $"progress={startDistanceMeters:F1} m, " +
                 $"algorithm='{route.Algorithm}'. " +
                 "Route progress was preserved; ARCore was not restarted.");
@@ -10465,15 +10422,6 @@ namespace RescuAR.App.Views.Camera
             }
 
             double startDistanceMeters;
-
-            float arOriginOffsetX =
-                spatial.Pose.PositionX -
-                spatial.Anchor.PositionX;
-
-            float arOriginOffsetZ =
-                spatial.Pose.PositionZ -
-                spatial.Anchor.PositionZ;
-
             bool published;
             lock (routeProgressFusionSync)
             {
@@ -10484,17 +10432,7 @@ namespace RescuAR.App.Views.Camera
                         DateTimeOffset.UtcNow, out var displayPosition, out _))
                     return CompleteGroundHandoffAwaitingPosition();
                 startDistanceMeters = displayPosition.ProgressMeters;
-                published = _mldArIntegrationService.PublishProgressWindow(
-                    route,
-                    startDistanceMeters,
-                    displayPosition.RoadCoordinate,
-                    activeMapToArYawDegrees,
-                    arOriginOffsetX,
-                    arOriginOffsetZ,
-                    arWindowMeters: GetCurrentArRouteVisualWindowMeters(),
-                    sourceSegmentIndex: displayPosition.SegmentIndex,
-                    userCoordinate: displayPosition.AlignmentCoordinate,
-                    placement: CaptureRoutePlacement(spatial, "GROUND-REBASE", true));
+                published = PublishRegisteredRouteWindow(route, displayPosition, spatial, "GROUND-REBASE");
                 if (published)
                     _routeProgressTracker.MarkWindowPublished(
                         _routeProgressTracker.Current.CommittedProgressMeters);
@@ -10526,12 +10464,10 @@ namespace RescuAR.App.Views.Camera
                 $"camera=(" +
                 $"{spatial.Pose.PositionX:F2}," +
                 $"{spatial.Pose.PositionZ:F2}), " +
-                $"localOffset=(" +
-                $"{arOriginOffsetX:F2}," +
-                $"{arOriginOffsetZ:F2}) m, " +
+                "placement=QUALIFIED_ACQUISITION, " +
                 $"window={GetCurrentArRouteVisualWindowMeters():F1} m, " +
                 $"routeVersion={recoveredRoute.Version}. " +
-                "Old AR-world continuity was intentionally discarded; " +
+                "World registration was preserved across floor renewal; " +
                 "geographic route progress was preserved.");
 
             return true;

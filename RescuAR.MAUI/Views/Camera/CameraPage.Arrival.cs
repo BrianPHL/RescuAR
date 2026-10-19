@@ -12,6 +12,19 @@ public partial class CameraPage
     private bool arrivalWasUserReported;
     private long observedDestinationVersion = -1;
     private long activeDestinationVersion;
+    private string arrivalNoticeCategory = "HIDDEN";
+
+    private bool HasArrivalNoticePriority()
+    {
+        LocationReading? reading;
+        lock (routeProgressFusionSync) reading = latestRouteStartupReading;
+        return CanOfferUserArrival() && reading is not null && UserArrivalConfirmationPolicy.CanShowNotice(
+            reading.Coordinate, NavigationDestinationBridge.Current.Coordinate, reading.AccuracyMeters,
+            reading.Timestamp, DateTimeOffset.UtcNow);
+    }
+
+    private void SetTurnGuidanceVisible(bool visible) =>
+        turnGuidancePanel.IsVisible = visible && !HasArrivalNoticePriority();
 
     private bool CanOfferUserArrival()
     {

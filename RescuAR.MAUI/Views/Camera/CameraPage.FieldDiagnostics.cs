@@ -38,6 +38,8 @@ public partial class CameraPage
         Observe(safeZoneConfirmationOverlay, "IsVisible");
         Observe(confirmUserArrivalButton, "IsVisible");
         Observe(turnGuidancePanel, "IsVisible");
+        Observe(routeLocatorPanel, "IsVisible");
+        Observe(routeLocatorLabel, "Text");
         Observe(cameraModeStatusBanner, "IsVisible");
         Observe(cameraModeStatusTitleLabel, "Text");
         Observe(cameraModeStatusSubtitleLabel, "Text");
@@ -46,14 +48,23 @@ public partial class CameraPage
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
     private void LogNavigationUiState()
     {
-        string key = $"trip={activeDestinationVersion}; arrivalOverlay={safeZoneConfirmationOverlay.IsVisible}; " +
+        LocationReading? noticeReading;
+        lock (routeProgressFusionSync) noticeReading = latestRouteStartupReading;
+        string key = $"trip={activeDestinationVersion}; pageActive={pageIsVisible}; mode={currentCameraModuleView}; " +
+            $"arrivalOverlay={safeZoneConfirmationOverlay.IsVisible}; " +
             $"arrivalSource={(safeZoneConfirmed ? arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY" : "UNCONFIRMED")}; " +
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}; userArrivalButton={confirmUserArrivalButton.IsVisible}; " +
             $"turnCard={turnGuidancePanel.IsVisible}; statusBanner={cameraModeStatusBanner.IsVisible}; " +
+            $"nearPanel={routeLocatorPanel.IsVisible}; nearCategory={arrivalNoticeCategory}; " +
+            $"nearSample={noticeReading?.Timestamp.ToUnixTimeMilliseconds()}; " +
+            $"nearEligible={HasArrivalNoticePriority()}; observationHeld={positionObservationHeld}; " +
+            $"nearMargin={routeLocatorPanel.Margin}; nearVertical={routeLocatorPanel.VerticalOptions.Alignment}; " +
+            $"arrivalReason='{lastSafeZoneDecision.Reason}'; " +
             $"hazardNotice='{routeHazardNotice ?? "none"}'; emergency={emergencyAdvisoryVisible}";
         if (lastNavigationUiTrace == key) return;
         lastNavigationUiTrace = key;
-        AndroidLog.Info(RouteLogTag, $"NAV_UI {key}.");
+        AndroidLog.Info(RouteLogTag, $"NAV_UI {key}; nearFixAgeMs=" +
+            $"{(noticeReading is null ? double.NaN : (DateTimeOffset.UtcNow - noticeReading.Timestamp).TotalMilliseconds):F0}.");
     }
 
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
@@ -252,7 +263,9 @@ public partial class CameraPage
                 $"poseAtPublicationAgeMs={placed.PublishedAt - placed.PosePublishedAt}; frameNs={placed.FrameTimestamp}; " +
                 $"gpsAtPublicationMs={(placed.ObservationTime.HasValue ? placed.PublishedAt - now + (DateTimeOffset.UtcNow - placed.ObservationTime.Value).TotalMilliseconds : double.NaN):F0}; " +
                 $"yaw={placed.YawDegrees:F2}; gpsToRoadEN=({placed.GpsToRoadEast:F2},{placed.GpsToRoadNorth:F2})m; " +
-                $"cameraPairing=RECEIPT_POSE; observationPoseFrameNs={placed.ObservationPoseFrame}; " +
+                $"cameraPairing={placed.AlignmentSource}; registrationSample={placed.RegistrationSample}; " +
+                $"registeredWorldRef=({placed.RegisteredWorldX:F3},{placed.RegisteredWorldZ:F3}); " +
+                $"observationPoseFrameNs={placed.ObservationPoseFrame}; " +
                 $"observationPoseSkewMs={placed.ObservationPoseSkewMilliseconds}; " +
                 $"observationCamera=({placed.ObservationCameraX:F3},{placed.ObservationCameraZ:F3}); anchorQ={placed.AnchorRotation}; " +
                 $"gpsToRoadAR=({placed.GpsToRoadX:F2},{placed.GpsToRoadZ:F2})m; " +
