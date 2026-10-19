@@ -2,6 +2,7 @@ using Evergine.Common.IO;
 using Evergine.Framework;
 using Evergine.Framework.Services;
 using Evergine.Framework.Threading;
+using RescuAR.Diagnostics;
 using RescuAR.Navigation.Data;
 
 namespace RescuAR
@@ -32,9 +33,18 @@ namespace RescuAR
             var assetsService = this.Container.Resolve<AssetsService>();
 
             // Navigate to scene
-            var scene = assetsService.Load<MyScene>(EvergineContent.Scenes.MyScene_wescene);
+            // Reference the generated factory directly so disabling scene-code
+            // generation cannot silently produce an application with no scene.
+            AndroidLog.Info("RescuAR-Evergine",
+                $"AR_STARTUP_SCENE_LOADING id={EvergineContent.Scenes.MyScene_wescene}; " +
+                $"factory={typeof(CompiledMyScene).FullName}.");
+            var scene = assetsService.Load<MyScene>(EvergineContent.Scenes.MyScene_wescene)
+                ?? throw new System.InvalidOperationException(
+                    "The required AR startup scene could not be loaded. " +
+                    "Rebuild with GenerateEvergineScenesCode=true and include its scene assets.");
             ScreenContext screenContext = new ScreenContext(scene);
             screenContextManager.To(screenContext);
+            AndroidLog.Info("RescuAR-Evergine", "AR_STARTUP_SCENE_QUEUED scene=RescuAR.MyScene.");
 
             /*
              * Milestone 4 diagnostic:

@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../RescuAR/Navigation/Data/profiles/evacuation-policy-cases.json" Link="evacuation-policy-cases.json" CopyToOutputDirectory="PreserveNewest" />
-    <ProjectReference Include="../../RescuAR/RescuAR.csproj" AdditionalProperties="GenerateEvergineContent=False;GenerateEvergineScenesCode=False" />
+    <ProjectReference Include="../../RescuAR/RescuAR.csproj" AdditionalProperties="GenerateEvergineContent=False;GenerateEvergineScenesCode=True" />
     <Compile Include="../../RescuAR.MAUI/Services/ArCoreRunIntent.cs" Link="ArCoreRunIntent.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/ArCoreLifecycleContracts.cs" Link="ArCoreLifecycleContracts.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/ArCoreLifecyclePolicy.cs" Link="ArCoreLifecyclePolicy.cs" />

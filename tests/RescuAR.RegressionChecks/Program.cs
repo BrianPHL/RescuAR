@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--startup-scene"))
+{
+    StartupSceneChecks.Run(Check);
+    Console.WriteLine($"{passed} startup-scene regression checks passed.");
+    return;
+}
 if (args.Contains("--ground-flood"))
 {
     ARGroundFloodChecks.Run(Check);
@@ -28,12 +34,14 @@ if (args.Contains("--field-validation"))
     ARGroundFloodChecks.Run(Check);
     ARFieldValidationChecks.Run(Check);
     RouteBacktrackingChecks.Run(Check);
+    StartupSceneChecks.Run(Check);
     Console.WriteLine($"{passed} field-validation regression checks passed.");
     return;
 }
 ARGroundFloodChecks.Run(Check);
 ARFieldValidationChecks.Run(Check);
 RouteBacktrackingChecks.Run(Check);
+StartupSceneChecks.Run(Check);
 foreach (bool activityFirst in new[] { true, false })
 {
     var intent = new ArCoreRunIntent();

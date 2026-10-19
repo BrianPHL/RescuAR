@@ -10,6 +10,14 @@
 		<GenerateEvergineScenesCode>True</GenerateEvergineScenesCode>
 	</PropertyGroup>
 
+	<!-- The exporter excludes compiled scenes from the packaged assets. Their
+	     generated factories are therefore required even in a fast local build. -->
+	<Target Name="ValidateEvergineStartupSceneGeneration" BeforeTargets="CoreCompile"
+	        Condition="'$(DesignTimeBuild)' != 'true'">
+		<Error Condition="'$(GenerateEvergineScenesCode)' != 'true'"
+		       Text="RescuAR requires GenerateEvergineScenesCode=true: startup scenes are compiled into the assembly and excluded from exported assets. Disabling scene generation produces a black AR camera." />
+	</Target>
+
 	<ItemGroup>
 		<PackageReference Include="Evergine.Common" Version="2025.10.21.3204" />
 		<PackageReference Include="Evergine.Components" Version="2025.10.21.3204" />

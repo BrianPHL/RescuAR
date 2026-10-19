@@ -250,8 +250,10 @@ and intermittently missing guidance still require device acceptance.
 Candidate: [RescuAR-20261019-RoutePosition.apk](artifacts/field-test-20261019-route-position/RescuAR-20261019-RoutePosition.apk).
 SHA-256: `884945e9a93d063e71a96b587b4933d7aa422922f6a5232ecd57b8eab6dbb2e6`.
 Package evidence: `artifacts/field-test-20261019-route-position/package-evidence/`.
-This candidate contains the local uncommitted follow-up changes on top of
-`8d2de51`; the embedded base revision alone does not identify these changes.
+The later `111542` capture identifies this candidate's embedded base revision as
+`dbc60efb35164f057ba575de469dec0f22b2c745`; that revision alone does not identify
+the uncommitted follow-up changes. This candidate is superseded by the startup
+correction below.
 
 1. Record a complete capture per phone. Walk normally, turn only the phone,
    then walk backward along the same street far enough to exceed GPS uncertainty
@@ -263,3 +265,68 @@ This candidate contains the local uncommitted follow-up changes on top of
    Expect more visible blue water below the simulated height, with valid
    above-water geometry clear. Report the actual results and complete captures
    before further behavior-dependent changes.
+
+## Follow-up: 11:15 black camera capture
+
+`Logs/RescuAR_FieldTest_20261019_111542/` is a complete Samsung SM-A546E / API 34
+capture spanning 11:15:46–11:25:41, with 191 application events and seven
+navigation events. Its installed APK SHA-256 is exactly the preceding
+`884945e9a93d063e71a96b587b4933d7aa422922f6a5232ecd57b8eab6dbb2e6`
+candidate. The native bridge hash is unchanged.
+
+### Confirmed startup failure
+
+The camera surface appears at `logcat-001.txt:919`. At lines 978–985, the first
+Evergine update throws `NullReferenceException` in
+`ScreenContextManager.InitializeASingleScene`. The pinned framework's method
+dereferences the supplied scene before initialization; `MyApplication` had
+queued a null scene. Rendering is disabled by the draw-error handler, which
+awaits native surface recreation. Merely revisiting the retained Camera tab
+does not recreate that failed engine state.
+
+At lines 991–994, ARCore startup consequently reports `GraphicsUnavailable`
+with session generation zero. Reopening Camera fails the same way at lines
+1230–1234. Camera permission is granted, and accepted camera poses remain zero
+through the last coherence record at line 1360. No routing or flood behavior
+can be accepted from this run.
+
+The delivered APK was built with `GenerateEvergineScenesCode=False`. Evergine's
+exporter separately excludes compiled scenes from assets. Inspection confirmed
+that the scene asset was absent from the APK and that the pre-correction
+Release assembly lacked both `RescuAR.CompiledMyScene` and the application's
+generated factory registration. Disabling generation therefore removed both
+ways of loading the startup scene. This was an error in the supplied build,
+and the earlier manifest/native-package checks did not cover it.
+
+### Correction and verification
+
+- The shared project now rejects disabled scene generation before compilation.
+  Regression builds also keep scene generation enabled.
+- `MyApplication` directly references the generated factory, logs scene loading
+  and queueing, and rejects a null startup scene with an explicit explanation.
+- Three focused checks verify the factory's scene identifier, compiled asset
+  path, and application registration override. All passed. A negative build
+  check also confirmed that `GenerateEvergineScenesCode=false` is rejected.
+- Android Release build passed with zero warnings and zero errors, using
+  `dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False`.
+  Do not disable `GenerateEvergineScenesCode` in application or regression builds.
+- Release readiness, manifest, ARM64 bridge, and diagnostic-profile checks
+  passed. Additional inspection extracted `RescuAR.dll` from the exact new APK
+  assembly-store payload and verified that `MyApplication` constructs and
+  registers `CompiledMyScene` for scene
+  `bef99f5b-28b9-4d53-98a1-36b4a18fdc05`.
+- No device installation, manual application interaction, integration tests,
+  or full regression-suite run was performed.
+
+Corrected candidate: [RescuAR-20261019-CameraStartup.apk](artifacts/field-test-20261019-camera-startup/RescuAR-20261019-CameraStartup.apk).
+SHA-256: `41cd0e77dbda4b3ad7dd71ba2809b905c6e574f00efdd19e501b877ca259c58f`.
+The embedded revision is `81b25794295977999e091e9469c6ff9b16de1bc9`, with the
+local startup corrections still uncommitted. Evidence is under
+`artifacts/field-test-20261019-camera-startup/package-evidence/`, including
+`startup-scene-test-report.json` and the extracted assembly hash.
+
+Install this candidate, fully close and relaunch the app, then open Camera.
+Expect the live camera image to appear. Leave and reopen Camera once; expect
+the image to resume. Return the actual result and a complete capture before
+resuming the routing and flood acceptance walk. Builds and packaged-code
+inspection cannot establish physical camera behavior.
