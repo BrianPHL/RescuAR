@@ -119,12 +119,9 @@ namespace RescuAR.App.Views.Camera
 
         private readonly IDispatcherTimer diagnosticTimer;
 
-#if RESCUAR_DIAGNOSTICS && DEBUG
+#if RESCUAR_DIAGNOSTICS
         private const long DetailedStatusLogIntervalMilliseconds =
-            10_000;
-#elif RESCUAR_DIAGNOSTICS
-        private const long DetailedStatusLogIntervalMilliseconds =
-            30_000;
+            5_000;
 #endif
 
         private const long DynamicUiRefreshIntervalMilliseconds =
@@ -1536,6 +1533,9 @@ namespace RescuAR.App.Views.Camera
             lastArGuidanceConfidence =
                 confidence;
 
+            LogNavigationFieldSnapshot(confidence, route, progress, continuity,
+                gpsAge.TotalSeconds, latestGpsAccuracy, routeIdentitySuspended, headingTrusted);
+
             bool arCameraMode =
                 currentCameraModuleView ==
                     CameraModuleViewMode.ArCamera;
@@ -1791,6 +1791,9 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshRouteLocatorCue()
         {
+            routeLocatorPanel.VerticalOptions = LayoutOptions.Center;
+            routeLocatorPanel.Margin = new Thickness(24, 150, 24, 0);
+            routeLocatorLabel.FontSize = 12;
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
@@ -4796,7 +4799,8 @@ namespace RescuAR.App.Views.Camera
                                         ? beforeGps.CommittedProgressMeters
                                         : 0.0,
                                     beforeGps.HasProgress,
-                                    matchedGps);
+                                    matchedGps,
+                                    reading.Timestamp);
 
                             lastGpsConfidence =
                                 gpsFusionDecision.Confidence;
@@ -9311,13 +9315,14 @@ namespace RescuAR.App.Views.Camera
                     spatial.Pose.PositionZ,
                     DateTimeOffset.UtcNow);
 
-            if (decision.Disposition ==
-                    HeadingRevalidationDisposition.AwaitingConfirmation ||
-                decision.Disposition ==
-                    HeadingRevalidationDisposition.SignalsDisagree ||
-                decision.Disposition ==
-                    HeadingRevalidationDisposition.CorrectionCooldown)
+            long headingLogTimestamp = Environment.TickCount64;
+            if (decision.Disposition != lastLoggedHeadingDisposition ||
+                lastHeadingDecisionLogTimestamp == long.MinValue ||
+                headingLogTimestamp - lastHeadingDecisionLogTimestamp >= 5_000 ||
+                decision.ShouldApplyCorrection)
             {
+                lastLoggedHeadingDisposition = decision.Disposition;
+                lastHeadingDecisionLogTimestamp = headingLogTimestamp;
                 LogDetailedDebug(
                     HeadingLogTag,
                     "HEADING REVALIDATION: " +
@@ -9326,6 +9331,8 @@ namespace RescuAR.App.Views.Camera
                     $"{decision.RequiredConfirmationCount}, " +
                     $"gpsMove={decision.GpsDisplacementMeters:F1} m, " +
                     $"arMove={decision.ArDisplacementMeters:F1} m, " +
+                    $"gpsAccuracy={reading.AccuracyMeters:F1} m, " +
+                    $"reportedSpeed={reading.SpeedMetersPerSecond:F2} m/s, " +
                     $"gpsBearing={decision.GpsDisplacementBearingDegrees:F1} deg, " +
                     $"gpsCourse={decision.GpsCourseDegrees:F1} deg, " +
                     $"routeBearing={decision.RouteTangentBearingDegrees:F1} deg, " +

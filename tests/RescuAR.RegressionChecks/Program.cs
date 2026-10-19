@@ -17,6 +17,21 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--ground-flood"))
+{
+    ARGroundFloodChecks.Run(Check);
+    Console.WriteLine($"{passed} ground/flood regression checks passed.");
+    return;
+}
+if (args.Contains("--field-validation"))
+{
+    ARGroundFloodChecks.Run(Check);
+    ARFieldValidationChecks.Run(Check);
+    Console.WriteLine($"{passed} field-validation regression checks passed.");
+    return;
+}
+ARGroundFloodChecks.Run(Check);
+ARFieldValidationChecks.Run(Check);
 foreach (bool activityFirst in new[] { true, false })
 {
     var intent = new ArCoreRunIntent();
@@ -473,15 +488,15 @@ Check(!blocked.IsConfirmed && blocked.ConfirmationCount == 0,
 ObserveArrival(2);
 ObserveArrival(5);
 Check(ObserveArrival(8).IsConfirmed,
-    "three fresh accurate observations over six seconds confirm vicinity without requiring a mapped route");
+    "repeated fresh observations confirm vicinity without requiring a mapped route");
 arrival.Reset();
 Check(!ObserveArrival(0, distance: 60, accuracy: 8.5).IsCandidate &&
     !ObserveArrival(4, distance: 60, accuracy: 8.5).IsConfirmed,
     "field-test fixes sixty metres from the pin cannot confirm arrival inside a broad facility profile");
 Check(ObserveArrival(5, distance: 24, accuracy: 5).IsCandidate &&
-    ObserveArrival(6, distance: 26, accuracy: 5).IsObservationHeld &&
+    ObserveArrival(6, distance: 41, accuracy: 5).IsObservationHeld &&
     !arrival.Current.IsConfirmed && arrival.Current.ConfirmationCount == 1,
-    "boundary uncertainty pauses arrival without counting a fix outside the thirty metre margin");
+    "boundary uncertainty pauses arrival without counting a fix outside the automatic radius");
 ObserveArrival(7);
 Check(ObserveArrival(8, accuracy: 30).ConfirmationCount == 0,
     "weak arrival fixes reset the consecutive sequence");
@@ -995,13 +1010,13 @@ ARRouteBridge.Clear();
 
 arrival.Reset();
 ObserveArrival(0,distance:14.5,accuracy:11);
-var tipBoundaryNoise = ObserveArrival(4.935,distance:22.4,accuracy:9);
+var tipBoundaryNoise = ObserveArrival(4.935,distance:41,accuracy:9);
 Check(tipBoundaryNoise.IsObservationHeld && tipBoundaryNoise.ConfirmationCount == 1 &&
     !tipBoundaryNoise.IsConfirmed,
     "TIP boundary jitter holds earlier arrival evidence without confirming the uncertain position");
-Check(!ObserveArrival(9.490,distance:2.8,accuracy:14).IsConfirmed &&
+Check(ObserveArrival(9.490,distance:2.8,accuracy:14).IsConfirmed &&
     ObserveArrival(13.964,distance:8.1,accuracy:10).IsConfirmed,
-    "three qualifying TIP observations can complete arrival across a brief uncertain boundary sample");
+    "two qualifying observations complete arrival across a brief uncertain boundary sample");
 arrival.Reset();
 ObserveArrival(0);
 Check(ObserveArrival(4,distance:9.7,accuracy:25.5).IsObservationHeld &&

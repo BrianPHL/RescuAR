@@ -22,7 +22,7 @@ public sealed class HeadingRevalidationPolicy
         0.60;
 
     private const double MinimumGpsDisplacementMeters =
-        4.0;
+        8.0;
 
     private const double MinimumArDisplacementMeters =
         3.0;
@@ -132,6 +132,7 @@ public sealed class HeadingRevalidationPolicy
         MovementBaseline current =
             new(
                 gpsCoordinate,
+                gpsAccuracyMeters!.Value,
                 arPositionX,
                 arPositionZ,
                 timestampUtc);
@@ -191,7 +192,9 @@ public sealed class HeadingRevalidationPolicy
         if (elapsed <
                 MinimumMovementWindow ||
             gpsDisplacementMeters <
-                MinimumGpsDisplacementMeters ||
+                Math.Max(MinimumGpsDisplacementMeters,
+                    Math.Min(20.0, Math.Max(baseline.Value.AccuracyMeters,
+                        gpsAccuracyMeters!.Value) * 1.5)) ||
             arDisplacementMeters <
                 MinimumArDisplacementMeters)
         {
@@ -247,13 +250,10 @@ public sealed class HeadingRevalidationPolicy
                         arDeltaX,
                         arDeltaZ)));
 
-        bool gpsCourseUsable =
-            gpsCourseDegrees.HasValue &&
-            double.IsFinite(
-                gpsCourseDegrees.Value) &&
-            (reportedSpeedUsable ||
-             derivedSpeedMetersPerSecond >=
-                MinimumReportedSpeedMetersPerSecond);
+        // Displacement speed cannot validate the provider's course field.
+        // Some phones supply course=0 while reporting no usable speed.
+        bool gpsCourseUsable = RouteCorridorPolicy.IsCourseUsable(
+            gpsCourseDegrees, gpsSpeedMetersPerSecond);
 
         double displacementRouteErrorDegrees =
             AngularErrorDegrees(
@@ -662,6 +662,7 @@ public sealed class HeadingRevalidationPolicy
 
     private readonly record struct MovementBaseline(
         GeoCoordinate GpsCoordinate,
+        double AccuracyMeters,
         float ArPositionX,
         float ArPositionZ,
         DateTimeOffset TimestampUtc);

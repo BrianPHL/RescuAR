@@ -92,7 +92,7 @@ public sealed partial class ArCoreService
     private bool TryConsumeGroundProbeBudget(long now)
     {
         int sweepLimit = Math.Max(
-            1,
+            ARGroundProbePlan.MinimumSpatialSamples,
             powerThermalDecision.MaximumGroundProbesPerSweep);
 
         if (groundProbesThisSweep >= sweepLimit ||

@@ -150,6 +150,9 @@ public sealed class GpsPdrFusionPolicy
         -1;
 
     private double? lastResolvedRouteIdentityProgressMeters;
+    private DateTimeOffset? lastResolvedRouteIdentityAt;
+    private DateTimeOffset? lastRouteIdentityCandidateAt;
+    private static readonly TimeSpan MaximumIdentityEvidenceGap = TimeSpan.FromSeconds(10);
 
     public void Reset()
     {
@@ -165,8 +168,10 @@ public sealed class GpsPdrFusionPolicy
     public GpsFusionDecision EvaluateGps(
         double previousCommittedProgressMeters,
         bool hasPreviousProgress,
-        RouteProgressTracker.RouteProgressUpdate gpsUpdate)
+        RouteProgressTracker.RouteProgressUpdate gpsUpdate,
+        DateTimeOffset? observedAt = null)
     {
+        DateTimeOffset timestamp = observedAt ?? DateTimeOffset.UtcNow;
         if (!gpsUpdate.IsAccepted ||
             gpsUpdate.IsOffRoute)
         {
@@ -221,6 +226,16 @@ public sealed class GpsPdrFusionPolicy
             RouteMatchConfidence.Medium)
         {
             ResetBackwardConfirmation();
+
+            // Low precision and competing roads are different failures. A
+            // bounded weak fix on the same unambiguous road must not erase
+            // recent good identity evidence. It supplies no new progress.
+            if (CanRetainIdentityThroughWeakFix(gpsUpdate, timestamp))
+                return new GpsFusionDecision(GpsConfidence.Low,
+                    GpsFusionAction.HoldLowReliability, previousCommittedProgressMeters,
+                    gpsUpdate.RawProgressMeters - previousCommittedProgressMeters,
+                    0, routeIdentityConfirmationCount, 0.0,
+                    "Weak GPS precision on the same corridor; retaining recent route identity without advancing progress.");
 
             SuspendRouteIdentity();
 
@@ -319,7 +334,7 @@ public sealed class GpsPdrFusionPolicy
 
         if (routeIdentitySuspended &&
             !TryConfirmRouteIdentity(
-                gpsUpdate))
+                gpsUpdate, timestamp))
         {
             ResetBackwardConfirmation();
 
@@ -335,7 +350,7 @@ public sealed class GpsPdrFusionPolicy
         }
 
         RememberResolvedRouteIdentity(
-            gpsUpdate);
+            gpsUpdate, timestamp);
 
         if (divergence >=
             0.0)
@@ -679,8 +694,27 @@ public sealed class GpsPdrFusionPolicy
         ResetRouteIdentityCandidate();
     }
 
+    private bool CanRetainIdentityThroughWeakFix(
+        RouteProgressTracker.RouteProgressUpdate update, DateTimeOffset timestamp)
+    {
+        if (update.AccuracyMeters is not double accuracy || !double.IsFinite(accuracy) ||
+            accuracy <= MediumAccuracyMeters || accuracy > 50 ||
+            !(update.IndependentCorridorScoreGap >= 2.0) ||
+            !double.IsFinite(update.CrossTrackErrorMeters) || update.CrossTrackErrorMeters > 10 ||
+            (double.IsFinite(update.CourseAlignmentErrorDegrees) && update.CourseAlignmentErrorDegrees > 90))
+            return false;
+        bool Recent(DateTimeOffset? at) => at.HasValue && timestamp >= at.Value &&
+            timestamp - at.Value <= MaximumIdentityEvidenceGap;
+        bool pendingCorridor = routeIdentitySuspended && Recent(lastRouteIdentityCandidateAt) &&
+            lastRouteIdentityCandidateProgressMeters.HasValue &&
+            Math.Abs(update.SegmentIndex - lastRouteIdentityCandidateSegment) <= IdentitySegmentTolerance &&
+            Math.Abs(update.RawProgressMeters - lastRouteIdentityCandidateProgressMeters.Value) <= IdentityProgressAgreementMeters;
+        return pendingCorridor || (Recent(lastResolvedRouteIdentityAt) && DoesMatchResolvedRouteIdentity(update));
+    }
+
     private void ResetRouteIdentityCandidate()
     {
+        lastRouteIdentityCandidateAt = null;
         routeIdentityConfirmationCount =
             0;
 
@@ -692,9 +726,13 @@ public sealed class GpsPdrFusionPolicy
     }
 
     private bool TryConfirmRouteIdentity(
-        RouteProgressTracker.RouteProgressUpdate gpsUpdate)
+        RouteProgressTracker.RouteProgressUpdate gpsUpdate, DateTimeOffset timestamp)
     {
+        if (lastRouteIdentityCandidateAt.HasValue && timestamp <= lastRouteIdentityCandidateAt.Value)
+            return false;
         bool agreesWithPreviousCandidate =
+            lastRouteIdentityCandidateAt.HasValue &&
+            timestamp - lastRouteIdentityCandidateAt.Value <= MaximumIdentityEvidenceGap &&
             lastRouteIdentityCandidateSegment >=
                 0 &&
             Math.Abs(
@@ -718,6 +756,7 @@ public sealed class GpsPdrFusionPolicy
 
         lastRouteIdentityCandidateProgressMeters =
             gpsUpdate.RawProgressMeters;
+        lastRouteIdentityCandidateAt = timestamp;
 
         int requiredConfirmations =
             gpsUpdate.MatchConfidence ==
@@ -735,7 +774,7 @@ public sealed class GpsPdrFusionPolicy
             false;
 
         RememberResolvedRouteIdentity(
-            gpsUpdate);
+            gpsUpdate, timestamp);
 
         ResetRouteIdentityCandidate();
 
@@ -760,8 +799,9 @@ public sealed class GpsPdrFusionPolicy
     }
 
     private void RememberResolvedRouteIdentity(
-        RouteProgressTracker.RouteProgressUpdate gpsUpdate)
+        RouteProgressTracker.RouteProgressUpdate gpsUpdate, DateTimeOffset timestamp)
     {
+        lastResolvedRouteIdentityAt = timestamp;
         hasResolvedRouteIdentity =
             true;
 
@@ -774,6 +814,7 @@ public sealed class GpsPdrFusionPolicy
 
     private void ResetRouteIdentitySuspension()
     {
+        lastResolvedRouteIdentityAt = null;
         routeIdentitySuspended =
             false;
 

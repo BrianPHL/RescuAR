@@ -11,13 +11,13 @@ namespace RescuAR.Navigation.Guidance;
 ///
 /// Evacuation centers are areas, not mathematical points. Callers may provide
 /// a facility-specific arrival radius that covers the evacuation building /
-/// compound vicinity. Automatic confirmation is limited to 30 m from the pin;
+/// compound vicinity. Automatic confirmation is limited to 40 m from the pin;
 /// a larger facility profile alone is not evidence that the user has arrived.
 /// </summary>
 public sealed class SafeZoneConfirmationService
 {
     public const int RequiredConfirmationCount =
-        3;
+        2;
 
     /// <summary>
     /// Default radius used when no facility-specific profile exists.
@@ -25,13 +25,13 @@ public sealed class SafeZoneConfirmationService
     public const double ArrivalRadiusMeters =
         30.0;
 
-    public const double MaximumAutomaticConfirmationRadiusMeters = 30.0;
+    public const double MaximumAutomaticConfirmationRadiusMeters = 40.0;
 
-    private static readonly TimeSpan MinimumConfirmationDuration = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan MinimumConfirmationDuration = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan MaximumObservationGap = TimeSpan.FromSeconds(12);
 
     public const double MaximumAcceptedAccuracyMeters =
-        15.0;
+        25.0;
 
     /// <summary>
     /// Retained in the diagnostic decision for legacy callers; route progress
@@ -176,14 +176,15 @@ public sealed class SafeZoneConfirmationService
         bool observationIsFresh = fixAge >= TimeSpan.FromSeconds(-2) &&
             fixAge <= TimeSpan.FromSeconds(5);
 
-        // The accuracy margin keeps a GPS fix on the outer boundary from
-        // confirming a facility on the opposite side of that boundary.
+        // Repeated fresh fixes establish vicinity, rather than requiring the
+        // entire accuracy circle to fit inside a small point-based radius.
+        // Mapped crossing barriers and the independent accuracy cap still apply.
         bool withinArrivalRadius =
             accuracyIsAcceptable &&
             observationIsFresh &&
             !majorRoadBarrier &&
             double.IsFinite(distanceToDestinationMeters) &&
-            distanceToDestinationMeters + accuracyMeters!.Value <=
+            distanceToDestinationMeters <=
                 effectiveArrivalRadiusMeters;
 
         if (confirmed)
@@ -279,7 +280,7 @@ public sealed class SafeZoneConfirmationService
                 : !accuracyIsAcceptable
                     ? $"GPS accuracy exceeds {MaximumAcceptedAccuracyMeters:F0} m."
                     : !withinArrivalRadius
-                        ? $"User and GPS accuracy margin extend beyond the {effectiveArrivalRadiusMeters:F0} m arrival radius."
+                        ? $"Position is outside the {effectiveArrivalRadiusMeters:F0} m arrival radius."
                             : "Arrival conditions are not satisfied.";
 
         current =
