@@ -12,8 +12,10 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.ApplicationModel.Communication;
 using Microsoft.Maui.Devices.Sensors;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Networking;
 using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
+using RescuAR.App.Services.Storage;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.Services;
@@ -229,6 +231,26 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     private int _passScore = Preferences.Default.Get("PASS_Score", 72);
 
     public string PassScoreText => $"{PassScore}% prepared";
+
+    [ObservableProperty]
+    private bool _isOfflineData;
+
+    [ObservableProperty]
+    private string _offlineStatusTitle = "Offline Mode — Locally Saved Data";
+
+    [ObservableProperty]
+    private string _offlineStatusDescription = string.Empty;
+
+    [ObservableProperty]
+    private string _shelterSectionSubtitle = "Nearest shelter is listed first";
+
+    [ObservableProperty]
+    private bool _isRefreshing;
+
+    [ObservableProperty]
+    private DateTimeOffset? _lastSuccessfulUpdate;
+
+    private bool _isConnectivitySubscribed;
 
     public EvacuationCenterInfoViewModel()
     {
@@ -466,23 +488,302 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         };
     }
 
-    private void LoadData()
+    private void LoadDefaultHotlines()
     {
         Hotlines.Clear();
         Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina Rescue 161", Number = "(02) 161", Type = "24/7 Emergency Medical & Rescue", BadgeText = "EMS" });
         Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina PNP Central", Number = "(02) 8405-0091", Type = "Police Emergency Hotline", BadgeText = "PNP" });
         Hotlines.Add(new EmergencyHotlineItem { Name = "Marikina BFP Fire Dept", Number = "(02) 8646-0427", Type = "Fire & Rescue Brigade", BadgeText = "BFP" });
         Hotlines.Add(new EmergencyHotlineItem { Name = "Red Cross Marikina", Number = "(02) 8681-3442", Type = "Disaster Relief & Blood Bank", BadgeText = "PRC" });
+    }
 
-        _masterCentersList.Clear();
-        _masterCentersList.AddRange(GetOfficialMarikinaCenters());
+    private static bool IsConnectedToInternet()
+    {
+        try
+        {
+            return Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void UpdateOfflineStatusInfo()
+    {
+        if (IsOfflineData)
+        {
+            OfflineStatusTitle = "Offline Mode — Locally Saved Data";
+            if (LastSuccessfulUpdate.HasValue)
+            {
+                var localTime = LastSuccessfulUpdate.Value.ToLocalTime();
+                OfflineStatusDescription = $"Last updated: {FormatTimestamp(localTime)}";
+                ShelterSectionSubtitle = $"Offline (Saved {FormatTimestamp(localTime)})";
+            }
+            else
+            {
+                OfflineStatusDescription = "Viewing saved emergency shelter data";
+                ShelterSectionSubtitle = "Nearest shelter first • Offline Mode";
+            }
+        }
+        else
+        {
+            OfflineStatusTitle = string.Empty;
+            if (LastSuccessfulUpdate.HasValue)
+            {
+                var localTime = LastSuccessfulUpdate.Value.ToLocalTime();
+                OfflineStatusDescription = $"Live Data • Updated {FormatTimestamp(localTime)}";
+                ShelterSectionSubtitle = $"Updated {FormatTimestamp(localTime)} • Nearest first";
+            }
+            else
+            {
+                OfflineStatusDescription = "Live Data • Connected";
+                ShelterSectionSubtitle = "Nearest shelter is listed first";
+            }
+        }
+    }
+
+    private static string FormatTimestamp(DateTimeOffset dt)
+    {
+        var now = DateTimeOffset.Now;
+        var span = now - dt;
+
+        if (span.TotalSeconds >= 0 && span.TotalMinutes < 1)
+            return "Just now";
+        if (span.TotalMinutes >= 1 && span.TotalMinutes < 60)
+            return $"{(int)span.TotalMinutes}m ago";
+        if (dt.Date == now.Date)
+            return $"Today at {dt:h:mm tt}";
+        if (dt.Date == now.Date.AddDays(-1))
+            return $"Yesterday at {dt:h:mm tt}";
+
+        return dt.ToString("MMM d, yyyy 'at' h:mm tt");
+    }
+
+    private static EvacuationCenterItem CreateItemFromCached(CachedEvacuationCenterItem cached, Location userLoc)
+    {
+        var item = new EvacuationCenterItem
+        {
+            Id = cached.Id,
+            Name = cached.Name,
+            Barangay = cached.Barangay,
+            Classification = string.IsNullOrWhiteSpace(cached.Classification) ? "Flood-Safe Major" : cached.Classification,
+            Address = cached.Address,
+            VerifiedBy = string.IsNullOrWhiteSpace(cached.VerifiedBy) ? "Marikina LGU" : cached.VerifiedBy,
+            Latitude = cached.Latitude,
+            Longitude = cached.Longitude,
+            Capacity = cached.Capacity > 0 ? cached.Capacity : 500,
+            CurrentEvacuees = cached.CurrentEvacuees,
+            Status = string.IsNullOrWhiteSpace(cached.Status) ? "Standby" : cached.Status,
+            HeadOfficer = string.IsNullOrWhiteSpace(cached.HeadOfficer) ? "Unassigned" : cached.HeadOfficer,
+            Contact = string.IsNullOrWhiteSpace(cached.Contact) ? "N/A" : cached.Contact,
+            Facilities = cached.Facilities ?? new List<string>(),
+            FacilityImageUrl = cached.FacilityImageUrl ?? string.Empty,
+            MapImageSource = string.IsNullOrWhiteSpace(cached.MapImageSource)
+                ? $"https://staticmap.openstreetmap.de/staticmap.php?center={cached.Latitude},{cached.Longitude}&zoom=16&size=600x300&markers={cached.Latitude},{cached.Longitude},red-pushpin"
+                : cached.MapImageSource
+        };
+
+        item.LoadBookmarkState();
+
+        if (item.Latitude != 0 && item.Longitude != 0)
+        {
+            var centerLoc = new Location(item.Latitude, item.Longitude);
+            double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
+            item.DistanceKm = distKm;
+            item.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
+            int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
+            item.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
+        }
+
+        return item;
+    }
+
+    private static CachedEvacuationCenterItem CreateCachedFromItem(EvacuationCenterItem item)
+    {
+        return new CachedEvacuationCenterItem
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Barangay = item.Barangay,
+            Classification = item.Classification,
+            Address = item.Address,
+            VerifiedBy = item.VerifiedBy,
+            FacilityImageUrl = item.FacilityImageUrl,
+            MapImageSource = item.MapImageSource,
+            Latitude = item.Latitude,
+            Longitude = item.Longitude,
+            Capacity = item.Capacity,
+            CurrentEvacuees = item.CurrentEvacuees,
+            Status = item.Status,
+            HeadOfficer = item.HeadOfficer,
+            Contact = item.Contact,
+            Facilities = item.Facilities?.ToList() ?? new List<string>()
+        };
+    }
+
+    private void RecalculateDistances(double userLat, double userLng)
+    {
+        var userLoc = new Location(userLat, userLng);
+        foreach (var center in _masterCentersList)
+        {
+            if (center.Latitude != 0 && center.Longitude != 0)
+            {
+                var centerLoc = new Location(center.Latitude, center.Longitude);
+                double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
+                center.DistanceKm = distKm;
+                center.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
+                int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
+                center.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
+            }
+        }
         ApplyFilterAndSorting();
+    }
+
+    private void LoadData()
+    {
+        var cached = CacheService.LoadEvacuationCenters();
+        if (cached != null && cached.Centers != null && cached.Centers.Count > 0)
+        {
+            var userLoc = new Location(_userLat, _userLng);
+            _masterCentersList.Clear();
+            foreach (var c in cached.Centers)
+            {
+                _masterCentersList.Add(CreateItemFromCached(c, userLoc));
+            }
+
+            if (cached.Hotlines != null && cached.Hotlines.Count > 0)
+            {
+                Hotlines.Clear();
+                foreach (var h in cached.Hotlines)
+                {
+                    Hotlines.Add(new EmergencyHotlineItem
+                    {
+                        Name = h.Name,
+                        Number = h.Number,
+                        Type = h.Type,
+                        BadgeText = h.BadgeText
+                    });
+                }
+            }
+            else
+            {
+                LoadDefaultHotlines();
+            }
+
+            LastSuccessfulUpdate = cached.LastUpdatedUtc;
+            IsOfflineData = !IsConnectedToInternet();
+            UpdateOfflineStatusInfo();
+            ApplyFilterAndSorting();
+        }
+        else
+        {
+            LoadDefaultHotlines();
+            _masterCentersList.Clear();
+            _masterCentersList.AddRange(GetOfficialMarikinaCenters());
+            LastSuccessfulUpdate = CacheService.GetLastUpdatedTime();
+            IsOfflineData = !IsConnectedToInternet();
+            UpdateOfflineStatusInfo();
+            ApplyFilterAndSorting();
+        }
+    }
+
+    public void OnAppearing()
+    {
+        if (!_isConnectivitySubscribed)
+        {
+            try
+            {
+                Connectivity.Current.ConnectivityChanged += OnConnectivityChanged;
+                _isConnectivitySubscribed = true;
+            }
+            catch { }
+        }
+
+        if (IsConnectedToInternet())
+        {
+            _ = RefreshDataAsync();
+        }
+        else
+        {
+            IsOfflineData = true;
+            UpdateOfflineStatusInfo();
+        }
+    }
+
+    public void OnDisappearing()
+    {
+        if (_isConnectivitySubscribed)
+        {
+            try
+            {
+                Connectivity.Current.ConnectivityChanged -= OnConnectivityChanged;
+                _isConnectivitySubscribed = false;
+            }
+            catch { }
+        }
+    }
+
+    private void OnConnectivityChanged(object? sender, ConnectivityChangedEventArgs e)
+    {
+        bool isConnected = e.NetworkAccess == NetworkAccess.Internet;
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (isConnected)
+            {
+                await RefreshDataAsync();
+            }
+            else
+            {
+                IsOfflineData = true;
+                UpdateOfflineStatusInfo();
+            }
+        });
+    }
+
+    [RelayCommand]
+    public async Task RefreshAsync()
+    {
+        if (IsRefreshing) return;
+        try
+        {
+            IsRefreshing = true;
+            await RefreshDataAsync();
+        }
+        finally
+        {
+            IsRefreshing = false;
+        }
+    }
+
+    public async Task RefreshDataAsync()
+    {
+        if (!IsConnectedToInternet())
+        {
+            IsOfflineData = true;
+            UpdateOfflineStatusInfo();
+            RecalculateDistances(_userLat, _userLng);
+            return;
+        }
+
+        await Task.WhenAll(
+            FetchHotlinesFromSupabaseAsync(),
+            FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng)
+        );
     }
 
     public async Task FetchEvacuationCentersFromSupabaseAsync(double userLat = 14.6612, double userLng = 121.0963)
     {
         _userLat = userLat;
         _userLng = userLng;
+
+        if (!IsConnectedToInternet())
+        {
+            IsOfflineData = true;
+            UpdateOfflineStatusInfo();
+            RecalculateDistances(_userLat, _userLng);
+            return;
+        }
 
         try
         {
@@ -499,7 +800,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                     Android.Util.Log.Info(MldLogTag, $"Fetched {response.Models.Count} evacuation centers from Supabase.");
 #endif
                     var userLoc = new Location(userLat, userLng);
-                    var currentList = new List<EvacuationCenterItem>(_masterCentersList);
+                    var updatedList = new List<EvacuationCenterItem>();
 
                     foreach (var model in response.Models)
                     {
@@ -513,85 +814,63 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                         }
 
                         var facilitiesList = ParseFacilities(model.Facilities);
-
-                        var existing = currentList.FirstOrDefault(c =>
-                            (!string.IsNullOrWhiteSpace(model.Id) && string.Equals(c.Id, model.Id, StringComparison.OrdinalIgnoreCase)) ||
-                            (!string.IsNullOrWhiteSpace(model.Name) && string.Equals(c.Name?.Trim(), model.Name?.Trim(), StringComparison.OrdinalIgnoreCase)));
-
                         string resolvedImage = (model.ImageUrl ?? string.Empty).Trim();
 
-                        if (existing != null)
+                        var item = new EvacuationCenterItem
                         {
-                            if (!string.IsNullOrWhiteSpace(model.Id)) existing.Id = model.Id;
-                            if (!string.IsNullOrWhiteSpace(model.Name)) existing.Name = model.Name;
-                            if (!string.IsNullOrWhiteSpace(model.Barangay)) existing.Barangay = model.Barangay;
-                            if (!string.IsNullOrWhiteSpace(model.Classification)) existing.Classification = model.Classification;
-                            existing.Address = string.IsNullOrWhiteSpace(existing.Barangay) ? "Marikina City" : $"{existing.Barangay}, Marikina City";
-                            if (lat != 14.6502 || lng != 121.0944)
-                            {
-                                existing.Latitude = lat;
-                                existing.Longitude = lng;
-                            }
-                            if (model.Capacity > 0) existing.Capacity = model.Capacity;
-                            existing.CurrentEvacuees = model.CurrentEvacuees;
-                            if (!string.IsNullOrWhiteSpace(model.Status)) existing.Status = model.Status;
-                            if (!string.IsNullOrWhiteSpace(model.HeadOfficer)) existing.HeadOfficer = model.HeadOfficer;
-                            if (!string.IsNullOrWhiteSpace(model.Contact)) existing.Contact = model.Contact;
-                            if (facilitiesList.Count > 0) existing.Facilities = facilitiesList;
+                            Id = model.Id ?? string.Empty,
+                            Name = model.Name ?? string.Empty,
+                            Barangay = model.Barangay ?? string.Empty,
+                            Classification = string.IsNullOrWhiteSpace(model.Classification) ? "Flood-Safe Major" : model.Classification,
+                            Address = string.IsNullOrWhiteSpace(model.Barangay) ? "Marikina City" : $"{model.Barangay}, Marikina City",
+                            VerifiedBy = "Marikina LGU",
+                            Latitude = lat,
+                            Longitude = lng,
+                            Capacity = model.Capacity > 0 ? model.Capacity : 500,
+                            CurrentEvacuees = model.CurrentEvacuees,
+                            Status = string.IsNullOrWhiteSpace(model.Status) ? "Standby" : model.Status,
+                            HeadOfficer = string.IsNullOrWhiteSpace(model.HeadOfficer) ? "Unassigned" : model.HeadOfficer,
+                            Contact = string.IsNullOrWhiteSpace(model.Contact) ? "N/A" : model.Contact,
+                            Facilities = facilitiesList,
+                            FacilityImageUrl = resolvedImage,
+                            MapImageSource = $"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lng}&zoom=16&size=600x300&markers={lat},{lng},red-pushpin"
+                        };
 
-                            if (!string.IsNullOrWhiteSpace(resolvedImage))
-                            {
-                                existing.FacilityImageUrl = resolvedImage;
-                            }
+                        item.LoadBookmarkState();
 
-                            existing.MapImageSource = $"https://staticmap.openstreetmap.de/staticmap.php?center={existing.Latitude},{existing.Longitude}&zoom=16&size=600x300&markers={existing.Latitude},{existing.Longitude},red-pushpin";
-
-                            existing.LoadBookmarkState();
-                            var centerLoc = new Location(existing.Latitude, existing.Longitude);
-                            double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
-                            existing.DistanceKm = distKm;
-                            existing.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
-                            int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
-                            existing.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
-                        }
-                        else
+                        if (lat != 0 && lng != 0)
                         {
-                            var item = new EvacuationCenterItem
-                            {
-                                Id = model.Id,
-                                Name = model.Name,
-                                Barangay = model.Barangay,
-                                Classification = string.IsNullOrWhiteSpace(model.Classification) ? "Flood-Safe Major" : model.Classification,
-                                Address = string.IsNullOrWhiteSpace(model.Barangay) ? "Marikina City" : $"{model.Barangay}, Marikina City",
-                                VerifiedBy = "Marikina LGU",
-                                Latitude = lat,
-                                Longitude = lng,
-                                Capacity = model.Capacity > 0 ? model.Capacity : 500,
-                                CurrentEvacuees = model.CurrentEvacuees,
-                                Status = string.IsNullOrWhiteSpace(model.Status) ? "Standby" : model.Status,
-                                HeadOfficer = string.IsNullOrWhiteSpace(model.HeadOfficer) ? "Unassigned" : model.HeadOfficer,
-                                Contact = string.IsNullOrWhiteSpace(model.Contact) ? "N/A" : model.Contact,
-                                Facilities = facilitiesList,
-                                FacilityImageUrl = resolvedImage,
-                                MapImageSource = $"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lng}&zoom=16&size=600x300&markers={lat},{lng},red-pushpin"
-                            };
-
-                            item.LoadBookmarkState();
-                            var centerLoc = new Location(item.Latitude, item.Longitude);
+                            var centerLoc = new Location(lat, lng);
                             double distKm = Location.CalculateDistance(userLoc, centerLoc, DistanceUnits.Kilometers);
                             item.DistanceKm = distKm;
                             item.Distance = distKm < 1.0 ? $"{Math.Round(distKm * 1000)} meters away" : $"{distKm:F1} km away";
                             int walkMins = (int)Math.Max(1, Math.Round(distKm * 13.75));
                             item.DetailedDistanceString = $"{(int)Math.Round(distKm * 1000)} meters ({walkMins} mins walk)";
-
-                            currentList.Add(item);
                         }
+
+                        updatedList.Add(item);
                     }
+
+                    // Save latest successfully loaded data to local storage (Requirements 1, 3, 4)
+                    var now = DateTimeOffset.UtcNow;
+                    var cachedItems = updatedList.Select(CreateCachedFromItem).ToList();
+                    var cachedHotlines = Hotlines.Select(h => new CachedEmergencyHotlineItem
+                    {
+                        Name = h.Name,
+                        Number = h.Number,
+                        Type = h.Type,
+                        BadgeText = h.BadgeText
+                    }).ToList();
+
+                    CacheService.SaveEvacuationCenters(cachedItems, cachedHotlines, now);
 
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         _masterCentersList.Clear();
-                        _masterCentersList.AddRange(currentList);
+                        _masterCentersList.AddRange(updatedList);
+                        LastSuccessfulUpdate = now;
+                        IsOfflineData = false;
+                        UpdateOfflineStatusInfo();
                         ApplyFilterAndSorting();
                     });
                 }
@@ -604,6 +883,16 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 #else
             System.Diagnostics.Debug.WriteLine($"Failed to fetch live evacuation centers from Supabase: {ex.Message}");
 #endif
+            // If online request fails, do NOT overwrite existing saved data with empty/incomplete results (Requirement 4)
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsOfflineData = true;
+                UpdateOfflineStatusInfo();
+                if (_masterCentersList.Count == 0)
+                {
+                    LoadData();
+                }
+            });
         }
     }
 
@@ -632,6 +921,8 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public async Task FetchHotlinesFromSupabaseAsync()
     {
+        if (!IsConnectedToInternet()) return;
+
         try
         {
             var client = await SupabaseService.Instance.GetClientAsync();
@@ -675,6 +966,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             {
                 _userLat = location.Latitude;
                 _userLng = location.Longitude;
+                RecalculateDistances(_userLat, _userLng);
                 _ = FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng);
             }
 
@@ -689,6 +981,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                         _userLng = freshLoc.Longitude;
                         MainThread.BeginInvokeOnMainThread(() =>
                         {
+                            RecalculateDistances(_userLat, _userLng);
                             _ = FetchEvacuationCentersFromSupabaseAsync(_userLat, _userLng);
                         });
                     }
