@@ -46,6 +46,10 @@ public partial class CameraPage
             $"speed={reading?.SpeedMetersPerSecond:F2}; course={reading?.CourseDegrees:F1}; " +
             $"fusion={lastGpsFusionAction}; reliability={lastGpsReliabilityWeight:F2}; " +
             $"gpsPdrDelta={lastGpsPdrDivergenceMeters:F1}m; " +
+            $"backtrackSamples={lastBacktrackingDecision.ConfirmationCount}/" +
+            $"{lastBacktrackingDecision.RequiredConfirmationCount}; " +
+            $"backtrackRetreat={lastBacktrackingDecision.RetreatMeters:F1}m; " +
+            $"backtrackReason='{lastBacktrackingDecision.Reason}'; " +
             $"arrivalDistance={lastSafeZoneDecision.DistanceToDestinationMeters:F1}m; " +
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}/{lastSafeZoneDecision.RequiredConfirmationCount}; " +
             $"arrivalReason='{lastSafeZoneDecision.Reason}'.");

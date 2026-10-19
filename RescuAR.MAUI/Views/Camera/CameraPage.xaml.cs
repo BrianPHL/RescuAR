@@ -93,6 +93,8 @@ namespace RescuAR.App.Views.Camera
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly PdrHeadingSmoother _pdrHeadingSmoother;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
+        private readonly RouteBacktrackingPolicy _routeBacktrackingPolicy = new();
+        private RouteBacktrackingPolicy.BacktrackingDecision lastBacktrackingDecision;
         private readonly DestinationProximityReroutePolicy _destinationProximityReroutePolicy = new();
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
         private readonly HeadingRevalidationPolicy _headingRevalidationPolicy;
@@ -3753,6 +3755,8 @@ namespace RescuAR.App.Views.Camera
                     UpdateRoadFollowingVisualModeFromAcceptedGps(initialFused);
 
                 _offRouteReroutePolicy.Reset();
+                _routeBacktrackingPolicy.Reset();
+                lastBacktrackingDecision = default;
 
                 _routeReplacementPolicy.Reset();
 
@@ -4323,6 +4327,8 @@ namespace RescuAR.App.Views.Camera
             _pdrHeadingSmoother.Reset();
 
             _offRouteReroutePolicy.Reset();
+            _routeBacktrackingPolicy.Reset();
+            lastBacktrackingDecision = default;
 
             _routeReplacementPolicy.Reset();
 
@@ -4700,6 +4706,8 @@ namespace RescuAR.App.Views.Camera
                         bool verifiedOffCourseThisCycle =
                             false;
 
+                        bool replanForBacktracking = false;
+
                         GeoCoordinate rerouteOrigin =
                             default;
 
@@ -4740,17 +4748,21 @@ namespace RescuAR.App.Views.Camera
                                     matchedGps.MatchConfidence;
                             }
 
+                            bool nearDestination = activeDestinationCoordinate.HasValue &&
+                                _destinationProximityReroutePolicy.ShouldHold(reading.Coordinate,
+                                    activeDestinationCoordinate.Value, reading.AccuracyMeters,
+                                    reading.Timestamp, DateTimeOffset.UtcNow,
+                                    accessVerified: arrivalRoadGraph is not null &&
+                                        !arrivalRoadGraph.AccessCrossesMajorRoad(reading.Coordinate,
+                                            activeDestinationCoordinate.Value));
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 _offRouteReroutePolicy.Evaluate(
                                     matchedGps,
                                     reading.Timestamp,
-                                    destinationProximityUncertain: activeDestinationCoordinate.HasValue &&
-                                        _destinationProximityReroutePolicy.ShouldHold(reading.Coordinate,
-                                            activeDestinationCoordinate.Value, reading.AccuracyMeters,
-                                            reading.Timestamp, DateTimeOffset.UtcNow,
-                                            accessVerified: arrivalRoadGraph is not null &&
-                                                !arrivalRoadGraph.AccessCrossesMajorRoad(reading.Coordinate,
-                                                    activeDestinationCoordinate.Value)));
+                                    destinationProximityUncertain: nearDestination);
+
+                            lastBacktrackingDecision = _routeBacktrackingPolicy.Evaluate(route,
+                                matchedGps, reading.Timestamp, DateTimeOffset.UtcNow, nearDestination);
 
                             lastOffRouteCandidate =
                                 offRouteDecision.IsCandidate;
@@ -4773,6 +4785,16 @@ namespace RescuAR.App.Views.Camera
                                     $"reroute={offRouteDecision.ShouldReroute}, " +
                                     $"reason='{offRouteDecision.Reason}'");
                             }
+                            if (lastBacktrackingDecision.IsCandidate)
+                                Log.Warn(RerouteLogTag,
+                                    $"ROUTE_BACKTRACKING algorithm='{route.Algorithm}'; " +
+                                    $"samples={lastBacktrackingDecision.ConfirmationCount}/" +
+                                    $"{lastBacktrackingDecision.RequiredConfirmationCount}; " +
+                                    $"displacement={lastBacktrackingDecision.DisplacementMeters:F1}m; " +
+                                    $"retreat={lastBacktrackingDecision.RetreatMeters:F1}m; " +
+                                    $"accuracy={reading.AccuracyMeters:F1}m; " +
+                                    $"replan={lastBacktrackingDecision.ShouldReplan}; " +
+                                    $"reason='{lastBacktrackingDecision.Reason}'.");
 #endif
 
                             if (offRouteDecision.ShouldReroute)
@@ -4788,6 +4810,13 @@ namespace RescuAR.App.Views.Camera
 
                                 rerouteReason =
                                     offRouteDecision.Reason;
+                            }
+                            else if (lastBacktrackingDecision.ShouldReplan)
+                            {
+                                shouldStartDynamicReroute = true;
+                                replanForBacktracking = true;
+                                rerouteOrigin = reading.Coordinate;
+                                rerouteReason = lastBacktrackingDecision.Reason;
                             }
 
                             RouteProgressTracker.RouteProgressUpdate fusedGps =
@@ -5004,6 +5033,7 @@ namespace RescuAR.App.Views.Camera
                                         false;
 
                                     _offRouteReroutePolicy.ResetConfirmation();
+                                    _routeBacktrackingPolicy.ResetEvidence();
 
                                     lastOffRouteCandidate =
                                         false;
@@ -5061,7 +5091,8 @@ namespace RescuAR.App.Views.Camera
                         {
                             StartDynamicRerouteIfPossible(
                                 rerouteOrigin,
-                                rerouteReason);
+                                rerouteReason,
+                                preserveActiveAlgorithm: replanForBacktracking);
                         }
 
 #if RESCUAR_DIAGNOSTICS
@@ -5823,7 +5854,8 @@ namespace RescuAR.App.Views.Camera
 
         private void StartDynamicRerouteIfPossible(
             GeoCoordinate origin,
-            string reason)
+            string reason,
+            bool preserveActiveAlgorithm = false)
         {
 #if ANDROID
             if (safeZoneConfirmed ||
@@ -5847,7 +5879,8 @@ namespace RescuAR.App.Views.Camera
             _ =
                 TryDynamicRerouteAsync(
                     origin,
-                    reason);
+                    reason,
+                    preserveActiveAlgorithm: preserveActiveAlgorithm);
 #endif
         }
 
@@ -5856,7 +5889,8 @@ namespace RescuAR.App.Views.Camera
             string reason,
             bool forceOfflineAStar = false,
             IReadOnlyList<RouteHazard>? hazardsToAvoid = null,
-            RouteHazard? triggeringHazard = null)
+            RouteHazard? triggeringHazard = null,
+            bool preserveActiveAlgorithm = false)
         {
 #if ANDROID
             if (safeZoneConfirmed ||
@@ -5878,6 +5912,8 @@ namespace RescuAR.App.Views.Camera
 
             bool hazardAware =
                 hazardsToAvoid is { Count: > 0 };
+            bool keepOfflineAlgorithm = preserveActiveAlgorithm &&
+                activeRoute is { } previousRoute && IsAStarRoute(previousRoute);
 
             routeRequestInProgress =
                 true;
@@ -5902,6 +5938,7 @@ namespace RescuAR.App.Views.Camera
                     RerouteLogTag,
                     "DYNAMIC REROUTE STARTED: " +
                     $"reason='{reason}', " +
+                    $"previousAlgorithm='{activeRoute?.Algorithm}', preserveAlgorithm={preserveActiveAlgorithm}, " +
                     $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
                     $"destination='{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'. " +
                     "The geographic route is retained until a validated replacement is ready.");
@@ -5928,7 +5965,7 @@ namespace RescuAR.App.Views.Camera
                             hazardsToAvoid!,
                             cancellationToken);
                 }
-                else if (forceOfflineAStar)
+                else if (forceOfflineAStar || keepOfflineAlgorithm)
                 {
                     replacementRoute =
                         await _hybridRoutingService.FindOfflineRouteAsync(
@@ -6078,6 +6115,7 @@ namespace RescuAR.App.Views.Camera
 
                         _offRouteReroutePolicy.MarkRerouteCompleted(
                             DateTimeOffset.UtcNow);
+                        _routeBacktrackingPolicy.MarkRerouteCompleted(DateTimeOffset.UtcNow);
 
                         lastOffRouteCandidate =
                             false;
@@ -6194,10 +6232,14 @@ namespace RescuAR.App.Views.Camera
                         "DestinationChanged"))
                 {
                     lock (routeProgressFusionSync)
+                    {
                         _offRouteReroutePolicy.MarkRerouteFailed(
                             DateTimeOffset.UtcNow,
                             awaitingConfirmation: lastRerouteResult ==
                                 "AwaitingRouteConfirmation");
+                        _routeBacktrackingPolicy.MarkRerouteFailed(DateTimeOffset.UtcNow,
+                            awaitingConfirmation: lastRerouteResult == "AwaitingRouteConfirmation");
+                    }
                 }
 
                 dynamicRerouteInProgress =

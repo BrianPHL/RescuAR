@@ -162,3 +162,104 @@ and faster automatic vicinity confirmation. For flood mode, expect scene-masked
 water at the selected height rather than grid lines. Collect a complete capture
 for each phone, especially a fresh HONOR capture, before further
 behavior-dependent changes.
+
+## Follow-up: 10:24 field capture
+
+The later MLD, A*, and faint-water findings were read before opening
+`Logs/RescuAR_FieldTest_20261019_102425.zip`. This section records the subsequent
+review and local changes; the preceding section describes the earlier capture.
+
+### Capture evidence
+
+All three installed manifests identify APK SHA-256
+`e2396a692c05c5d2975160121a0cdd80ae487812e25792ed727562a0a47acbe9`,
+embedded source revision `29a3eecc4f5d7d84f2b34040c3309b2aa6cc7915`, and a
+diagnostic Release profile. Review copies and a compact count summary are under
+the ignored `artifacts/field-review-20261019-1024/` directory.
+
+| Capture | Coverage | Evidence |
+|---|---|---|
+| `102329`, Samsung SM-A546E / API 36 | Complete, 10:23:34–10:45:42; 3,427 application / 246 navigation events | MLD: one route request, zero dynamic reroutes, 52 AR alignment publications. Of 101 current-location samples, 24 reported accuracy worse than 30 m; median 15.5 m, worst 49.38 m. |
+| `102500`, Samsung SM-A546E / API 34 | Complete, 10:25:04–10:45:04; 7,399 application / 447 navigation events | A*: zero dynamic reroutes, 71 AR alignment publications. Of 173 current-location samples, 29 reported accuracy worse than 30 m; median 10 m, worst 100 m. |
+| `102425`, HONOR ALI-NX1 / API 35 | Incomplete, about 13 seconds; zero application / navigation events | Logger dead at collection, start marker present, end marker absent. This capture cannot diagnose the reported intermittent guidance. |
+
+The MLD request is at `102329/logcat-001.txt:2448`. Repeated rebuilding of the
+AR window is separate from requesting a geographic route. GPS uncertainty,
+tracking recovery, route-position confidence, and briefly pending geometry
+appear in visibility records. For example, `102329/logcat-001.txt:3941` records
+geometry preparing despite fresh GPS and trusted heading. Neither complete
+capture contains an `AR_ROUTE_GEOMETRY_STALLED` event. These observations
+explain possible visual interruptions, but do not establish a GPS hardware
+fault or reproduce the uncaptured phone's failure. Location redaction also
+prevents reconstructing its actual street trajectory from this archive.
+
+The A* off-route candidate at `102500/logcat-004.txt:4708` reaches only 1/3
+confirmations. There is no recorded dynamic replacement. The source checks
+distance away from the route corridor; walking backward along the same route
+can therefore preserve stale committed progress without requesting a replan.
+The source gap exists for both algorithms. The user's physical reverse-walking
+test covered A* only; MLD reverse behavior remains untested on a phone.
+
+### Corrections
+
+`RouteBacktrackingPolicy` now compares raw matched position and GPS displacement
+independently of forward-only GPS/PDR progress. Replanning requires accuracy
+at most 20 m, an unambiguous accepted match, displacement and reverse progress
+of at least the larger of 12 m or the combined GPS uncertainties, at least six
+seconds of walking, and two continued-movement observations at least two seconds
+apart. A stationary position after one GPS jump cannot complete confirmation.
+It also handles walking away from a route's start, where projection clamps
+progress to zero. Stale/duplicate observations, poor accuracy, route changes,
+arrival proximity, and cooldowns guard the new evidence.
+
+The backward match search now covers at least 60 m instead of relying solely
+on four preceding vertices. Dense GeoJSON vertices can no longer limit the
+search to just a few metres. A confirmed reverse walk requests a route from
+the current GPS position. An active A* route uses offline A* for this request;
+MLD uses the existing connectivity-aware router. Destination version checks,
+mapped access validation, replacement-distance confirmation, and independent
+AR placement checks still apply. A new route may correctly point back toward
+the same destination; recalculation does not promise an alternative street.
+
+`ROUTE_BACKTRACKING` records now distinguish reverse-walking confirmation from
+ordinary corridor departure. Periodic `NAV_PROGRESS` includes confirmation,
+retreat distance, and the reason a reverse replan is held. Dynamic request logs
+identify the preceding algorithm and whether its selection is being preserved.
+
+The screenshots show estimated-floor mode, previously capped at 56/255 opacity
+(22%). Estimated-floor water now reaches 120/255 (47%), and verified-floor
+water reaches 160/255 (63%), using a deeper blue (`#0084B8`). Scene depth,
+metric water height, surface feathering, transparent invalid-depth pixels,
+ground validation, and the estimated-floor caption remain in place. The
+screenshots at 10:49–10:50 fall after the complete captures ended, so the archive
+cannot establish the mask coverage of those exact frames. Physical visibility
+and intermittently missing guidance still require device acceptance.
+
+### Local verification and next walk
+
+- `--field-validation`: **67 checks passed**, including 24 new reverse-walking
+  checks. A test fixture initially retained prior branch identity instead of
+  representing an ambiguous match; correcting that fixture and rerunning passed.
+- Android Release build: **0 warnings, 0 errors**.
+- Release readiness and APK manifest / ARM64 native-bridge / diagnostic-profile
+  checks: **passed**. The native bridge remains
+  `c744905f5916525c0fe10f7c55b6d7c8b27347d0796c18988d62b8c37073b3b5`.
+- No full regression suite, integration tests, UI automation, installation, or
+  physical-device testing was performed for this follow-up.
+
+Candidate: [RescuAR-20261019-RoutePosition.apk](artifacts/field-test-20261019-route-position/RescuAR-20261019-RoutePosition.apk).
+SHA-256: `884945e9a93d063e71a96b587b4933d7aa422922f6a5232ecd57b8eab6dbb2e6`.
+Package evidence: `artifacts/field-test-20261019-route-position/package-evidence/`.
+This candidate contains the local uncommitted follow-up changes on top of
+`8d2de51`; the embedded base revision alone does not identify these changes.
+
+1. Record a complete capture per phone. Walk normally, turn only the phone,
+   then walk backward along the same street far enough to exceed GPS uncertainty
+   (usually 15–40 m with a usable fix). Expect one confirmed current-position
+   replan and refreshed remaining distance, without requests on every GPS poll.
+2. Repeat separately in A* and MLD. During cyan/arrow loss, retain the exact
+   screen message and time so visibility reasons can be matched to the capture.
+3. Compare flood mode at 0.6 m and 1.77 m, including estimated-floor mode.
+   Expect more visible blue water below the simulated height, with valid
+   above-water geometry clear. Report the actual results and complete captures
+   before further behavior-dependent changes.

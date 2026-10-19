@@ -308,6 +308,12 @@ public sealed class RouteProgressTracker
                     previousSegment -
                     SearchBackwardSegments);
 
+            // Vertex density must not prevent GPS from finding a user walking
+            // back along the same road. Keep this search local in metres too.
+            while (startIndex > 0 && previousCommittedProgress -
+                currentRoute.Points[startIndex].DistanceFromStartMeters < 60.0)
+                startIndex--;
+
             int endIndex =
                 Math.Min(
                     currentRoute.Points.Count -
@@ -462,8 +468,8 @@ public sealed class RouteProgressTracker
 
         /*
          * GPS jitter can produce a nearby point behind the previous sample.
-         * Keep route progress monotonic for this first pedestrian milestone.
-         * Intentional backtracking/recovery is a later map-matching concern.
+         * Keep normal route progress monotonic. RouteBacktrackingPolicy uses
+         * the raw match to request a replacement after confirmed reverse walking.
          */
         if (alreadyHasProgress &&
             committedProgress <

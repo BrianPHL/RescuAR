@@ -32,13 +32,15 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
 
     private const float SurfaceTransitionMeters = 0.06f;
 
-    private const byte EstimatedFloodMaximumAlpha = 56;
+    // Keep estimated-floor water visibly distinct while the banner continues
+    // to identify its uncertainty. Even this mode must be readable in daylight.
+    private const byte EstimatedFloodMaximumAlpha = 120;
 
     private const float MaximumGroundCorrectionPerDepthFrameMeters =
         0.08f;
 
     private static readonly SKColor FloodColor =
-        new(0x00, 0xA6, 0xC8, 104);
+        new(0x00, 0x84, 0xB8, 160);
 
     private static readonly SKColor Transparent =
         new(0, 0, 0, 0);

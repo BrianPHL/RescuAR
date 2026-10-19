@@ -27,11 +27,13 @@ if (args.Contains("--field-validation"))
 {
     ARGroundFloodChecks.Run(Check);
     ARFieldValidationChecks.Run(Check);
+    RouteBacktrackingChecks.Run(Check);
     Console.WriteLine($"{passed} field-validation regression checks passed.");
     return;
 }
 ARGroundFloodChecks.Run(Check);
 ARFieldValidationChecks.Run(Check);
+RouteBacktrackingChecks.Run(Check);
 foreach (bool activityFirst in new[] { true, false })
 {
     var intent = new ArCoreRunIntent();
