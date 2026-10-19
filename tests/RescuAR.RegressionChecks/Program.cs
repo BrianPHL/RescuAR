@@ -29,49 +29,27 @@ if (args.Contains("--ground-flood"))
     Console.WriteLine($"{passed} ground/flood regression checks passed.");
     return;
 }
-if (args.Contains("--field-validation"))
+if (args.Contains("--field-validation") || args.Contains("--ar-guidance"))
 {
     ARGroundFloodChecks.Run(Check);
     ARFieldValidationChecks.Run(Check);
     RouteBacktrackingChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
     StartupSceneChecks.Run(Check);
-    Console.WriteLine($"{passed} field-validation regression checks passed.");
+    if (args.Contains("--ar-guidance"))
+    {
+        await ARGuidanceParityChecks.RunAsync(Check);
+        await ARSystemAuditChecks.RunAsync(Check);
+    }
+    Console.WriteLine($"{passed} {(args.Contains("--ar-guidance") ? "AR guidance" : "field-validation")} regression checks passed.");
     return;
 }
 ARGroundFloodChecks.Run(Check);
 ARFieldValidationChecks.Run(Check);
 RouteBacktrackingChecks.Run(Check);
+RouteDisplayProgressChecks.Run(Check);
 StartupSceneChecks.Run(Check);
-foreach (bool activityFirst in new[] { true, false })
-{
-    var intent = new ArCoreRunIntent();
-    intent.Request(true);
-    intent.SetSurfaceReady(true);
-    Check(intent.ShouldRun, "requested camera has both prerequisites");
-    intent.SetActivityResumed(false);
-    intent.SetActivityResumed(false);
-    intent.SetSurfaceReady(false);
-    intent.SetSurfaceReady(false);
-    Check(intent.Requested && !intent.ShouldRun, "duplicate pauses retain camera intent");
-    if (activityFirst) intent.SetActivityResumed(true);
-    else intent.SetSurfaceReady(true);
-    Check(!intent.ShouldRun, "one returning prerequisite cannot resume alone");
-    if (activityFirst) intent.SetSurfaceReady(true);
-    else intent.SetActivityResumed(true);
-    Check(intent.ShouldRun, "both resume callback orders work");
-    intent.SetSurfaceReady(false);
-    intent.Request(false);
-    intent.SetActivityResumed(true);
-    intent.SetSurfaceReady(true);
-    Check(!intent.ShouldRun, "late surface cannot undo Camera-tab exit");
-    intent.Request(true);
-    Check(intent.ShouldRun, "explicit camera re-entry resumes");
-    intent.Shutdown();
-    intent.SetActivityResumed(true);
-    intent.SetSurfaceReady(true);
-    intent.Request(true);
-    Check(intent.IsShutdown && !intent.ShouldRun, "late callbacks cannot revive shutdown");
-}
+await ARGuidanceParityChecks.RunAsync(Check);
 ArHorizontalRoutePoint P(float x, float z, double d) => new(x, z, d);
 Check(ARRouteGeometrySanitizer.Prepare(
     new[] { P(0,0,0), P(float.NaN,1,1), P(2,0,2) }, 65).Points.Count == 0,

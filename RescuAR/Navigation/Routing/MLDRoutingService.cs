@@ -59,7 +59,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
     public const string FallbackBaseUrl =
         "https://rescuar-production-2c22.up.railway.app";
 
-    private static readonly HttpClient httpClient =
+    private static readonly HttpClient sharedHttpClient =
         new()
         {
             Timeout =
@@ -68,6 +68,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         };
 
     private readonly string[] baseUrls;
+    private readonly HttpClient httpClient;
 
     public string AlgorithmName =>
         "MLD (Railway OSRM)";
@@ -84,7 +85,14 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     public MLDRoutingService(
         params string[] baseUrls)
+        : this(sharedHttpClient, baseUrls)
     {
+    }
+
+    /// <summary>The caller retains ownership of the supplied HTTP client.</summary>
+    public MLDRoutingService(HttpClient httpClient, params string[] baseUrls)
+    {
+        this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         if (baseUrls is null ||
             baseUrls.Length == 0)
         {

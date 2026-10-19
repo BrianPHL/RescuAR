@@ -213,6 +213,17 @@ public sealed class HeadingRevalidationPolicy
                 0.001,
                 elapsed.TotalSeconds);
 
+        double movementDifferenceAllowance = baseline.Value.AccuracyMeters +
+            gpsAccuracyMeters!.Value + Math.Max(8.0, arDisplacementMeters * 0.5);
+        if (Math.Abs(gpsDisplacementMeters - arDisplacementMeters) > movementDifferenceAllowance)
+        {
+            baseline = current;
+            ResetCandidateEvidence();
+            return CreateDecision(HeadingRevalidationDisposition.SignalsDisagree,
+                currentMapToArYawDegrees, gpsDisplacementMeters, arDisplacementMeters,
+                reason: "GPS and ARCore movement distances disagree beyond GPS uncertainty");
+        }
+
         bool reportedSpeedUsable =
             gpsSpeedMetersPerSecond.HasValue &&
             double.IsFinite(

@@ -1152,22 +1152,34 @@ public sealed class RouteProgressTracker
 
         if (!best.IsAvailable) return best;
 
+        // Continuity chooses the corridor, then geometry chooses the physical
+        // position on that corridor. Otherwise a backward-progress penalty can
+        // pull a dense route's match onto an endpoint ahead of the user while
+        // the same road represented by one long segment projects correctly.
+        SegmentMatch corridorWinner = best;
+        foreach (SegmentMatch candidate in candidates)
+        {
+            if (candidate.CrossTrackErrorMeters < best.CrossTrackErrorMeters &&
+                IsSameCorridorNeighbor(route, corridorWinner.SegmentIndex, candidate.SegmentIndex))
+                best = candidate;
+        }
+
         // Consecutive pieces of one planned road are the same corridor.
         // Treat a genuinely separate branch (or an immediate reversal) as
         // competition; ordinary vertex proximity must not lower confidence.
         double secondBestScore = double.PositiveInfinity;
         foreach (SegmentMatch candidate in candidates)
         {
-            if (candidate.SegmentIndex == best.SegmentIndex ||
-                IsSameCorridorNeighbor(route, best.SegmentIndex,
+            if (candidate.SegmentIndex == corridorWinner.SegmentIndex ||
+                IsSameCorridorNeighbor(route, corridorWinner.SegmentIndex,
                     candidate.SegmentIndex))
                 continue;
             secondBestScore = Math.Min(secondBestScore, candidate.MatchScore);
         }
         double scoreGap = double.IsFinite(secondBestScore)
-            ? Math.Max(0.0, secondBestScore - best.MatchScore)
+            ? Math.Max(0.0, secondBestScore - corridorWinner.MatchScore)
             : double.PositiveInfinity;
-        return best.WithScoreGap(scoreGap);
+        return best.WithScore(corridorWinner.MatchScore, best.CourseAlignmentErrorDegrees).WithScoreGap(scoreGap);
     }
 
     private static bool IsSameCorridorNeighbor(

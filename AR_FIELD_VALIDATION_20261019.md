@@ -330,3 +330,212 @@ Expect the live camera image to appear. Leave and reopen Camera once; expect
 the image to resume. Return the actual result and a complete capture before
 resuming the routing and flood acceptance walk. Builds and packaged-code
 inspection cannot establish physical camera behavior.
+
+## Follow-up: 11:40 guidance consistency capture
+
+The user's latest findings were read before opening
+`Logs/RescuAR_FieldTest_20261019_114043.zip`. All three installed manifests
+identify the corrected camera-startup APK
+`41cd0e77dbda4b3ad7dd71ba2809b905c6e574f00efdd19e501b877ca259c58f`.
+
+| Capture | Evidence |
+|---|---|
+| `113912`, Samsung SM-A546E / API 36 | Complete, 11:39:15–11:57:14; 3,648 application / 338 navigation events. Two initial MLD requests, no dynamic reroutes. GPS median reported accuracy 21.5 m; 43 of 124 current fixes worse than 30 m. Nine GPS-to-graph origin rejections. |
+| `114043`, Samsung SM-A546E / API 34 | Complete, 11:40:46–11:57:43; 5,882 application / 288 navigation events. One initial MLD request, no dynamic reroutes. GPS median reported accuracy 7.5 m; 21 of 120 current fixes worse than 30 m. Four GPS-to-graph origin rejections; repeated motion/feature tracking losses and low-light states. |
+| `114004`, HONOR ALI-NX1 / API 35 | Incomplete, about eleven seconds; zero application/navigation events. Logger dead at collection, completion marker absent. |
+
+The user identified Android 16 as the A* test phone. Its complete capture
+nevertheless reports `MLD (Railway OSRM)` throughout the active trip, and
+`HybridRouting` records successful online selections. There is no recorded
+offline A* selection in either complete capture. The API 34 phone loses
+connectivity at `114043/logcat-001.txt:4218` and intentionally retains its
+downloaded MLD route. Losing Internet during an existing trip does not by
+itself request an A* replacement. These logs cannot establish a comparison of
+two different route providers or a completed reverse-walking test in MLD.
+
+### Reproduced guidance loss
+
+At `113912/logcat-002.txt:781–787`, GPS matches the road with High confidence,
+11 m reported accuracy, and only 5.4 m cross-track error. Its raw route position
+is 37.5 m, but smoothed trip progress remains 58.8 m. The display uses that
+smoothed coordinate as the road reference, fails the 20 m GPS-to-graph limit,
+clears the bridge, and reports “Pedestrian route unavailable.” The geographic
+route itself remains valid.
+
+At `114043/logcat-002.txt:2961–2968`, the same sequence occurs with 7 m accuracy,
+3 m cross-track error, raw position 88.8 m, and fused progress 127.2 m. The
+origin rejection is therefore partly along-route smoothing error, rather than
+distance away from the actual road. Those failures are reproducible without
+weakening the physical placement limit.
+
+### Shared correction
+
+`RouteDisplayProgressPolicy` now uses the actual matched GPS route position
+for the display window, road reference, and segment. Trip-distance smoothing
+continues independently. Between fixes, step-based PDR advances from that
+physical display anchor by its own increment, preserving the observed
+GPS-to-road offset instead of centering the road on the camera every step.
+The derived alignment reference is used only for AR projection; route requests,
+arrival checks, and stored device locations continue to use actual GPS.
+
+The same policy serves both MLD and A*. It also supplies heading/road-entry
+segment references and recent display references for anchor/world recovery.
+New trips and route replacements reset its evidence. Existing GPS precision,
+route confidence, barriers, ground/tracking trust, the 20 m placement limit,
+and PDR's eight-second/eight-metre bounds remain enforced. Physical movement
+can refresh the display even while smoothed trip progress is being held.
+
+Heading revalidation additionally rejects GPS/AR movement-distance disagreement
+beyond reported uncertainty. For example, a 100 m GPS jump alongside 5 m of
+tracked motion cannot supply a new road yaw merely because the bearings agree.
+This addresses a pattern present in the capture's heading records without
+applying a fixed rotation or shift to the road dataset.
+
+The false “geometry stalled” record at `113912/logcat-003.txt:6704` occurs while
+the camera session is paused, pose session is zero, GPS is about 110 seconds
+old, and the renderer already reports `WithinCapacity`. Geometry preparation
+timeouts now require fresh tracked frames. A retained geographic route with
+missing AR placement is labelled as placement recovery. Periodic diagnostics
+record raw GPS, smoothed trip, and displayed progress separately.
+
+No GeoJSON coordinates, road connections, routing preference, or dependency
+pins were modified. The evidence supports a display-reference offset; a genuine
+map-data offset still needs a verified street reference. Location redaction
+prevents surveying the dataset from this archive. Actual tracking loss and
+prolonged GPS uncertainty can still hide the cyan route and direction arrow.
+
+### Local verification and required walk
+
+- **96 focused checks passed**, including 26 new display/projection checks for
+  both algorithm labels, the reproduced offset failure, lateral placement,
+  bounded PDR, duplicate fixes, trip resets, corner segment selection, and rejection
+  of incoherent heading movement.
+- Android Release build passed with **zero warnings and zero errors**. Release
+  readiness, whitespace, manifest, ARM64 bridge, and diagnostic-profile checks
+  passed. Inspection of the managed assembly extracted from the actual APK
+  also confirmed startup-scene registration and the new shared display policy.
+- No physical-device, integration, browser, or full regression-suite testing
+  was performed for this follow-up.
+
+Candidate: [RescuAR-20261019-Guidance.apk](artifacts/field-test-20261019-guidance/RescuAR-20261019-Guidance.apk).
+SHA-256: `30d7bd8f51d4efa8c143a565b42c6d54183b00f1bc2d003d7c5a51dc0c8734b0`.
+Its embedded source revision is `d48304d5e95523bfea19b6265571bc3187458769`, plus
+the uncommitted changes described here. Package and managed-code evidence is
+under `artifacts/field-test-20261019-guidance/package-evidence/`. The native
+bridge remains `c744905f5916525c0fe10f7c55b6d7c8b27347d0796c18988d62b8c37073b3b5`.
+
+Retest the same straight street and a corner. Expect the cyan route to survive
+good GPS fixes that differ from smoothed walking progress, and expect step
+updates to preserve the road's lateral placement. For an A* run, disable
+Internet **before starting a new trip** and confirm an offline selection in the
+capture; an existing MLD route is retained through connectivity loss. Test
+opposite-direction walking separately in both providers, and return the actual
+results and complete captures before further behavior-dependent adjustments.
+
+## Shared A* / MLD guidance follow-up
+
+The implementation follows the parity plan: use the same progress, reroute,
+road-entry, visibility, recovery, and arrival rules for either provider, while
+allowing their mapped paths and online/offline capabilities to differ.
+
+### Provider selection and replacement
+
+`HybridRoutingService.FindReplacementRouteAsync` now owns the selection used
+for both ordinary deviations and sustained reverse walking. An active A* trip
+keeps the offline provider when Internet returns. An active MLD trip uses the
+normal connectivity-aware provider and retains its existing transport fallback.
+Both providers now receive the same deferred, bounded road-access retry; the
+earlier A* backtracking branch bypassed that retry. Hazard replacements still
+use the common safety-first planner, with client-side hazard validation and
+offline fallback. A hazard replacement can deliberately change providers.
+
+Replacement calculations do not publish AR geometry. The existing destination
+version, barrier, geometry, distance-increase, and atomic acceptance checks
+remain in CameraPage. Network loss alone retains downloaded MLD guidance.
+
+### Density-dependent match regression found by the new tests
+
+The first parity run used the actual A* graph planner and the production MLD
+HTTP adapter/parser with an in-memory OSRM protocol fixture. The fixture has
+five-metre vertices, duplicate coordinates, a mapped corner, and a server
+distance that differs from the geometry. It is representative test data, not
+a newly captured device response; no remote server is contacted.
+
+That run exposed a real matching discrepancy: during backward walking three
+metres beside the road, continuity penalties could select a dense route vertex
+ahead of the closest physical projection. The same road encoded as a long A*
+segment projected correctly. This could stall reverse-walking confirmation.
+
+Matching now selects the road corridor with the existing continuity score,
+then selects the nearest physical projection within that same continuous
+corridor. Independent-corridor scoring, parallel-road ambiguity checks,
+monotonic trip progress, and reroute confirmation thresholds remain intact.
+No GeoJSON coordinates, data identities, heading transforms, or snap limits
+were changed. A geographic dataset offset still requires a reliable physical
+reference; these changes do not establish that the source roads are surveyed.
+
+### Visibility and recovery safeguards
+
+- A valid mapped preview is retained when a fresh publication waits for tracking
+  or an anchor. Visibility still requires the independent tracking, GPS,
+  heading, access, and route-identity gates. Anchor handoff still discards an
+  old preview before accepting geometry in the new frame.
+- The brief verified-window GPS hold now explicitly rejects suspended route
+  identity. Its immutable snapshot is atomically published across UI/GPS work.
+  The existing six-second, 25-metre accuracy, 15-metre displacement, route
+  version, and ground-reference limits remain enforced.
+- World-correction and replacement-anchor publication now recheck the active
+  trip and route under the progress lock, using the latest bounded physical
+  display anchor. A superseded callback cannot republish its earlier route.
+- Diagnostics include the visual kind, visual mode, preview/entry state,
+  reroute state/result, trip version, and provider selection policy.
+
+### Verification and phone acceptance
+
+The scoped `--ar-guidance` runner includes the existing 96 field checks,
+60 new provider/parity checks, and 57 lifecycle/frame/sensor/visibility audit
+checks. The first run exposed the density issue above; after the focused
+correction, **213 checks passed**. The new scope reuses the camera resume checks
+and does not run the unrelated full regression harness.
+
+Final verification repeated those 213 scoped checks after making the hold
+snapshot atomic. Android Release completed with **zero warnings and zero
+errors**. Source readiness, whitespace, merged manifest, ARM64 native bridge,
+and diagnostic-profile package checks passed. The package check required an
+explicit path to the installed native inspector and permission to launch that
+inspector outside the process sandbox; it passed without application changes.
+
+Inspection of both managed assemblies extracted from the actual APK confirmed
+the generated startup-scene factory and registration, shared replacement
+entry point, CameraPage's call to it, atomic hold state, and the physical
+corridor-matching correction. The extracted payload matches the final build
+store used by its assembly manifest.
+
+Candidate: [RescuAR-20261019-Routing-Parity.apk](artifacts/field-test-20261019-routing-parity/RescuAR-20261019-Routing-Parity.apk).
+SHA-256: `a0b90b53710802614db9e27f93aceb0cf8913475b7a06a7159126d66b9aae6af`.
+The embedded source revision is `299ee0f5df7ac0d3350a5ba80bacc1ac3de68d78`, plus
+the uncommitted guidance changes. Diagnostics are enabled and the route
+visibility override is disabled. Test/build logs, package evidence, and managed
+assembly checks are under `artifacts/field-test-20261019-routing-parity/`.
+The native bridge remains `c744905f5916525c0fe10f7c55b6d7c8b27347d0796c18988d62b8c37073b3b5`.
+
+Run `dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj --no-restore -- --ar-guidance`
+for this scope. Device acceptance remains separate from these local checks:
+
+1. Start a new online trip and confirm `MLD (Railway OSRM)` in its capture.
+   Walk forward, reverse direction long enough to exceed GPS uncertainty,
+   and leave/rejoin the mapped road. Expect confirmed current-position replans,
+   stable progress during GPS jitter, and an explicit recovery message when
+   trustworthy AR placement is unavailable.
+2. Stop that trip, disable Internet, and start a new trip. Confirm `AStar`
+   before repeating the same route and maneuvers. Restore Internet during the
+   A* trip; ordinary replans should keep A*. Disabling Internet during an
+   existing MLD trip does not establish an A* test.
+3. For each provider, briefly interrupt tracking, turn a corner, leave/reenter
+   the camera, and change the destination during pending route work. Expect
+   recovery with fresh placement, no old-trip geometry, no premature arrival,
+   and a working camera. Recheck ground acquisition and visible flood Depth.
+
+Return the actual results and complete captures before further changes that
+depend on physical-device behavior. No device installation, UI automation,
+integration tests, remote routing calls, or full-suite run were performed.

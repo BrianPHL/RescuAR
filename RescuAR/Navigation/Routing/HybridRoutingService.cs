@@ -373,11 +373,54 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     }
 
     /// <summary>
-    /// Explicit offline route entry point used when an already-active MLD trip
-    /// receives a confirmed Internet-loss event. This guarantees that the
-    /// transition itself is MLD -> A* even if connectivity changes again while
-    /// the replacement calculation is being prepared.
+    /// Ordinary deviations and reverse walking use the same per-trip provider
+    /// and bounded road-access retry. Internet restoration alone must not move
+    /// an offline trip back to MLD. Hazards use the shared safety-first planner,
+    /// which can select either provider after validating the alternative.
+    /// This method calculates geography only; it never changes ARRouteBridge.
     /// </summary>
+    public Task<RouteResult?> FindReplacementRouteAsync(
+        RouteResult activeRoute,
+        GeoCoordinate origin,
+        GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        IReadOnlyList<RouteHazard>? hazards = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(activeRoute);
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (hazards is { Count: > 0 })
+        {
+            AndroidLog.Info(LogTag,
+                $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=HazardSafety; hazards={hazards.Count}.");
+            return FindHazardAvoidingRouteAsync(origin, destination, hazards, cancellationToken);
+        }
+
+        IRoutingService provider = requireEmbeddedPedestrianGraph || IsOfflineRoute(activeRoute)
+            ? new OfflineTripRoutingService(this)
+            : this;
+        AndroidLog.Info(LogTag,
+            $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=RetainTripProvider; selected='{provider.AlgorithmName}'.");
+        return new MLDARIntegrationService(provider).RequestRouteWithDeferredRoadApproachAsync(
+            origin, destination, findRoadAccess, cancellationToken);
+    }
+
+    public static bool IsOfflineRoute(RouteResult route) =>
+        route.Algorithm.Contains("AStar", StringComparison.OrdinalIgnoreCase) ||
+        route.Algorithm.Contains("A*", StringComparison.OrdinalIgnoreCase);
+
+    private sealed class OfflineTripRoutingService(HybridRoutingService owner) : IRoutingService
+    {
+        public string AlgorithmName => "AStar";
+
+        public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+            CancellationToken cancellationToken = default) =>
+            owner.FindOfflineRouteAsync(origin, destination, cancellationToken);
+    }
+
+    /// <summary>Explicit routing against the embedded pedestrian graph.</summary>
     public async Task<RouteResult?> FindOfflineRouteAsync(
         GeoCoordinate origin,
         GeoCoordinate destination,

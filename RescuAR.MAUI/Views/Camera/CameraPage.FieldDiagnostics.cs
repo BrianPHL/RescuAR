@@ -34,6 +34,9 @@ public partial class CameraPage
         AndroidLog.Info(RouteLogTag, $"NAV_PLACEMENT visible={confidence.AllowsRouteGeometry}; " +
             $"reason='{confidence.DisplayMessage}'; session={frame.Generation.SessionGeneration}; " +
             $"route={route.Version}; spatial={continuity.State}; tracking={frame.IsTracking}; " +
+            $"visual={route.NavigationState.VisualKind}; mode={arRouteVisualMode}; " +
+            $"preview={approachRoutePreviewPublished}; entrySamples={roadFollowingReentryConfirmationCount}/{RoadFollowingEntryRequiredSamples}; " +
+            $"rerouting={dynamicRerouteInProgress}; rerouteResult={lastRerouteResult}; " +
             $"ground={frame.Anchor.Trust}/{frame.Anchor.ReferenceGeneration}; " +
             $"gpsAgeSec={gpsAgeSeconds:F1}; accuracy={gpsAccuracy:F1}m; " +
             $"identitySuspended={identitySuspended}; identitySamples={lastGpsRouteIdentityConfirmationCount}; " +
@@ -42,6 +45,8 @@ public partial class CameraPage
         AndroidLog.Info(RouteLogTag, $"NAV_PROGRESS algorithm='{activeRoute?.Algorithm}'; " +
             $"trip={NavigationDestinationBridge.Current.Version}; segment={progress.SegmentIndex}; " +
             $"progress={progress.CommittedProgressMeters:F1}m; remaining={progress.RemainingMeters:F1}m; " +
+            $"rawGpsProgress={progress.RawProgressMeters:F1}m; " +
+            $"displayProgress={route.NavigationState.WindowStartProgressMeters:F1}m; " +
             $"crossTrack={progress.CrossTrackErrorMeters:F1}m; " +
             $"speed={reading?.SpeedMetersPerSecond:F2}; course={reading?.CourseDegrees:F1}; " +
             $"fusion={lastGpsFusionAction}; reliability={lastGpsReliabilityWeight:F2}; " +

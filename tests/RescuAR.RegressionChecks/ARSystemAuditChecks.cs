@@ -12,6 +12,37 @@ internal static class ARSystemAuditChecks
 {
     public static async Task RunAsync(Action<bool, string> check)
     {
+        foreach (bool activityFirst in new[] { true, false })
+        {
+            var intent = new ArCoreRunIntent();
+            intent.Request(true);
+            intent.SetSurfaceReady(true);
+            check(intent.ShouldRun, "requested camera has both prerequisites");
+            intent.SetActivityResumed(false);
+            intent.SetActivityResumed(false);
+            intent.SetSurfaceReady(false);
+            intent.SetSurfaceReady(false);
+            check(intent.Requested && !intent.ShouldRun, "duplicate pauses retain camera intent");
+            if (activityFirst) intent.SetActivityResumed(true);
+            else intent.SetSurfaceReady(true);
+            check(!intent.ShouldRun, "one returning prerequisite cannot resume alone");
+            if (activityFirst) intent.SetSurfaceReady(true);
+            else intent.SetActivityResumed(true);
+            check(intent.ShouldRun, "both resume callback orders work");
+            intent.SetSurfaceReady(false);
+            intent.Request(false);
+            intent.SetActivityResumed(true);
+            intent.SetSurfaceReady(true);
+            check(!intent.ShouldRun, "late surface cannot undo Camera-tab exit");
+            intent.Request(true);
+            check(intent.ShouldRun, "explicit camera re-entry resumes");
+            intent.Shutdown();
+            intent.SetActivityResumed(true);
+            intent.SetSurfaceReady(true);
+            intent.Request(true);
+            check(intent.IsShutdown && !intent.ShouldRun, "late callbacks cannot revive shutdown");
+        }
+
         var pin = new GeoCoordinate(14.697875, 121.078949);
         NavigationDestinationBridge.Set("Trip A", pin, 30);
         var firstTrip = NavigationDestinationBridge.Current;
