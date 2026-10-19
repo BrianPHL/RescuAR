@@ -1,0 +1,6 @@
+"event_id","event_date","role","event_status","source_file_exists","observed_geometry_registered","observation_domain_registered","approved_qc_sidecar_exists","ready_for_quantitative_evaluation"
+"mcdrrmo_carina_2024",2024-07-24,"reference_only","source_ready_georeference_pending",TRUE,FALSE,FALSE,FALSE,FALSE
+"mcdrrmo_falcon_2011",2011-06-24,"reference_only","source_ready_georeference_pending",TRUE,FALSE,FALSE,FALSE,FALSE
+"mcdrrmo_crising_habagat_2025",2025-07-21,"reference_only","source_ready_georeference_pending",TRUE,FALSE,FALSE,FALSE,FALSE
+"mcdrrmo_maymay_2026_08_09",2026-08-09,"reference_only","source_ready_georeference_pending",TRUE,FALSE,FALSE,FALSE,FALSE
+"mcdrrmo_swm_2026_08_17",2026-08-17,"reference_only","source_ready_georeference_pending",TRUE,FALSE,FALSE,FALSE,FALSE
