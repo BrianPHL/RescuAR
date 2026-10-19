@@ -25,25 +25,14 @@
                              Spacing="0"
                              Padding="24">
             
-            <!-- Glassmorphic Elevated Logo Box -->
-            <Border WidthRequest="168"
-                    HeightRequest="168"
-                    StrokeThickness="1"
-                    Stroke="#E2E8F0"
-                    BackgroundColor="White"
-                    StrokeShape="RoundRectangle 36"
-                    HorizontalOptions="Center"
-                    VerticalOptions="Center">
-                <Border.Shadow>
-                    <Shadow Brush="#00848E" Offset="0,12" Radius="36" Opacity="0.12" />
-                </Border.Shadow>
-                
-                <Image Source="rescuar_logo.jpg"
-                       Aspect="AspectFill"
-                       HorizontalOptions="Fill"
-                       VerticalOptions="Fill"
-                       Margin="0" />
-            </Border>
+            <!-- Direct Logo Display -->
+            <Image Source="rescuar_logo.png"
+                   Aspect="AspectFit"
+                   WidthRequest="280"
+                   HeightRequest="100"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   Margin="0" />
             
         </VerticalStackLayout>
 
