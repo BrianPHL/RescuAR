@@ -29,8 +29,9 @@ if (args.Contains("--ground-flood"))
     Console.WriteLine($"{passed} ground/flood regression checks passed.");
     return;
 }
-if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery"))
+if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery") || args.Contains("--alignment-recovery"))
 {
+    if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance")) await ARHeadingRecoveryChecks.RunAsync(Check);
     await ARRecoveryContinuityChecks.RunAsync(Check);
     ARPlacementHazardChecks.Run(Check);
     ARGroundFloodChecks.Run(Check);
@@ -38,14 +39,15 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     RouteBacktrackingChecks.Run(Check);
     RouteDisplayProgressChecks.Run(Check);
     StartupSceneChecks.Run(Check);
-    if (args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery"))
+    if (args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery") || args.Contains("--alignment-recovery"))
     {
         await ARGuidanceParityChecks.RunAsync(Check);
-        if (args.Contains("--ar-guidance")) await ARSystemAuditChecks.RunAsync(Check);
+        if (args.Contains("--ar-guidance") || args.Contains("--alignment-recovery")) await ARSystemAuditChecks.RunAsync(Check);
     }
-    Console.WriteLine($"{passed} {(args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
+    Console.WriteLine($"{passed} {(args.Contains("--alignment-recovery") ? "alignment-recovery" : args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
     return;
 }
+await ARHeadingRecoveryChecks.RunAsync(Check);
 await ARRecoveryContinuityChecks.RunAsync(Check);
 ARPlacementHazardChecks.Run(Check);
 ARGroundFloodChecks.Run(Check);

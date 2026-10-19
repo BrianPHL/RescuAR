@@ -102,6 +102,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         new();
 
     private static HeadingAlignmentResult? sessionCalibration;
+    private static long calibrationRevision;
 
     public bool IsSupported =>
         OrientationSensor.Default.IsSupported;
@@ -124,8 +125,12 @@ public sealed class ArHeadingAlignmentService : IDisposable
             lock (sessionCalibrationSync)
             {
                 long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
-                return session > 0 && sessionCalibration?.SessionGeneration == session
-                    ? sessionCalibration : null;
+                if (session <= 0 || sessionCalibration?.SessionGeneration != session) return null;
+                var calibration = sessionCalibration.Value;
+                // A known world correction invalidates render trust, while
+                // retaining a finite starting estimate for independent recovery.
+                return calibration.WorldFrame == ARCameraSpatialController.WorldFrameGeneration
+                    ? calibration : calibration with { IsStable = false, RequiresMovementValidation = true };
             }
         }
     }
@@ -153,6 +158,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             sessionCalibration =
                 null;
+            calibrationRevision++;
         }
 
 #if ANDROID
@@ -285,13 +291,22 @@ public sealed class ArHeadingAlignmentService : IDisposable
         if (captureSession <= 0) return null;
 
         HeadingAlignmentResult? cachedCalibration;
+        long captureRevision;
 
         lock (sessionCalibrationSync)
         {
             cachedCalibration = LastResult;
+            captureRevision = calibrationRevision;
         }
 
-        if (cachedCalibration.HasValue)
+        if (cachedCalibration is { RequiresMovementValidation: true })
+        {
+            // Magnetic repeatability cannot validate a partially corrected
+            // movement calibration or a changed world frame. The independent
+            // walking observer continues while directional geometry is hidden.
+            return null;
+        }
+        if (cachedCalibration is { IsStable: true })
         {
 #if ANDROID
             Log.Debug(
@@ -337,6 +352,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                     out string? unavailableReason))
             {
                 if (sample.SessionGeneration != captureSession) return null;
+                if (samples.Count > 0 && (sample.TrackingEpoch != samples[^1].TrackingEpoch ||
+                    sample.WorldFrame != samples[^1].WorldFrame)) samples.Clear();
                 if (samples.Count > 0 && sample.SpatialVersion == samples[^1].SpatialVersion)
                 {
                     await Task.Delay(100, cancellationToken);
@@ -388,7 +405,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                                     true
                             };
 
-                        return StoreAndLogResult(locked) ? locked : null;
+                        return StoreAndLogResult(locked, captureRevision) ? locked : null;
                     }
                 }
             }
@@ -489,7 +506,19 @@ public sealed class ArHeadingAlignmentService : IDisposable
         double residualAlignmentErrorDegrees,
         DateTimeOffset timestampUtc)
     {
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        return TryApplyMovementValidatedYaw(correctedMapToArYawDegrees, confirmationCount,
+            residualAlignmentErrorDegrees, timestampUtc, frame.Generation.SessionGeneration,
+            frame.TrackingEpoch, frame.WorldFrame, out var corrected) ? corrected : default;
+    }
+
+    public bool TryApplyMovementValidatedYaw(double correctedMapToArYawDegrees, int confirmationCount,
+        double residualAlignmentErrorDegrees, DateTimeOffset timestampUtc,
+        long expectedSession, long expectedTrackingEpoch, long expectedWorldFrame,
+        out HeadingAlignmentResult corrected)
+    {
         ThrowIfDisposed();
+        corrected = default;
 
         if (!double.IsFinite(
                 correctedMapToArYawDegrees))
@@ -498,10 +527,17 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 nameof(correctedMapToArYawDegrees));
         }
 
-        HeadingAlignmentResult corrected;
-
         lock (sessionCalibrationSync)
         {
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            var tracking = ARTrackingStateBridge.Current;
+            if (!frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking || expectedSession <= 0 ||
+                !tracking.IsRenderableFor(expectedSession) ||
+                tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount != expectedTrackingEpoch ||
+                frame.Generation.SessionGeneration != expectedSession || frame.TrackingEpoch != expectedTrackingEpoch ||
+                frame.WorldFrame != expectedWorldFrame ||
+                ARCameraSpatialController.WorldFrameGeneration != expectedWorldFrame ||
+                !double.IsFinite(residualAlignmentErrorDegrees)) return false;
             HeadingAlignmentResult previous =
                 LastResult ??
                 new HeadingAlignmentResult(
@@ -542,11 +578,16 @@ public sealed class ArHeadingAlignmentService : IDisposable
                             residualAlignmentErrorDegrees) <=
                             StableMaxDeviationDegrees,
                     Timestamp = timestampUtc,
-                    SessionGeneration = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration
+                    SessionGeneration = expectedSession,
+                    Source = "MOVEMENT",
+                    RequiresMovementValidation = Math.Abs(residualAlignmentErrorDegrees) > StableMaxDeviationDegrees,
+                    TrackingEpoch = expectedTrackingEpoch,
+                    WorldFrame = expectedWorldFrame
                 };
 
             sessionCalibration =
                 corrected;
+            calibrationRevision++;
         }
 
 #if ANDROID
@@ -560,8 +601,12 @@ public sealed class ArHeadingAlignmentService : IDisposable
             $"spatialVersion={corrected.SpatialVersion}.");
 #endif
 
-        return corrected;
+        return true;
     }
+
+    /// <summary>Independent sensor observation for diagnosis; never changes calibration.</summary>
+    public bool TryGetIndependentObservation(GeoCoordinate location, double? altitudeMeters,
+        out HeadingAlignmentResult observation) => TryCreateSample(location, altitudeMeters, out observation, out _);
 
     private void OnOrientationReadingChanged(
         object? sender,
@@ -703,10 +748,10 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 magneticCameraHeadingDegrees +
                 declinationDegrees);
 
-        ARCameraPoseBridge.SpatialSnapshot spatial =
-            ARCameraPoseBridge.CurrentFrame;
+        bool paired = ARCameraPoseBridge.TryGetObservationFrame(orientationTimestamp,
+            DateTimeOffset.UtcNow, Environment.TickCount64, out var spatial, out long poseSkew);
 
-        if (!spatial.IsFresh || !spatial.IsTracking ||
+        if (!paired || !spatial.IsFresh || !spatial.IsTracking ||
             !spatial.Pose.IsTracking)
         {
             unavailableReason =
@@ -809,7 +854,12 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 GetDisplayRotationName(),
                 HeadingCoordinateConvention,
                 1.0,
-                spatial.Generation.SessionGeneration);
+                spatial.Generation.SessionGeneration,
+                TrackingEpoch: spatial.TrackingEpoch,
+                WorldFrame: spatial.WorldFrame,
+                OrientationObservedAt: orientationTimestamp,
+                ObservationPoseFrame: spatial.FrameTimestamp,
+                ObservationPoseSkewMilliseconds: poseSkew);
 
         return true;
     }
@@ -848,14 +898,18 @@ public sealed class ArHeadingAlignmentService : IDisposable
     }
 
     private bool StoreAndLogResult(
-        HeadingAlignmentResult result)
+        HeadingAlignmentResult result, long expectedRevision)
     {
         lock (sessionCalibrationSync)
         {
-            if (!result.IsStable || result.SessionGeneration <= 0 ||
-                result.SessionGeneration != ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            if (calibrationRevision != expectedRevision || !frame.IsFresh || !frame.IsTracking ||
+                !result.IsStable || result.SessionGeneration <= 0 ||
+                result.SessionGeneration != frame.Generation.SessionGeneration ||
+                result.TrackingEpoch != frame.TrackingEpoch || result.WorldFrame != frame.WorldFrame)
                 return false;
             sessionCalibration = result;
+            calibrationRevision++;
         }
 
 #if ANDROID
@@ -1037,5 +1091,12 @@ public sealed class ArHeadingAlignmentService : IDisposable
         string DisplayRotation,
         string CoordinateConvention,
         double CircularConcentration,
-        long SessionGeneration = 0);
+        long SessionGeneration = 0,
+        string Source = "MAGNETIC",
+        bool RequiresMovementValidation = false,
+        long TrackingEpoch = 0,
+        long WorldFrame = 0,
+        DateTimeOffset OrientationObservedAt = default,
+        long ObservationPoseFrame = 0,
+        long ObservationPoseSkewMilliseconds = long.MaxValue);
 }

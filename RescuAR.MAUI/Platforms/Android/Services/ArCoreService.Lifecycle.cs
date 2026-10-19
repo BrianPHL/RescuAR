@@ -925,6 +925,16 @@ public sealed partial class ArCoreService
         }
     }
 
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void LogNavigationLifecycleFrame(ArCoreLifecycleState state)
+    {
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        Log.Info(Tag, $"NAV_REFERENCE_LIFECYCLE state={state}; session={frame.Generation.SessionGeneration}; " +
+            $"frameNs={frame.FrameTimestamp}; fresh={frame.IsFresh}; tracking={frame.IsTracking}; " +
+            $"trackingEpoch={frame.TrackingEpoch}; worldFrame={frame.WorldFrame}; " +
+            $"ground={frame.Anchor.ReferenceGeneration}; anchorHasRotation={frame.Anchor.HasRotation}; anchorQ={frame.Anchor.Rotation}.");
+    }
+
     private async Task<bool> ResumeSessionCoreAsync(CancellationToken cancellationToken)
     {
         lastSessionOperationException = null;
@@ -1245,6 +1255,7 @@ public sealed partial class ArCoreService
             $"requestGeneration={Interlocked.Read(ref lifecycleRequestGeneration)}, " +
             $"sessionGeneration={Interlocked.Read(ref currentSessionGeneration)}, " +
             $"failure={failure.Code}.");
+        LogNavigationLifecycleFrame(state);
 
         Action<ArCoreLifecycleSnapshot>? handlers =
             LifecycleChanged;

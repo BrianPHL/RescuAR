@@ -19,11 +19,13 @@ public sealed class RouteResult
 
     public string Algorithm { get; }
     public string GeometryFingerprint { get; }
+    public RouteProvenance Provenance { get; }
 
     public RouteResult(
         IReadOnlyList<RoutePoint> points,
         double totalDistanceMeters,
-        string algorithm)
+        string algorithm,
+        RouteProvenance? provenance = null)
     {
         Points =
             points ??
@@ -36,6 +38,7 @@ public sealed class RouteResult
         Algorithm =
             algorithm ??
             string.Empty;
+        Provenance = provenance ?? RouteProvenance.Unreported;
         var geometry = new StringBuilder();
         foreach (var point in Points)
             geometry.Append(point.Coordinate.Latitude.ToString("R", CultureInfo.InvariantCulture)).Append(',')

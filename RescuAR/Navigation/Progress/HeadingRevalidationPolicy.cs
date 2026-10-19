@@ -74,6 +74,7 @@ public sealed class HeadingRevalidationPolicy
     private DateTimeOffset? lastObservationUtc;
     private long trackingSession;
     private long worldFrame;
+    private long trackingEpoch;
 
     public long EvidenceResetVersion { get; private set; }
     public string LastEvidenceResetReason { get; private set; } = "initial";
@@ -88,6 +89,7 @@ public sealed class HeadingRevalidationPolicy
         lastObservationUtc = null;
         trackingSession = 0;
         worldFrame = 0;
+        trackingEpoch = 0;
 
         ResetCandidateEvidence(reason);
     }
@@ -111,16 +113,20 @@ public sealed class HeadingRevalidationPolicy
         float arPositionZ,
         DateTimeOffset timestampUtc,
         long sessionGeneration = 0,
-        long worldFrameGeneration = 0)
+        long worldFrameGeneration = 0,
+        long trackingEpochGeneration = 0,
+        bool requiresValidation = false)
     {
         // Camera positions are session-world coordinates. Replacing a floor
         // anchor does not change that frame and must not erase walking windows.
         // A genuine world correction or a new session still invalidates them.
-        if (trackingSession != sessionGeneration || worldFrame != worldFrameGeneration)
+        if (trackingSession != sessionGeneration || worldFrame != worldFrameGeneration ||
+            trackingEpoch != trackingEpochGeneration)
         {
-            Reset("AR session/world frame changed");
+            Reset("AR session/world frame/tracking continuity changed");
             trackingSession = sessionGeneration;
             worldFrame = worldFrameGeneration;
+            trackingEpoch = trackingEpochGeneration;
         }
         if (lastObservationUtc.HasValue && timestampUtc <= lastObservationUtc.Value)
             return CreateDecision(HeadingRevalidationDisposition.Unavailable,
@@ -401,7 +407,7 @@ public sealed class HeadingRevalidationPolicy
                 reason: "GPS direction contradicts tracked AR movement; fresh calibration required");
         }
 
-        if (Math.Abs(
+        if (!requiresValidation && Math.Abs(
                 currentAlignmentErrorDegrees) <=
             AlignmentStableErrorDegrees)
         {
@@ -538,7 +544,13 @@ public sealed class HeadingRevalidationPolicy
         int confirmations =
             candidateCount;
 
-        ResetCandidateEvidence("bounded heading correction confirmed");
+        // A partially corrected calibration is intentionally hidden. Keep the
+        // confirmed target reachable while new independent movement windows
+        // support it, so render trust cannot stop bounded convergence. Existing
+        // time, disagreement and tracking/frame expiry rules still apply.
+        if (Math.Abs(NormalizeSignedDegrees(confirmedCandidateYawDegrees - correctedYawDegrees)) <=
+            AlignmentStableErrorDegrees)
+            ResetCandidateEvidence("bounded heading correction completed");
 
         return CreateDecision(
             HeadingRevalidationDisposition.CorrectionReady,

@@ -1942,7 +1942,8 @@ public sealed partial class ArCoreService : IArCoreService
             TryGetSpatialGroundAnchorPose(
                 out float anchorX,
                 out float anchorY,
-                out float anchorZ);
+                out float anchorZ,
+                out System.Numerics.Quaternion? anchorRotation);
 
         if (anchorAvailable)
         {
@@ -2027,7 +2028,8 @@ public sealed partial class ArCoreService : IArCoreService
             anchorX,
             anchorY,
             anchorZ,
-            frameMetadata);
+            frameMetadata,
+            anchorRotation);
 
         /*
          * Start/clear retained-anchor recovery from the ARCore frame cadence
@@ -2926,11 +2928,13 @@ public sealed partial class ArCoreService : IArCoreService
     private bool TryGetSpatialGroundAnchorPose(
         out float anchorX,
         out float anchorY,
-        out float anchorZ)
+        out float anchorZ,
+        out System.Numerics.Quaternion? anchorRotation)
     {
         anchorX = 0;
         anchorY = 0;
         anchorZ = 0;
+        anchorRotation = null;
 
         Google.AR.Core.Anchor? anchor =
             spatialGroundAnchor;
@@ -2963,6 +2967,9 @@ public sealed partial class ArCoreService : IArCoreService
         anchorPose.GetTranslation(
             anchorTranslation,
             0);
+        float[] rotation = new float[4];
+        anchorPose.GetRotationQuaternion(rotation, 0);
+        anchorRotation = new System.Numerics.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
 
         anchorX =
             anchorTranslation[0];

@@ -160,7 +160,20 @@ public static class ARRouteRenderer
         int EnabledSegments, int DepthHiddenSegments, int PrefixHiddenSegments,
         int InFrontSegments, int ViewportMidpoints, int EnabledArrowWings,
         ARRoutePlacement Placement = default, float RootX = 0, float RootZ = 0,
-        float CameraX = 0, float CameraZ = 0);
+        float CameraX = 0, float CameraZ = 0,
+        ViewportBounds RibbonBounds = default, ViewportBounds ArrowBounds = default,
+        int ArrowDepthHidden = 0, int ArrowPrefixHidden = 0);
+
+    /// <summary>Clipped centerline bounds; does not claim raster/UI visibility.</summary>
+    public readonly record struct ViewportBounds(int Segments, float Left, float Top, float Right, float Bottom)
+    {
+        public ViewportBounds Include(System.Numerics.Vector2 a, System.Numerics.Vector2 b) =>
+            new(Segments + 1,
+                Segments == 0 ? MathF.Min(a.X, b.X) : MathF.Min(Left, MathF.Min(a.X, b.X)),
+                Segments == 0 ? MathF.Min(a.Y, b.Y) : MathF.Min(Top, MathF.Min(a.Y, b.Y)),
+                Segments == 0 ? MathF.Max(a.X, b.X) : MathF.Max(Right, MathF.Max(a.X, b.X)),
+                Segments == 0 ? MathF.Max(a.Y, b.Y) : MathF.Max(Bottom, MathF.Max(a.Y, b.Y)));
+    }
 
     public static RouteVisibilitySnapshot Visibility
     {
@@ -671,6 +684,8 @@ public static class ARRouteRenderer
     {
         int prepared = 0, enabled = 0, depthHidden = 0, prefixHidden = 0;
         int inFront = 0, viewport = 0, enabledArrows = 0;
+        int arrowDepthHidden = 0, arrowPrefixHidden = 0;
+        ViewportBounds ribbonBounds = default, arrowBounds = default;
         var rotation = new System.Numerics.Quaternion(frame.Pose.RotationX,
             frame.Pose.RotationY, frame.Pose.RotationZ, frame.Pose.RotationW);
         bool poseValid = frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
@@ -678,6 +693,20 @@ public static class ARRouteRenderer
         if (poseValid) rotation = System.Numerics.Quaternion.Conjugate(
             System.Numerics.Quaternion.Normalize(rotation));
         var projection = frame.Projection;
+        void IncludeBounds(SegmentSlot slot, ref ViewportBounds bounds)
+        {
+#if RESCUAR_DIAGNOSTICS
+            if (!poseValid || !slot.Entity.IsEnabled) return;
+            var start = new NumericsVector3(rootPosition.X + slot.LocalStart.X,
+                rootPosition.Y + slot.LocalStart.Y, rootPosition.Z + slot.LocalStart.Z);
+            var end = new NumericsVector3(rootPosition.X + slot.LocalEnd.X,
+                rootPosition.Y + slot.LocalEnd.Y, rootPosition.Z + slot.LocalEnd.Z);
+            if (FloodSimulationProjection.TryProjectSegment(start, end,
+                    new(frame.Pose.PositionX, frame.Pose.PositionY, frame.Pose.PositionZ),
+                    new(frame.Pose.RotationX, frame.Pose.RotationY, frame.Pose.RotationZ, frame.Pose.RotationW),
+                    projection, out var a, out var b)) bounds = bounds.Include(a, b);
+#endif
+        }
         foreach (SegmentSlot slot in segmentSlots)
         {
             if (!slot.GeometryAvailable) continue;
@@ -689,6 +718,7 @@ public static class ARRouteRenderer
                 continue;
             }
             enabled++;
+            IncludeBounds(slot, ref ribbonBounds);
             if (!poseValid) continue;
             var local = System.Numerics.Vector3.Transform(new NumericsVector3(
                 rootPosition.X + slot.LocalMidpoint.X - frame.Pose.PositionX,
@@ -706,12 +736,18 @@ public static class ARRouteRenderer
             if (w > 0 && MathF.Abs(x) <= w && MathF.Abs(y) <= w) viewport++;
         }
         foreach (SegmentSlot arrow in arrowSlots)
-            if (arrow.GeometryAvailable && arrow.Entity.IsEnabled) enabledArrows++;
+        {
+            if (!arrow.GeometryAvailable) continue;
+            if (arrow.DepthOccluded) arrowDepthHidden++;
+            if (arrow.Entity.IsEnabled) { enabledArrows++; IncludeBounds(arrow, ref arrowBounds); }
+            else if (!arrow.DepthOccluded) arrowPrefixHidden++;
+        }
         lock (sync) visibility = new(appliedRouteVersion, frame.Generation.SessionGeneration,
             frame.Anchor.ReferenceGeneration, Environment.TickCount64, rootEnabled,
             prepared, enabled, depthHidden, prefixHidden,
             inFront, viewport, enabledArrows, appliedPlacement,
-            rootPosition.X, rootPosition.Z, frame.Pose.PositionX, frame.Pose.PositionZ);
+            rootPosition.X, rootPosition.Z, frame.Pose.PositionX, frame.Pose.PositionZ,
+            ribbonBounds, arrowBounds, arrowDepthHidden, arrowPrefixHidden);
     }
 
     /// <summary>

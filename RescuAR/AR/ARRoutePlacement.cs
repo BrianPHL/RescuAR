@@ -10,7 +10,10 @@ public readonly record struct ARRoutePlacement(
     double GpsToRoadEast = 0, double GpsToRoadNorth = 0,
     float GpsToRoadX = 0, float GpsToRoadZ = 0,
     long PosePublishedAt = 0, long FrameTimestamp = 0,
-    long TrackingEpoch = 0, long WorldFrame = 0)
+    long TrackingEpoch = 0, long WorldFrame = 0,
+    System.Numerics.Quaternion? AnchorRotation = null,
+    long ObservationPoseFrame = 0, long ObservationPoseSkewMilliseconds = long.MaxValue,
+    float ObservationCameraX = float.NaN, float ObservationCameraZ = float.NaN)
 {
     public bool IsAvailable => Generation.IsValid && GroundReference > 0 && SpatialVersion > 0 &&
         float.IsFinite(AnchorX) && float.IsFinite(AnchorZ) &&

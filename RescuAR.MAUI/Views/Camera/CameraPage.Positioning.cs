@@ -21,13 +21,21 @@ public partial class CameraPage
         DateTimeOffset? observation;
         lock (routeProgressFusionSync)
             observation = retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.Timestamp;
-        var tracking = ARTrackingStateBridge.Current;
+        var observed = ARCameraPoseBridge.SpatialSnapshot.Unavailable;
+        long skew = long.MaxValue;
+        bool paired = observation.HasValue && ARCameraPoseBridge.TryGetObservationFrame(observation.Value,
+            DateTimeOffset.UtcNow, Environment.TickCount64, out observed, out skew);
         return new(frame.Generation, frame.Anchor.ReferenceGeneration, frame.Version,
             Environment.TickCount64, frame.Anchor.PositionX, frame.Anchor.PositionZ,
             frame.Pose.PositionX, frame.Pose.PositionZ, observation, source, activeMapToArYawDegrees,
             PosePublishedAt: frame.PublishedAtMonotonicMilliseconds, FrameTimestamp: frame.FrameTimestamp,
-            TrackingEpoch: tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount,
-            WorldFrame: ARCameraSpatialController.WorldFrameGeneration);
+            TrackingEpoch: frame.TrackingEpoch,
+            WorldFrame: frame.WorldFrame,
+            AnchorRotation: frame.Anchor.HasRotation ? frame.Anchor.Rotation : null,
+            ObservationPoseFrame: paired ? observed.FrameTimestamp : 0,
+            ObservationPoseSkewMilliseconds: skew,
+            ObservationCameraX: paired ? observed.Pose.PositionX : float.NaN,
+            ObservationCameraZ: paired ? observed.Pose.PositionZ : float.NaN);
     }
 
     private sealed record VerifiedPosition(RouteResult Route, DateTimeOffset At,
@@ -42,12 +50,15 @@ public partial class CameraPage
             RouteCorridorPolicy.GetCorridorRadiusMeters(reading.AccuracyMeters, false),
             RouteMatchConfidence.Unavailable, double.NaN);
 
-    private RouteBacktrackingPolicy.TrackedMotion? GetTrackedRouteMotion()
+    private RouteBacktrackingPolicy.TrackedMotion? GetTrackedRouteMotion(bool requireTrustedHeading = true)
     {
         var frame = ARCameraPoseBridge.CurrentFrame;
         var tracking = ARTrackingStateBridge.Current;
         if (!frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
-            !HasCurrentRouteHeading() || !tracking.IsRenderableFor(frame.Generation.SessionGeneration) ||
+            !(requireTrustedHeading ? HasCurrentRouteHeading() : HasCurrentHeadingCandidate()) ||
+            !tracking.IsRenderableFor(frame.Generation.SessionGeneration) ||
+            frame.TrackingEpoch != tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount ||
+            frame.WorldFrame != ARCameraSpatialController.WorldFrameGeneration ||
             !ARRenderGenerationBridge.IsCurrentSession(frame.Generation) ||
             ARCameraSpatialController.CurrentRouteWorldCorrectionRequest.IsPending)
             return null;
@@ -55,8 +66,7 @@ public partial class CameraPage
         var motion = new RouteBacktrackingPolicy.TrackedMotion(frame.Pose.PositionX,
             frame.Pose.PositionZ, activeMapToArYawDegrees, frame.Generation.SessionGeneration,
             frame.Anchor.ReferenceGeneration,
-            tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount,
-            ARCameraSpatialController.WorldFrameGeneration);
+            frame.TrackingEpoch, frame.WorldFrame);
         return motion.IsValid ? motion : null;
     }
 

@@ -1113,3 +1113,114 @@ markers at the covered transition and any disappearance or incorrect direction.
 Sustained visibility, physical street alignment, timing on each phone, and text
 layout remain device acceptance checks; unit/build/package success does not
 verify those behaviors.
+
+## 20:00 capture: shared heading recovery and alignment evidence
+
+The approved implementation addresses the confirmed calibration recovery loop
+in `RescuAR_FieldTest_20261019_200008.zip`. A partial movement correction could
+leave approximately 45 degrees of residual error, after which the camera
+required trusted heading to collect further evidence while the heading service
+kept returning the unstable cached result. Both providers use this shared path.
+
+### Implemented behavior
+
+- Separate a reusable calibration from a candidate requiring further movement
+  validation. Qualified walking observations continue during short previews and
+  hidden-geometry recovery. Calibration commits independently of publication;
+  an unavailable floor or unpublished route does not roll back a valid correction.
+- Preserve confirmed movement evidence through bounded partial corrections and
+  ordinary floor renewal. Actual session, tracking-continuity, or known world
+  changes reset the observation window. Existing correction limits, confirmation
+  counts, cooldowns, and position/identity requirements remain in force. A large
+  residual remains untrusted; it is not displayed merely to increase visibility.
+- Prevent an older asynchronous magnetic capture from replacing a newer
+  movement calibration. Independent orientation observations remain diagnostic
+  inputs and never directly rotate displayed geometry.
+- Pair navigation observations with a bounded historical AR pose near their
+  recorded time, with at most 250 ms skew and 3 s observation age. Historical
+  snapshots never become renderable; the existing 750 ms render freshness limit
+  remains. Placement and motion identity come from the captured coherent frame.
+
+Road coordinates, route geometry, matching thresholds, destination ownership,
+arrival decisions, hazard handling, ground acquisition, and flood rendering were
+not changed. The conditional rigid-frame transport and source-data correction
+remain dependent on measured reference evidence. This candidate does not prove
+that the physical road offset has been eliminated.
+
+### Diagnostic coverage
+
+The diagnostic build now records complete chunked session-relative requested
+inputs, snapped endpoints, unmodified route output, selected A* source way IDs
+when location export is permitted, and actual provider/dataset metadata. MLD
+metadata absent from the server remains explicitly `unreported`; the embedded
+offline dataset is not presented as the server dataset. Absolute coordinate
+export retains the existing consent controls.
+
+Observation IDs connect raw GPS, physical road match, fused progress, historical
+pose pairing, captured placement, and published local vertices. Reference-anchor
+quaternions, independent orientation, calibration source, tracking/world keys,
+and lifecycle events expose changes that session identity alone cannot explain.
+Separate clipped ribbon/arrow centerline bounds and depth/prefix suppression
+states distinguish off-screen geometry from suppressed geometry. These bounds
+are not pixel visibility or occlusion proof. UI transition events identify
+arrival source, confirmation state, visible guidance, and hazard notice state.
+Detailed traces are diagnostic-build gated and emitted at state/publication
+changes or the existing throttled sample rate.
+
+### Verification and candidate
+
+**491 focused alignment-recovery regression checks passed.** The new fixtures
+compile the actual heading service and exercise both provider labels through the
+captured severe-error sequence, partial-correction recovery, unchanged floor
+handoffs, real tracking/world invalidation, late magnetic callbacks, historical
+pose pairing, and optional provider provenance. Existing routing, reverse
+walking, GPS innovation, arrival, hazard, ground/flood, sensor ownership, and
+startup-scene checks remain in the selected run. No new testing dependency,
+live provider request, integration test, or E2E test was used.
+
+```powershell
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj --no-restore -p:GenerateEvergineContent=False -- --alignment-recovery
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False -p:RescuArDiagnosticBuild=true -p:AndroidPackageFormats=apk
+```
+
+The final Android Release build passed with **zero warnings and zero errors**.
+Release-readiness declarations, native-bridge checks, and equivalent manifest,
+minimum-API, ARCore/camera/Vulkan, ARM64-only, and build-profile assertions passed.
+The standard package script was not run; artifact-local assertions used installed
+`aapt` output. The first sandboxed inspector launch failed before execution;
+the permitted SDK inspection then passed. The unchanged stripped native bridge
+retains 16 KiB load alignment. Readelf came from NDK 30; provenance toolchain
+fields describe the pinned configuration, not a native rebuild in this run.
+
+Evidence: `artifacts/field-test-20261019-alignment-recovery/`, including
+`regression.log`, `android-release-build.log`, `release-readiness.log`,
+`native-bridge-provenance.json`, `package-check-report.json`, and
+`source-manifest.json`.
+
+Candidate: [RescuAR-20261019-Alignment-Recovery.apk](artifacts/field-test-20261019-alignment-recovery/RescuAR-20261019-Alignment-Recovery.apk)
+(60,736,055 bytes). SHA-256:
+`cc8296c8ca90f92c3b79af08a6444120dbb1b2833abaaa708f189a68fcc255f8`.
+Source base: `8653cc65aeb1ff94c5a4dc68e44102c838a5c079` plus these uncommitted
+changes. Diagnostics are enabled and the route visibility override is disabled.
+No commit, device installation, or application/UI interaction was performed.
+
+### Required phone retest
+
+1. Start new A* and MLD trips on the same independently referenced walkable
+   corridor, in both directions. Record synchronized footage and capture markers
+   at identifiable 5/10/20 m marks. Compare actual provider and dataset identity,
+   geographic geometry, lateral error, and heading error separately. Proposed
+   alignment targets remain at most 2 m lateral error and 5 degrees angular
+   error, with reference uncertainty recorded; visibility alone does not pass.
+2. Continue beyond 60 m, through a safe covered frontage and into open conditions.
+   Include a turn, reverse walking, and camera exit/reentry. Expect qualified
+   walking observations to continue during recovery and mapped guidance to
+   return once alignment, tracking, floor, and position are valid. A repeated
+   unstable-cache loop or unexplained sustained loss under valid conditions fails.
+3. Recheck GPS-confirmed and user-confirmed arrival, hazard warnings, and a short
+   indoor ground/flood session. Expect their existing behavior to remain intact.
+
+Return actual results and complete captures for both providers before further
+behavior-dependent corrections. Absolute road/GPS translation and unobserved
+world-frame changes still need independent reference and new capture evidence;
+unit, build, and package checks cannot establish physical alignment.

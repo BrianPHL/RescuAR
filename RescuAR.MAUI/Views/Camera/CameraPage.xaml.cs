@@ -611,7 +611,8 @@ namespace RescuAR.App.Views.Camera
                     () =>
                         Connectivity.Current.NetworkAccess ==
                             NetworkAccess.Internet,
-                    requireEmbeddedPedestrianGraph: false);
+                    requireEmbeddedPedestrianGraph: false,
+                    roadDatasetId: () => NavigationDataBootstrap.DatasetId);
 
             _mldArIntegrationService =
                 new MLDARIntegrationService(
@@ -670,6 +671,7 @@ namespace RescuAR.App.Views.Camera
 
             diagnosticTimer.Tick +=
                 OnDiagnosticTimerTick;
+            AttachNavigationUiDiagnostics();
 
             ApplyCameraModuleView(
                 CameraModuleViewMode.ArCamera,
@@ -1243,13 +1245,7 @@ namespace RescuAR.App.Views.Camera
             ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
                 _arCoreService.TrackingSnapshot;
 
-            bool headingTrusted =
-                lastHeadingAlignment.HasValue &&
-                lastHeadingAlignment.Value.IsAvailable &&
-                lastHeadingAlignment.Value.IsStable &&
-                lastHeadingAlignment.Value.SessionGeneration > 0 &&
-                lastHeadingAlignment.Value.SessionGeneration ==
-                    ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+            bool headingTrusted = HasCurrentRouteHeading();
 
             ARCameraSpatialController.SetRouteHeadingTrust(
                 headingTrusted,
@@ -4061,7 +4057,13 @@ namespace RescuAR.App.Views.Camera
         private bool HasCurrentRouteHeading() =>
             _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
             lastHeadingAlignment is { IsAvailable: true, IsStable: true } heading &&
-            _headingAlignmentService.HasSessionCalibration &&
+            _headingAlignmentService.LastResult is { IsStable: true, RequiresMovementValidation: false } &&
+            heading.SessionGeneration == ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+
+        private bool HasCurrentHeadingCandidate() =>
+            _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+            _headingAlignmentService.LastResult is { IsAvailable: true } heading &&
+            double.IsFinite(heading.MapToArYawDegrees) &&
             heading.SessionGeneration == ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
 
         private Task<RoadGraph?> GetArrivalGraphSafelyAsync() =>
@@ -4986,6 +4988,7 @@ namespace RescuAR.App.Views.Camera
                                     rerouteReason);
                             }
 
+                            LogPositionPipeline(route, reading, matchedGps, fusedGps);
                             bool routeVisualModeChanged =
                                 !positionObservationHeld && UpdateRoadFollowingVisualModeFromAcceptedGps(
                                     fusedGps);
@@ -9349,8 +9352,7 @@ namespace RescuAR.App.Views.Camera
             LocationReading reading,
             RouteProgressTracker.RouteProgressUpdate update)
         {
-            if (!HasCurrentRouteHeading() ||
-                arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (!HasCurrentHeadingCandidate()) return false;
 
 #if ANDROID
             if (!update.IsAccepted ||
@@ -9369,27 +9371,34 @@ namespace RescuAR.App.Views.Camera
 
             if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
-                !spatial.Anchor.IsAvailable ||
-                GetTrackedRouteMotion() is null ||
+                GetTrackedRouteMotion(requireTrustedHeading: false) is null ||
                 reading.Timestamp > DateTimeOffset.UtcNow ||
-                DateTimeOffset.UtcNow - reading.Timestamp > TimeSpan.FromSeconds(3))
+                DateTimeOffset.UtcNow - reading.Timestamp > TimeSpan.FromSeconds(3) ||
+                !ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+                    Environment.TickCount64, out var observedFrame, out long poseSkew))
             {
                 return false;
             }
 
+            if (_headingAlignmentService.LastResult is not { IsAvailable: true } calibration ||
+                calibration.SessionGeneration != observedFrame.Generation.SessionGeneration) return false;
+            lastHeadingAlignment = calibration;
             HeadingRevalidationDecision decision =
                 _headingRevalidationPolicy.Evaluate(
-                    activeMapToArYawDegrees,
+                    calibration.MapToArYawDegrees,
                     reading.Coordinate,
                     reading.AccuracyMeters,
                     reading.SpeedMetersPerSecond,
                     reading.CourseDegrees,
                     update.MatchConfidence,
                     routeTangentBearingDegrees,
-                    spatial.Pose.PositionX,
-                    spatial.Pose.PositionZ,
+                    observedFrame.Pose.PositionX,
+                    observedFrame.Pose.PositionZ,
                     reading.Timestamp,
-                    spatial.Generation.SessionGeneration);
+                    observedFrame.Generation.SessionGeneration,
+                    observedFrame.WorldFrame,
+                    observedFrame.TrackingEpoch,
+                    calibration.RequiresMovementValidation);
 
             long headingLogTimestamp = Environment.TickCount64;
             if (decision.Disposition != lastLoggedHeadingDisposition ||
@@ -9420,6 +9429,12 @@ namespace RescuAR.App.Views.Camera
                     $"reason='{decision.Reason}'; " +
                     $"evidenceReset={_headingRevalidationPolicy.EvidenceResetVersion}; " +
                     $"resetReason='{_headingRevalidationPolicy.LastEvidenceResetReason}'.");
+                LogDetailedDebug(HeadingLogTag,
+                    $"NAV_HEADING_PAIR sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                    $"frameNs={observedFrame.FrameTimestamp}; skewMs={poseSkew}; " +
+                    $"trackingEpoch={observedFrame.TrackingEpoch}; worldFrame={observedFrame.WorldFrame}; " +
+                    $"source={calibration.Source}; recovery={calibration.RequiresMovementValidation}; " +
+                    $"mode={arRouteVisualMode}.");
             }
 
             if (!decision.ShouldApplyCorrection)
@@ -9430,41 +9445,38 @@ namespace RescuAR.App.Views.Camera
             double previousYawDegrees =
                 activeMapToArYawDegrees;
 
-            activeMapToArYawDegrees =
-                decision.CorrectedYawDegrees;
-
-            bool published =
-                TryPublishMovingRouteWindow(
-                    route,
-                    update,
-                    "GPS/HEADING-REVALIDATION");
-
-            if (!published)
-            {
-                activeMapToArYawDegrees =
-                    previousYawDegrees;
-
-                Log.Warn(
-                    HeadingLogTag,
-                    "Movement-confirmed heading correction was not applied because the corrected local route window could not be published.");
-
-                return false;
-            }
-
-            _headingRevalidationPolicy.MarkCorrectionApplied(
-                DateTimeOffset.UtcNow);
-
             double residualAlignmentErrorDegrees =
                 NormalizeSignedDegrees(
                     decision.CandidateYawDegrees -
                     decision.CorrectedYawDegrees);
 
-            lastHeadingAlignment =
-                _headingAlignmentService.ApplyMovementValidatedYaw(
-                    decision.CorrectedYawDegrees,
-                    decision.ConfirmationCount,
-                    residualAlignmentErrorDegrees,
-                    DateTimeOffset.UtcNow);
+            if (!_headingAlignmentService.TryApplyMovementValidatedYaw(decision.CorrectedYawDegrees,
+                    decision.ConfirmationCount, residualAlignmentErrorDegrees, DateTimeOffset.UtcNow,
+                    observedFrame.Generation.SessionGeneration, observedFrame.TrackingEpoch,
+                    observedFrame.WorldFrame, out var corrected)) return false;
+
+            // Calibration recovery is independent of geometry publication.
+            // Invalidate old-yaw display evidence, retaining geographic progress,
+            // route identity and arrival inputs. A partial correction stays hidden.
+            activeMapToArYawDegrees = corrected.MapToArYawDegrees;
+            lastHeadingAlignment = corrected;
+            _headingRevalidationPolicy.MarkCorrectionApplied(DateTimeOffset.UtcNow);
+            positionObservationPolicy.Reset();
+            _routeDisplayProgressPolicy.Reset();
+            verifiedPosition = null;
+            _verifiedRouteWindowHoldPolicy.Reset();
+            approachRoutePreviewPublished = false;
+            ARRouteBridge.Clear();
+            ARCameraSpatialController.SetRouteRenderingEnabled(false,
+                corrected.IsStable ? "heading corrected; republishing mapped geometry" : "heading correction awaiting independent validation");
+            bool published = false;
+            if (corrected.IsStable)
+            {
+                ObserveVerifiedGpsPosition(route, update, reading);
+                published = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong
+                    ? TryPublishMovingRouteWindow(route, update, "GPS/HEADING-REVALIDATION")
+                    : TryPublishApproachToRouteVisual(route, update, "GPS/HEADING-REVALIDATION");
+            }
 
             Log.Warn(
                 HeadingLogTag,
@@ -9476,9 +9488,9 @@ namespace RescuAR.App.Views.Camera
                 $"observedError={decision.AlignmentErrorDegrees:F1} deg, " +
                 $"confirmations={decision.ConfirmationCount}/" +
                 $"{decision.RequiredConfirmationCount}, " +
-                $"segment={update.SegmentIndex}.");
+                $"segment={update.SegmentIndex}; stable={corrected.IsStable}; published={published}.");
 
-            return true;
+            return published;
 #else
             return false;
 #endif
@@ -10814,6 +10826,7 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
             if (activeRoute is { } headingRoute && !routeRequestInProgress && pageIsVisible &&
                 !safeZoneConfirmed && !HasCurrentRouteHeading() &&
+                _headingAlignmentService.LastResult is not { RequiresMovementValidation: true } &&
                 _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
                 IsRoadApproachFixUsable(latestRouteStartupReading) &&

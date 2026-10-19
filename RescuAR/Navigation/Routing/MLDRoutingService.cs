@@ -651,7 +651,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
         AndroidLog.Debug(
             LogTag,
-            $"MLD endpoint request: {requestUrl}");
+            $"MLD endpoint request: {new Uri(baseUrl).GetLeftPart(UriPartial.Authority)}; " +
+            $"inputs={string.Join(";", coordinates.Select(c => DiagnosticPrivacyPolicy.FormatCoordinate(c.Latitude, c.Longitude)))}");
 
         using HttpResponseMessage response =
             await httpClient.GetAsync(
@@ -666,7 +667,10 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         {
             return ParseRoutes(
                 json,
-                algorithmName);
+                algorithmName,
+                new RouteProvenance("MLD", DatasetId: response.Headers.TryGetValues("X-RescuAR-Dataset-Id", out var ids)
+                    ? DiagnosticToken(ids.FirstOrDefault()) : "unreported",
+                    RequestedCoordinates: coordinates.ToArray()));
         }
 
         if ((int)response.StatusCode <
@@ -696,7 +700,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     private static IReadOnlyList<RouteResult> ParseRoutes(
         string json,
-        string algorithmName)
+        string algorithmName,
+        RouteProvenance provenance)
     {
         using JsonDocument document = ParseResponseDocument(json);
 
@@ -704,6 +709,17 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             document.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("OSRM response must be an object.");
+        var snapped = new List<GeoCoordinate>();
+        if (root.TryGetProperty("waypoints", out var waypoints) && waypoints.ValueKind == JsonValueKind.Array)
+            foreach (var waypoint in waypoints.EnumerateArray())
+                if (waypoint.ValueKind == JsonValueKind.Object && waypoint.TryGetProperty("location", out var pair) &&
+                    pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 &&
+                    pair[0].ValueKind == JsonValueKind.Number && pair[1].ValueKind == JsonValueKind.Number &&
+                    pair[0].TryGetDouble(out double lon) && pair[1].TryGetDouble(out double lat) &&
+                    new GeoCoordinate(lat, lon) is { IsValid: true } coordinate) snapped.Add(coordinate);
+        provenance = provenance with { SnappedWaypoints = snapped.ToArray(),
+            DataVersion = root.TryGetProperty("data_version", out var dataVersion) && dataVersion.ValueKind == JsonValueKind.String
+                ? DiagnosticToken(dataVersion.GetString()) : "unreported" };
 
         string code =
             root.TryGetProperty(
@@ -749,7 +765,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             RouteResult? route =
                 ParseRouteElement(
                     routeElement,
-                    algorithmName);
+                    algorithmName, provenance);
 
             if (route is not null)
             {
@@ -776,7 +792,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     private static RouteResult? ParseRouteElement(
         JsonElement route,
-        string algorithmName)
+        string algorithmName, RouteProvenance provenance)
     {
         if (route.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("OSRM route must be an object.");
@@ -874,8 +890,12 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         return new RouteResult(
             points,
             totalDistanceMeters,
-            algorithmName);
+            algorithmName, provenance);
     }
+
+    private static string DiagnosticToken(string? value) => string.IsNullOrWhiteSpace(value)
+        ? "unreported" : new string(value.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':')
+            .Take(128).ToArray());
 
     private static IReadOnlyList<GeoCoordinate> BuildBypassCandidates(
         RouteResult route,

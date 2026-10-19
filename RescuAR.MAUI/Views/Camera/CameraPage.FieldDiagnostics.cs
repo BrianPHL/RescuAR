@@ -6,6 +6,7 @@ using RescuAR.Navigation.State;
 using RescuAR.Navigation.Data;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Projection;
+using RescuAR.Navigation.Diagnostics;
 
 namespace RescuAR.App.Views.Camera;
 
@@ -16,6 +17,44 @@ public partial class CameraPage
     private HeadingRevalidationDisposition? lastLoggedHeadingDisposition;
     private long lastHeadingDecisionLogTimestamp = long.MinValue;
     private long lastLoggedHeadingResetVersion = -1;
+    private readonly string navigationTraceOwner = Guid.NewGuid().ToString("N")[..8];
+    private NavigationGeometryTrace? geographicTrace;
+    private long geographicTraceSession = -1;
+    private long geographicTraceVersion;
+    private string? lastGeographicRouteTrace;
+    private ARCameraPoseBridge.SpatialSnapshot lastFieldReference;
+    private string? lastNavigationUiTrace;
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void AttachNavigationUiDiagnostics()
+    {
+        void Observe(Microsoft.Maui.Controls.BindableObject source, string property)
+        {
+            source.PropertyChanged += (_, change) =>
+            {
+                if (change.PropertyName == property) LogNavigationUiState();
+            };
+        }
+        Observe(safeZoneConfirmationOverlay, "IsVisible");
+        Observe(confirmUserArrivalButton, "IsVisible");
+        Observe(turnGuidancePanel, "IsVisible");
+        Observe(cameraModeStatusBanner, "IsVisible");
+        Observe(cameraModeStatusTitleLabel, "Text");
+        Observe(cameraModeStatusSubtitleLabel, "Text");
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void LogNavigationUiState()
+    {
+        string key = $"trip={activeDestinationVersion}; arrivalOverlay={safeZoneConfirmationOverlay.IsVisible}; " +
+            $"arrivalSource={(safeZoneConfirmed ? arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY" : "UNCONFIRMED")}; " +
+            $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}; userArrivalButton={confirmUserArrivalButton.IsVisible}; " +
+            $"turnCard={turnGuidancePanel.IsVisible}; statusBanner={cameraModeStatusBanner.IsVisible}; " +
+            $"hazardNotice='{routeHazardNotice ?? "none"}'; emergency={emergencyAdvisoryVisible}";
+        if (lastNavigationUiTrace == key) return;
+        lastNavigationUiTrace = key;
+        AndroidLog.Info(RouteLogTag, $"NAV_UI {key}.");
+    }
 
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
     private void LogAcceptedRoute(RouteResult route, long trip, string reason)
@@ -24,7 +63,79 @@ public partial class CameraPage
             $"NAV_ROUTE_ACCEPTED trip={trip}; reason={reason}; algorithm='{route.Algorithm}'; " +
             $"geometry={route.GeometryFingerprint}; points={route.Points.Count}; " +
             $"distance={route.TotalDistanceMeters:F1}m; embeddedDataset={NavigationDataBootstrap.DatasetId}; " +
-            "remoteDataset=unreported.");
+            $"remoteDataset={(route.Provenance.Provider == "MLD" ? route.Provenance.DatasetId : "not-applicable")}.");
+        LogGeographicRoute(route, trip, force: true);
+    }
+
+    private NavigationGeometryTrace GetGeographicTrace(RouteResult route)
+    {
+        long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+        if (geographicTrace is null || session > 0 && session != geographicTraceSession)
+        {
+            geographicTraceSession = session;
+            geographicTraceVersion++;
+            var origin = route.Provenance.RequestedCoordinates is { Count: > 0 } inputs
+                ? inputs[0] : route.Points[0].Coordinate;
+            geographicTrace = new(origin.IsValid ? origin : route.Points[0].Coordinate);
+            lastGeographicRouteTrace = null;
+        }
+        return geographicTrace;
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void LogGeographicRoute(RouteResult route, long trip, bool force = false)
+    {
+        if (route.Points.Count == 0) return;
+        var trace = GetGeographicTrace(route);
+        string key = $"{geographicTraceVersion}|{route.GeometryFingerprint}";
+        if (!force && lastGeographicRouteTrace == key) return;
+        lastGeographicRouteTrace = key;
+        string prefix = $"trip={trip}; geoRef={navigationTraceOwner}/{geographicTraceVersion}; geometry={route.GeometryFingerprint}";
+        var provenance = route.Provenance;
+        AndroidLog.Info(RouteLogTag, $"NAV_GEO_FRAME {prefix}; session={geographicTraceSession}; " +
+            $"basis=EAST_NORTH_METERS; origin={DiagnosticPrivacyPolicy.FormatCoordinate(trace.Origin.Latitude, trace.Origin.Longitude)}; " +
+            $"provider={provenance.Provider}; dataset={provenance.DatasetId}; dataVersion={provenance.DataVersion}; " +
+            $"points={route.Points.Count}; inputCount={provenance.RequestedCoordinates?.Count ?? 0}; " +
+            $"snapCount={provenance.SnappedWaypoints?.Count ?? 0}; wayCount={provenance.SourceWayIds?.Count ?? 0}.");
+        void LogCoordinates(string kind, IReadOnlyList<GeoCoordinate>? coordinates)
+        {
+            if (coordinates is null) return;
+            foreach (var chunk in coordinates.Select((point, index) => $"{index}:{trace.Point(point)}").Chunk(16).Select((points, index) => (points, index)))
+                AndroidLog.Info(RouteLogTag, $"NAV_GEO_INPUT {prefix}; kind={kind}; chunk={chunk.index}; values={string.Join("|", chunk.points)}.");
+        }
+        LogCoordinates("REQUESTED", provenance.RequestedCoordinates);
+        LogCoordinates("SNAPPED", provenance.SnappedWaypoints);
+        int part = 0;
+        foreach (var chunk in trace.RouteChunks(route.Points))
+            AndroidLog.Info(RouteLogTag, $"NAV_GEO_ROUTE {prefix}; chunk={part++}; values={chunk}.");
+        if (DiagnosticPrivacyPolicy.HasLocationLoggingConsent && provenance.SourceWayIds is { } ways)
+            foreach (var chunk in ways.Select(DiagnosticPrivacyPolicy.FormatRouteLabel).Chunk(16).Select((values, index) => (values, index)))
+                AndroidLog.Info(RouteLogTag, $"NAV_GEO_SOURCE {prefix}; chunk={chunk.index}; ways={string.Join("|", chunk.values)}.");
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void LogPositionPipeline(RouteResult route, LocationReading reading,
+        RouteProgressTracker.RouteProgressUpdate matched, RouteProgressTracker.RouteProgressUpdate fused)
+    {
+        if (route.Points.Count == 0) return;
+        LogGeographicRoute(route, activeDestinationVersion);
+        var trace = GetGeographicTrace(route);
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        bool paired = ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+            Environment.TickCount64, out var observed, out long skew);
+        bool roadReady = RouteDisplayProgressPolicy.TryAtDistance(route, matched.RawProgressMeters, out var road);
+        AndroidLog.Info(ProgressLogTag, $"NAV_POSITION_PIPELINE sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+            $"trip={activeDestinationVersion}; geoRef={navigationTraceOwner}/{geographicTraceVersion}; geometry={route.GeometryFingerprint}; " +
+            $"gpsEN={trace.Point(reading.Coordinate)}; accuracy={reading.AccuracyMeters:F2}m; " +
+            $"ageMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; provider=unavailable; courseAccuracy=unavailable; " +
+            $"accepted={matched.IsAccepted}; held={positionObservationHeld}; match={matched.MatchConfidence}; " +
+            $"rawProgress={matched.RawProgressMeters:F3}; fusedProgress={fused.CommittedProgressMeters:F3}; " +
+            $"roadEN={(roadReady ? trace.Point(road.RoadCoordinate) : "unavailable")}; " +
+            $"fusion={lastGpsFusionAction}; yaw={activeMapToArYawDegrees:F3}; " +
+            $"paired={paired}; pairedFrameNs={(paired ? observed.FrameTimestamp : 0)}; pairingSkewMs={skew}; " +
+            $"pairedCamera={(paired ? FormattableString.Invariant($"({observed.Pose.PositionX:F3},{observed.Pose.PositionZ:F3})") : "unavailable")}; " +
+            $"receiptFrameNs={frame.FrameTimestamp}; receiptCamera=({frame.Pose.PositionX:F3},{frame.Pose.PositionZ:F3}); " +
+            $"session={frame.Generation.SessionGeneration}; trackingEpoch={frame.TrackingEpoch}; worldFrame={frame.WorldFrame}.");
     }
 
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
@@ -61,7 +172,7 @@ public partial class CameraPage
         if (!pageIsVisible) return;
         var frame = ARCameraPoseBridge.CurrentFrame;
         string key = $"{confidence.AllowsRouteGeometry}|{confidence.DisplayMessage}|" +
-            $"{route.Version}|{frame.Anchor.ReferenceGeneration}|{identitySuspended}";
+            $"{route.Version}|{frame.Anchor.ReferenceGeneration}|{identitySuspended}|{frame.TrackingEpoch}|{frame.WorldFrame}";
         long now = Environment.TickCount64;
         if (key == lastFieldPlacementKey && lastFieldPlacementLogTimestamp != long.MinValue &&
             now - lastFieldPlacementLogTimestamp < 5_000) return;
@@ -70,6 +181,24 @@ public partial class CameraPage
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         var rendered = ARRouteRenderer.Visibility;
+        var calibration = _headingAlignmentService.LastResult;
+        var oldReference = lastFieldReference;
+        lastFieldReference = frame;
+        var anchor = frame.Anchor;
+        AndroidLog.Info(RouteLogTag, $"NAV_REFERENCE session={frame.Generation.SessionGeneration}; frameNs={frame.FrameTimestamp}; " +
+            $"tracking={frame.IsTracking}; trackingEpoch={frame.TrackingEpoch}; worldFrame={frame.WorldFrame}; " +
+            $"ground={anchor.ReferenceGeneration}; trust={anchor.Trust}; anchorXZ=({anchor.PositionX:F3},{anchor.PositionZ:F3}); " +
+            $"anchorHasRotation={anchor.HasRotation}; anchorQ={anchor.Rotation}; " +
+            $"previousFrameNs={oldReference.FrameTimestamp}; previousGround={oldReference.Anchor.ReferenceGeneration}; " +
+            $"previousAnchorQ={oldReference.Anchor.Rotation}; calibrationSource={calibration?.Source}; " +
+            $"requiresMovement={calibration?.RequiresMovementValidation}; calibrationWorld={calibration?.WorldFrame}.");
+        if (reading is not null && _headingAlignmentService.TryGetIndependentObservation(reading.Coordinate,
+                reading.AltitudeMeters, out var independent))
+            AndroidLog.Info(HeadingLogTag, $"NAV_ORIENTATION sample={independent.OrientationObservedAt.ToUnixTimeMilliseconds()}; " +
+                $"frameNs={independent.ObservationPoseFrame}; skewMs={independent.ObservationPoseSkewMilliseconds}; " +
+                $"yaw={independent.MapToArYawDegrees:F3}; bearing={independent.TrueCameraHeadingDegrees:F3}; " +
+                $"arAzimuth={independent.ArCameraAzimuthDegrees:F3}; accuracy=unavailable; action=OBSERVE_ONLY; " +
+                $"session={independent.SessionGeneration}; trackingEpoch={independent.TrackingEpoch}; worldFrame={independent.WorldFrame}.");
         AndroidLog.Info(RouteLogTag, $"NAV_PLACEMENT visible={confidence.AllowsRouteGeometry}; " +
             $"reason='{confidence.DisplayMessage}'; session={frame.Generation.SessionGeneration}; " +
             $"route={route.Version}; spatial={continuity.State}; tracking={frame.IsTracking}; " +
@@ -88,7 +217,9 @@ public partial class CameraPage
             $"rootEnabled={rendered.RootEnabled}; prepared={rendered.PreparedSegments}; " +
             $"enabled={rendered.EnabledSegments}; depthHidden={rendered.DepthHiddenSegments}; " +
             $"prefixHidden={rendered.PrefixHiddenSegments}; inFront={rendered.InFrontSegments}; " +
-            $"viewportMidpoints={rendered.ViewportMidpoints}; arrows={rendered.EnabledArrowWings}.");
+            $"viewportMidpoints={rendered.ViewportMidpoints}; arrows={rendered.EnabledArrowWings}; " +
+            $"ribbonClippedCenterlines={rendered.RibbonBounds}; arrowClippedCenterlines={rendered.ArrowBounds}; " +
+            $"arrowDepthHidden={rendered.ArrowDepthHidden}; arrowPrefixHidden={rendered.ArrowPrefixHidden}.");
         AndroidLog.Info(RouteLogTag, $"NAV_PROGRESS algorithm='{activeRoute?.Algorithm}'; " +
             $"trip={NavigationDestinationBridge.Current.Version}; segment={progress.SegmentIndex}; " +
             $"progress={progress.CommittedProgressMeters:F1}m; remaining={progress.RemainingMeters:F1}m; " +
@@ -121,6 +252,9 @@ public partial class CameraPage
                 $"poseAtPublicationAgeMs={placed.PublishedAt - placed.PosePublishedAt}; frameNs={placed.FrameTimestamp}; " +
                 $"gpsAtPublicationMs={(placed.ObservationTime.HasValue ? placed.PublishedAt - now + (DateTimeOffset.UtcNow - placed.ObservationTime.Value).TotalMilliseconds : double.NaN):F0}; " +
                 $"yaw={placed.YawDegrees:F2}; gpsToRoadEN=({placed.GpsToRoadEast:F2},{placed.GpsToRoadNorth:F2})m; " +
+                $"cameraPairing=RECEIPT_POSE; observationPoseFrameNs={placed.ObservationPoseFrame}; " +
+                $"observationPoseSkewMs={placed.ObservationPoseSkewMilliseconds}; " +
+                $"observationCamera=({placed.ObservationCameraX:F3},{placed.ObservationCameraZ:F3}); anchorQ={placed.AnchorRotation}; " +
                 $"gpsToRoadAR=({placed.GpsToRoadX:F2},{placed.GpsToRoadZ:F2})m; " +
                 $"origin=({placed.AnchorX:F2},{placed.AnchorZ:F2}); cameraAtPublication=({placed.CameraX:F2},{placed.CameraZ:F2}); " +
                 $"first=({first.X:F2},{first.Z:F2}); final=({final.X:F2},{final.Z:F2}); " +

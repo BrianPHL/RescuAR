@@ -54,7 +54,8 @@ public static class RouteAnchorRecoveryPolicy
             AnchorX = frame.Anchor.PositionX, AnchorZ = frame.Anchor.PositionZ,
             CameraX = frame.Pose.PositionX, CameraZ = frame.Pose.PositionZ,
             Source = "GROUND-HANDOFF", PosePublishedAt = frame.PublishedAtMonotonicMilliseconds,
-            FrameTimestamp = frame.FrameTimestamp };
+            FrameTimestamp = frame.FrameTimestamp,
+            AnchorRotation = frame.Anchor.HasRotation ? frame.Anchor.Rotation : null };
         return true;
     }
 }

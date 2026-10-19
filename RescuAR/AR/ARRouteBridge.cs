@@ -183,6 +183,17 @@ public static class ARRouteBridge
             $"windowProgress=" +
             $"{(next.NavigationState.IsAvailable ? next.NavigationState.WindowStartProgressMeters.ToString("F1") : "<none>")} m, " +
             $"sourceSegment={next.NavigationState.SourceSegmentIndex}");
+        LogPublishedGeometry(next);
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private static void LogPublishedGeometry(RouteSnapshot snapshot)
+    {
+        int chunk = 0;
+        foreach (var points in RescuAR.Navigation.Diagnostics.NavigationGeometryTrace.ArChunks(snapshot.Points))
+            AndroidLog.Info(LogTag, $"NAV_AR_GEOMETRY route={snapshot.Version}; " +
+                $"sample={snapshot.Placement.ObservationTime?.ToUnixTimeMilliseconds()}; " +
+                $"pointCount={snapshot.Points.Count}; chunk={chunk++}; points={points}.");
     }
 
     internal static void PublishGeometryQuality(

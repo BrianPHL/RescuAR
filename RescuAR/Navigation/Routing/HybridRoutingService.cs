@@ -36,6 +36,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     private readonly Func<CancellationToken, Task<RoadGraph>> roadGraphProvider;
     private readonly Func<bool> isInternetAvailable;
     private readonly bool requireEmbeddedPedestrianGraph;
+    private readonly Func<string> roadDatasetId;
 
     private readonly SemaphoreSlim offlineInitializationGate =
         new(
@@ -51,7 +52,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         IRoutingService onlineRoutingService,
         Func<CancellationToken, Task<RoadGraph>> roadGraphProvider,
         Func<bool> isInternetAvailable,
-        bool requireEmbeddedPedestrianGraph = false)
+        bool requireEmbeddedPedestrianGraph = false,
+        Func<string>? roadDatasetId = null)
     {
         this.onlineRoutingService =
             onlineRoutingService ??
@@ -69,6 +71,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 nameof(isInternetAvailable));
 
         this.requireEmbeddedPedestrianGraph = requireEmbeddedPedestrianGraph;
+        this.roadDatasetId = roadDatasetId ?? (() => "unreported");
     }
 
     /// <summary>
@@ -513,7 +516,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
 
             existing =
                 new AStarRoutingService(
-                    graph);
+                    graph, roadDatasetId());
 
             offlineRoutingService =
                 existing;

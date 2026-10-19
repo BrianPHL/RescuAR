@@ -32,6 +32,7 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
     private const double OriginCandidateBandMeters = 12.0;
 
     private readonly RoadGraph graph;
+    private readonly string datasetId;
     private readonly Dictionary<int, int> componentByNode;
     private readonly Dictionary<int, int> componentSizes;
     private const double IndexCellDegrees = 0.002;
@@ -40,9 +41,10 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
 
     public string AlgorithmName => "AStar";
 
-    public AStarRoutingService(RoadGraph graph)
+    public AStarRoutingService(RoadGraph graph, string datasetId = "unreported")
     {
         this.graph = graph ?? throw new ArgumentNullException(nameof(graph));
+        this.datasetId = datasetId;
         componentByNode = BuildComponents(graph);
         componentSizes = componentByNode.Values.GroupBy(id => id)
             .ToDictionary(group => group.Key, group => group.Count());
@@ -230,7 +232,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
                 3.0 * (start.CrossTrackMeters + end.CrossTrackMeters);
             if (score >= bestTargetScore) continue;
             bestTargetScore = score;
-            bestDirect = CreateRoute(new[] { start.SnappedCoordinate, end.SnappedCoordinate }, algorithmName);
+            bestDirect = CreateRoute(new[] { start.SnappedCoordinate, end.SnappedCoordinate }, algorithmName,
+                travel.OsmId is { } id ? new[] { id } : Array.Empty<string>());
         }
         while (openSet.TryDequeue(out int currentId, out double lowerBound))
         {
@@ -274,9 +277,12 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         }
 
         RouteResult? result = bestDirect ?? (bestTarget is null ? null :
-            ReconstructRoute(cameFrom, startByNode, bestTarget, bestDestination.SnappedCoordinate, algorithmName));
+            ReconstructRoute(cameFrom, startByNode, bestTarget, bestDestination, algorithmName));
         if (result is not null)
         {
+            result = new RouteResult(result.Points, result.TotalDistanceMeters, result.Algorithm,
+                result.Provenance with { RequestedCoordinates = new[] { origin, destination },
+                    SnappedWaypoints = new[] { result.Points[0].Coordinate, result.Points[^1].Coordinate } });
             if (hazardAware && !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(result, origin, hazards!))
                 return null;
             AndroidLog.Debug(LogTag,
@@ -603,16 +609,19 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         Dictionary<int, (int ParentId, RoadEdge UsedEdge)> cameFrom,
         Dictionary<int, EdgeProjection> startByNode,
         RoadNode targetNode,
-        GeoCoordinate snappedDestination,
+        EdgeProjection destination,
         string algorithmName)
     {
         var reversedNodes = new List<RoadNode>();
+        var ways = new List<string>();
+        if (destination.Edge?.OsmId is { } destinationWay) ways.Add(destinationWay);
 
         int currentId = targetNode.Id;
         reversedNodes.Add(targetNode);
 
         while (cameFrom.TryGetValue(currentId, out var tuple))
         {
+            if (tuple.UsedEdge.OsmId is { } way) ways.Add(way);
             currentId = tuple.ParentId;
             if (graph.Nodes.TryGetValue(currentId, out var parentNode))
             {
@@ -621,12 +630,14 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
         }
 
         reversedNodes.Reverse();
+        if (startByNode[currentId].Edge?.OsmId is { } startWay) ways.Add(startWay);
         return CreateRoute(new[] { startByNode[currentId].SnappedCoordinate }
             .Concat(reversedNodes.Select(node => node.Coordinate))
-            .Append(snappedDestination), algorithmName);
+            .Append(destination.SnappedCoordinate), algorithmName, ways.Distinct().ToArray());
     }
 
-    private static RouteResult CreateRoute(IEnumerable<GeoCoordinate> coordinates, string algorithmName)
+    private RouteResult CreateRoute(IEnumerable<GeoCoordinate> coordinates, string algorithmName,
+        IReadOnlyList<string>? sourceWayIds = null)
     {
         var points = new List<RoutePoint>();
         double distance = 0.0;
@@ -640,7 +651,8 @@ public sealed class AStarRoutingService : IHazardAwareRoutingService
             }
             points.Add(new RoutePoint(coordinate, distance));
         }
-        return new RouteResult(points, distance, algorithmName);
+        return new RouteResult(points, distance, algorithmName,
+            new RouteProvenance("ASTAR", datasetId, SourceWayIds: sourceWayIds));
     }
 
     private readonly record struct EdgeProjection(
