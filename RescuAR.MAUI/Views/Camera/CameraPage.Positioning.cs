@@ -11,8 +11,21 @@ public partial class CameraPage
     // They never become routing origins, device locations or arrival evidence.
     private VerifiedPosition? verifiedPosition;
 
+    private ARRoutePlacement CaptureRoutePlacement(ARCameraPoseBridge.SpatialSnapshot frame,
+        string source, bool retainedObservation)
+    {
+        DateTimeOffset? observation;
+        lock (routeProgressFusionSync)
+            observation = retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.Timestamp;
+        return new(frame.Generation, frame.Anchor.ReferenceGeneration, frame.Version,
+            Environment.TickCount64, frame.Anchor.PositionX, frame.Anchor.PositionZ,
+            frame.Pose.PositionX, frame.Pose.PositionZ, observation, source, activeMapToArYawDegrees,
+            PosePublishedAt: frame.PublishedAtMonotonicMilliseconds, FrameTimestamp: frame.FrameTimestamp);
+    }
+
     private sealed record VerifiedPosition(RouteResult Route, DateTimeOffset At,
-        double Accuracy, double Progress, RouteBacktrackingPolicy.TrackedMotion? Motion);
+        double Accuracy, double Progress, RouteBacktrackingPolicy.TrackedMotion? Motion,
+        GeoCoordinate Coordinate);
 
     private RouteBacktrackingPolicy.TrackedMotion? GetTrackedRouteMotion()
     {
@@ -43,9 +56,10 @@ public partial class CameraPage
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
             TimeSpan age = DateTimeOffset.UtcNow - reading.Timestamp;
+            var motion = age >= TimeSpan.Zero && age <= TimeSpan.FromSeconds(3) ? GetTrackedRouteMotion() : null;
+            LogPositionInnovation(verifiedPosition, route, reading, motion);
             verifiedPosition = new(route, reading.Timestamp, reading.AccuracyMeters!.Value,
-                update.CommittedProgressMeters,
-                age >= TimeSpan.Zero && age <= TimeSpan.FromSeconds(3) ? GetTrackedRouteMotion() : null);
+                update.CommittedProgressMeters, motion, reading.Coordinate);
         }
     }
 

@@ -75,7 +75,10 @@ public sealed class HeadingRevalidationPolicy
     private long trackingSession;
     private long worldFrame;
 
-    public void Reset()
+    public long EvidenceResetVersion { get; private set; }
+    public string LastEvidenceResetReason { get; private set; } = "initial";
+
+    public void Reset(string reason = "route/session reset")
     {
         baseline =
             null;
@@ -86,7 +89,7 @@ public sealed class HeadingRevalidationPolicy
         trackingSession = 0;
         worldFrame = 0;
 
-        ResetCandidateEvidence();
+        ResetCandidateEvidence(reason);
     }
 
     public void MarkCorrectionApplied(
@@ -115,7 +118,7 @@ public sealed class HeadingRevalidationPolicy
         // A genuine world correction or a new session still invalidates them.
         if (trackingSession != sessionGeneration || worldFrame != worldFrameGeneration)
         {
-            Reset();
+            Reset("AR session/world frame changed");
             trackingSession = sessionGeneration;
             worldFrame = worldFrameGeneration;
         }
@@ -126,7 +129,7 @@ public sealed class HeadingRevalidationPolicy
         lastObservationUtc = timestampUtc;
         if ((lastCandidateUtc.HasValue && timestampUtc - lastCandidateUtc.Value > MaximumMovementWindow) ||
             (firstCandidateUtc.HasValue && timestampUtc - firstCandidateUtc.Value > TimeSpan.FromSeconds(60)))
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("candidate evidence expired");
 
         bool trustworthyInput =
             double.IsFinite(
@@ -157,7 +160,7 @@ public sealed class HeadingRevalidationPolicy
                 matchConfidence == RouteMatchConfidence.Unavailable)
             {
                 baseline = null;
-                ResetCandidateEvidence();
+                ResetCandidateEvidence("invalid pose or route identity");
             }
 
             return CreateDecision(
@@ -200,7 +203,7 @@ public sealed class HeadingRevalidationPolicy
             baseline =
                 current;
 
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("movement baseline expired");
 
             return CreateDecision(
                 HeadingRevalidationDisposition.CollectingMovement,
@@ -257,7 +260,7 @@ public sealed class HeadingRevalidationPolicy
         if (Math.Abs(gpsDisplacementMeters - arDisplacementMeters) > movementDifferenceAllowance)
         {
             baseline = current;
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("GPS and AR movement distances disagree");
             return CreateDecision(HeadingRevalidationDisposition.SignalsDisagree,
                 currentMapToArYawDegrees, gpsDisplacementMeters, arDisplacementMeters,
                 reason: "GPS and ARCore movement distances disagree beyond GPS uncertainty");
@@ -277,7 +280,7 @@ public sealed class HeadingRevalidationPolicy
             baseline =
                 current;
 
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("walking speed is insufficient");
 
             return CreateDecision(
                 HeadingRevalidationDisposition.SignalsDisagree,
@@ -341,7 +344,7 @@ public sealed class HeadingRevalidationPolicy
               courseRouteErrorDegrees >
                     MaximumSignalAgreementErrorDegrees)))
         {
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("displacement, course and route disagree");
 
             return CreateDecision(
                 HeadingRevalidationDisposition.SignalsDisagree,
@@ -388,7 +391,7 @@ public sealed class HeadingRevalidationPolicy
         // toward that jump. Such a large discrepancy needs fresh calibration.
         if (Math.Abs(currentAlignmentErrorDegrees) > 90)
         {
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("GPS contradicts tracked AR direction");
             return CreateDecision(HeadingRevalidationDisposition.SignalsDisagree,
                 currentMapToArYawDegrees, gpsDisplacementMeters, arDisplacementMeters,
                 gpsDisplacementBearingDegrees, routeTangentBearingDegrees: routeTangentBearingDegrees,
@@ -402,7 +405,7 @@ public sealed class HeadingRevalidationPolicy
                 currentAlignmentErrorDegrees) <=
             AlignmentStableErrorDegrees)
         {
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("movement agrees with active alignment");
 
             return CreateDecision(
                 HeadingRevalidationDisposition.AlignmentStable,
@@ -438,7 +441,7 @@ public sealed class HeadingRevalidationPolicy
                 candidateMapToArYawDegrees) >
                 MaximumCandidateDeviationDegrees)
         {
-            ResetCandidateEvidence();
+            ResetCandidateEvidence("successive yaw candidates disagree");
         }
 
         double candidateRadians =
@@ -535,7 +538,7 @@ public sealed class HeadingRevalidationPolicy
         int confirmations =
             candidateCount;
 
-        ResetCandidateEvidence();
+        ResetCandidateEvidence("bounded heading correction confirmed");
 
         return CreateDecision(
             HeadingRevalidationDisposition.CorrectionReady,
@@ -556,8 +559,10 @@ public sealed class HeadingRevalidationPolicy
             "three movement windows confirmed a bounded heading correction");
     }
 
-    private void ResetCandidateEvidence()
+    private void ResetCandidateEvidence(string reason)
     {
+        EvidenceResetVersion++;
+        LastEvidenceResetReason = reason;
         candidateSinSum =
             0.0;
 

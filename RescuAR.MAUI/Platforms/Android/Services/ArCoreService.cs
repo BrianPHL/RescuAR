@@ -3041,6 +3041,28 @@ public sealed partial class ArCoreService : IArCoreService
                 "estimate as a verified physical floor.");
         }
 
+        if (LocalArNavigationPolicy.TryRenewProvisionalReference(
+                cameraTranslation[0], cameraTranslation[1], cameraTranslation[2],
+                provisionalGroundX, provisionalGroundY, provisionalGroundZ, out var renewed))
+        {
+            float distance = LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                cameraTranslation[0] - provisionalGroundX, cameraTranslation[2] - provisionalGroundZ);
+            ARGroundStateBridge.InvalidateAndSearch(renderGeneration, true,
+                "estimated ground reference exceeded the local window");
+            provisionalGroundX = renewed.X;
+            provisionalGroundZ = renewed.Z;
+            // Keep floor Y, probe budgets and search timers. This is a local
+            // reference handoff, not a new floor search or an AR world change.
+            long replacement;
+            lock (groundAnchorRecoveryLock) replacement = ++groundAnchorReplacementGeneration;
+            ARCameraSpatialController.SetRouteRecoveryRebasePending(true,
+                "estimated ground reference renewed; current route requires rebase");
+            Log.Info(AnchorRecoveryLogTag,
+                $"PROVISIONAL LOCAL FRAME RENEWED: distance={distance:F2}m; " +
+                $"floorY={provisionalGroundY:F2}m; replacementGeneration={replacement}; " +
+                "ground search budget retained.");
+        }
+
         // Tracking loss suspends trust without discarding this fixed estimate.
         // Restore its provisional state on every tracked return, including
         // recovery before a real Plane/Depth anchor has been acquired.

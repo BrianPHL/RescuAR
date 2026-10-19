@@ -766,6 +766,7 @@ public static class ARCameraSpatialController
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
+        ARRoutePlacement placement = ARRouteRenderer.AppliedPlacement;
 
         if (anchor.IsAvailable &&
             anchor.ReferenceGeneration != appliedGroundReferenceGeneration)
@@ -822,6 +823,9 @@ public static class ARCameraSpatialController
         lock (sync)
         {
             routeAlignmentTrusted =
+                placement.IsFor(frame) &&
+                LocalArNavigationPolicy.IsGroundReferenceLocal(
+                    frame.Pose.PositionX, frame.Pose.PositionZ, anchor.PositionX, anchor.PositionZ) &&
                 !pendingWorldCorrectionRequest.IsPending &&
                 !routeRecoveryRebasePending;
 
@@ -1000,10 +1004,10 @@ public static class ARCameraSpatialController
             !routeRootHorizontalLocked)
         {
             lockedRouteRootX =
-                anchor.PositionX;
+                placement.IsAvailable ? placement.AnchorX : anchor.PositionX;
 
             lockedRouteRootZ =
-                anchor.PositionZ;
+                placement.IsAvailable ? placement.AnchorZ : anchor.PositionZ;
 
             routeRootHorizontalLocked =
                 true;
@@ -1048,6 +1052,9 @@ public static class ARCameraSpatialController
         lock (sync)
         {
             routeAlignmentCorrectionPending =
+                !placement.IsFor(frame) ||
+                !LocalArNavigationPolicy.IsGroundReferenceLocal(
+                    frame.Pose.PositionX, frame.Pose.PositionZ, anchor.PositionX, anchor.PositionZ) ||
                 pendingWorldCorrectionRequest.IsPending ||
                 routeRecoveryRebasePending;
         }

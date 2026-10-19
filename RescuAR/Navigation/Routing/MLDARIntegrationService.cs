@@ -218,18 +218,27 @@ public sealed class MLDARIntegrationService
         double arWindowMeters = 7.5,
         bool clearRouteOnFailure = true,
         int sourceSegmentIndex = -1,
-        GeoCoordinate? userCoordinate = null)
+        GeoCoordinate? userCoordinate = null,
+        ARRoutePlacement placement = default)
     {
         ArgumentNullException.ThrowIfNull(
             route);
         if (!IsCameraOffsetAcceptable(arOriginOffsetX, arOriginOffsetZ))
             return false;
+        float cameraOffsetX = arOriginOffsetX, cameraOffsetZ = arOriginOffsetZ;
         if (userCoordinate.HasValue &&
             !TryApplyGpsToRouteOffset(userCoordinate.Value, snappedReference,
                 mapToArYawDegrees, ref arOriginOffsetX, ref arOriginOffsetZ))
         {
             if (clearRouteOnFailure) ARRouteBridge.Clear();
             return false;
+        }
+
+        if (placement.IsAvailable)
+        {
+            var gpsOffset = userCoordinate.HasValue ? GeographicOffset(userCoordinate.Value, snappedReference) : (0.0, 0.0);
+            placement = placement with { GpsToRoadEast = gpsOffset.Item1, GpsToRoadNorth = gpsOffset.Item2,
+                GpsToRoadX = arOriginOffsetX - cameraOffsetX, GpsToRoadZ = arOriginOffsetZ - cameraOffsetZ };
         }
 
         bool published =
@@ -246,7 +255,7 @@ public sealed class MLDARIntegrationService
                     progressMeters,
                     sourceSegmentIndex),
                 ProgressLogTag,
-                clearRouteOnFailure);
+                clearRouteOnFailure, placement);
 
         if (published)
         {
@@ -304,11 +313,7 @@ public sealed class MLDARIntegrationService
                 "GPS-to-graph displacement too uncertain for an AR route origin.");
             return false;
         }
-        double latitude = user.Latitude * Math.PI / 180.0;
-        double east = (routePoint.Longitude - user.Longitude) *
-            Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude);
-        double north = (routePoint.Latitude - user.Latitude) *
-            Math.PI / 180.0 * 6371008.8;
+        var (east, north) = GeographicOffset(user, routePoint);
         var offset = MapToArCoordinates.Rotate(east, north, yawDegrees);
         arOffsetX += (float)offset.X;
         arOffsetZ += (float)offset.Z;
@@ -316,10 +321,22 @@ public sealed class MLDARIntegrationService
             arOffsetX, arOffsetZ, out _);
     }
 
-    private static bool IsCameraOffsetAcceptable(float x, float z) =>
-        float.IsFinite(x) && float.IsFinite(z) &&
-        MathF.Sqrt(x * x + z * z) <=
-            LocalArNavigationPolicy.MaximumCameraToAnchorOffsetMeters;
+    private static (double East, double North) GeographicOffset(GeoCoordinate user, GeoCoordinate routePoint)
+    {
+        double latitude = user.Latitude * Math.PI / 180.0;
+        return ((routePoint.Longitude - user.Longitude) * Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude),
+            (routePoint.Latitude - user.Latitude) * Math.PI / 180.0 * 6371008.8);
+    }
+
+    private static bool IsCameraOffsetAcceptable(float x, float z)
+    {
+        if (LocalArNavigationPolicy.IsGroundReferenceLocal(x, z, 0, 0)) return true;
+        AndroidLog.Warn(ProgressLogTag,
+            $"AR_PUBLICATION_REJECTED reason=GROUND_REFERENCE_TOO_DISTANT; " +
+            $"cameraOffset=({x:F2},{z:F2})m; maximum=" +
+            $"{LocalArNavigationPolicy.MaximumCameraToAnchorOffsetMeters:F1}m.");
+        return false;
+    }
 
     private static bool PublishWindow(
         RouteResult route,
@@ -331,7 +348,8 @@ public sealed class MLDARIntegrationService
         double arWindowMeters,
         int sourceSegmentIndex,
         string logTag,
-        bool clearRouteOnFailure)
+        bool clearRouteOnFailure,
+        ARRoutePlacement placement = default)
     {
         if (!ValidateLocalRouteOriginOffset(
                 arOriginOffsetX,
@@ -441,7 +459,7 @@ public sealed class MLDARIntegrationService
             route.TotalDistanceMeters,
             RouteVisualKind.RouteWindow,
             startDistanceMeters,
-            sourceSegmentIndex);
+            sourceSegmentIndex, placement);
 
         return true;
     }

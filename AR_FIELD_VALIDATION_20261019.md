@@ -838,3 +838,135 @@ screenshots. Physical road alignment, offline cache persistence on each phone,
 and UI layout remain unverified by the build. If building intersections persist,
 obtain a consented synchronized position trace and a reliable road reference
 before changing geographic data or applying an offset.
+
+## 15:36 capture: approved local placement and hazard corrections
+
+The investigation and plan were presented before implementation and explicitly
+approved. Evidence and the original plan are retained in
+`artifacts/field-review-20261019-1536/Investigation-and-proposed-plan.txt`.
+
+The capture confirms two MLD trips, not a successful A* trip. Failed A* hazard
+replacement attempts did not change the accepted provider. An estimated ground
+reference remained fixed while the camera travelled 85.81 m away, beyond the
+existing 15 m retirement and 20 m publication limits. A route window remained
+unchanged for approximately 81.5 seconds while confidence could still report
+Full. Separately, hazard monitoring repeatedly rejected outward escape paths
+that the planner had validated, considered the passed portion of a long current
+segment, retried unchanged NoRoute cases, and used a turn-card warning that
+ordinary guidance updates could overwrite.
+
+### Changes
+
+- Estimated references now renew horizontal X/Z at the existing 15 m limit.
+  Floor Y, provisional trust, ongoing Plane/Depth search budgets, and AR session
+  ownership are retained. One invalidation advances the ground reference and
+  replacement generation and requests a fresh route rebase. Invalid poses and
+  implausible camera heights cannot manufacture a replacement floor.
+- Publications carry the captured session, ground reference, pose timestamp,
+  source observation, and placement origin. Rendering uses that origin.
+  Confidence, short geometry holds, and the final render gate reject a route
+  whose reference is incompatible or farther than the existing 20 m limit.
+  Equivalent local points cannot preserve an obsolete placement origin.
+- Both providers use the same hazard monitor. It clips the current segment to
+  remaining progress, retains only a validated replacement's outward escape
+  contract, and continues rejecting later re-entry or a hazardous destination.
+  An initial route does not acquire an escape exemption merely because GPS
+  currently matches inside a hazard.
+- An unsuccessful assessment is retained for unchanged route, hazards,
+  connectivity, and mapped segment. Changed exclusions, connectivity, a new
+  segment/trip, or an existing confirmed reverse/off-route replan can permit
+  reconsideration. The existing cooldown remains. Stale completions cannot
+  suppress a newer trip or hazard assessment.
+- Hazard status persists in the status banner independently of the turn card:
+  finding an alternative, leaving a reported hazard, or no safer route found.
+  A real emergency advisory retains priority and includes the route notice.
+- Bounded diagnostic records add the actual accepted algorithm, source geometry
+  fingerprint and embedded dataset identity; publication/draw origins and
+  sample times; signed GPS-to-road offsets; GPS versus tracked-AR movement
+  residuals; and heading-evidence reset reasons. Remote dataset identity,
+  location provider, and bearing uncertainty are explicitly unavailable when
+  the current interfaces do not supply them. No absolute coordinates were added.
+
+Road data, geographic offsets, GPS sampling and accuracy gates, heading
+thresholds, automatic arrival criteria, flood materials, native bridge, and
+dependency pins retain their existing behavior. A stable remaining lateral
+offset is not established as corrected by these changes. The new diagnostics
+are intended to distinguish GPS translation, yaw, source geometry, and actual
+draw placement in the next capture.
+
+### Verification and candidate
+
+**213 focused regression checks passed**, covering the new reference boundaries,
+long provisional walks, captured-reference identity, hazard escape and re-entry,
+unsafe destinations, unchanged/revised assessments, stale completions, and the
+existing A*/MLD guidance, backtracking, arrival, ground/flood, and compiled scene
+fixtures. The routing fixtures use in-memory graphs and stubbed HTTP responses.
+
+```powershell
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj --no-restore -p:GenerateEvergineContent=False -p:GenerateEvergineScenesCode=True -- --placement-hazards
+```
+
+Android Release passed with **zero warnings and zero errors**:
+
+```powershell
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False -p:RescuArDiagnosticBuild=true -p:AndroidPackageFormats=apk
+```
+
+An initial build attempt also set `GenerateEvergineScenesCode=True` globally,
+which incorrectly activated scene generation in the MAUI host and failed with
+WESC003 / namespace errors. The one corrective rebuild used the command above,
+leaving the shared application project's existing scene generation enabled.
+The startup guard and generated scene factories remain intact. Only whitespace
+alignment and this validation record were changed after the successful build.
+
+`Verify-ARCoreReleaseReadiness.ps1` and `Verify-AndroidNativeBridge.ps1` passed.
+The native bridge is unchanged, ARM64, stripped, and has 16 KiB load alignment.
+The SDK lacks `apkanalyzer`, so `Test-ARCorePackage.ps1` was not run. Equivalent
+package ID, required ARCore/camera/Vulkan declarations, Vulkan version/level,
+minimum API, ARM64-only libraries, and diagnostic profile checks passed using
+the installed `aapt` inspector and the artifact-local
+`Verify-PackagedCandidate.ps1`. No dependencies or SDK components were installed.
+The inspection used NDK 30's readelf; native provenance toolchain fields describe
+the pinned bridge configuration, not a native rebuild in this run.
+
+Evidence:
+
+- `artifacts/field-review-20261019-1536/implementation-regression.log`
+- `artifacts/field-review-20261019-1536/release-readiness.log`
+- `artifacts/field-test-20261019-local-placement-hazards/android-release-build.log`
+- `artifacts/field-test-20261019-local-placement-hazards/package-check-report.json`
+- `artifacts/field-test-20261019-local-placement-hazards/native-bridge-provenance.json`
+
+Candidate: [RescuAR-20261019-Local-Placement-Hazards.apk](artifacts/field-test-20261019-local-placement-hazards/RescuAR-20261019-Local-Placement-Hazards.apk)
+(60,674,615 bytes). SHA-256:
+`2dcf0fdcead0c25de03fdeafd4bc5f52bc3fd5e325a501ae83cf41b7fd903cb7`.
+Source base: `d997103a8855082056ca77dd563aff53bc84973f` plus these uncommitted
+changes. Diagnostics are enabled and the route visibility override is disabled.
+No commit, device installation, UI interaction, live integration test, or E2E
+test was performed.
+
+### Required phone retest
+
+1. Start a new online MLD trip and a separate new offline A* trip to the same
+   center, leaving Location enabled. Verify each accepted provider in the new
+   `NAV_ROUTE_ACCEPTED` records. A failed A* replacement on an MLD trip is not
+   evidence of an A* trip.
+2. Walk a safe straight section for more than 60 m with ground still estimated,
+   then allow Plane/Depth verification. Expect bounded reference handoffs,
+   unchanged floor height, and no frozen old window returning as Full. Check
+   cyan placement at fixed street landmarks in both walking directions.
+3. Exercise outward escape, a passed hazard on a long segment, an unavailable
+   alternative, and a newly changed hazard. Expect a persistent, appropriate
+   notice; no repeating unchanged failed calculation; and renewed assessment
+   after a relevant change. Use reported/test hazards without entering danger.
+4. Recheck reverse walking, a corner, leaving/rejoining the route, brief tracking
+   loss, camera exit/reentry, a destination change, and completed arrival. Expect
+   shared provider behavior, current-trip geometry, and preserved arrival rules.
+5. Check indoor ground acquisition and flood depth briefly. Expect camera startup,
+   visible flood rendering, and no floor-height jump after horizontal renewal.
+
+Return the actual outcomes and complete captures for both providers before any
+further behavior-dependent correction. Include original navigation footage or
+timestamped markers at identifiable street points if lateral error persists.
+Physical road alignment, device rendering, and banner layout remain unverified
+by these builds and unit/package checks.

@@ -150,12 +150,17 @@ public static class ARRouteRenderer
 
     private static int activeSegmentCount;
     private static RouteVisibilitySnapshot visibility;
+    private static ARRoutePlacement appliedPlacement;
+
+    public static ARRoutePlacement AppliedPlacement { get { lock (sync) return appliedPlacement; } }
 
     /// <summary>Measured draw-thread state, not a claim that pixels are visible.</summary>
     public readonly record struct RouteVisibilitySnapshot(long RouteVersion,
         long Session, long GroundReference, long MeasuredAt, bool RootEnabled, int PreparedSegments,
         int EnabledSegments, int DepthHiddenSegments, int PrefixHiddenSegments,
-        int InFrontSegments, int ViewportMidpoints, int EnabledArrowWings);
+        int InFrontSegments, int ViewportMidpoints, int EnabledArrowWings,
+        ARRoutePlacement Placement = default, float RootX = 0, float RootZ = 0,
+        float CameraX = 0, float CameraZ = 0);
 
     public static RouteVisibilitySnapshot Visibility
     {
@@ -368,6 +373,7 @@ public static class ARRouteRenderer
         }
         if (placement.Active)
         {
+            lock (sync) appliedPlacement = default;
             if (appliedDiagnosticVersion != nextDiagnosticVersion)
             {
                 if (segmentMaterial is null) return false;
@@ -423,6 +429,7 @@ public static class ARRouteRenderer
 
         appliedRouteVersion =
             snapshot.Version;
+        lock (sync) appliedPlacement = snapshot.Placement;
 
         if (!snapshot.IsAvailable ||
             snapshot.Points.Count <
@@ -703,7 +710,8 @@ public static class ARRouteRenderer
         lock (sync) visibility = new(appliedRouteVersion, frame.Generation.SessionGeneration,
             frame.Anchor.ReferenceGeneration, Environment.TickCount64, rootEnabled,
             prepared, enabled, depthHidden, prefixHidden,
-            inFront, viewport, enabledArrows);
+            inFront, viewport, enabledArrows, appliedPlacement,
+            rootPosition.X, rootPosition.Z, frame.Pose.PositionX, frame.Pose.PositionZ);
     }
 
     /// <summary>

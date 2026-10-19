@@ -48,6 +48,23 @@ public static class LocalArNavigationPolicy
 
     public const float MaximumCameraToAnchorOffsetMeters = 20.0f;
 
+    public static bool IsGroundReferenceLocal(float cameraX, float cameraZ,
+        float groundX, float groundZ) =>
+        GetHorizontalDistanceMeters(cameraX - groundX, cameraZ - groundZ) <=
+        MaximumCameraToAnchorOffsetMeters;
+
+    /// <summary>Renew only X/Z; walking must not raise or lower the estimated floor.</summary>
+    public static bool TryRenewProvisionalReference(float cameraX, float cameraY, float cameraZ,
+        float groundX, float groundY, float groundZ, out (float X, float Y, float Z) renewed)
+    {
+        renewed = (groundX, groundY, groundZ);
+        float distance = GetHorizontalDistanceMeters(cameraX - groundX, cameraZ - groundZ);
+        if (!float.IsFinite(distance) || distance < GroundAnchorRetirementDistanceMeters ||
+            !IsCameraHeightAboveGroundPlausible(cameraY, groundY, out _)) return false;
+        renewed = (cameraX, groundY, cameraZ);
+        return true;
+    }
+
     /// <summary>
     /// Lowest plausible upright-device camera height above a navigable floor.
     /// Hits closer than this are commonly tables, benches, or other raised
