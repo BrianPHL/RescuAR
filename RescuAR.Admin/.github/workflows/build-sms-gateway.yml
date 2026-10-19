@@ -1,11 +1,10 @@
 name: Build RescuAR SMS Gateway APK
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - 'android-sms-gateway/**'
-      - '.github/workflows/build-sms-gateway.yml'
+    branches:
+      - dev
+  workflow_dispatch:
 
 permissions:
   contents: read
