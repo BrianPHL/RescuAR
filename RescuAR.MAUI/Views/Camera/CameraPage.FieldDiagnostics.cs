@@ -31,6 +31,7 @@ public partial class CameraPage
         lastFieldPlacementLogTimestamp = now;
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
+        var rendered = ARRouteRenderer.Visibility;
         AndroidLog.Info(RouteLogTag, $"NAV_PLACEMENT visible={confidence.AllowsRouteGeometry}; " +
             $"reason='{confidence.DisplayMessage}'; session={frame.Generation.SessionGeneration}; " +
             $"route={route.Version}; spatial={continuity.State}; tracking={frame.IsTracking}; " +
@@ -42,6 +43,13 @@ public partial class CameraPage
             $"identitySuspended={identitySuspended}; identitySamples={lastGpsRouteIdentityConfirmationCount}; " +
             $"headingTrusted={headingTrusted}; yaw={activeMapToArYawDegrees:F1}; " +
             $"headingDeviation={lastHeadingAlignment?.MaxSampleDeviationDegrees:F1}deg.");
+        AndroidLog.Info(RouteLogTag, $"NAV_RENDER route={rendered.RouteVersion}; " +
+            $"session={rendered.Session}; ground={rendered.GroundReference}; " +
+            $"ageMs={now - rendered.MeasuredAt}; " +
+            $"rootEnabled={rendered.RootEnabled}; prepared={rendered.PreparedSegments}; " +
+            $"enabled={rendered.EnabledSegments}; depthHidden={rendered.DepthHiddenSegments}; " +
+            $"prefixHidden={rendered.PrefixHiddenSegments}; inFront={rendered.InFrontSegments}; " +
+            $"viewportMidpoints={rendered.ViewportMidpoints}; arrows={rendered.EnabledArrowWings}.");
         AndroidLog.Info(RouteLogTag, $"NAV_PROGRESS algorithm='{activeRoute?.Algorithm}'; " +
             $"trip={NavigationDestinationBridge.Current.Version}; segment={progress.SegmentIndex}; " +
             $"progress={progress.CommittedProgressMeters:F1}m; remaining={progress.RemainingMeters:F1}m; " +
@@ -54,6 +62,8 @@ public partial class CameraPage
             $"backtrackSamples={lastBacktrackingDecision.ConfirmationCount}/" +
             $"{lastBacktrackingDecision.RequiredConfirmationCount}; " +
             $"backtrackRetreat={lastBacktrackingDecision.RetreatMeters:F1}m; " +
+            $"backtrackArRetreat={lastBacktrackingDecision.ArRetreatMeters:F1}m; " +
+            $"backtrackEvidence={lastBacktrackingDecision.EvidenceSource}; " +
             $"backtrackReason='{lastBacktrackingDecision.Reason}'; " +
             $"arrivalDistance={lastSafeZoneDecision.DistanceToDestinationMeters:F1}m; " +
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}/{lastSafeZoneDecision.RequiredConfirmationCount}; " +

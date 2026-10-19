@@ -1173,6 +1173,7 @@ public static class ARCameraSpatialController
                 routeRootTransform.Position,
                 frame);
         }
+        ARRouteRenderer.PublishVisibility(route.IsEnabled, routeRootTransform.Position, frame);
 
         LogVisualContinuityHoldIfChanged(
             trackingValid,

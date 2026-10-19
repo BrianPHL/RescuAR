@@ -539,3 +539,159 @@ for this scope. Device acceptance remains separate from these local checks:
 Return the actual results and complete captures before further changes that
 depend on physical-device behavior. No device installation, UI automation,
 integration tests, remote routing calls, or full-suite run were performed.
+
+## 13:21/13:23 captures: live guidance, reverse walking, and alignment
+
+The findings in the supplied task were read before the ZIP. This follow-up
+uses `RescuAR_FieldTest_20261019_132301.zip`, containing two complete captures:
+
+| Capture | Device / Android | Confirmed active provider | Navigation records in capture quality report |
+| --- | --- | --- | --- |
+| `132120` | Samsung SM-A546E / Android 16 (API 36) | AStar | 114 |
+| `132301` | Samsung SM-A546E / Android 14 (API 34) | MLD (Railway OSRM) | 327 |
+
+Both installed APKs match the preceding routing-parity candidate SHA-256
+`a0b90b53710802614db9e27f93aceb0cf8913475b7a06a7159126d66b9aae6af`.
+Both active routes have six points and a reported distance of 261.5 metres.
+Both captures contain good and weak GPS observations, trusted guidance periods,
+and depth occlusion events. Neither records a dynamic reroute or a confirmed
+backtracking candidate. A* recorded no PDR steps; MLD recorded 133 detected,
+87 accepted, and 46 rejected steps. Reverse detection therefore cannot depend
+on step callbacks. The tester confirmed staying on the same street, but the
+physical reverse-walking times are unknown; the logs cannot establish those
+intervals or prove that every retreating GPS fix represents backward walking.
+
+### Confirmed defects and remaining uncertainty
+
+- Reverse evidence was reset on every weak GPS observation. A* recorded
+  repeated raw retreats of roughly 20-24 metres that did not exceed the sum
+  of the two fixes' uncertainty. Some retreats disagreed with tracked AR
+  movement. These are not evidence for simply reducing the GPS distance gate.
+- Heading revalidation required movement along the forward route tangent;
+  correct same-street reverse movement was rejected. Qualified heading
+  candidates were also erased by brief weak-fix interruptions. In MLD,
+  `logcat-002.txt` records 1/3 at 13:35:02, 2/3 at 13:35:15, then an unavailable
+  fix at 13:35:17. Later 1/3 candidates are similarly interrupted.
+- Every new route-window publication marks geometry pending. CameraPage
+  suppressed the entire route during this preparation even when its previous
+  local geometry remained prepared and usable. PDR also depended on the first
+  segment of the published visual instead of the current geographic segment.
+- A prepared route is not necessarily visible. MLD reports trusted placement
+  at 13:32:22 while the camera faces about 174 degrees away from the route.
+  Both captures also record depth-hidden segments. Existing telemetry did not
+  distinguish prepared, enabled, occluded, and camera-facing geometry.
+- Initial projected and rendered route azimuths agree to 0 degrees in both
+  captures. This supports the existing axis convention; it does not establish
+  surveyed road placement. Interrupted heading correction can preserve an
+  existing yaw error; its share of the reported rightward offset is unconfirmed.
+  A systematic GeoJSON translation, GPS bias, or device-specific error also
+  remains unconfirmed without a physical reference and synchronized movement
+  observations. No blanket geographic or rightward offset correction is
+  justified by these captures.
+
+### Focused shared corrections
+
+1. Reverse detection retains qualified evidence through weak fixes for at most
+   15 seconds between reliable observations. Weak fixes add no evidence.
+   Fresh live AR translation can corroborate at least 12 metres of backward
+   movement with at least 3 metres of accurate GPS displacement/retreat. It
+   requires the same session, ground reference, stable calibration, and street
+   tangents within 35 degrees. A corner falls back to the GPS-only distance
+   checks. GPS
+   retreat opposed by forward AR motion is rejected. Without AR corroboration,
+   the existing GPS uncertainty distance remains required. Both paths retain
+   the six-second movement window, two advancing confirmations, spacing,
+   ambiguity checks, destination protection, and reroute cooldowns.
+2. Heading validation accepts either walking direction along a matched street.
+   Three consistent qualified windows remain necessary. Weak fixes preserve
+   candidates for at most 30 seconds between candidates and 60 seconds overall;
+   conflicting signals, changed tracking references, duplicates, and expired
+   evidence cannot accumulate a correction. GPS motion contradicting AR by
+   over 90 degrees cannot rotate the route toward a GPS jump. Existing bounded
+   correction sizes and cooldowns remain in force.
+3. New GPS placement uses the existing fusion, identity, accuracy, and matching
+   checks. Only qualified fixes refresh the physical display reference. PDR
+   uses that reference and the current geographic route tangent independently
+   of whether geometry is visible. Every step, including unpublished steps,
+   is bounded to eight seconds and eight metres of verified GPS, with a fresh
+   matching AR reference and no confirmed deviation or active reroute. This
+   extends the existing publication budget to progress itself; it does not
+   create a fused device coordinate or replace GPS arrival evidence.
+4. The already verified geometry can survive a brief weak-fix interruption
+   using that bounded physical reference. The six-second geometry hold still
+   requires the same route version and ground reference, bounded displacement,
+   available route identity, live tracking, and trusted heading. A replacement
+   window no longer causes a preparation blink when its prior geometry was
+   allowed and remains prepared in the same tracked ground reference. Resetting
+   road entry or accepting a replacement requires a newly prepared window;
+   the six-second preparation timeout remains.
+   Depth occlusion, obstacle continuity, ground, tracking, and geometry rejection
+   checks remain active.
+5. `NAV_RENDER` records the applied version, root visibility, prepared/enabled
+   segment counts, depth/prefix suppression, enabled segments in front of the
+   camera, segment midpoints in the viewport, and arrow wings. These counts
+   describe draw-thread state and approximate camera coverage, not proof that
+   pixels are visible through scene objects or UI. Reverse diagnostics include
+   independent AR retreat and the evidence source.
+
+Both providers continue through the same current-GPS replacement entry point
+and atomic destination/version, access, geometry, and distance validation.
+No routing dataset, provider selection, dependency, arrival threshold, flood
+renderer, native bridge, or camera startup-scene configuration was changed.
+
+### Validation and manual acceptance
+
+Validation is limited to the requested Android Release build. No additional
+automated tests, readiness/package test scripts, integration tests, device
+installation, or application interaction are authorized for this follow-up.
+The final build completed successfully with **zero warnings and zero errors**:
+
+```powershell
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False
+```
+
+Startup scene code generation remains enabled. The final build log is
+`artifacts/field-test-20261019-live-guidance/android-release-final-build.log`.
+The first build also passed; source review then tightened reuse across route
+replacement/ground changes and restricted AR corroboration around corners,
+followed by the final build above. No automated tests were run in either pass.
+
+Candidate: [RescuAR-20261019-Live-Guidance.apk](artifacts/field-test-20261019-live-guidance/RescuAR-20261019-Live-Guidance.apk)
+(60,338,609 bytes). SHA-256:
+`9003f2fe2f180b4c697c4d75467d71f880920c6af9209af3bb619679740272e9`.
+Source base: `9dd638e2e5615f3a0553d022fbc12f7d05f68f3a` plus this follow-up's
+uncommitted changes. The build and candidate hash establish a local compilation
+and artifact identity, not package-test or physical-device acceptance.
+
+Repeat these steps for a new online MLD trip and a separate new offline A*
+trip; confirm the provider in each capture. Restoring Internet during A* should
+retain A* for ordinary replans. Losing Internet during MLD alone is not an A*
+test. Record approximate elapsed times for each maneuver in the next report.
+
+1. On a safe straight street, wait for qualified placement, face the route,
+   and walk forward 20-30 metres. Expect a joined solid cyan line and matching
+   arrows/text without a preparation blink at each position update. Brief GPS
+   uncertainty may retain the last verified path with an explicit message;
+   sustained uncertainty should fall back to recovery guidance.
+2. Stay on that street and deliberately reverse 20-40 metres for at least ten
+   seconds. Allow two fresh accurate observations and continued movement.
+   Expect a logged current-position reroute, then updated route, distance,
+   instructions, and AR placement after fresh verification. Poor positioning
+   must not force an unsafe immediate replan. A valid new route can still ask
+   the user to turn back toward the destination; verify that its origin and
+   remaining distance use the new position.
+3. Stand still and rotate the phone, then resume forward walking. Expect no
+   reverse reroute from pointing changes or GPS jitter. Turn away from the
+   route: camera-facing guidance should explain where to look. Depth-obscured
+   geometry must not appear to pass through a genuine obstacle.
+4. Compare the cyan road with a fixed visible street reference while facing
+   along it and after turning around. Include the raw-road diagnostic view,
+   reported accuracy, and a video if offset persists. Do not judge accuracy by
+   assuming the person stands on the road centreline. Check `NAV_RENDER` and
+   heading decisions to distinguish placement error, camera coverage, and
+   occlusion.
+5. Recheck a corner, leaving/rejoining the road, brief tracking loss, camera
+   exit/reentry, a destination change during route work, arrival, and flood
+   depth/ground acquisition. Expect no stale-trip line, repeated replans,
+   premature arrival, or black camera. Return actual results and both complete
+   captures before further fixes that depend on device behavior.

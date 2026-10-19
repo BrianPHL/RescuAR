@@ -383,9 +383,6 @@ namespace RescuAR.App.Views.Camera
         private RouteMatchConfidence lastRouteMatchConfidence =
             RouteMatchConfidence.Unavailable;
 
-        private DateTimeOffset? lastVerifiedGpsAt;
-        private double lastVerifiedGpsProgressMeters;
-
         private DateTimeOffset lastRouteLocationFailureLogAt;
 
         private static readonly TimeSpan MaximumPdrRouteWindowGpsAge =
@@ -1448,7 +1445,18 @@ namespace RescuAR.App.Views.Camera
                 routeGeometryWaitingSince ??= now;
                 bool timedOut = now - routeGeometryWaitingSince.Value >
                     TimeSpan.FromSeconds(6);
-                if (confidence.State !=
+                var renderedWindow = ARRouteRenderer.Visibility;
+                var currentFrame = ARCameraPoseBridge.CurrentFrame;
+                long renderedAge = Environment.TickCount64 - renderedWindow.MeasuredAt;
+                bool replacingPreparedWindow = !timedOut &&
+                    ARRouteRenderer.ActiveSegmentCount > 0 &&
+                    ARRouteRenderer.AppliedRouteVersion >= routeStartupPublishedVersion &&
+                    routeStartupPublishedVersion >= 0 &&
+                    renderedWindow.RootEnabled && renderedAge >= 0 && renderedAge <= 1000 &&
+                    renderedWindow.Session == route.Generation.SessionGeneration &&
+                    renderedWindow.GroundReference == currentFrame.Anchor.ReferenceGeneration &&
+                    lastArGuidanceConfidence.AllowsRouteGeometry;
+                if (!replacingPreparedWindow && confidence.State !=
                         ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden &&
                     !lowLightFallbackActive)
                 {
@@ -1663,8 +1671,8 @@ namespace RescuAR.App.Views.Camera
                 double? latestAccuracy,
                 DateTimeOffset now)
         {
-            long groundGeneration =
-                ARCameraPoseBridge.CurrentFrame.Anchor.ReferenceGeneration;
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            long groundGeneration = frame.Anchor.ReferenceGeneration;
 
             bool ready =
                 arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong &&
@@ -1675,6 +1683,7 @@ namespace RescuAR.App.Views.Camera
                 geometry.IsCurrentFor(route) &&
                 geometry.State != RouteGeometryQualityState.Pending &&
                 geometry.State != RouteGeometryQualityState.Rejected &&
+                frame.IsFresh &&
                 spatial.State == ARCameraSpatialController.SpatialContinuityState.Live &&
                 tracking.IsAvailable && tracking.IsTracking &&
                 headingTrusted &&
@@ -1697,6 +1706,19 @@ namespace RescuAR.App.Views.Camera
                     route.Version, groundGeneration, latestGps.Value, now);
             }
 
+            GeoCoordinate? holdCoordinate = latestGps;
+            double? holdAccuracy = latestAccuracy;
+            if (activeRoute is { } geographicRoute &&
+                TryGetBoundedDisplayPosition(geographicRoute,
+                    _routeProgressTracker.Current.CommittedProgressMeters, now,
+                    out var heldPosition, out double verifiedAccuracy))
+            {
+                // A weak current fix cannot move an already placed path. Use
+                // the bounded physical reference while live AR still agrees.
+                holdCoordinate = heldPosition.AlignmentCoordinate;
+                holdAccuracy = verifiedAccuracy;
+            }
+
             // Keep the exact previously verified geometry for a brief GPS
             // wobble. Never advance progress or construct a new connector.
             // Any new route, anchor, confirmed deviation, hazard reroute,
@@ -1707,7 +1729,7 @@ namespace RescuAR.App.Views.Camera
                 matchConfidence == RouteMatchConfidence.Unavailable ||
                 lastOffRouteCandidate ||
                 !_verifiedRouteWindowHoldPolicy.CanHold(route.Version, groundGeneration,
-                    latestGps, latestAccuracy, now, routeIdentitySuspended))
+                    holdCoordinate, holdAccuracy, now, routeIdentitySuspended))
             {
                 return confidence;
             }
@@ -3731,11 +3753,11 @@ namespace RescuAR.App.Views.Camera
                         initialFusion.TargetProgressMeters, initialMatch,
                         $"GPS_PDR_{initialFusion.Action}");
                 initialRoadApproachPending = true;
-                _routeDisplayProgressPolicy.ObserveGps(route, initialFused, locationReading.Timestamp);
                 roadEntryConfirmation.Reset();
                 TrySetRouteRoadApproachCue(initialMatch, returningToRoute: false);
                 lastRouteMatchConfidence = initialMatch.MatchConfidence;
                 lastGpsConfidence = initialFusion.Confidence;
+                lastGpsReliabilityWeight = initialFusion.ReliabilityWeight;
 
                 if (initialMatch.IsAccepted && !initialMatch.IsOffRoute &&
                     initialMatch.MatchConfidence >= RouteMatchConfidence.Medium &&
@@ -3743,8 +3765,7 @@ namespace RescuAR.App.Views.Camera
                     initialFusion.ReliabilityWeight >= 0.35 &&
                     locationReading.AccuracyMeters <= 20.0)
                 {
-                    lastVerifiedGpsAt = locationReading.Timestamp;
-                    lastVerifiedGpsProgressMeters = initialFused.CommittedProgressMeters;
+                    ObserveVerifiedGpsPosition(route, initialFused, locationReading);
                 }
 
                 if (initialFused.IsAccepted && !initialFused.IsOffRoute)
@@ -4289,8 +4310,7 @@ namespace RescuAR.App.Views.Camera
             lastGpsConfidence =
                 GpsPdrFusionPolicy.GpsConfidence.Unavailable;
 
-            lastVerifiedGpsAt = null;
-            lastVerifiedGpsProgressMeters = 0.0;
+            verifiedPosition = null;
 
             lastGpsFusionAction =
                 GpsPdrFusionPolicy.GpsFusionAction.Ignore;
@@ -4505,8 +4525,7 @@ namespace RescuAR.App.Views.Camera
             lastRouteMatchConfidence =
                 RouteMatchConfidence.Unavailable;
 
-            lastVerifiedGpsAt = null;
-            lastVerifiedGpsProgressMeters = 0.0;
+            verifiedPosition = null;
 
             CancellationTokenSource? cancellation =
                 routeProgressCancellation;
@@ -4746,8 +4765,13 @@ namespace RescuAR.App.Views.Camera
                                     reading.Timestamp,
                                     destinationProximityUncertain: nearDestination);
 
+                            DateTimeOffset evaluatedAt = DateTimeOffset.UtcNow;
+                            TimeSpan observationAge = evaluatedAt - reading.Timestamp;
                             lastBacktrackingDecision = _routeBacktrackingPolicy.Evaluate(route,
-                                matchedGps, reading.Timestamp, DateTimeOffset.UtcNow, nearDestination);
+                                matchedGps, reading.Timestamp, evaluatedAt, nearDestination,
+                                observationAge >= TimeSpan.Zero && observationAge <= TimeSpan.FromSeconds(3) &&
+                                    !_gpsPdrFusionPolicy.IsRouteIdentitySuspended
+                                    ? GetTrackedRouteMotion() : null);
 
                             lastOffRouteCandidate =
                                 offRouteDecision.IsCandidate;
@@ -4777,6 +4801,8 @@ namespace RescuAR.App.Views.Camera
                                     $"{lastBacktrackingDecision.RequiredConfirmationCount}; " +
                                     $"displacement={lastBacktrackingDecision.DisplacementMeters:F1}m; " +
                                     $"retreat={lastBacktrackingDecision.RetreatMeters:F1}m; " +
+                                    $"arRetreat={lastBacktrackingDecision.ArRetreatMeters:F1}m; " +
+                                    $"evidence={lastBacktrackingDecision.EvidenceSource}; " +
                                     $"accuracy={reading.AccuracyMeters:F1}m; " +
                                     $"replan={lastBacktrackingDecision.ShouldReplan}; " +
                                     $"reason='{lastBacktrackingDecision.Reason}'.");
@@ -4848,8 +4874,6 @@ namespace RescuAR.App.Views.Camera
                                             $"GPS_PDR_{gpsFusionDecision.Action}");
                                 }
 
-                                _routeDisplayProgressPolicy.ObserveGps(route, fusedGps, reading.Timestamp);
-
                                 turnGuidanceUpdate =
                                     fusedGps;
 
@@ -4861,9 +4885,7 @@ namespace RescuAR.App.Views.Camera
                                     !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
                                     reading.AccuracyMeters <= 20.0)
                                 {
-                                    lastVerifiedGpsAt = reading.Timestamp;
-                                    lastVerifiedGpsProgressMeters =
-                                        fusedGps.CommittedProgressMeters;
+                                    ObserveVerifiedGpsPosition(route, fusedGps, reading);
                                 }
                             }
 
@@ -6066,8 +6088,7 @@ namespace RescuAR.App.Views.Camera
                         lastRouteMatchConfidence =
                             RouteMatchConfidence.Unavailable;
 
-                        lastVerifiedGpsAt = null;
-                        lastVerifiedGpsProgressMeters = 0.0;
+                        verifiedPosition = null;
 
                         recoveryConnectorVerified =
                             false;
@@ -9298,9 +9319,12 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
-            if (!spatial.IsTracking ||
+            if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
-                !spatial.Anchor.IsAvailable)
+                !spatial.Anchor.IsAvailable ||
+                GetTrackedRouteMotion() is null ||
+                reading.Timestamp > DateTimeOffset.UtcNow ||
+                DateTimeOffset.UtcNow - reading.Timestamp > TimeSpan.FromSeconds(3))
             {
                 return false;
             }
@@ -9316,7 +9340,9 @@ namespace RescuAR.App.Views.Camera
                     routeTangentBearingDegrees,
                     spatial.Pose.PositionX,
                     spatial.Pose.PositionZ,
-                    reading.Timestamp);
+                    reading.Timestamp,
+                    spatial.Generation.SessionGeneration,
+                    spatial.Anchor.ReferenceGeneration);
 
             long headingLogTimestamp = Environment.TickCount64;
             if (decision.Disposition != lastLoggedHeadingDisposition ||
@@ -9492,18 +9518,6 @@ namespace RescuAR.App.Views.Camera
             }
 
             if (!IsIndoorRouteTestModeEnabled &&
-                lastRouteMatchConfidence <
-                    RouteMatchConfidence.Medium)
-            {
-                RecordPdrStepRejection(
-                    e,
-                    "ROUTE_MATCH_LOW",
-                    $"confidence={lastRouteMatchConfidence}");
-
-                return;
-            }
-
-            if (!IsIndoorRouteTestModeEnabled &&
                 _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
             {
                 RecordPdrStepRejection(
@@ -9576,6 +9590,18 @@ namespace RescuAR.App.Views.Camera
 
             lock (routeProgressFusionSync)
             {
+                // Check before advancing trip progress, even when the visual
+                // window has not moved far enough to need publication yet.
+                if (!ReferenceEquals(route, activeRoute) ||
+                    (!IsIndoorRouteTestModeEnabled &&
+                     !TryGetBoundedDisplayPosition(route,
+                         _routeProgressTracker.Current.CommittedProgressMeters + fusedStepAdvanceMeters,
+                         DateTimeOffset.UtcNow, out _, out _)))
+                {
+                    RecordPdrStepRejection(e, "POSITION_ANCHOR_EXPIRED",
+                        "PDR requires the same tracked reference within 8 seconds and 8 meters of verified GPS");
+                    return;
+                }
                 update =
                     _routeProgressTracker.AdvanceDeadReckoning(
                         fusedStepAdvanceMeters);
@@ -9644,7 +9670,7 @@ namespace RescuAR.App.Views.Camera
 
         /// <summary>
         /// Compares a short rolling ARCore walking/camera direction estimate to
-        /// the current cyan route tangent in the SAME ARCore coordinate frame.
+        /// the current geographic route tangent in the SAME ARCore coordinate frame.
         ///
         /// This remains intentionally AR-relative and does not require another
         /// compass reading at step time.
@@ -9675,7 +9701,7 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
-            if (!spatial.IsTracking ||
+            if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking)
             {
                 unavailableReason =
@@ -9692,15 +9718,18 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            ARRouteBridge.RouteSnapshot route =
-                ARRouteBridge.Current;
-
-            if (!route.IsAvailable ||
-                route.Points.Count <
-                    2)
+            RouteResult? route = activeRoute;
+            RouteDisplayProgressPolicy.DisplayPosition displayPosition = default;
+            double progress = _routeProgressTracker.Current.CommittedProgressMeters;
+            bool positionReady = route is not null && (IsIndoorRouteTestModeEnabled
+                ? RouteDisplayProgressPolicy.TryAtDistance(route, progress, out displayPosition)
+                : TryGetBoundedDisplayPosition(route, progress, DateTimeOffset.UtcNow,
+                    out displayPosition, out _));
+            if (!positionReady || route is null || !HasCurrentRouteHeading() ||
+                !TryGetRouteSegmentBearing(route, displayPosition.SegmentIndex, out double bearing))
             {
                 unavailableReason =
-                    "rendered route tangent is unavailable";
+                    "bounded geographic route reference is unavailable";
 
                 return false;
             }
@@ -9759,19 +9788,11 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            ArHorizontalRoutePoint first =
-                route.Points[0];
-
-            ArHorizontalRoutePoint second =
-                route.Points[1];
-
-            double routeDeltaX =
-                second.X -
-                first.X;
-
-            double routeDeltaZ =
-                second.Z -
-                first.Z;
+            double bearingRadians = DegreesToRadians(bearing);
+            var routeDirection = MapToArCoordinates.Rotate(Math.Sin(bearingRadians),
+                Math.Cos(bearingRadians), activeMapToArYawDegrees);
+            double routeDeltaX = routeDirection.X;
+            double routeDeltaZ = routeDirection.Z;
 
             double routeHorizontalMagnitude =
                 Math.Sqrt(
@@ -9847,6 +9868,9 @@ namespace RescuAR.App.Views.Camera
             string reason)
         {
             _verifiedRouteWindowHoldPolicy.Reset();
+            // The next publication establishes the earliest reusable version
+            // for this road entry, including after a replacement route.
+            routeStartupPublishedVersion = -1;
             /*
              * A newly requested route has not yet proven that the device is
              * physically inside its route corridor. Start conservatively with the
@@ -10047,10 +10071,16 @@ namespace RescuAR.App.Views.Camera
             bool pdrStep = update.RejectionReason == "PDR_STEP";
             bool syntheticStep = IsIndoorRouteTestModeEnabled &&
                 update.RejectionReason == "INDOOR_TEST_SYNTHETIC";
+            // New GPS placements still need the existing fusion/identity
+            // gates. Weak fixes may retain verified geometry, never replace it.
+            if (!pdrStep && !syntheticStep &&
+                (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
+                 lastGpsReliabilityWeight < 0.35 ||
+                 _gpsPdrFusionPolicy.IsRouteIdentitySuspended)) return false;
             RouteDisplayProgressPolicy.DisplayPosition displayPosition;
             bool positionReady = pdrStep
-                ? _routeDisplayProgressPolicy.TryResolvePdr(route, update.CommittedProgressMeters,
-                    DateTimeOffset.UtcNow, out displayPosition)
+                ? TryGetBoundedDisplayPosition(route, update.CommittedProgressMeters,
+                    DateTimeOffset.UtcNow, out displayPosition, out _)
                 : syntheticStep
                     ? RouteDisplayProgressPolicy.TryAtDistance(route, update.CommittedProgressMeters, out displayPosition)
                     : RouteDisplayProgressPolicy.TryResolveGps(route, update, out displayPosition);
@@ -10073,7 +10103,7 @@ namespace RescuAR.App.Views.Camera
                 _arCoreService.TrackingSnapshot;
 
             bool tracking =
-                spatial.IsTracking &&
+                spatial.IsFresh && spatial.IsTracking &&
                 spatial.Pose.IsTracking &&
                 trackingSnapshot.IsRenderableFor(
                     spatial.Generation.SessionGeneration);
@@ -10114,22 +10144,7 @@ namespace RescuAR.App.Views.Camera
                 spatial.Pose.PositionZ -
                 spatial.Anchor.PositionZ;
 
-            if (pdrStep)
-            {
-                TimeSpan gpsAge = lastVerifiedGpsAt.HasValue
-                    ? DateTimeOffset.UtcNow - lastVerifiedGpsAt.Value
-                    : TimeSpan.MaxValue;
-                if (gpsAge < TimeSpan.Zero ||
-                    gpsAge > MaximumPdrRouteWindowGpsAge ||
-                    update.CommittedProgressMeters -
-                        lastVerifiedGpsProgressMeters >
-                            MaximumPdrRouteWindowAdvanceMeters ||
-                    lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
-                    lastRouteMatchConfidence < RouteMatchConfidence.Medium ||
-                    _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
-                    return false;
-            }
-            else if (!syntheticStep &&
+            if (!pdrStep && !syntheticStep &&
                 (update.AccuracyMeters is not double sampleAccuracy ||
                  !double.IsFinite(sampleAccuracy) || sampleAccuracy > 20.0 ||
                  !update.GpsCoordinate.IsValid))

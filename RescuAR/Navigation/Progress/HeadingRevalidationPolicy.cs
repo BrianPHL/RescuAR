@@ -69,6 +69,11 @@ public sealed class HeadingRevalidationPolicy
     private int candidateCount;
 
     private DateTimeOffset? lastCorrectionUtc;
+    private DateTimeOffset? firstCandidateUtc;
+    private DateTimeOffset? lastCandidateUtc;
+    private DateTimeOffset? lastObservationUtc;
+    private long trackingSession;
+    private long groundReference;
 
     public void Reset()
     {
@@ -77,6 +82,9 @@ public sealed class HeadingRevalidationPolicy
 
         lastCorrectionUtc =
             null;
+        lastObservationUtc = null;
+        trackingSession = 0;
+        groundReference = 0;
 
         ResetCandidateEvidence();
     }
@@ -98,8 +106,25 @@ public sealed class HeadingRevalidationPolicy
         double routeTangentBearingDegrees,
         float arPositionX,
         float arPositionZ,
-        DateTimeOffset timestampUtc)
+        DateTimeOffset timestampUtc,
+        long sessionGeneration = 0,
+        long groundGeneration = 0)
     {
+        if (trackingSession != sessionGeneration || groundReference != groundGeneration)
+        {
+            Reset();
+            trackingSession = sessionGeneration;
+            groundReference = groundGeneration;
+        }
+        if (lastObservationUtc.HasValue && timestampUtc <= lastObservationUtc.Value)
+            return CreateDecision(HeadingRevalidationDisposition.Unavailable,
+                currentMapToArYawDegrees, confirmationCount: candidateCount,
+                reason: "duplicate or older heading observation ignored");
+        lastObservationUtc = timestampUtc;
+        if ((lastCandidateUtc.HasValue && timestampUtc - lastCandidateUtc.Value > MaximumMovementWindow) ||
+            (firstCandidateUtc.HasValue && timestampUtc - firstCandidateUtc.Value > TimeSpan.FromSeconds(60)))
+            ResetCandidateEvidence();
+
         bool trustworthyInput =
             double.IsFinite(
                 currentMapToArYawDegrees) &&
@@ -107,6 +132,7 @@ public sealed class HeadingRevalidationPolicy
             gpsAccuracyMeters.HasValue &&
             double.IsFinite(
                 gpsAccuracyMeters.Value) &&
+            gpsAccuracyMeters.Value >= 0 &&
             gpsAccuracyMeters.Value <=
                 MaximumGpsAccuracyMeters &&
             matchConfidence >=
@@ -120,11 +146,21 @@ public sealed class HeadingRevalidationPolicy
 
         if (!trustworthyInput)
         {
-            ResetCandidateEvidence();
+            // A weak fix cannot add evidence or erase recent qualified windows.
+            // Invalid tracking or unavailable route identity still starts over.
+            if (!gpsCoordinate.IsValid || !double.IsFinite(currentMapToArYawDegrees) ||
+                !double.IsFinite(routeTangentBearingDegrees) ||
+                !float.IsFinite(arPositionX) || !float.IsFinite(arPositionZ) ||
+                matchConfidence == RouteMatchConfidence.Unavailable)
+            {
+                baseline = null;
+                ResetCandidateEvidence();
+            }
 
             return CreateDecision(
                 HeadingRevalidationDisposition.Unavailable,
                 currentMapToArYawDegrees,
+                confirmationCount: candidateCount,
                 reason:
                     "heading revalidation requires accurate GPS, a trustworthy route match, and tracked AR position");
         }
@@ -266,10 +302,16 @@ public sealed class HeadingRevalidationPolicy
         bool gpsCourseUsable = RouteCorridorPolicy.IsCourseUsable(
             gpsCourseDegrees, gpsSpeedMetersPerSecond);
 
+        // A corridor has two walking directions. Reverse walking must not be
+        // mistaken for a 180-degree error in the map-to-AR calibration.
+        double walkingRouteBearingDegrees = AngularErrorDegrees(
+            gpsDisplacementBearingDegrees, routeTangentBearingDegrees) <= 90
+                ? routeTangentBearingDegrees
+                : Normalize360Degrees(routeTangentBearingDegrees + 180);
         double displacementRouteErrorDegrees =
             AngularErrorDegrees(
                 gpsDisplacementBearingDegrees,
-                routeTangentBearingDegrees);
+                walkingRouteBearingDegrees);
 
         double courseDisplacementErrorDegrees =
             gpsCourseUsable
@@ -282,7 +324,7 @@ public sealed class HeadingRevalidationPolicy
             gpsCourseUsable
                 ? AngularErrorDegrees(
                     gpsCourseDegrees!.Value,
-                    routeTangentBearingDegrees)
+                    walkingRouteBearingDegrees)
                 : double.NaN;
 
         baseline =
@@ -317,7 +359,7 @@ public sealed class HeadingRevalidationPolicy
             new()
             {
                 gpsDisplacementBearingDegrees,
-                routeTangentBearingDegrees
+                walkingRouteBearingDegrees
             };
 
         if (gpsCourseUsable)
@@ -338,6 +380,20 @@ public sealed class HeadingRevalidationPolicy
             NormalizeSignedDegrees(
                 candidateMapToArYawDegrees -
                 currentMapToArYawDegrees);
+
+        // A GPS jump opposite to tracked AR motion must never rotate the route
+        // toward that jump. Such a large discrepancy needs fresh calibration.
+        if (Math.Abs(currentAlignmentErrorDegrees) > 90)
+        {
+            ResetCandidateEvidence();
+            return CreateDecision(HeadingRevalidationDisposition.SignalsDisagree,
+                currentMapToArYawDegrees, gpsDisplacementMeters, arDisplacementMeters,
+                gpsDisplacementBearingDegrees, routeTangentBearingDegrees: routeTangentBearingDegrees,
+                arMovementAzimuthDegrees: arMovementAzimuthDegrees,
+                candidateYawDegrees: candidateMapToArYawDegrees,
+                alignmentErrorDegrees: currentAlignmentErrorDegrees,
+                reason: "GPS direction contradicts tracked AR movement; fresh calibration required");
+        }
 
         if (Math.Abs(
                 currentAlignmentErrorDegrees) <=
@@ -396,6 +452,8 @@ public sealed class HeadingRevalidationPolicy
                 candidateRadians);
 
         candidateCount++;
+        firstCandidateUtc ??= timestampUtc;
+        lastCandidateUtc = timestampUtc;
 
         double confirmedCandidateYawDegrees =
             NormalizeSignedDegrees(
@@ -505,6 +563,8 @@ public sealed class HeadingRevalidationPolicy
 
         candidateCount =
             0;
+        firstCandidateUtc = null;
+        lastCandidateUtc = null;
     }
 
     private static HeadingRevalidationDecision CreateDecision(

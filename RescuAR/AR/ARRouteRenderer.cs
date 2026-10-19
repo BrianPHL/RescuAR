@@ -149,6 +149,18 @@ public static class ARRouteRenderer
         -1;
 
     private static int activeSegmentCount;
+    private static RouteVisibilitySnapshot visibility;
+
+    /// <summary>Measured draw-thread state, not a claim that pixels are visible.</summary>
+    public readonly record struct RouteVisibilitySnapshot(long RouteVersion,
+        long Session, long GroundReference, long MeasuredAt, bool RootEnabled, int PreparedSegments,
+        int EnabledSegments, int DepthHiddenSegments, int PrefixHiddenSegments,
+        int InFrontSegments, int ViewportMidpoints, int EnabledArrowWings);
+
+    public static RouteVisibilitySnapshot Visibility
+    {
+        get { lock (sync) return visibility; }
+    }
 
     private static int depthOcclusionRequested;
 
@@ -630,6 +642,7 @@ public static class ARRouteRenderer
             appliedRouteVersion = -1;
             activeSegmentCount = 0;
             boundGraphicsGeneration = 0;
+            visibility = default;
             Volatile.Write(ref depthOcclusionRequested, 0);
         }
     }
@@ -642,6 +655,55 @@ public static class ARRouteRenderer
             requested
                 ? 1
                 : 0);
+    }
+
+    // Draw-thread only. Segment midpoints in the viewport are a diagnostic
+    // approximation; occlusion, UI overlays and pixel visibility are separate.
+    public static void PublishVisibility(bool rootEnabled, Vector3 rootPosition,
+        ARCameraPoseBridge.SpatialSnapshot frame)
+    {
+        int prepared = 0, enabled = 0, depthHidden = 0, prefixHidden = 0;
+        int inFront = 0, viewport = 0, enabledArrows = 0;
+        var rotation = new System.Numerics.Quaternion(frame.Pose.RotationX,
+            frame.Pose.RotationY, frame.Pose.RotationZ, frame.Pose.RotationW);
+        bool poseValid = frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
+            float.IsFinite(rotation.LengthSquared()) && rotation.LengthSquared() > 0.0001f;
+        if (poseValid) rotation = System.Numerics.Quaternion.Conjugate(
+            System.Numerics.Quaternion.Normalize(rotation));
+        var projection = frame.Projection;
+        foreach (SegmentSlot slot in segmentSlots)
+        {
+            if (!slot.GeometryAvailable) continue;
+            prepared++;
+            if (slot.DepthOccluded) depthHidden++;
+            if (!slot.Entity.IsEnabled)
+            {
+                if (!slot.DepthOccluded) prefixHidden++;
+                continue;
+            }
+            enabled++;
+            if (!poseValid) continue;
+            var local = System.Numerics.Vector3.Transform(new NumericsVector3(
+                rootPosition.X + slot.LocalMidpoint.X - frame.Pose.PositionX,
+                rootPosition.Y + slot.LocalMidpoint.Y - frame.Pose.PositionY,
+                rootPosition.Z + slot.LocalMidpoint.Z - frame.Pose.PositionZ), rotation);
+            if (local.Z >= -0.01f) continue;
+            inFront++;
+            if (!projection.IsAvailable) continue;
+            float x = projection.M11 * local.X + projection.M12 * local.Y +
+                projection.M13 * local.Z + projection.M14;
+            float y = projection.M21 * local.X + projection.M22 * local.Y +
+                projection.M23 * local.Z + projection.M24;
+            float w = projection.M41 * local.X + projection.M42 * local.Y +
+                projection.M43 * local.Z + projection.M44;
+            if (w > 0 && MathF.Abs(x) <= w && MathF.Abs(y) <= w) viewport++;
+        }
+        foreach (SegmentSlot arrow in arrowSlots)
+            if (arrow.GeometryAvailable && arrow.Entity.IsEnabled) enabledArrows++;
+        lock (sync) visibility = new(appliedRouteVersion, frame.Generation.SessionGeneration,
+            frame.Anchor.ReferenceGeneration, Environment.TickCount64, rootEnabled,
+            prepared, enabled, depthHidden, prefixHidden,
+            inFront, viewport, enabledArrows);
     }
 
     /// <summary>
