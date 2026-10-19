@@ -12,57 +12,58 @@
     BackgroundColor="#F8FAFC">
 
     <Grid>
-        <!-- Virtualized Shelters CollectionView -->
-        <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
-            
-            <!-- Collection Header: Search, Category Picker & Section Title -->
-            <CollectionView.Header>
-                <VerticalStackLayout Padding="20,24,20,12" Spacing="20">
-                    
-                    <!-- Search Box & Dropdown Category Filter -->
-                    <VerticalStackLayout Spacing="10">
-                        <Label Text="Search &amp; Category Filter" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+        <!-- Virtualized Shelters CollectionView with Pull-To-Refresh -->
+        <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}" RefreshColor="#007E8A">
+            <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
+                
+                <!-- Collection Header: Search, Category Picker & Section Title -->
+                <CollectionView.Header>
+                    <VerticalStackLayout Padding="20,24,20,12" Spacing="20">
                         
-                        <!-- Search Input Box -->
-                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,4">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="44">
-                                <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.41L13.03,15.15C11.9,15.69 10.61,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5A4.5,4.5 0 0,0 5,9.5A4.5,4.5 0 0,0 9.5,14A4.5,4.5 0 0,0 14,9.5A4.5,4.5 0 0,0 9.5,5Z"
-                                      Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
-                                <Entry Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="Search shelter name, barangay, or officer..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
+                        <!-- Search Box & Dropdown Category Filter -->
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Search &amp; Category Filter" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                            
+                            <!-- Search Input Box -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,4">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="44">
+                                    <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.41L13.03,15.15C11.9,15.69 10.61,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5A4.5,4.5 0 0,0 5,9.5A4.5,4.5 0 0,0 9.5,14A4.5,4.5 0 0,0 14,9.5A4.5,4.5 0 0,0 9.5,5Z"
+                                          Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="Search shelter name, barangay, or officer..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
 
-                        <!-- Dropdown Category Picker -->
-                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,0">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="46">
-                                <Path Data="M10,18.17V14.41L19.5,4.91H4.5L10,10.41V18.17M21,3A1,1 0 0,1 22,4C22,4.27 21.89,4.53 21.71,4.71L14,12.42V20A1,1 0 0,1 13.42,20.83L9.42,22.83C8.86,23.11 8,22.7 8,22V12.42L0.29,4.71C0.11,4.53 0,4.27 0,4A1,1 0 0,1 1,3H21Z"
-                                      Fill="#007E8A" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
-                                <Picker Grid.Column="1"
-                                        ItemsSource="{Binding CategoryNames}"
-                                        SelectedItem="{Binding SelectedCategoryDropdown, Mode=TwoWay}"
-                                        Title="Select Classification..."
-                                        TitleColor="#94A3B8"
-                                        TextColor="#0F172A"
-                                        FontSize="14"
-                                        FontAttributes="Bold"
-                                        VerticalOptions="Center" />
-                                <Path Grid.Column="2" Data="M7,10L12,15L17,10H7Z" Fill="#64748B" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True" />
-                            </Grid>
-                        </Border>
-                    </VerticalStackLayout>
-
-                    <!-- Section Title & Map Toggle -->
-                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
-                        <VerticalStackLayout Grid.Column="0" Spacing="2">
-                            <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
-                            <Label Text="Nearest shelter is listed first" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                            <!-- Dropdown Category Picker -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,0">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="46">
+                                    <Path Data="M10,18.17V14.41L19.5,4.91H4.5L10,10.41V18.17M21,3A1,1 0 0,1 22,4C22,4.27 21.89,4.53 21.71,4.71L14,12.42V20A1,1 0 0,1 13.42,20.83L9.42,22.83C8.86,23.11 8,22.7 8,22V12.42L0.29,4.71C0.11,4.53 0,4.27 0,4A1,1 0 0,1 1,3H21Z"
+                                          Fill="#007E8A" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Picker Grid.Column="1"
+                                            ItemsSource="{Binding CategoryNames}"
+                                            SelectedItem="{Binding SelectedCategoryDropdown, Mode=TwoWay}"
+                                            Title="Select Classification..."
+                                            TitleColor="#94A3B8"
+                                            TextColor="#0F172A"
+                                            FontSize="14"
+                                            FontAttributes="Bold"
+                                            VerticalOptions="Center" />
+                                    <Path Grid.Column="2" Data="M7,10L12,15L17,10H7Z" Fill="#64748B" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True" />
+                                </Grid>
+                            </Border>
                         </VerticalStackLayout>
-                        <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
-                                Command="{Binding NavigateToMapCommand}" />
-                    </Grid>
 
-                </VerticalStackLayout>
-            </CollectionView.Header>
+                        <!-- Section Title & Map Toggle -->
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                                <Label Text="{Binding ShelterSectionSubtitle}" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+                            <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
+                                    Command="{Binding NavigateToMapCommand}" />
+                        </Grid>
+
+                    </VerticalStackLayout>
+                </CollectionView.Header>
 
             <!-- Card Template -->
             <CollectionView.ItemTemplate>
@@ -215,6 +216,7 @@
             </CollectionView.Footer>
 
         </CollectionView>
+        </RefreshView>
 
         <!-- FULL DETAILS OVERLAY POPUP DIALOG -->
         <Grid IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#660F172A" Padding="16,20">
