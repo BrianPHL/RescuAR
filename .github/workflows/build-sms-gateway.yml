@@ -1,3 +1,4 @@
+
 name: Build RescuAR SMS Gateway APK
 
 on:
@@ -13,9 +14,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     defaults:
       run:
-        working-directory: android-sms-gateway
+        working-directory: RescuAR.Admin/android-sms-gateway
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,6 +46,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RescuAR-SMS-Gateway-debug-APK
-          path: android-sms-gateway/app/build/outputs/apk/debug/app-debug.apk
+          path: RescuAR.Admin/android-sms-gateway/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
