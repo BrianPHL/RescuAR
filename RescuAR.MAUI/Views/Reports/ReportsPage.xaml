@@ -107,8 +107,8 @@
 
                             <Grid RowDefinitions="Auto, Auto, Auto" RowSpacing="8">
                                 <!-- Top Row: Icon, Title & Live Status Pill -->
-                                <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
-                                    <Path Grid.Column="0"
+                                <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto, Auto" ColumnSpacing="10" RowSpacing="3">
+                                    <Path Grid.Row="0" Grid.Column="0"
                                           Data="{Binding VicinityAlertIcon}"
                                           Fill="{Binding VicinityAlertTextColor}"
                                           WidthRequest="22"
@@ -116,29 +116,36 @@
                                           Aspect="Uniform"
                                           VerticalOptions="Center" />
 
-                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                        <Label Text="{Binding VicinityStatusTitle}"
-                                               TextColor="{Binding VicinityAlertTextColor}"
-                                               FontSize="15"
-                                               FontAttributes="Bold" />
-                                        <Label Text="{Binding VicinityStatusSubtitle}"
-                                               TextColor="{Binding VicinityAlertTextColor}"
-                                               Opacity="0.9"
-                                               FontSize="12" />
-                                    </VerticalStackLayout>
+                                    <Label Grid.Row="0" Grid.Column="1"
+                                           Text="{Binding VicinityStatusTitle}"
+                                           TextColor="{Binding VicinityAlertTextColor}"
+                                           FontSize="15"
+                                           FontAttributes="Bold"
+                                           LineBreakMode="WordWrap"
+                                           VerticalOptions="Center" />
 
                                     <!-- Active Hazard Badge Pill -->
-                                    <Border Grid.Column="2"
+                                    <Border Grid.Row="0" Grid.Column="2"
                                             BackgroundColor="{Binding VicinityAlertTextColor}"
                                             StrokeThickness="0"
                                             StrokeShape="RoundRectangle 12"
                                             Padding="10,4"
-                                            VerticalOptions="Center">
+                                            VerticalOptions="Center"
+                                            HorizontalOptions="End">
                                         <Label Text="{Binding VicinityActiveCountText}"
                                                TextColor="#FFFFFF"
                                                FontSize="11"
-                                               FontAttributes="Bold" />
+                                               FontAttributes="Bold"
+                                               HorizontalTextAlignment="Center" />
                                     </Border>
+
+                                    <!-- Subtitle spanning Columns 1 and 2 to allow full width for wrapping -->
+                                    <Label Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                           Text="{Binding VicinityStatusSubtitle}"
+                                           TextColor="{Binding VicinityAlertTextColor}"
+                                           Opacity="0.9"
+                                           FontSize="12"
+                                           LineBreakMode="WordWrap" />
                                 </Grid>
 
                                 <!-- Divider -->
@@ -146,32 +153,43 @@
 
                                 <!-- Bottom Row: Affected Areas & Refresh Button -->
                                 <Grid Grid.Row="2" ColumnDefinitions="*, Auto" ColumnSpacing="8" VerticalOptions="Center">
-                                    <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                                    <Grid Grid.Column="0" ColumnDefinitions="Auto, *" ColumnSpacing="6" VerticalOptions="Center">
                                         <!-- Location Pin Icon -->
-                                        <Path Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z"
+                                        <Path Grid.Column="0"
+                                              Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z"
                                               Fill="{Binding VicinityAlertTextColor}"
                                               WidthRequest="14"
                                               HeightRequest="14"
                                               Aspect="Uniform"
-                                              VerticalOptions="Center" />
-                                        <Label Text="{Binding VicinityAffectedAreas}"
+                                              VerticalOptions="Start"
+                                              Margin="0,2,0,0" />
+                                        <Label Grid.Column="1"
+                                               Text="{Binding VicinityAffectedAreas}"
                                                TextColor="{Binding VicinityAlertTextColor}"
                                                FontSize="12"
                                                FontAttributes="Bold"
-                                               LineBreakMode="TailTruncation"
+                                               LineBreakMode="WordWrap"
                                                VerticalOptions="Center" />
-                                    </HorizontalStackLayout>
+                                    </Grid>
 
-                                    <Button Grid.Column="1"
-                                            Text="GPS Sync"
-                                            Command="{Binding RefreshVicinityLocationCommand}"
+                                    <Border Grid.Column="1"
+                                            Stroke="{Binding VicinityAlertTextColor}"
+                                            StrokeThickness="1"
+                                            StrokeShape="RoundRectangle 8"
                                             BackgroundColor="Transparent"
-                                            TextColor="{Binding VicinityAlertTextColor}"
-                                            FontSize="11"
-                                            FontAttributes="Bold"
-                                            Padding="6,2"
-                                            HeightRequest="28"
-                                            VerticalOptions="Center" />
+                                            Padding="8,4"
+                                            VerticalOptions="Center"
+                                            HorizontalOptions="End">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding RefreshVicinityLocationCommand}" />
+                                        </Border.GestureRecognizers>
+                                        <Label Text="GPS Sync"
+                                               TextColor="{Binding VicinityAlertTextColor}"
+                                               FontSize="11"
+                                               FontAttributes="Bold"
+                                               HorizontalOptions="Center"
+                                               VerticalOptions="Center" />
+                                    </Border>
                                 </Grid>
                             </Grid>
                         </Border>
@@ -280,30 +298,26 @@
 
                                                 <!-- Author Name & Time -->
                                                 <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                                    <Label Text="{Binding PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                                    <Label Text="{Binding PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                                                     <Label Text="{Binding PostedAtText}" TextColor="#64748B" FontSize="12" />
                                                 </VerticalStackLayout>
 
-                                                <!-- Category Badge -->
+                                                <!-- Category Badge (No icon, cleanly aligned pill) -->
                                                 <Border Grid.Column="2"
                                                         BackgroundColor="{Binding CategoryBadgeColor}"
                                                         StrokeThickness="0"
-                                                        StrokeShape="RoundRectangle 14"
+                                                        StrokeShape="RoundRectangle 12"
                                                         Padding="10,4"
+                                                        HorizontalOptions="End"
                                                         VerticalOptions="Center">
-                                                    <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
-                                                        <Path Data="{Binding CategoryIcon}"
-                                                              Fill="{Binding CategoryTextColor}"
-                                                              WidthRequest="12"
-                                                              HeightRequest="12"
-                                                              Aspect="Uniform"
-                                                              VerticalOptions="Center" />
-                                                        <Label Text="{Binding Category}"
-                                                               TextColor="{Binding CategoryTextColor}"
-                                                               FontSize="12"
-                                                               FontAttributes="Bold"
-                                                               VerticalOptions="Center" />
-                                                    </HorizontalStackLayout>
+                                                    <Label Text="{Binding Category}"
+                                                           TextColor="{Binding CategoryTextColor}"
+                                                           FontSize="11"
+                                                           FontAttributes="Bold"
+                                                           HorizontalOptions="Center"
+                                                           VerticalOptions="Center"
+                                                           HorizontalTextAlignment="Center"
+                                                           VerticalTextAlignment="Center" />
                                                 </Border>
                                             </Grid>
 
