@@ -10,9 +10,10 @@ public static class MappedRoutePreviewPolicy
     public static bool CanPublish(bool accepted, bool offRoute,
         RouteMatchConfidence confidence, double? accuracy,
         GeoCoordinate gps, GeoCoordinate matched,
-        DateTimeOffset fixTimestamp, DateTimeOffset now, bool accessVerified)
+        DateTimeOffset fixTimestamp, DateTimeOffset now, bool accessVerified,
+        bool initialApproachPending = true, bool returningToRoute = false)
     {
-        if (!accepted || offRoute || !accessVerified ||
+        if ((!initialApproachPending && !returningToRoute) || !accepted || offRoute || !accessVerified ||
             confidence < RouteMatchConfidence.Medium || !matched.IsValid ||
             !RouteStartupLocationPolicy.CanPlace(gps, accuracy, fixTimestamp, now))
             return false;

@@ -219,13 +219,12 @@ public sealed class HazardReroutingService
         lock (sync) monitor.AcceptRoute(route, origin, validatedHazards);
     }
 
-    public bool MarkNoRoute(HazardRouteAssessment assessment)
+    public bool MarkNoRoute(HazardRouteAssessment assessment, RouteReplacementFailure reason = RouteReplacementFailure.NoRoute)
     {
         lock (sync)
         {
-            if (!monitor.IsCurrentContext(assessment.RetryContext)) return false;
-            monitor.MarkNoRoute(assessment.RetryContext);
-            return true;
+            if (reason != RouteReplacementFailure.DestinationExcluded && !monitor.IsCurrentContext(assessment.RetryContext)) return false;
+            return monitor.MarkNoRoute(assessment.RetryContext, reason);
         }
     }
 
@@ -242,6 +241,11 @@ public sealed class HazardReroutingService
     public bool IsUnavailable(HazardRouteAssessment assessment)
     {
         lock (sync) return !monitor.CanRetry(assessment.RetryContext);
+    }
+
+    public bool IsDestinationExcluded(HazardRouteAssessment assessment)
+    {
+        lock (sync) return monitor.IsDestinationExcluded(assessment.RetryContext);
     }
 
     /// <summary>

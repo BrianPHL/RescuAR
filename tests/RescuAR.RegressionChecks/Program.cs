@@ -29,22 +29,24 @@ if (args.Contains("--ground-flood"))
     Console.WriteLine($"{passed} ground/flood regression checks passed.");
     return;
 }
-if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || args.Contains("--placement-hazards"))
+if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery"))
 {
+    await ARRecoveryContinuityChecks.RunAsync(Check);
     ARPlacementHazardChecks.Run(Check);
     ARGroundFloodChecks.Run(Check);
     ARFieldValidationChecks.Run(Check);
     RouteBacktrackingChecks.Run(Check);
     RouteDisplayProgressChecks.Run(Check);
     StartupSceneChecks.Run(Check);
-    if (args.Contains("--ar-guidance") || args.Contains("--placement-hazards"))
+    if (args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery"))
     {
         await ARGuidanceParityChecks.RunAsync(Check);
         if (args.Contains("--ar-guidance")) await ARSystemAuditChecks.RunAsync(Check);
     }
-    Console.WriteLine($"{passed} {(args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
+    Console.WriteLine($"{passed} {(args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
     return;
 }
+await ARRecoveryContinuityChecks.RunAsync(Check);
 ARPlacementHazardChecks.Run(Check);
 ARGroundFloodChecks.Run(Check);
 ARFieldValidationChecks.Run(Check);

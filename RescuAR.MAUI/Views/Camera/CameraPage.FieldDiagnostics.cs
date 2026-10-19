@@ -32,8 +32,8 @@ public partial class CameraPage
         LocationReading reading, RouteBacktrackingPolicy.TrackedMotion? motion)
     {
         if (previous is null || !ReferenceEquals(previous.Route, route) ||
-            previous.Motion is not { } from || motion is not { } to || from.Session != to.Session ||
-            Math.Abs(Math.IEEERemainder(from.YawDegrees - to.YawDegrees, 360)) > 8) return;
+            previous.Motion is not { } from || motion is not { } to || !from.IsContinuousWith(to) ||
+            reading.Timestamp - previous.At > TimeSpan.FromSeconds(RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) return;
         double east = (reading.Coordinate.Longitude - previous.Coordinate.Longitude) *
             Math.PI / 180 * 6371008.8 * Math.Cos(previous.Coordinate.Latitude * Math.PI / 180);
         double north = (reading.Coordinate.Latitude - previous.Coordinate.Latitude) * Math.PI / 180 * 6371008.8;
@@ -43,6 +43,7 @@ public partial class CameraPage
             $"NAV_POSITION_INNOVATION sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
             $"previousSample={previous.At.ToUnixTimeMilliseconds()}; session={to.Session}; " +
             $"ground={from.GroundReference}/{to.GroundReference}; " +
+            $"trackingEpoch={to.TrackingEpoch}; worldFrame={to.WorldFrame}; " +
             $"gpsAgeMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; " +
             $"accuracy={previous.Accuracy:F1}/{reading.AccuracyMeters:F1}m; " +
             $"gpsEN=({east:F2},{north:F2})m; gpsAR=({projected.X:F2},{projected.Z:F2})m; " +
@@ -75,6 +76,7 @@ public partial class CameraPage
             $"visual={route.NavigationState.VisualKind}; mode={arRouteVisualMode}; " +
             $"preview={approachRoutePreviewPublished}; entrySamples={roadFollowingReentryConfirmationCount}/{RoadFollowingEntryRequiredSamples}; " +
             $"rerouting={dynamicRerouteInProgress}; rerouteResult={lastRerouteResult}; " +
+            $"observationHeld={positionObservationHeld}; " +
             $"ground={frame.Anchor.Trust}/{frame.Anchor.ReferenceGeneration}; " +
             $"gpsAgeSec={gpsAgeSeconds:F1}; accuracy={gpsAccuracy:F1}m; " +
             $"identitySuspended={identitySuspended}; identitySamples={lastGpsRouteIdentityConfirmationCount}; " +
@@ -114,6 +116,7 @@ public partial class CameraPage
                 $"NAV_REGISTRATION route={route.Version}; sample={placed.ObservationTime?.ToUnixTimeMilliseconds()}; " +
                 $"source='{placed.Source}'; session={placed.Generation.SessionGeneration}; " +
                 $"ground={placed.GroundReference}; spatial={placed.SpatialVersion}; " +
+                $"trackingEpoch={placed.TrackingEpoch}; worldFrame={placed.WorldFrame}; " +
                 $"placementAgeMs={now - placed.PublishedAt}; " +
                 $"poseAtPublicationAgeMs={placed.PublishedAt - placed.PosePublishedAt}; frameNs={placed.FrameTimestamp}; " +
                 $"gpsAtPublicationMs={(placed.ObservationTime.HasValue ? placed.PublishedAt - now + (DateTimeOffset.UtcNow - placed.ObservationTime.Value).TotalMilliseconds : double.NaN):F0}; " +

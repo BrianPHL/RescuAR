@@ -28,6 +28,7 @@ public partial class CameraPage
             frame.Anchor.IsAvailable && frame.Anchor.Trust != ARGroundTrust.None &&
                 frame.Anchor.GroundState.RenderGeneration == frame.Generation);
         if (action != RouteAnchorRecoveryAction.DiscardPreview) return false;
+        if (TryRetainWindowAcrossGroundHandoff(frame)) return true;
         ARRouteBridge.Clear();
         approachRoutePreviewPublished = false;
         ClearRoadApproachCue();

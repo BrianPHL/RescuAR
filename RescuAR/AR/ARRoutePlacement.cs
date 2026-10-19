@@ -9,7 +9,8 @@ public readonly record struct ARRoutePlacement(
     DateTimeOffset? ObservationTime, string Source, double YawDegrees,
     double GpsToRoadEast = 0, double GpsToRoadNorth = 0,
     float GpsToRoadX = 0, float GpsToRoadZ = 0,
-    long PosePublishedAt = 0, long FrameTimestamp = 0)
+    long PosePublishedAt = 0, long FrameTimestamp = 0,
+    long TrackingEpoch = 0, long WorldFrame = 0)
 {
     public bool IsAvailable => Generation.IsValid && GroundReference > 0 && SpatialVersion > 0 &&
         float.IsFinite(AnchorX) && float.IsFinite(AnchorZ) &&
@@ -21,5 +22,6 @@ public readonly record struct ARRoutePlacement(
 
     public bool HasSameOrigin(ARRoutePlacement other) => IsAvailable == other.IsAvailable &&
         (!IsAvailable || Generation.SessionGeneration == other.Generation.SessionGeneration &&
-            GroundReference == other.GroundReference && AnchorX == other.AnchorX && AnchorZ == other.AnchorZ);
+            GroundReference == other.GroundReference && TrackingEpoch == other.TrackingEpoch && WorldFrame == other.WorldFrame &&
+            AnchorX == other.AnchorX && AnchorZ == other.AnchorZ);
 }

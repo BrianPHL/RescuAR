@@ -26,6 +26,8 @@ public partial class CameraPage
         string? notice = assessment.IsUnsafe
             ? findingAlternative || dynamicRerouteInProgress && lastRerouteResult == "Requesting"
                 ? "Finding a safer route…"
+                : _hazardReroutingService.IsDestinationExcluded(assessment)
+                    ? "Destination is in a reported hazard area. Choose another safe center."
                 : _hazardReroutingService.IsUnavailable(assessment)
                     ? "No safer route found. Check the map."
                     : "Hazard on this route. Check the map."

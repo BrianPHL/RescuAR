@@ -206,6 +206,12 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 cancellationToken);
         }
 
+        if (RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
+        {
+            AndroidLog.Warn(LogTag, "HAZARD_ROUTE_UNAVAILABLE reason=DestinationExcluded; choose a safe destination.");
+            return null;
+        }
+
         bool internetAvailable =
             !requireEmbeddedPedestrianGraph && GetInternetAvailabilitySafely();
 
@@ -405,6 +411,20 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=RetainTripProvider; selected='{provider.AlgorithmName}'.");
         return new MLDARIntegrationService(provider).RequestRouteWithDeferredRoadApproachAsync(
             origin, destination, findRoadAccess, cancellationToken);
+    }
+
+    public async Task<RouteReplacementResult> FindReplacementRouteResultAsync(
+        RouteResult activeRoute, GeoCoordinate origin, GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        IReadOnlyList<RouteHazard>? hazards = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(activeRoute);
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (hazards is { Count: > 0 } && RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
+            return new(null, RouteReplacementFailure.DestinationExcluded);
+        var route = await FindReplacementRouteAsync(activeRoute, origin, destination, findRoadAccess, hazards, cancellationToken);
+        return new(route, route is null ? RouteReplacementFailure.NoRoute : RouteReplacementFailure.None);
     }
 
     public static bool IsOfflineRoute(RouteResult route) =>

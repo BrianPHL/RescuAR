@@ -970,3 +970,146 @@ further behavior-dependent correction. Include original navigation footage or
 timestamped markers at identifiable street points if lateral error persists.
 Physical road alignment, device rendering, and banner layout remain unverified
 by these builds and unit/package checks.
+
+## 17:23 capture: approved sustained-guidance recovery implementation
+
+The six-file capture was investigated before implementation; the findings and
+staged plan are retained in
+`artifacts/field-review-20261019-1723/Findings-and-proposed-plan.txt`.
+The user then approved implementation. The installed candidate matched the
+preceding supplied APK exactly. This archive contains a partial A* trip and a
+later MLD trip. MLD includes sampled cyan suppression intervals of approximately
+81.5 and 182.8 seconds. Camera/floor tracking recovered during parts of those
+intervals while route identity or road-entry recovery still prevented geometry.
+
+### Changes and retained safety boundaries
+
+- `PedestrianTurnGuidanceService`: reverse the AR azimuth difference when
+  classifying visible turns. North maps to -Z, so AR azimuth winds opposite to
+  geographic bearing. The route projector and mapped polyline remain unchanged.
+- `RoutePositionObservationPolicy` and `CameraPage.Positioning`: compare fresh
+  GPS innovations with recent, continuously tracked AR movement. The rejection
+  allowance uses the combined GPS uncertainty plus a 2 m pose/timing allowance;
+  it applies no geographic offset. A contradictory jump is held until a second
+  distinct, coherent observation confirms a position correction. Weak interleaved
+  fixes do not erase that bounded evidence or advance progress. Duplicate,
+  stale, and future observations cannot complete confirmation. Comparison only
+  spans the existing eight-second window; unavailable motion returns to the
+  ordinary GPS/matching gates.
+- Held observations do not reach the route tracker, fusion, heading correction,
+  or deviation/reverse evidence, and cannot publish a new cyan placement.
+  Confirmed position corrections reset walking-intent evidence so relocation
+  alone does not count as reverse walking. Actual raw device observations still
+  feed the existing arrival policy independently. The location service/cache,
+  GPS sampling rate, planning/placement accuracy limits, and arrival criteria
+  were not changed.
+- Camera-motion continuity now uses session, tracking/lifecycle epoch, yaw, and
+  AR world-correction generation. Ordinary floor-reference swaps no longer erase
+  horizontal PDR/backtracking evidence or require Live route-placement state
+  before camera motion can be observed. A tracking interruption, real world
+  correction, new session, or route replacement still breaks continuity.
+- `RouteAnchorRecoveryPolicy`: a recent eligible window can change its local
+  ground origin while preserving every world-space X/Z point. Its original GPS
+  acquisition time and eight-second/eight-metre budgets remain intact. Floor
+  height and locality checks remain required; no stale reference is reinstated.
+  When bounded position evidence is unavailable, a tracked ground handoff can
+  finish by clearing stale geometry and explicitly awaiting position confirmation,
+  instead of repeatedly holding ground recovery open for GPS.
+- Established-route recovery can publish the same short, current, access-checked
+  mapped preview used at trip start. A preview still requires an eligible
+  on-route match, the existing placement accuracy/freshness limits, and no mapped
+  major-road barrier. It grants neither road entry nor a fabricated walking
+  connector. The long corridor still requires two qualified fixes within 5 m.
+- Geographic turn text can remain available while AR geometry is unavailable
+  when the accepted route has a recent qualified physical display observation.
+  It is labeled as recovering AR placement and cannot bypass ambiguous position,
+  deviation, stale-trip, emergency-advisory, or arrival state. Empty-geometry
+  status now distinguishes tracking, missing ground, and position confirmation.
+- Hazard replacements return a typed `DestinationExcluded` failure before
+  attempting either provider when the requested destination is inside a hazard.
+  Monitoring retains that failure across position, segment, and connectivity
+  changes. Changed hazards or a new trip can reconsider it. Ordinary NoRoute
+  failures keep their position-dependent retry behavior. The persistent banner
+  explains that another safe center should be chosen; destination exclusion and
+  the validated outward-escape contract remain enforced.
+- Diagnostics add held/corrected observation decisions and tracking/world epochs.
+  GPS/AR movement residuals no longer compare across tracking/world breaks or
+  long sample gaps. New logging stays event-driven and adds no absolute coordinates.
+
+Both providers share these guidance policies. Their ordinary routing/failover
+semantics, embedded roads, hazard safety, 15/20 m floor-locality limits, flood
+materials, native bridge, dependency pins, and compiled startup scenes retain
+their existing contracts. This implementation does not establish that an absolute
+road/map offset is corrected. Genuine tracking loss or exhausted positioning
+budgets still withhold unreliable world geometry.
+
+### Verification and candidate
+
+**377 focused regression checks passed.** New cases run the actual geographic
+projector and turn classifiers across provider identities, cardinal directions,
+multiple yaw values, left/right bends, and U-turns. Compound cases cover the
+58.73 m stationary-camera jump followed by confirmation; interleaved segment
+jumps and weak fixes; normal and reverse walking through floor swaps; bounded
+world-preserving rebases; real tracking/world resets; recovery preview access and
+road-entry requirements; typed hazardous-destination failures; stale hazard
+results; and ordinary NoRoute behavior. Existing provider-parity, arrival,
+ground/flood, stale-callback, and compiled startup-scene fixtures also passed.
+All routing fixtures use local graphs or stubbed providers/HTTP responses.
+
+```powershell
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj --no-restore -p:GenerateEvergineContent=False -- --guidance-recovery
+```
+
+The first test compile found a contextual-keyword parse error in a new fixture
+variable; it was renamed and the focused command was rerun once successfully.
+No testing frameworks or dependencies were added.
+
+One Android Release build passed with **zero warnings and zero errors**:
+
+```powershell
+dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:GenerateEvergineContent=False -p:RescuArDiagnosticBuild=true -p:AndroidPackageFormats=apk
+```
+
+Release-readiness declarations and native-bridge verification passed. The APK
+contains the unchanged stripped ARM64 native bridge with 16 KiB load alignment.
+As in the preceding run, `apkanalyzer` is unavailable; the standard package
+script was not run. Equivalent package, manifest, ARCore/camera/Vulkan, ABI,
+minimum-API, and diagnostic-profile assertions passed using installed `aapt`
+and the artifact-local `Verify-PackagedCandidate.ps1`. Readelf came from NDK 30;
+the bridge's provenance toolchain fields describe its pinned configuration,
+not a native rebuild in this run.
+
+Evidence is under `artifacts/field-test-20261019-guidance-recovery/`:
+`regression.log`, `release-readiness.log`, `android-release-build.log`,
+`package-check-report.json`, and `native-bridge-provenance.json`.
+
+Candidate: [RescuAR-20261019-Guidance-Recovery.apk](artifacts/field-test-20261019-guidance-recovery/RescuAR-20261019-Guidance-Recovery.apk)
+(60,690,999 bytes). SHA-256:
+`8b687161413dafccbc57cb4d25aa2f72bfe81f5a6d1d77abc4b799fb5acbc4f0`.
+Source base: `ea79f7e` plus these uncommitted changes. Diagnostics are enabled;
+the route visibility override is disabled. No commit, device installation,
+application/UI interaction, live integration test, or E2E test was performed.
+
+### Required phone retest
+
+1. Start comparable new online MLD and offline A* trips, with Location enabled.
+   Confirm the actual accepted provider in each capture. Walk at least 60 m,
+   pass a safe covered frontage, and continue into open conditions. Expect
+   valid mapped guidance to return after tracking and qualified position recover,
+   without restarting the trip or repeating a completed ground handoff.
+2. Check left/right turns and reverse walking. Expect geographic and cyan turn
+   labels to agree, fresh-position replanning for actual sustained deviation,
+   and no abrupt route relocation from a single GPS jump or phone rotation.
+3. Recheck a short mapped recovery preview before close road entry, camera
+   exit/reentry, brief tracking loss, a destination change, and hazard reporting.
+   A destination inside a reported hazard must retain a warning and must not
+   trigger repeated invariant failures as the user moves.
+4. Recheck automatic vicinity arrival and a short indoor ground/flood session.
+   Expect the working arrival confirmation, camera startup, and flood height
+   baseline to remain intact.
+
+Return actual results and complete captures for both providers, with recording
+markers at the covered transition and any disappearance or incorrect direction.
+Sustained visibility, physical street alignment, timing on each phone, and text
+layout remain device acceptance checks; unit/build/package success does not
+verify those behaviors.

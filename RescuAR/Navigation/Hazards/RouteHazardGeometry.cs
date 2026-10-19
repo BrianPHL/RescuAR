@@ -14,6 +14,13 @@ public static class RouteHazardGeometry
     private const double EarthRadiusMeters =
         6371008.8;
 
+    public static bool IsDestinationExcluded(GeoCoordinate destination, IReadOnlyList<RouteHazard> hazards)
+    {
+        foreach (var hazard in hazards)
+            if (destination.DistanceTo(hazard.Coordinate) <= hazard.RadiusMeters) return true;
+        return false;
+    }
+
     public readonly record struct RouteHazardIntersection(
         bool IsAffected,
         RouteHazard? Hazard,

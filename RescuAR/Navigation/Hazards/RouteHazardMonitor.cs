@@ -18,6 +18,7 @@ public sealed class RouteHazardMonitor
     private readonly Dictionary<string, RouteHazard> escapeHazards = new(StringComparer.Ordinal);
     private readonly HashSet<int> unavailableSegments = new();
     private RetryContext? latestContext;
+    private string? excludedDestinationSnapshot;
 
     public readonly record struct RetryContext(RouteResult Route, string Snapshot,
         bool InternetAvailable, int CurrentSegment);
@@ -30,6 +31,7 @@ public sealed class RouteHazardMonitor
         escapeHazards.Clear();
         unavailableSegments.Clear();
         latestContext = null;
+        excludedDestinationSnapshot = null;
     }
 
     public void AcceptRoute(RouteResult route, GeoCoordinate origin,
@@ -72,6 +74,8 @@ public sealed class RouteHazardMonitor
             hasPosition ? position.SegmentIndex : -1);
         if (sameRoute)
         {
+            if (latestContext is { } latest && latest.Snapshot != context.Snapshot)
+                excludedDestinationSnapshot = null;
             if (!HasCurrentInputs(context)) unavailableSegments.Clear();
             latestContext = context;
         }
@@ -86,12 +90,26 @@ public sealed class RouteHazardMonitor
         latestContext!.Value.CurrentSegment == context.CurrentSegment;
 
     public bool CanRetry(RetryContext context) => HasCurrentInputs(context) &&
-        !unavailableSegments.Contains(context.CurrentSegment);
+        !IsDestinationExcluded(context) && !unavailableSegments.Contains(context.CurrentSegment);
 
-    public void MarkNoRoute(RetryContext context)
+    public bool IsDestinationExcluded(RetryContext context) => ReferenceEquals(currentRoute, context.Route) &&
+        excludedDestinationSnapshot is not null && excludedDestinationSnapshot == context.Snapshot;
+
+    public bool MarkNoRoute(RetryContext context, RouteReplacementFailure reason = RouteReplacementFailure.NoRoute)
     {
         // A stale async completion cannot inhibit a new route or newer snapshot.
-        if (HasCurrentInputs(context)) unavailableSegments.Add(context.CurrentSegment);
+        if (reason == RouteReplacementFailure.DestinationExcluded)
+        {
+            if (!ReferenceEquals(currentRoute, context.Route) || latestContext is not { } latest ||
+                latest.Snapshot != context.Snapshot) return false;
+            excludedDestinationSnapshot = context.Snapshot;
+        }
+        else
+        {
+            if (!HasCurrentInputs(context)) return false;
+            unavailableSegments.Add(context.CurrentSegment);
+        }
+        return true;
     }
 
     public void AllowRetryForPositionChange(RouteResult route)

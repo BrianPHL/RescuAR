@@ -107,8 +107,7 @@ public sealed class RouteBacktrackingPolicy
             accuracy, observedAt, trackedMotion);
         if (trackedMotion is { IsValid: true } newMotion && anchor is Observation existing &&
             (existing.Motion is not TrackedMotion oldMotion ||
-             oldMotion.Session != newMotion.Session || oldMotion.GroundReference != newMotion.GroundReference ||
-             Math.Abs(Math.IEEERemainder(oldMotion.YawDegrees - newMotion.YawDegrees, 360)) > 8))
+             !oldMotion.IsContinuousWith(newMotion)))
             ResetEvidence();
         double arRetreat = anchor is Observation previous
             ? GetArRetreat(route, previous, update.RawProgressMeters, trackedMotion) : double.NaN;
@@ -140,6 +139,16 @@ public sealed class RouteBacktrackingPolicy
         bool corroborated = arRetreat >= 12 && retreat >= 3 && moved >= 3;
         double evidenceRetreat = corroborated ? arRetreat : retreat;
         double requiredDistance = Math.Max(12, baseline.Accuracy + accuracy);
+        if (baseline.Motion is { } stationaryFrom && trackedMotion is { } stationaryTo &&
+            stationaryFrom.IsContinuousWith(stationaryTo) && moved >= requiredDistance &&
+            Math.Sqrt(Math.Pow(stationaryTo.X - stationaryFrom.X, 2) +
+                Math.Pow(stationaryTo.Z - stationaryFrom.Z, 2)) < 3)
+        {
+            ResetEvidence();
+            anchor = observation;
+            lastReliableObservationAt = observedAt;
+            return Decision("GPS displacement has no tracked walking corroboration", moved, retreat);
+        }
         if ((!corroborated && (moved < requiredDistance || retreat < requiredDistance)) ||
             observedAt - baseline.At < MinimumMovementTime)
         {
@@ -184,9 +193,7 @@ public sealed class RouteBacktrackingPolicy
         double currentProgress, TrackedMotion? current)
     {
         if (baseline.Motion is not TrackedMotion from || current is not TrackedMotion to ||
-            !from.IsValid || !to.IsValid || from.Session != to.Session ||
-            from.GroundReference != to.GroundReference ||
-            Math.Abs(Math.IEEERemainder(from.YawDegrees - to.YawDegrees, 360)) > 8 ||
+            !from.IsContinuousWith(to) ||
             !RouteDisplayProgressPolicy.TryAtDistance(route, baseline.Progress, out var position) ||
             !RouteDisplayProgressPolicy.TryAtDistance(route, currentProgress, out var currentPosition))
             return double.NaN;
@@ -234,10 +241,16 @@ public sealed class RouteBacktrackingPolicy
         double Accuracy, DateTimeOffset At, TrackedMotion? Motion);
 
     public readonly record struct TrackedMotion(float X, float Z, double YawDegrees,
-        long Session, long GroundReference)
+        long Session, long GroundReference, long TrackingEpoch = 0, long WorldFrame = 0)
     {
         public bool IsValid => float.IsFinite(X) && float.IsFinite(Z) &&
             double.IsFinite(YawDegrees) && Session > 0 && GroundReference > 0;
+
+        // Floor references share camera-world coordinates. Tracking loss,
+        // lifecycle changes and world corrections do not share that guarantee.
+        public bool IsContinuousWith(TrackedMotion other) => IsValid && other.IsValid &&
+            Session == other.Session && TrackingEpoch == other.TrackingEpoch && WorldFrame == other.WorldFrame &&
+            Math.Abs(Math.IEEERemainder(YawDegrees - other.YawDegrees, 360)) <= 8;
     }
 
     public readonly record struct BacktrackingDecision(bool IsCandidate, bool ShouldReplan,

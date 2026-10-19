@@ -130,6 +130,8 @@ public static class ARCameraSpatialController
 
     private static long worldCorrectionRequestGeneration;
 
+    public static long WorldFrameGeneration { get { lock (sync) return worldCorrectionRequestGeneration; } }
+
     private static RouteWorldCorrectionRequest pendingWorldCorrectionRequest =
         RouteWorldCorrectionRequest.Unavailable;
 
