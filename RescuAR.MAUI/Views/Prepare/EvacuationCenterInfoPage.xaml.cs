@@ -43,6 +43,18 @@ namespace RescuAR.App.Views.Prepare
             }
         }
 
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
+            ViewModel.OnAppearing();
+        }
+
+        protected override void OnDisappearing()
+        {
+            base.OnDisappearing();
+            ViewModel.OnDisappearing();
+        }
+
         private Mapsui.Map CreateRouteMap(EvacuationCenterItem center)
         {
             var map = new Mapsui.Map
