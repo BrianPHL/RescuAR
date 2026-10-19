@@ -367,25 +367,52 @@
                                                TextColor="#0A8491"
                                                FontSize="12.5"
                                                LineBreakMode="TailTruncation" />
-                                        <Label Text="{Binding MemberStatusLine}"
-                                               TextColor="#64748B"
-                                               FontSize="11" />
+                                        <!-- Status & Battery Row with Dedicated Battery Vector Icon -->
+                                        <HorizontalStackLayout Spacing="5" VerticalOptions="Center">
+                                            <Label Text="{Binding SinceTimeText}"
+                                                   TextColor="#64748B"
+                                                   FontSize="11"
+                                                   VerticalOptions="Center" />
+                                            <Label Text="•"
+                                                   TextColor="#94A3B8"
+                                                   FontSize="11"
+                                                   VerticalOptions="Center" />
+                                            
+                                            <!-- Dedicated Battery Vector Icon -->
+                                            <Path Data="M15.67,4H14V2H10V4H8.33C7.6,4 7,4.6 7,5.33V20.67C7,21.4 7.6,22 8.33,22H15.67C16.4,22 17,21.4 17,20.67V5.33C17,4.6 16.4,4 15.67,4Z"
+                                                  Fill="{Binding BatteryColor}"
+                                                  Aspect="Uniform"
+                                                  WidthRequest="9"
+                                                  HeightRequest="13"
+                                                  VerticalOptions="Center" />
+                                            
+                                            <Label Text="{Binding BatteryText}"
+                                                   TextColor="{Binding BatteryColor}"
+                                                   FontSize="11"
+                                                   FontAttributes="Bold"
+                                                   VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
                                     </VerticalStackLayout>
 
-                                    <!-- Heart / Safety Icon -->
+                                    <!-- Phone Call Action Button (Redirects to Phone App) -->
                                     <Border Grid.Column="2"
-                                            BackgroundColor="Transparent"
+                                            BackgroundColor="#E6F4F2"
                                             StrokeThickness="0"
-                                            WidthRequest="36"
-                                            HeightRequest="36"
+                                            WidthRequest="38"
+                                            HeightRequest="38"
                                             VerticalOptions="Center">
-                                        <Path Data="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                                              Fill="Transparent"
-                                              Stroke="#0A8491"
-                                              StrokeThickness="1.8"
+                                        <Border.StrokeShape>
+                                            <RoundRectangle CornerRadius="19" />
+                                        </Border.StrokeShape>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding ViewModel.CallMemberCommand, Source={x:Reference SafetyCircleRoot}, x:DataType=local:SafetyCirclePage}"
+                                                                  CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <Path Data="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"
+                                              Fill="#0A8491"
                                               Aspect="Uniform"
-                                              WidthRequest="20"
-                                              HeightRequest="20"
+                                              WidthRequest="18"
+                                              HeightRequest="18"
                                               HorizontalOptions="Center"
                                               VerticalOptions="Center" />
                                     </Border>

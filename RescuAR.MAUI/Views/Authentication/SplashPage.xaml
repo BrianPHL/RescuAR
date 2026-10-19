@@ -12,21 +12,27 @@
 
     <Grid HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand">
         
-        <!-- Deep Ambient Gradient Background -->
+        <!-- Deep Ambient Background -->
         <BoxView BackgroundColor="#0B132B" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
 
         <!-- Center Stage Stack -->
         <VerticalStackLayout HorizontalOptions="Center" 
                              VerticalOptions="Center" 
-                             Spacing="40">
+                             Spacing="32">
             
-            <!-- Radar on Top of Map Display Widget -->
+            <!-- Official RescuAR Logo Banner from Uploaded Brand Assets -->
+            <Image Source="rescuar_logo_banner.png"
+                   HeightRequest="68"
+                   Aspect="AspectFit"
+                   HorizontalOptions="Center" />
+
+            <!-- Radar on Top of Map Display Widget (Animated Radar / Loading element) -->
             <Border x:Name="RadarBorder"
-                    WidthRequest="270"
-                    HeightRequest="270"
+                    WidthRequest="260"
+                    HeightRequest="260"
                     StrokeThickness="2.5"
                     Stroke="#1E3A5F"
-                    StrokeShape="RoundRectangle 135"
+                    StrokeShape="RoundRectangle 130"
                     BackgroundColor="#0D1B36"
                     HorizontalOptions="Center"
                     Padding="0">
@@ -35,26 +41,12 @@
                 </Border.Shadow>
 
                 <skia:SKCanvasView x:Name="RadarCanvas"
-                                   WidthRequest="270"
-                                   HeightRequest="270"
+                                   WidthRequest="260"
+                                   HeightRequest="260"
                                    PaintSurface="OnRadarCanvasPaintSurface"
                                    HorizontalOptions="Fill"
                                    VerticalOptions="Fill" />
             </Border>
-
-            <!-- Only RescuAR Brand Text Visible -->
-            <HorizontalStackLayout HorizontalOptions="Center" Spacing="0">
-                <Label Text="Rescu"
-                       FontSize="40"
-                       FontAttributes="Bold"
-                       TextColor="#FFFFFF"
-                       CharacterSpacing="1.5" />
-                <Label Text="AR"
-                       FontSize="40"
-                       FontAttributes="Bold"
-                       TextColor="#0A8491"
-                       CharacterSpacing="1.5" />
-            </HorizontalStackLayout>
         </VerticalStackLayout>
         
     </Grid>

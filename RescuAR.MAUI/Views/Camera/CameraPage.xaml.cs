@@ -2646,10 +2646,38 @@ namespace RescuAR.App.Views.Camera
         {
             try
             {
-                if (Shell.Current is not null)
+                var shelters = EvacuationCenterRepository.GetEvacuationCenters();
+                if (shelters == null || shelters.Count == 0)
                 {
-                    await Shell.Current.GoToAsync(
-                        "Prepare/EvacuationCenterInfo");
+                    await DisplayAlert("Safe Zones", "No evacuation centers found.", "OK");
+                    return;
+                }
+
+                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+
+                var sorted = shelters
+                    .Select(s => new { Shelter = s, Distance = origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude)) })
+                    .OrderBy(s => s.Distance)
+                    .ToList();
+
+                var options = sorted
+                    .Select(s => $"{s.Shelter.Name} ({s.Distance:F0} m)")
+                    .ToArray();
+
+                string action = await DisplayActionSheet(
+                    "Select Safe Zone / Evacuation Center",
+                    "Cancel",
+                    null,
+                    options);
+
+                if (string.IsNullOrEmpty(action) || action == "Cancel")
+                    return;
+
+                int selectedIndex = Array.IndexOf(options, action);
+                if (selectedIndex >= 0 && selectedIndex < sorted.Count)
+                {
+                    var chosen = sorted[selectedIndex].Shelter;
+                    await StartGuidanceToEvacuationCenterAsync(chosen);
                 }
             }
             catch (Exception exception)
@@ -2657,7 +2685,114 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
                 Log.Warn(
                     "RescuAR-CameraUI",
-                    $"Explore Safe Zones navigation failed: {DiagnosticPrivacyPolicy.FormatException(exception)}");
+                    $"Explore Safe Zones failed: {DiagnosticPrivacyPolicy.FormatException(exception)}");
+#endif
+            }
+        }
+
+        private async Task StartGuidanceToEvacuationCenterAsync(RescuAR.App.Models.EvacuationCenter center)
+        {
+            try
+            {
+                arrivalRoadGraph ??= await NavigationDataBootstrap.GetRoadGraphAsync(CancellationToken.None);
+
+                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+                GeoCoordinate dest = new GeoCoordinate(center.Latitude, center.Longitude);
+
+                activeDestinationCoordinate = dest;
+                activeDestinationName = center.Name;
+                activeDestinationSafeZoneRadiusMeters = SafeZoneConfirmationService.ArrivalRadiusMeters;
+
+                // 1. Calculate route using GeoJSON pedestrian road graph
+                RouteResult? route = null;
+                try
+                {
+                    route = await _hybridRoutingService.FindHazardAvoidingRouteAsync(origin, dest, Array.Empty<RouteHazard>());
+                }
+                catch { }
+
+                if (route == null || route.Points == null || route.Points.Count < 2)
+                {
+                    try
+                    {
+                        route = await _hybridRoutingService.FindOfflineRouteAsync(origin, dest);
+                    }
+                    catch { }
+                }
+
+                if (route == null || route.Points == null || route.Points.Count < 2)
+                {
+                    await DisplayAlert("Route Guidance", $"Unable to find pedestrian route to {center.Name}.", "OK");
+                    return;
+                }
+
+                activeRoute = route;
+
+                // Set destination bridge so app system state is consistent
+                NavigationDestinationBridge.Set(center.Name, dest);
+
+                // 2. Switch to 2D Map Guidance mode
+                OnMapGuidanceOptionClicked(this, EventArgs.Empty);
+
+                // 3. Render 2D map with single route line, OSM tiles, and evacuation markers
+                InitializeOrRefresh2DCameraMap();
+
+                // 4. Populate and display turn-by-turn directions sheet
+                OpenRouteDirectionsSheet();
+
+                // 5. Update top direction banner
+                if (turnGuidancePanel != null)
+                {
+                    turnGuidancePanel.IsVisible = true;
+                    string firstStep = "Proceed along route";
+                    if (route.Points.Count >= 2)
+                    {
+                        var p0 = route.Points[0].Coordinate;
+                        var p1 = route.Points[1].Coordinate;
+                        double segDist = p0.DistanceTo(p1);
+                        string? street = FindNearestStreetName(p0) ?? FindNearestStreetName(p1);
+                        firstStep = !string.IsNullOrWhiteSpace(street)
+                            ? $"Go straight on {street} for {segDist:F0}m"
+                            : $"Go straight for {segDist:F0}m";
+
+                        if (route.Points.Count >= 3)
+                        {
+                            var p2 = route.Points[2].Coordinate;
+                            double b1 = CalculateInitialBearingDegrees(p0, p1);
+                            double b2 = CalculateInitialBearingDegrees(p1, p2);
+                            double angle = NormalizeSignedDegrees(b2 - b1);
+                            string? nextStreet = FindNearestStreetName(p1) ?? FindNearestStreetName(p2);
+                            if (angle > 20)
+                            {
+                                firstStep = !string.IsNullOrWhiteSpace(nextStreet)
+                                    ? $"Turn right on {nextStreet} in {segDist:F0}m"
+                                    : $"Turn right in {segDist:F0}m";
+                            }
+                            else if (angle < -20)
+                            {
+                                firstStep = !string.IsNullOrWhiteSpace(nextStreet)
+                                    ? $"Turn left on {nextStreet} in {segDist:F0}m"
+                                    : $"Turn left in {segDist:F0}m";
+                            }
+                        }
+                    }
+
+                    turnInstructionLabel.Text = firstStep;
+                    turnDistanceLabel.Text = $"{route.TotalDistanceMeters:F0} meters away from {center.Name}";
+
+                    _lastSpokenInstruction = firstStep;
+                    _ = SpeakTurnInstructionAsync(firstStep);
+                }
+
+                if (endNavigationButton != null)
+                {
+                    endNavigationButton.IsVisible = true;
+                }
+            }
+            catch (Exception ex)
+            {
+#if ANDROID
+                Log.Warn("RescuAR-CameraUI", $"StartGuidanceToEvacuationCenter failed: {DiagnosticPrivacyPolicy.FormatException(ex)}");
 #endif
             }
         }
@@ -2737,11 +2872,6 @@ namespace RescuAR.App.Views.Camera
             object? sender,
             EventArgs e)
         {
-            if (!NavigationDestinationBridge.Current.IsAvailable)
-            {
-                return;
-            }
-
 #if ANDROID
             Log.Info(
                 "RescuAR-CameraUI",
@@ -2749,6 +2879,17 @@ namespace RescuAR.App.Views.Camera
 #endif
 
             NavigationDestinationBridge.Clear();
+
+            activeRoute = null;
+            activeDestinationCoordinate = null;
+            activeDestinationName = string.Empty;
+
+            if (turnGuidancePanel != null) turnGuidancePanel.IsVisible = false;
+            if (routeDirectionsSheet != null) routeDirectionsSheet.IsVisible = false;
+            if (endNavigationButton != null) endNavigationButton.IsVisible = false;
+            try { _ttsCancellation?.Cancel(); } catch { }
+
+            InitializeOrRefresh2DCameraMap();
 
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
@@ -4811,9 +4952,9 @@ namespace RescuAR.App.Views.Camera
                         continue;
                     }
 
+                    bool is2DMapMode = mapModeLayer != null && mapModeLayer.IsVisible;
                     if (!pageIsVisible ||
-                        !_arCoreService.IsInitialized ||
-                        _arCoreService.IsSessionPaused)
+                        (!is2DMapMode && (!_arCoreService.IsInitialized || _arCoreService.IsSessionPaused)))
                     {
                         await Task.Delay(
                             RouteProgressPollInterval,
@@ -4851,6 +4992,13 @@ namespace RescuAR.App.Views.Camera
                                     activeDestinationCoordinate.Value));
                             HandleSafeZoneDecision(arrival);
                             lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
+                            if (mapModeLayer != null && mapModeLayer.IsVisible)
+                            {
+                                MainThread.BeginInvokeOnMainThread(() =>
+                                {
+                                    UpdateCamera2DUserLocation(arrivalReading.Coordinate);
+                                });
+                            }
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
                             {
                                 BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
@@ -4904,6 +5052,14 @@ namespace RescuAR.App.Views.Camera
 
                             latestGpsTimestampForRouting =
                                 reading.Timestamp;
+                        }
+
+                        if (mapModeLayer != null && mapModeLayer.IsVisible)
+                        {
+                            MainThread.BeginInvokeOnMainThread(() =>
+                            {
+                                UpdateCamera2DUserLocation(reading.Coordinate);
+                            });
                         }
 
                         bool shouldStartDynamicReroute =
@@ -11652,8 +11808,173 @@ namespace RescuAR.App.Views.Camera
 
         #region Voice Guidance & Route Directions Fallback
 
+        private string? FindNearestStreetName(GeoCoordinate coord, double maxDistMeters = 60.0)
+        {
+            if (arrivalRoadGraph == null || arrivalRoadGraph.Edges == null) return null;
+            RoadEdge? bestEdge = null;
+            double bestDist = maxDistMeters;
+            foreach (var edge in arrivalRoadGraph.Edges)
+            {
+                if (string.IsNullOrWhiteSpace(edge.Name)) continue;
+                double d1 = coord.DistanceTo(edge.From.Coordinate);
+                double d2 = coord.DistanceTo(edge.To.Coordinate);
+                double minD = Math.Min(d1, d2);
+                if (minD < bestDist)
+                {
+                    bestDist = minD;
+                    bestEdge = edge;
+                }
+            }
+            return bestEdge?.Name;
+        }
+
+        private void UpdateCamera2DUserLocation(GeoCoordinate coord)
+        {
+            try
+            {
+                if (CameraMapControl?.Map == null) return;
+                var currentMap = CameraMapControl.Map;
+
+                var (ux, uy) = Mapsui.Projections.SphericalMercator.FromLonLat(coord.Longitude, coord.Latitude);
+
+                // Update marker layer
+                var existingMarkers = currentMap.Layers.FirstOrDefault(l => l.Name == "Camera2DMarkersLayer") as Mapsui.Layers.MemoryLayer;
+                if (existingMarkers != null)
+                {
+                    var userFeature = existingMarkers.Features.FirstOrDefault(f => f is Mapsui.Nts.GeometryFeature gf && gf.Geometry is NetTopologySuite.Geometries.Point && gf.Styles.Any(s => s is Mapsui.Styles.SymbolStyle ss && ss.SymbolType == Mapsui.Styles.SymbolType.Ellipse && ss.Fill?.Color?.R == 10 && ss.Fill?.Color?.G == 132 && ss.Fill?.Color?.B == 145)) as Mapsui.Nts.GeometryFeature;
+
+                    if (userFeature != null)
+                    {
+                        userFeature.Geometry = new NetTopologySuite.Geometries.Point(ux, uy);
+                    }
+                    else
+                    {
+                        var newFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(ux, uy));
+                        newFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
+                        {
+                            SymbolType = Mapsui.Styles.SymbolType.Ellipse,
+                            SymbolScale = 1.0,
+                            Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(10, 132, 145)),
+                            Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2)
+                        });
+                        var list = existingMarkers.Features.ToList();
+                        list.Add(newFeature);
+                        existingMarkers.Features = list;
+                    }
+                    existingMarkers.DataHasChanged();
+                }
+
+                // Center on user movement like Google Maps
+                currentMap.Navigator.CenterOn(new MPoint(ux, uy));
+                CameraMapControl.Refresh();
+
+                // Dynamic guidance updates
+                if (activeRoute != null && activeRoute.Points != null && activeRoute.Points.Count >= 2)
+                {
+                    UpdateTurnGuidanceFromLocation(coord);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateCamera2DUserLocation error: {ex.Message}");
+            }
+        }
+
+        private void UpdateTurnGuidanceFromLocation(GeoCoordinate userCoord)
+        {
+            try
+            {
+                var route = activeRoute;
+                if (route == null || route.Points == null || route.Points.Count < 2) return;
+
+                int closestIdx = 0;
+                double minDist = double.MaxValue;
+                for (int i = 0; i < route.Points.Count; i++)
+                {
+                    double d = userCoord.DistanceTo(route.Points[i].Coordinate);
+                    if (d < minDist)
+                    {
+                        minDist = d;
+                        closestIdx = i;
+                    }
+                }
+
+                var lastPoint = route.Points[^1].Coordinate;
+                double distToDestination = userCoord.DistanceTo(lastPoint);
+
+                if (distToDestination <= 15.0)
+                {
+                    string arriveText = $"Arrived at {activeDestinationName}";
+                    turnInstructionLabel.Text = arriveText;
+                    turnDistanceLabel.Text = "You have reached your safe zone";
+                    turnDirectionIconLabel.Source = "lucide_circle_check_big_teal.png";
+                    if (!string.Equals(_lastSpokenInstruction, arriveText, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastSpokenInstruction = arriveText;
+                        _ = SpeakTurnInstructionAsync(arriveText);
+                    }
+                    return;
+                }
+
+                string nextInstr = "Continue along route";
+                string icon = "lucide_arrow_up_teal.png";
+
+                for (int i = closestIdx; i < route.Points.Count - 2; i++)
+                {
+                    var p0 = route.Points[i].Coordinate;
+                    var p1 = route.Points[i + 1].Coordinate;
+                    var p2 = route.Points[i + 2].Coordinate;
+                    double b1 = CalculateInitialBearingDegrees(p0, p1);
+                    double b2 = CalculateInitialBearingDegrees(p1, p2);
+                    double angle = NormalizeSignedDegrees(b2 - b1);
+                    double distToTurn = userCoord.DistanceTo(p1);
+
+                    if (Math.Abs(angle) >= 20.0)
+                    {
+                        string? street = FindNearestStreetName(p1) ?? FindNearestStreetName(p2);
+                        if (angle > 20)
+                        {
+                            nextInstr = !string.IsNullOrWhiteSpace(street)
+                                ? $"Turn right on {street} in {distToTurn:F0}m"
+                                : $"Turn right in {distToTurn:F0}m";
+                            icon = "lucide_corner_up_right_teal.png";
+                        }
+                        else
+                        {
+                            nextInstr = !string.IsNullOrWhiteSpace(street)
+                                ? $"Turn left on {street} in {distToTurn:F0}m"
+                                : $"Turn left in {distToTurn:F0}m";
+                            icon = "lucide_corner_up_left_teal.png";
+                        }
+                        break;
+                    }
+                }
+
+                if (nextInstr == "Continue along route")
+                {
+                    var pNow = route.Points[closestIdx].Coordinate;
+                    string? currentStreet = FindNearestStreetName(pNow);
+                    nextInstr = !string.IsNullOrWhiteSpace(currentStreet)
+                        ? $"Go straight on {currentStreet} for {distToDestination:F0}m"
+                        : $"Go straight for {distToDestination:F0}m";
+                }
+
+                turnInstructionLabel.Text = nextInstr;
+                turnDirectionIconLabel.Source = icon;
+                turnDistanceLabel.Text = $"{distToDestination:F0} meters away from {activeDestinationName}";
+
+                if (!string.Equals(_lastSpokenInstruction, nextInstr, StringComparison.OrdinalIgnoreCase))
+                {
+                    _lastSpokenInstruction = nextInstr;
+                    _ = SpeakTurnInstructionAsync(nextInstr);
+                }
+            }
+            catch { }
+        }
+
         private async Task SpeakTurnInstructionAsync(string text)
         {
+            if (_isVoiceMuted || string.IsNullOrWhiteSpace(text)) return;
             try
             {
                 _ttsCancellation?.Cancel();
@@ -11747,13 +12068,18 @@ namespace RescuAR.App.Views.Camera
                     var p1 = points[i];
                     var p2 = points[i + 1];
                     double segDist = p1.Coordinate.DistanceTo(p2.Coordinate);
+                    string? streetName = FindNearestStreetName(p1.Coordinate) ?? FindNearestStreetName(p2.Coordinate);
 
                     if (i == 0)
                     {
+                        string instr = !string.IsNullOrWhiteSpace(streetName)
+                            ? $"Go straight on {streetName} for {segDist:F0}m"
+                            : $"Go straight for {segDist:F0}m";
+
                         steps.Add(new RouteDirectionStepItem
                         {
-                            InstructionText = "Start route from current location",
-                            SubtitleText = "Head forward along pedestrian path",
+                            InstructionText = instr,
+                            SubtitleText = !string.IsNullOrWhiteSpace(streetName) ? $"Follow {streetName}" : "Head forward along pedestrian path",
                             DistanceText = $"{segDist:F0} m",
                             IconSource = "lucide_arrow_up_teal.png",
                             BackgroundColor = Color.FromArgb("#E6F4F2")
@@ -11761,9 +12087,10 @@ namespace RescuAR.App.Views.Camera
                     }
                     else if (i == points.Count - 2)
                     {
+                        string destName = !string.IsNullOrWhiteSpace(activeDestinationName) ? activeDestinationName : "Evacuation Center";
                         steps.Add(new RouteDirectionStepItem
                         {
-                            InstructionText = $"Arrive at {(!string.IsNullOrWhiteSpace(activeDestinationName) ? activeDestinationName : "Evacuation Center")}",
+                            InstructionText = $"Arrive at {destName}",
                             SubtitleText = "Destination on designated safe zone",
                             DistanceText = $"{segDist:F0} m",
                             IconSource = "lucide_circle_check_big_teal.png",
@@ -11777,40 +12104,50 @@ namespace RescuAR.App.Views.Camera
                         double b2 = CalculateInitialBearingDegrees(p1.Coordinate, p2.Coordinate);
                         double angle = NormalizeSignedDegrees(b2 - b1);
 
-                        if (Math.Abs(angle) >= 20.0 || segDist > 100.0)
+                        if (Math.Abs(angle) >= 20.0 || segDist > 80.0)
                         {
                             string instr;
                             string icon;
                             if (angle < -45)
                             {
-                                instr = "Turn left";
+                                instr = !string.IsNullOrWhiteSpace(streetName)
+                                    ? $"Turn left on {streetName} in {segDist:F0}m"
+                                    : $"Turn left in {segDist:F0}m";
                                 icon = "lucide_corner_up_left_teal.png";
                             }
                             else if (angle < -15)
                             {
-                                instr = "Bear left";
+                                instr = !string.IsNullOrWhiteSpace(streetName)
+                                    ? $"Bear left on {streetName} in {segDist:F0}m"
+                                    : $"Bear left in {segDist:F0}m";
                                 icon = "lucide_arrow_up_left_teal.png";
                             }
                             else if (angle > 45)
                             {
-                                instr = "Turn right";
+                                instr = !string.IsNullOrWhiteSpace(streetName)
+                                    ? $"Turn right on {streetName} in {segDist:F0}m"
+                                    : $"Turn right in {segDist:F0}m";
                                 icon = "lucide_corner_up_right_teal.png";
                             }
                             else if (angle > 15)
                             {
-                                instr = "Bear right";
+                                instr = !string.IsNullOrWhiteSpace(streetName)
+                                    ? $"Bear right on {streetName} in {segDist:F0}m"
+                                    : $"Bear right in {segDist:F0}m";
                                 icon = "lucide_arrow_up_right_teal.png";
                             }
                             else
                             {
-                                instr = "Continue straight";
+                                instr = !string.IsNullOrWhiteSpace(streetName)
+                                    ? $"Go straight on {streetName} for {segDist:F0}m"
+                                    : $"Go straight for {segDist:F0}m";
                                 icon = "lucide_arrow_up_teal.png";
                             }
 
                             steps.Add(new RouteDirectionStepItem
                             {
                                 InstructionText = instr,
-                                SubtitleText = $"Follow road corridor for {segDist:F0} m",
+                                SubtitleText = !string.IsNullOrWhiteSpace(streetName) ? $"Follow {streetName}" : $"Follow road corridor for {segDist:F0} m",
                                 DistanceText = $"{segDist:F0} m",
                                 IconSource = icon,
                                 BackgroundColor = Color.FromArgb("#E6F4F2")

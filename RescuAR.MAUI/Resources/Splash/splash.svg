@@ -1,28 +1,27 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
-        <linearGradient id="shieldFill" x1="256" y1="48" x2="256" y2="464" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#0E7490"/>
-            <stop offset="100%" stop-color="#0A8491"/>
+        <linearGradient id="arGrad" x1="120" y1="360" x2="340" y2="180" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#078F99" />
+            <stop offset="50%" stop-color="#00C4B4" />
+            <stop offset="100%" stop-color="#00E5D0" />
         </linearGradient>
-        <linearGradient id="arrowFill" x1="256" y1="140" x2="256" y2="340" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#FFFFFF"/>
-            <stop offset="100%" stop-color="#E0F2FE"/>
+        <linearGradient id="waveGrad" x1="280" y1="120" x2="480" y2="320" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#00E5D0" stop-opacity="0.9" />
+            <stop offset="100%" stop-color="#078F99" stop-opacity="0.15" />
         </linearGradient>
     </defs>
 
-    <!-- Professional Minimalist Protection Shield -->
-    <path d="M256 48C176 48 112 80 112 168C112 308 256 464 256 464C256 464 400 308 400 168C400 80 336 48 256 48Z" 
-          fill="url(#shieldFill)" />
+    <!-- Radar Pulse Waves emanated from AR -->
+    <path d="M 330 140 A 170 170 0 0 1 450 300" stroke="url(#waveGrad)" stroke-width="12" stroke-linecap="round" fill="none" />
+    <path d="M 315 175 A 130 130 0 0 1 410 300" stroke="url(#waveGrad)" stroke-width="10" stroke-linecap="round" fill="none" />
+    <path d="M 300 210 A 90 90 0 0 1 370 300" stroke="url(#waveGrad)" stroke-width="8" stroke-linecap="round" fill="none" />
 
-    <!-- Inner Clean Dark Core -->
-    <path d="M256 76C192 76 138 104 138 174C138 290 256 424 256 424C256 424 374 290 374 174C374 104 320 76 256 76Z" 
-          fill="#0A0E1A" />
-
-    <!-- Directional Evacuation Arrow / Compass Needle -->
-    <path d="M256 136L318 276L256 244L194 276L256 136Z" 
-          fill="url(#arrowFill)" />
-
-    <!-- Safety Core Beacon Dot -->
-    <circle cx="256" cy="324" r="10" fill="#0A8491" />
+    <!-- AR Symbol Base -->
+    <!-- Diagonal Leg / Ribbon -->
+    <path d="M 120 400 L 220 220 L 290 320 L 250 400 Z" fill="#00A89A" />
+    <!-- Overlapping Folded Cyan Loop -->
+    <path d="M 220 220 C 260 150 370 180 370 260 C 370 330 300 370 220 400 L 150 400 C 200 330 250 260 290 230 C 320 205 340 230 330 260 C 320 290 280 320 220 370 Z" fill="url(#arGrad)" />
+    
+    <!-- Inner Dark Pin Beacon -->
+    <circle cx="300" cy="245" r="28" fill="#153E5C" />
 </svg>

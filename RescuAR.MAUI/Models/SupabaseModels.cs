@@ -74,7 +74,7 @@ namespace RescuAR.App.Models
     [Table("safety_circle_messages")]
     public class SupabaseCircleMessage : BaseModel
     {
-        [PrimaryKey("id", true)]
+        [PrimaryKey("id", false)]
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
         [Column("circle_id")]

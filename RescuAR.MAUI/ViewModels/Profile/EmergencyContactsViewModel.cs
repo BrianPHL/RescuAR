@@ -106,6 +106,11 @@ public partial class EmergencyContactsViewModel : ObservableObject
                 {
                     Contact1Phone = phone;
                 }
+                await SyncEmergencyContactsToQuickActionsAsync();
+                if (Shell.Current != null)
+                {
+                    await Shell.Current.DisplayAlert("Contact Imported", $"{Contact1Name} was imported and connected to your Quick Actions.", "OK");
+                }
             }
         }
         catch (Exception ex)
@@ -141,6 +146,11 @@ public partial class EmergencyContactsViewModel : ObservableObject
                 {
                     Contact2Phone = phone;
                 }
+                await SyncEmergencyContactsToQuickActionsAsync();
+                if (Shell.Current != null)
+                {
+                    await Shell.Current.DisplayAlert("Contact Imported", $"{Contact2Name} was imported and connected to your Quick Actions.", "OK");
+                }
             }
         }
         catch (Exception ex)
@@ -150,7 +160,54 @@ public partial class EmergencyContactsViewModel : ObservableObject
         }
     }
 
+    private async Task SyncEmergencyContactsToQuickActionsAsync()
+    {
+        try
+        {
+            var c1Name = Contact1Name?.Trim() ?? string.Empty;
+            var c1Phone = Contact1Phone?.Trim() ?? string.Empty;
+            var c1Rel = Contact1Relationship?.Trim() ?? "Family";
 
+            var c2Name = Contact2Name?.Trim() ?? string.Empty;
+            var c2Phone = Contact2Phone?.Trim() ?? string.Empty;
+            var c2Rel = Contact2Relationship?.Trim() ?? "Friend";
+
+            // Save to Preferences
+            Preferences.Default.Set("EmergencyContact1Name", c1Name);
+            Preferences.Default.Set("EmergencyContact1Phone", c1Phone);
+            Preferences.Default.Set("EmergencyContact1Rel", c1Rel);
+
+            Preferences.Default.Set("EmergencyContact2Name", c2Name);
+            Preferences.Default.Set("EmergencyContact2Phone", c2Phone);
+            Preferences.Default.Set("EmergencyContact2Rel", c2Rel);
+
+            // Sync with UserProfileService & Quick Actions
+            var profiles = RescuAR.App.Services.Profile.UserProfileService.Instance;
+            try
+            {
+                await profiles.PatchAsync(
+                    (x => x.EmergencyContact1Name, c1Name),
+                    (x => x.EmergencyContact1Phone, c1Phone),
+                    (x => x.EmergencyContact2Name, c2Name),
+                    (x => x.EmergencyContact2Phone, c2Phone)
+                );
+            }
+            catch { }
+
+            var user = await profiles.LoadAsync();
+            var json = profiles.GetLocal("QuickActions");
+            var actions = string.IsNullOrWhiteSpace(json)
+                ? new System.Collections.Generic.List<RescuAR.App.Models.QuickActionItem>()
+                : Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<RescuAR.App.Models.QuickActionItem>>(json) ?? new();
+
+            profiles.SyncContacts(actions, user);
+            profiles.SetLocal("QuickActions", Newtonsoft.Json.JsonConvert.SerializeObject(actions));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SyncEmergencyContactsToQuickActions error: {ex.Message}");
+        }
+    }
 
     [RelayCommand]
     private async Task SaveContactsAsync()
@@ -160,72 +217,7 @@ public partial class EmergencyContactsViewModel : ObservableObject
         IsSaving = true;
         try
         {
-            // Save to Preferences
-            Preferences.Default.Set("EmergencyContact1Name", Contact1Name.Trim());
-            Preferences.Default.Set("EmergencyContact1Phone", Contact1Phone.Trim());
-            Preferences.Default.Set("EmergencyContact1Rel", Contact1Relationship.Trim());
-
-            Preferences.Default.Set("EmergencyContact2Name", Contact2Name.Trim());
-            Preferences.Default.Set("EmergencyContact2Phone", Contact2Phone.Trim());
-            Preferences.Default.Set("EmergencyContact2Rel", Contact2Relationship.Trim());
-
-            // Sync with Dashboard Quick Actions
-            try
-            {
-                var json = Preferences.Default.Get("CustomQuickActionsList_v18", "[]");
-                var actions = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<RescuAR.App.Models.QuickActionItem>>(json) ?? new();
-                
-                if (!string.IsNullOrWhiteSpace(Contact1Name) && !string.IsNullOrWhiteSpace(Contact1Phone))
-                {
-                    var existing1 = actions.FirstOrDefault(a => a.ActionType == "CustomContact" && a.Id == "emergency_contact_1");
-                    if (existing1 != null)
-                    {
-                        existing1.Title = Contact1Name.Trim();
-                        existing1.Subtitle = $"Call {Contact1Phone.Trim()}";
-                        existing1.PhoneNumber = Contact1Phone.Trim();
-                    }
-                    else
-                    {
-                        actions.Add(new RescuAR.App.Models.QuickActionItem
-                        {
-                            Id = "emergency_contact_1",
-                            Title = Contact1Name.Trim(),
-                            Subtitle = $"Call {Contact1Phone.Trim()}",
-                            ActionType = "CustomContact",
-                            PhoneNumber = Contact1Phone.Trim(),
-                            IsEnabled = true,
-                            IsCustom = true
-                        });
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(Contact2Name) && !string.IsNullOrWhiteSpace(Contact2Phone))
-                {
-                    var existing2 = actions.FirstOrDefault(a => a.ActionType == "CustomContact" && a.Id == "emergency_contact_2");
-                    if (existing2 != null)
-                    {
-                        existing2.Title = Contact2Name.Trim();
-                        existing2.Subtitle = $"Call {Contact2Phone.Trim()}";
-                        existing2.PhoneNumber = Contact2Phone.Trim();
-                    }
-                    else
-                    {
-                        actions.Add(new RescuAR.App.Models.QuickActionItem
-                        {
-                            Id = "emergency_contact_2",
-                            Title = Contact2Name.Trim(),
-                            Subtitle = $"Call {Contact2Phone.Trim()}",
-                            ActionType = "CustomContact",
-                            PhoneNumber = Contact2Phone.Trim(),
-                            IsEnabled = true,
-                            IsCustom = true
-                        });
-                    }
-                }
-
-                Preferences.Default.Set("CustomQuickActionsList_v18", Newtonsoft.Json.JsonConvert.SerializeObject(actions));
-            }
-            catch { }
+            await SyncEmergencyContactsToQuickActionsAsync();
 
             // Save to Supabase
             var client = SupabaseService.Instance.Client;

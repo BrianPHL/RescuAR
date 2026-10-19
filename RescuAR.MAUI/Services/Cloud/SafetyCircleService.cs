@@ -690,21 +690,19 @@ namespace RescuAR.App.Services.Cloud
 
             try
             {
-                var client = GetClient();
                 userId = GetCurrentUserId();
 
-                try
+                var cachedFn = Preferences.Default.Get("UserFirstName", string.Empty);
+                var cachedLn = Preferences.Default.Get("UserLastName", string.Empty);
+                if (!string.IsNullOrWhiteSpace(cachedFn))
                 {
-                    var userResp = await client.From<User>().Where(u => u.Id == userId).Get();
-                    var user = userResp.Models.FirstOrDefault();
-                    if (user != null)
-                    {
-                        senderName = $"{user.FirstName} {user.LastName}".Trim();
-                        if (string.IsNullOrWhiteSpace(senderName)) senderName = user.Username;
-                        avatarUrl = user.AvatarUrl;
-                    }
+                    senderName = $"{cachedFn} {cachedLn}".Trim();
                 }
-                catch { }
+                if (string.IsNullOrWhiteSpace(senderName) || senderName == "Family Member")
+                {
+                    senderName = Preferences.Default.Get("UserName", Preferences.Default.Get("UserEmail", "Family Member"));
+                }
+                avatarUrl = Preferences.Default.Get("UserAvatarUrl", Preferences.Default.Get("UserProfilePicPath", string.Empty));
             }
             catch { }
 

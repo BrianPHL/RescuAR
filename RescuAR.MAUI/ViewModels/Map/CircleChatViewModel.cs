@@ -97,7 +97,7 @@ public partial class CircleChatViewModel : ObservableObject
         _chatTimer = Application.Current?.Dispatcher?.CreateTimer();
         if (_chatTimer != null)
         {
-            _chatTimer.Interval = TimeSpan.FromSeconds(3);
+            _chatTimer.Interval = TimeSpan.FromSeconds(1.5);
             _chatTimer.Tick += async (s, e) => await RefreshMessagesSilentAsync();
         }
 
@@ -321,6 +321,14 @@ public partial class CircleChatViewModel : ObservableObject
                 await _safetyCircleService.SendMessageAsync(CircleId, textToSend, null, "Text");
             });
         }
+    }
+
+    [RelayCommand]
+    private async Task QuickChatAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        NewMessageText = text;
+        await SendMessageAsync();
     }
 
     [RelayCommand]

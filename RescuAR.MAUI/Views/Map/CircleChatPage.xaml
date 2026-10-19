@@ -9,7 +9,7 @@
              Shell.NavBarIsVisible="False"
              BackgroundColor="#F8FAFC">
 
-    <Grid RowDefinitions="Auto, Auto, *, Auto">
+    <Grid RowDefinitions="Auto, Auto, *, Auto, Auto">
         <!-- Top App Bar / Header -->
         <Border Grid.Row="0" BackgroundColor="#0A8491" HeightRequest="64" StrokeThickness="0" Padding="14,0" Shadow="{Shadow Brush=Black, Offset='0,2', Radius=6, Opacity=0.12}">
             <Grid ColumnDefinitions="Auto, Auto, *, Auto" VerticalOptions="Center">
@@ -205,8 +205,73 @@
             </CollectionView.ItemTemplate>
         </CollectionView>
 
+        <!-- Quick Chat Emergency Chips Bar -->
+        <ScrollView Grid.Row="3" Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Margin="0,4,0,4">
+            <HorizontalStackLayout Spacing="6" Padding="12,0">
+                <Border BackgroundColor="#E6F4F2" Stroke="#0A8491" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="Hello everyone! 👋" />
+                    </Border.GestureRecognizers>
+                    <Label Text="👋 Hello everyone!" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
+                </Border>
+
+                <Border BackgroundColor="#DCFCE7" Stroke="#16A34A" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="I am safe at my current location. 📍" />
+                    </Border.GestureRecognizers>
+                    <Label Text="📍 I'm safe" TextColor="#15803D" FontSize="11" FontAttributes="Bold" />
+                </Border>
+
+                <Border BackgroundColor="#FEE2E2" Stroke="#EF4444" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="EMERGENCY: I need assistance! ⚠️" />
+                    </Border.GestureRecognizers>
+                    <Label Text="⚠️ Need Help!" TextColor="#B91C1C" FontSize="11" FontAttributes="Bold" />
+                </Border>
+
+                <Border BackgroundColor="#FEF3C7" Stroke="#F59E0B" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="Heading to the evacuation center now. 🏃‍♂️" />
+                    </Border.GestureRecognizers>
+                    <Label Text="🏃‍♂️ Going to Evac" TextColor="#B45309" FontSize="11" FontAttributes="Bold" />
+                </Border>
+
+                <Border BackgroundColor="#EFF6FF" Stroke="#3B82F6" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="My phone battery is running low. 🔋" />
+                    </Border.GestureRecognizers>
+                    <Label Text="🔋 Low Battery" TextColor="#1D4ED8" FontSize="11" FontAttributes="Bold" />
+                </Border>
+
+                <Border BackgroundColor="#F3E8FF" Stroke="#A855F7" StrokeThickness="1" Padding="10,6" VerticalOptions="Center">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="14" />
+                    </Border.StrokeShape>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickChatCommand}" CommandParameter="Please update me on your status! 💬" />
+                    </Border.GestureRecognizers>
+                    <Label Text="💬 What's your status?" TextColor="#7E22CE" FontSize="11" FontAttributes="Bold" />
+                </Border>
+            </HorizontalStackLayout>
+        </ScrollView>
+
         <!-- Bottom Chat Input Bar -->
-        <Border Grid.Row="3" BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" Padding="8,8" Shadow="{Shadow Brush=Black, Offset='0,-2', Radius=6, Opacity=0.06}">
+        <Border Grid.Row="4" BackgroundColor="White" Stroke="#E2E8F0" StrokeThickness="1" Padding="8,8" Shadow="{Shadow Brush=Black, Offset='0,-2', Radius=6, Opacity=0.06}">
             <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="8" VerticalOptions="Center">
                 <!-- Photo Upload Button -->
                 <Border Grid.Column="0" BackgroundColor="#F1F5F9" StrokeThickness="0" WidthRequest="38" HeightRequest="38" VerticalOptions="Center">

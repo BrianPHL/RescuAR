@@ -22,6 +22,8 @@ public class CircleMember
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public bool HasPhoneNumber => !string.IsNullOrWhiteSpace(PhoneNumber);
     public string Initials { get; set; } = string.Empty;
     public string StatusText { get; set; } = "Online";
     public string LocationSubtitle { get; set; } = "Near Current Location";
@@ -30,6 +32,7 @@ public class CircleMember
     public string BatteryIcon { get; set; } = "🔋";
     public Microsoft.Maui.Graphics.Color BatteryColor { get; set; } = Microsoft.Maui.Graphics.Color.FromArgb("#16A34A");
     public bool HasBattery => true;
+    public bool IsCharging { get; set; } = false;
     public Microsoft.Maui.Graphics.Color ColorTheme { get; set; } = Microsoft.Maui.Graphics.Colors.Teal;
     public double Latitude { get; set; }
     public double Longitude { get; set; }
@@ -39,7 +42,7 @@ public class CircleMember
     public string AvatarImageSource { get; set; } = string.Empty;
     public bool IsMe { get; set; } = false;
     public bool IsSafe { get; set; } = true;
-    public string MemberStatusLine => $"{SinceTimeText} • {BatteryIcon} {BatteryText}";
+    public string MemberStatusLine => $"{SinceTimeText} • {BatteryText}";
 }
 
 public partial class SafetyCircleViewModel : ObservableObject
@@ -434,17 +437,20 @@ public partial class SafetyCircleViewModel : ObservableObject
                 myInitials = myWords[0].Substring(0, 2).ToUpper();
             }
 
+            var myPhone = Preferences.Default.Get("UserPhone", Preferences.Default.Get("UserPhoneNumber", string.Empty));
             var meMember = new CircleMember
             {
                 Id = _safetyCircleService.GetCurrentUserId(),
                 Name = $"{myName} (You)",
+                PhoneNumber = myPhone,
                 Initials = myInitials,
                 StatusText = "Online",
                 LocationSubtitle = await GetEstimatedLocationSubtitleAsync(myLat, myLon),
                 SinceTimeText = $"Since {DateTime.Now:h:mm tt}",
                 BatteryText = $"{myBatteryPercent}%",
-                BatteryIcon = myIsCharging ? "⚡" : "🔋",
-                BatteryColor = myIsCharging ? Microsoft.Maui.Graphics.Color.FromArgb("#2563EB") : (myBatteryPercent <= 20 ? Microsoft.Maui.Graphics.Color.FromArgb("#EF4444") : Microsoft.Maui.Graphics.Color.FromArgb("#16A34A")),
+                BatteryIcon = "🔋",
+                BatteryColor = myIsCharging ? Microsoft.Maui.Graphics.Color.FromArgb("#2563EB") : (myBatteryPercent <= 20 ? Microsoft.Maui.Graphics.Color.FromArgb("#EF4444") : (myBatteryPercent <= 50 ? Microsoft.Maui.Graphics.Color.FromArgb("#F59E0B") : Microsoft.Maui.Graphics.Color.FromArgb("#16A34A"))),
+                IsCharging = myIsCharging,
                 Latitude = myLat,
                 Longitude = myLon,
                 ColorTheme = Microsoft.Maui.Graphics.Color.FromArgb("#10B981"),
@@ -485,8 +491,8 @@ public partial class SafetyCircleViewModel : ObservableObject
                     string rawStatus = userLoc?.StatusText ?? "Online";
                     string displayStatus = "Online";
                     string batteryText = "100%";
-                    string batteryIcon = "🔋";
                     var batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#16A34A");
+                    bool isCharging = false;
 
                     if (rawStatus.Contains("|"))
                     {
@@ -495,7 +501,8 @@ public partial class SafetyCircleViewModel : ObservableObject
                         batteryText = parts[1];
                         if (batteryText.Contains("⚡"))
                         {
-                            batteryIcon = "⚡";
+                            isCharging = true;
+                            batteryText = batteryText.Replace("⚡", "").Trim();
                             batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#2563EB");
                         }
                         else
@@ -541,13 +548,15 @@ public partial class SafetyCircleViewModel : ObservableObject
                     {
                         Id = member.Id,
                         Name = memberName,
+                        PhoneNumber = member.PhoneNumber ?? string.Empty,
                         Initials = initials,
                         StatusText = displayStatus,
                         LocationSubtitle = locationSubtitle,
                         SinceTimeText = sinceTime,
-                        BatteryText = batteryText,
-                        BatteryIcon = batteryIcon,
+                        BatteryText = batteryText.EndsWith("%") ? batteryText : $"{batteryText}%",
+                        BatteryIcon = "🔋",
                         BatteryColor = batteryColor,
+                        IsCharging = isCharging,
                         Latitude = memberLat,
                         Longitude = memberLon,
                         ColorTheme = GetColorForUser(member.Id),
@@ -956,4 +965,39 @@ public partial class SafetyCircleViewModel : ObservableObject
             await Shell.Current.GoToAsync("NotificationsPage");
         }
     }
+
+    [RelayCommand]
+    private async Task CallMemberAsync(CircleMember? member)
+    {
+        if (member == null) return;
+        var phone = member.PhoneNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.DisplayAlert("No Phone Number", $"{member.Name} has not linked a phone number to their account yet.", "OK");
+            }
+            return;
+        }
+
+        try
+        {
+            if (PhoneDialer.Default.IsSupported)
+            {
+                PhoneDialer.Default.Open(phone);
+            }
+            else
+            {
+                await Launcher.Default.OpenAsync(new Uri($"tel:{phone}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.DisplayAlert("Call Failed", $"Could not launch dialer: {ex.Message}", "OK");
+            }
+        }
+    }
 }
+
