@@ -13,6 +13,7 @@ import HazardExposure from './components/HazardExposure';
 // Community & Reports Components
 import ReportsModeration from './components/ReportsModeration';
 import UserManagement from './components/UserManagement';
+import SmsOutboundConsole from './components/SmsOutboundConsole';
 
 // Content & Management Components
 import Advisories from './components/Advisories';
@@ -106,7 +107,7 @@ export default function App({ session }) {
       case 'community-residents':
         return <div style={{ padding: '20px' }}>Residents Directory View (Placeholder)</div>;
       case 'community-sms-parser':
-        return <div style={{ padding: '20px' }}>SMS Parser Console View (Placeholder)</div>;
+        return <SmsOutboundConsole />;
       case 'community-user-management':
         return <UserManagement />;
       case 'content-advisories':
