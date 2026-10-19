@@ -118,6 +118,9 @@ public class CommunityReportService
                         Reports.Add(item);
                     }
 
+                    // Enrich usernames for loaded comments
+                    _ = EnrichCommentsUsernamesAsync(fetchedList.SelectMany(r => r.Comments));
+
                     return fetchedList;
                 }
             }
@@ -245,15 +248,20 @@ public class CommunityReportService
         }
     }
 
-    public async Task AddCommentAsync(string reportId, string content, string authorName)
+    public async Task AddCommentAsync(string reportId, string content, string authorName, string userId = "")
     {
         var report = Reports.FirstOrDefault(r => r.Id == reportId);
         if (report != null && report.AllowComments)
         {
+            var cleanName = string.IsNullOrWhiteSpace(authorName) || string.Equals(authorName.Trim(), "User", StringComparison.OrdinalIgnoreCase)
+                ? "Resident"
+                : authorName.Trim();
+
             var comment = new CommunityComment
             {
                 ReportId = reportId,
-                AuthorName = string.IsNullOrWhiteSpace(authorName) ? "User" : authorName,
+                UserId = userId ?? string.Empty,
+                AuthorName = cleanName,
                 Content = content,
                 PostedAt = DateTime.Now
             };
@@ -271,6 +279,68 @@ public class CommunityReportService
                 {
                     System.Diagnostics.Debug.WriteLine($"Supabase AddComment Error: {ex.Message}");
                 }
+            }
+        }
+    }
+
+    public async Task EnrichCommentsUsernamesAsync(IEnumerable<CommunityComment>? comments)
+    {
+        if (comments == null) return;
+        var commentList = comments.ToList();
+        if (commentList.Count == 0) return;
+
+        var userIdsToFetch = commentList
+            .Where(c => !string.IsNullOrWhiteSpace(c.UserId) || (Guid.TryParse(c.AuthorName, out _)))
+            .Select(c => !string.IsNullOrWhiteSpace(c.UserId) ? c.UserId : c.AuthorName)
+            .Distinct()
+            .ToList();
+
+        if (userIdsToFetch.Count > 0)
+        {
+            try
+            {
+                var client = await GetClientAsync();
+                if (client != null)
+                {
+                    var userResp = await client.From<User>()
+                        .Filter("id", Supabase.Postgrest.Constants.Operator.In, userIdsToFetch)
+                        .Get();
+
+                    if (userResp?.Models != null && userResp.Models.Count > 0)
+                    {
+                        var userMap = userResp.Models.ToDictionary(u => u.Id, u =>
+                        {
+                            if (!string.IsNullOrWhiteSpace(u.Username)) return u.Username.Trim();
+                            string full = $"{u.FirstName} {u.LastName}".Trim();
+                            if (!string.IsNullOrWhiteSpace(full)) return full;
+                            return "Resident";
+                        });
+
+                        foreach (var c in commentList)
+                        {
+                            string uid = !string.IsNullOrWhiteSpace(c.UserId) ? c.UserId : c.AuthorName;
+                            if (!string.IsNullOrWhiteSpace(uid) && userMap.TryGetValue(uid, out var resolvedName))
+                            {
+                                c.AuthorName = resolvedName;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error enriching comment usernames: {ex.Message}");
+            }
+        }
+
+        // Apply fallback if author name is missing, placeholder "User", or unresolved GUID
+        foreach (var c in commentList)
+        {
+            if (string.IsNullOrWhiteSpace(c.AuthorName) 
+                || string.Equals(c.AuthorName.Trim(), "User", StringComparison.OrdinalIgnoreCase)
+                || Guid.TryParse(c.AuthorName.Trim(), out _))
+            {
+                c.AuthorName = "Resident";
             }
         }
     }
