@@ -1,0 +1,33 @@
+{
+  "event_id": "mcdrrmo_falcon_2011",
+  "event_name": "Typhoon Falcon — Marikina 2011",
+  "event_date": "2011-06-24",
+  "event_date_range": "2011-06-24/2011-06-25",
+  "role": "reference_only",
+  "event_status": "source_ready_georeference_pending",
+  "calibration_eligible": false,
+  "map_type": "depth_class_map",
+  "source_agency_attribution": "Marikina City Government map (provided through MCDRRMO contact); methodology to verify",
+  "source_filename": "FALCON.jpg",
+  "source_map": "source_map.jpg",
+  "source_sha256": "3e875258d03ccce410254cb1222038e0265473ef92809616985235431448f8a2",
+  "image_dimensions_pixels": [
+    7200,
+    9897
+  ],
+  "priority": "high",
+  "georeference_status": "not_georeferenced",
+  "observed_geometry_status": "not_available",
+  "observation_domain_status": "not_available",
+  "source_is_field_observed": null,
+  "manual_qc_approval": false,
+  "limitations": [
+    "Multi-colour flood-level classes. Legend categories are heterogeneous; do not map colours to standardized LiPAD classes without source verification.",
+    "Map depicts large part of city; observed coverage unknown.",
+    "Raster image is not a georeferenced flood polygon and has no native GIS CRS.",
+    "Do not treat uncoloured areas as verified dry without independent coverage documentation.",
+    "Never trace these references using LiPAD hazard predictions.",
+    "Do not use this event to calibrate scenario rules unless a separately justified historical trigger state and calibration role exist.",
+    "Do not use modern demographic estimates to claim historical affected-person validation."
+  ]
+}

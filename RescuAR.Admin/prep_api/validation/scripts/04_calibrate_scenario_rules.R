@@ -457,8 +457,27 @@ registry_status <- events |>
 registry_status_path <- file.path(calibration_dir, "event_registry_status.csv")
 write.csv(registry_status, registry_status_path, row.names = FALSE)
 
-ready_events <- events[observed_geometry_exists, , drop = FALSE]
-pending_events <- events[!observed_geometry_exists, , drop = FALSE]
+# Do not evaluate newly attached, unapproved candidate geometry as ground truth.
+# Existing ready events (e.g. Ulysses) remain unchanged.
+valid_ready_status <- trimws(tolower(as.character(events$event_status))) == "ready"
+valid_ready_status[is.na(valid_ready_status)] <- FALSE
+source_only_mcdrrmo <- grepl("^mcdrrmo_", as.character(events$event_id))
+# MCDRRMO references must also have passed 08's QC promotion (sidecar present).
+mcdrrmo_qc_ok <- vapply(seq_len(nrow(events)), function(i) {
+  if (!source_only_mcdrrmo[i]) return(TRUE)
+  cert <- file.path(validation_dir, "events", events$event_id[i], "approved_reference_qc.json")
+  if (!file.exists(cert)) return(FALSE)
+  qc <- tryCatch(jsonlite::fromJSON(cert), error = function(e) NULL)
+  if (is.null(qc)) return(FALSE)
+  isTRUE(qc$accepted) && identical(as.character(qc$event_id), as.character(events$event_id[i]))
+}, logical(1))
+ready_for_evaluation <- observed_geometry_exists & valid_ready_status & mcdrrmo_qc_ok
+registry_status$evaluation_status <- ifelse(
+  ready_for_evaluation, "ready_for_spatial_evaluation", "source_registered_qc_or_geometry_pending"
+)
+write.csv(registry_status, registry_status_path, row.names = FALSE)
+ready_events <- events[ready_for_evaluation, , drop = FALSE]
+pending_events <- events[!ready_for_evaluation, , drop = FALSE]
 
 if (nrow(pending_events) > 0) {
   cat(

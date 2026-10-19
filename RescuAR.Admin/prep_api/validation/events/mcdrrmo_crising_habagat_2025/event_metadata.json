@@ -1,0 +1,33 @@
+{
+  "event_id": "mcdrrmo_crising_habagat_2025",
+  "event_name": "Crising–Habagat — Marikina 2025",
+  "event_date": "2025-07-21",
+  "event_date_range": "2025-07-21",
+  "role": "reference_only",
+  "event_status": "source_ready_georeference_pending",
+  "calibration_eligible": false,
+  "map_type": "flood_level_map",
+  "source_agency_attribution": "Marikina City Government map (provided through MCDRRMO contact); methodology to verify",
+  "source_filename": "CRISING HABAGAT MAP 072225.PNG",
+  "source_map": "source_map.png",
+  "source_sha256": "f251f98e8c705797f9535143eb1f80e3c35e1b62f17123190a607bd4190767c0",
+  "image_dimensions_pixels": [
+    566,
+    792
+  ],
+  "priority": "medium",
+  "georeference_status": "not_georeferenced",
+  "observed_geometry_status": "not_available",
+  "observation_domain_status": "not_available",
+  "source_is_field_observed": null,
+  "manual_qc_approval": false,
+  "limitations": [
+    "Very small raster; flood categories visible but difficult to trace precisely. Request original GIS or higher-resolution version.",
+    "City map, but full observation-domain not verified.",
+    "Raster image is not a georeferenced flood polygon and has no native GIS CRS.",
+    "Do not treat uncoloured areas as verified dry without independent coverage documentation.",
+    "Never trace these references using LiPAD hazard predictions.",
+    "Do not use this event to calibrate scenario rules unless a separately justified historical trigger state and calibration role exist.",
+    "Do not use modern demographic estimates to claim historical affected-person validation."
+  ]
+}

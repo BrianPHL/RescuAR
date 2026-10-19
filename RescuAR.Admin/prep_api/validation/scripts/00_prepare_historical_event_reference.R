@@ -42,6 +42,10 @@ suppressPackageStartupMessages({
 # Change to "monsoon_2013_tumana" for the second Espina event,
 # or set PREP_EVENT_ID before sourcing the script.
 EVENT_ID <- trimws(Sys.getenv("PREP_EVENT_ID", "ondoy_2009_tumana"))
+if (startsWith(EVENT_ID, "mcdrrmo_")) {
+  stop("MCDRRMO citywide maps must not use Tumana-only Script 00. " ,
+       "Use GIS georeferencing with independent checkpoints, then Script 08 to register verified polygons.")
+}
 
 # Georeferencing controls.
 # At least 6 well-distributed points are recommended; 8-12 is preferable.

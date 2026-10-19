@@ -1,0 +1,33 @@
+{
+  "event_id": "mcdrrmo_carina_2024",
+  "event_name": "Enhanced Southwest Monsoon / Carina — Marikina 2024",
+  "event_date": "2024-07-24",
+  "event_date_range": "2024-07-24",
+  "role": "reference_only",
+  "event_status": "source_ready_georeference_pending",
+  "calibration_eligible": false,
+  "map_type": "depth_class_map",
+  "source_agency_attribution": "Marikina City Government map (provided through MCDRRMO contact); methodology to verify",
+  "source_filename": "Carina Map.jfif",
+  "source_map": "source_map.jfif",
+  "source_sha256": "053a4990084f7a8d39cdd0952614269ff5689862a28edd20957c4788af87b556",
+  "image_dimensions_pixels": [
+    7200,
+    9900
+  ],
+  "priority": "high",
+  "georeference_status": "not_georeferenced",
+  "observed_geometry_status": "not_available",
+  "observation_domain_status": "not_available",
+  "source_is_field_observed": null,
+  "manual_qc_approval": false,
+  "limitations": [
+    "Map legend shows inundation depth bins approximately 0.1 to above 3.51 metres; confirm surveyed vs modelled method with issuing agency.",
+    "Map depicts Marikina city with coloured areas; independent surveyed coverage unknown.",
+    "Raster image is not a georeferenced flood polygon and has no native GIS CRS.",
+    "Do not treat uncoloured areas as verified dry without independent coverage documentation.",
+    "Never trace these references using LiPAD hazard predictions.",
+    "Do not use this event to calibrate scenario rules unless a separately justified historical trigger state and calibration role exist.",
+    "Do not use modern demographic estimates to claim historical affected-person validation."
+  ]
+}
