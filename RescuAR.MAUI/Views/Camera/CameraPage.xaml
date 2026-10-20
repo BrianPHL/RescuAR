@@ -19,7 +19,7 @@
         All ordinary interface glyphs in this page now use Lucide-compatible
         SVG assets rather than Unicode symbols or hand-drawn substitutes.
     -->
-    <Grid RowDefinitions="60,*">
+    <Grid RowDefinitions="56,Auto,*">
 
         <!-- ============================================================= -->
         <!-- TOP APP BAR                                                   -->
@@ -109,11 +109,92 @@
         </Grid>
 
         <!-- ============================================================= -->
+        <!-- NAVIGATION SUB-TABS SEGMENT (AR / 2D MAP / FLOOD DEPTH)       -->
+        <!-- ============================================================= -->
+        <Grid
+            Grid.Row="1"
+            ZIndex="201"
+            BackgroundColor="#FFFFFF"
+            Padding="12,4,12,6">
+            <Border
+                BackgroundColor="#F1F5F9"
+                Stroke="#E2E8F0"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 10"
+                Padding="3">
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                    <!-- Tab 1: AR Evacuation Guidance -->
+                    <Border
+                        x:Name="subTabArButton"
+                        Grid.Column="0"
+                        BackgroundColor="#0A8491"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 7"
+                        Padding="4,6">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnArSubTabClicked" />
+                        </Border.GestureRecognizers>
+                        <Label
+                            x:Name="subTabArLabel"
+                            Text="AR Route"
+                            TextColor="#FFFFFF"
+                            FontSize="11.5"
+                            FontAttributes="Bold"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                    </Border>
+
+                    <!-- Tab 2: 2D Map Guidance -->
+                    <Border
+                        x:Name="subTabMapButton"
+                        Grid.Column="1"
+                        BackgroundColor="Transparent"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 7"
+                        Padding="4,6">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnMapSubTabClicked" />
+                        </Border.GestureRecognizers>
+                        <Label
+                            x:Name="subTabMapLabel"
+                            Text="2D Map"
+                            TextColor="#64748B"
+                            FontSize="11.5"
+                            FontAttributes="Bold"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                    </Border>
+
+                    <!-- Tab 3: Flood Depth Visualization -->
+                    <Border
+                        x:Name="subTabFloodButton"
+                        Grid.Column="2"
+                        BackgroundColor="Transparent"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 7"
+                        Padding="4,6">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnFloodSubTabClicked" />
+                        </Border.GestureRecognizers>
+                        <Label
+                            x:Name="subTabFloodLabel"
+                            Text="Flood Depth"
+                            TextColor="#64748B"
+                            FontSize="11.5"
+                            FontAttributes="Bold"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ============================================================= -->
         <!-- CAMERA / AR WORKSPACE                                         -->
         <!-- ============================================================= -->
         <Grid
             x:Name="cameraWorkspace"
-            Grid.Row="1"
+            Grid.Row="2"
             BackgroundColor="Black">
 
             <evergine:EvergineView
@@ -144,6 +225,46 @@
                                    HorizontalOptions="FillAndExpand" 
                                    VerticalOptions="FillAndExpand" />
             </Grid>
+
+            <!-- 2D Map Route Overview Bar (Google Maps Style) -->
+            <Border
+                x:Name="mapRouteSummaryPanel"
+                IsVisible="False"
+                ZIndex="25"
+                Margin="12,12,12,0"
+                Padding="12,10"
+                VerticalOptions="Start"
+                BackgroundColor="#FFFFFF"
+                Stroke="#CBD5E1"
+                StrokeThickness="1"
+                StrokeShape="RoundRectangle 12">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.12" />
+                </Border.Shadow>
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                    <!-- From: My Location -->
+                    <Grid ColumnDefinitions="20,*" ColumnSpacing="8" VerticalOptions="Center">
+                        <Ellipse WidthRequest="10" HeightRequest="10" Fill="#0A8491" VerticalOptions="Center" HorizontalOptions="Center" />
+                        <Label Grid.Column="1" Text="From: Your Location" TextColor="#475569" FontSize="11" FontAttributes="Bold" />
+                    </Grid>
+                    <!-- To: Destination Evacuation Center -->
+                    <Grid Grid.Row="1" ColumnDefinitions="20,*" ColumnSpacing="8" VerticalOptions="Center">
+                        <Path Data="M12,2A8,8 0 0,0 4,10C4,15.25 12,22 12,22C12,22 20,15.25 20,10A8,8 0 0,0 12,2M12,6A4,4 0 0,1 16,10A4,4 0 0,1 12,14A4,4 0 0,1 8,10A4,4 0 0,1 12,6Z"
+                              Fill="#DC2626" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" HorizontalOptions="Center" />
+                        <Label x:Name="mapRouteDestinationNameLabel" Grid.Column="1" Text="To: Malanday Elementary School" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                    </Grid>
+                    <!-- Actions: Journey Buttons -->
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0" VerticalOptions="Center">
+                        <Label x:Name="mapRouteStatsLabel" Grid.Column="0" Text="877 m • ~11 mins walk" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                        
+                        <Button Grid.Column="1" Text="Directions" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="10,0"
+                                Clicked="OnRouteDirectionsButtonClicked" />
+
+                        <Button Grid.Column="2" Text="Start Journey" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="12,0"
+                                Clicked="OnStartJourneyClicked" />
+                    </Grid>
+                </Grid>
+            </Border>
 
             <!-- ========================================================= -->
             <!-- AR CAMERA STATUS + TURN GUIDANCE                          -->

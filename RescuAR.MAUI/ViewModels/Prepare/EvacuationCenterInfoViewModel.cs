@@ -839,11 +839,45 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task NavigateToMapAsync()
+    private async Task NavigateToMapAsync(EvacuationCenterItem? center = null)
     {
-        if (Shell.Current != null)
+        await NavigateTo2DMapAsync(center);
+    }
+
+    [RelayCommand]
+    private async Task Start2DNavigationAsync()
+    {
+        var center = SelectedCenter ?? EvacuationCenters.FirstOrDefault();
+        if (center != null)
         {
-            await Shell.Current.GoToAsync("//Map");
+            CloseDetailsPopup();
+            await NavigateTo2DMapAsync(center);
+        }
+    }
+
+    [RelayCommand]
+    private async Task NavigateTo2DMapAsync(EvacuationCenterItem? center = null)
+    {
+        try
+        {
+            var target = center ?? SelectedCenter ?? EvacuationCenters.FirstOrDefault();
+            if (target != null && target.Latitude != 0 && target.Longitude != 0)
+            {
+                RescuAR.Navigation.State.NavigationDestinationBridge.Set(
+                    target.Name,
+                    new RescuAR.Navigation.Models.GeoCoordinate(target.Latitude, target.Longitude));
+                RescuAR.Navigation.State.NavigationDestinationBridge.Prefer2DMapGuidance = true;
+            }
+
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("//Camera");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"NavigateTo2DMap error: {ex.Message}");
         }
     }
 }
+

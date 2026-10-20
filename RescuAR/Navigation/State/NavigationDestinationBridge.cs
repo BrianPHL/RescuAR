@@ -25,6 +25,8 @@ public static class NavigationDestinationBridge
     private static DestinationSnapshot current =
         DestinationSnapshot.Unavailable;
 
+    public static bool Prefer2DMapGuidance { get; set; }
+
     public static event EventHandler? DestinationChanged;
 
     public static DestinationSnapshot Current

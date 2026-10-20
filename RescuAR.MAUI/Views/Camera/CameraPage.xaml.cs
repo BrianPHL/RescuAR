@@ -782,6 +782,18 @@ namespace RescuAR.App.Views.Camera
 
                     CloseFloodSimulationSheet();
 
+                    if (subTabArButton != null && subTabMapButton != null && subTabFloodButton != null)
+                    {
+                        subTabArButton.BackgroundColor = arCameraMode ? Color.FromArgb("#0A8491") : Colors.Transparent;
+                        subTabArLabel.TextColor = arCameraMode ? Colors.White : Color.FromArgb("#64748B");
+
+                        subTabMapButton.BackgroundColor = mapMode ? Color.FromArgb("#0A8491") : Colors.Transparent;
+                        subTabMapLabel.TextColor = mapMode ? Colors.White : Color.FromArgb("#64748B");
+
+                        subTabFloodButton.BackgroundColor = floodMode ? Color.FromArgb("#0A8491") : Colors.Transparent;
+                        subTabFloodLabel.TextColor = floodMode ? Colors.White : Color.FromArgb("#64748B");
+                    }
+
                     arGuidanceSelectedIcon.IsVisible =
                         arCameraMode;
 
@@ -821,21 +833,42 @@ namespace RescuAR.App.Views.Camera
                             false;
                     }
 
-                    if (!arCameraMode)
+                    if (!arCameraMode && !mapMode)
                     {
                         turnGuidancePanel.IsVisible =
                             false;
+                        if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
                     }
                     else if (!emergencyAdvisoryVisible &&
                              !safeZoneConfirmed &&
                              !cameraPipelineTerminalFailureVisible &&
-                             lastTurnGuidance.IsAvailable)
+                             (activeRoute != null || lastTurnGuidance.IsAvailable))
                     {
-                        ApplyPrototypeTurnGuidance(
-                            lastTurnGuidance);
+                        if (lastTurnGuidance.IsAvailable)
+                        {
+                            ApplyPrototypeTurnGuidance(
+                                lastTurnGuidance);
+                        }
 
                         turnGuidancePanel.IsVisible =
                             true;
+                    }
+                    else
+                    {
+                        turnGuidancePanel.IsVisible =
+                            false;
+                    }
+
+                    if (mapMode && activeDestinationCoordinate.HasValue && activeRoute != null && mapRouteSummaryPanel != null)
+                    {
+                        mapRouteSummaryPanel.IsVisible = true;
+                        if (mapRouteDestinationNameLabel != null)
+                            mapRouteDestinationNameLabel.Text = $"To: {activeDestinationName}";
+                        if (mapRouteStatsLabel != null)
+                        {
+                            int walkMins = (int)Math.Max(1, Math.Round(activeRoute.TotalDistanceMeters / 80.0));
+                            mapRouteStatsLabel.Text = $"{activeRoute.TotalDistanceMeters:F0} m • ~{walkMins} mins walk";
+                        }
                     }
 
                     RefreshEmergencyStatusBanner();
@@ -932,12 +965,10 @@ namespace RescuAR.App.Views.Camera
                 NavigationDestinationBridge.Current.IsAvailable;
 
             endNavigationButton.IsVisible =
-                arCameraMode &&
                 hasDestination &&
                 !safeZoneConfirmed;
 
             exploreSafeZonesButton.IsVisible =
-                arCameraMode &&
                 !hasDestination &&
                 !safeZoneConfirmed;
 
@@ -2640,6 +2671,68 @@ namespace RescuAR.App.Views.Camera
                 "Flood Depth Visualization selected from Navigation & Awareness");
         }
 
+        private void OnArSubTabClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.ArCamera,
+                "AR Route sub-tab tapped");
+        }
+
+        private void OnMapSubTabClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.Map2D,
+                "2D Map sub-tab tapped");
+        }
+
+        private void OnFloodSubTabClicked(
+            object? sender,
+            TappedEventArgs e)
+        {
+            ApplyCameraModuleView(
+                CameraModuleViewMode.FloodDepth,
+                "Flood Depth sub-tab tapped");
+        }
+
+        private void OnRouteDirectionsButtonClicked(
+            object? sender,
+            EventArgs e)
+        {
+            OpenRouteDirectionsSheet();
+        }
+
+        private void OnStartJourneyClicked(
+            object? sender,
+            EventArgs e)
+        {
+            if (activeRoute == null && NavigationDestinationBridge.Current.IsAvailable)
+            {
+                var destSnap = NavigationDestinationBridge.Current;
+                _ = StartGuidanceToEvacuationCenterAsync(new RescuAR.App.Models.EvacuationCenter
+                {
+                    Name = destSnap.Name,
+                    Latitude = destSnap.Coordinate.Latitude,
+                    Longitude = destSnap.Coordinate.Longitude
+                });
+                return;
+            }
+
+            if (activeRoute != null && activeRoute.Points != null && activeRoute.Points.Count >= 2)
+            {
+                GeoCoordinate origin = latestGpsCoordinateForRouting ?? activeRoute.Points[0].Coordinate;
+                UpdateCamera2DUserLocation(origin);
+
+                if (turnGuidancePanel != null) turnGuidancePanel.IsVisible = true;
+
+                string firstStep = turnInstructionLabel?.Text ?? "Proceed along route";
+                _ = SpeakTurnInstructionAsync(firstStep);
+            }
+        }
+
         private async void OnExploreSafeZonesClicked(
             object? sender,
             EventArgs e)
@@ -2784,6 +2877,18 @@ namespace RescuAR.App.Views.Camera
                     _ = SpeakTurnInstructionAsync(firstStep);
                 }
 
+                if (mapRouteSummaryPanel != null)
+                {
+                    mapRouteSummaryPanel.IsVisible = true;
+                    if (mapRouteDestinationNameLabel != null)
+                        mapRouteDestinationNameLabel.Text = $"To: {center.Name}";
+                    if (mapRouteStatsLabel != null)
+                    {
+                        int walkMins = (int)Math.Max(1, Math.Round(route.TotalDistanceMeters / 80.0));
+                        mapRouteStatsLabel.Text = $"{route.TotalDistanceMeters:F0} m • ~{walkMins} mins walk";
+                    }
+                }
+
                 if (endNavigationButton != null)
                 {
                     endNavigationButton.IsVisible = true;
@@ -2885,6 +2990,7 @@ namespace RescuAR.App.Views.Camera
             activeDestinationName = string.Empty;
 
             if (turnGuidancePanel != null) turnGuidancePanel.IsVisible = false;
+            if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
             if (routeDirectionsSheet != null) routeDirectionsSheet.IsVisible = false;
             if (endNavigationButton != null) endNavigationButton.IsVisible = false;
             try { _ttsCancellation?.Cancel(); } catch { }
@@ -2967,9 +3073,30 @@ namespace RescuAR.App.Views.Camera
                 diagnosticTimer.Start();
             }
 
-            ApplyCameraModuleView(
-                currentCameraModuleView,
-                "Camera tab entered");
+            if (NavigationDestinationBridge.Prefer2DMapGuidance)
+            {
+                NavigationDestinationBridge.Prefer2DMapGuidance = false;
+                ApplyCameraModuleView(
+                    CameraModuleViewMode.Map2D,
+                    "2D Map Guidance preferred");
+
+                if (NavigationDestinationBridge.Current.IsAvailable)
+                {
+                    var destSnap = NavigationDestinationBridge.Current;
+                    _ = StartGuidanceToEvacuationCenterAsync(new RescuAR.App.Models.EvacuationCenter
+                    {
+                        Name = destSnap.Name,
+                        Latitude = destSnap.Coordinate.Latitude,
+                        Longitude = destSnap.Coordinate.Longitude
+                    });
+                }
+            }
+            else
+            {
+                ApplyCameraModuleView(
+                    currentCameraModuleView,
+                    "Camera tab entered");
+            }
         }
 
         protected override void OnDisappearing()

@@ -277,6 +277,7 @@ public partial class DashboardViewModel : ObservableObject
     {
         LoadUserData();
         RefreshSirenState();
+        LoadQuickActions();
         await LoadWeatherDataAsync();
         await LoadRealtimeBentoBoxDataAsync();
     }
@@ -317,16 +318,101 @@ public partial class DashboardViewModel : ObservableObject
                 PopulateDefaultSolidQuickActions();
             }
 
-            var profiles = RescuAR.App.Services.Profile.UserProfileService.Instance;
-            var user = JsonConvert.DeserializeObject<Models.User>(profiles.GetLocal("User"));
-            if (user != null) profiles.SyncContacts(AllAvailableQuickActions, user);
+            // Sync Emergency Contacts from Profile / Preferences directly into Quick Actions
+            SyncEmergencyContactsFromPreferencesAndProfile();
+
             SyncEnabledQuickActions();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"LoadQuickActions error: {ex.Message}");
             PopulateDefaultSolidQuickActions();
+            SyncEmergencyContactsFromPreferencesAndProfile();
             SyncEnabledQuickActions();
+        }
+    }
+
+    private void SyncEmergencyContactsFromPreferencesAndProfile()
+    {
+        try
+        {
+            string c1Name = Preferences.Default.Get("EmergencyContact1Name", string.Empty);
+            string c1Phone = Preferences.Default.Get("EmergencyContact1Phone", string.Empty);
+
+            string c2Name = Preferences.Default.Get("EmergencyContact2Name", string.Empty);
+            string c2Phone = Preferences.Default.Get("EmergencyContact2Phone", string.Empty);
+
+            try
+            {
+                var profiles = RescuAR.App.Services.Profile.UserProfileService.Instance;
+                string userJson = profiles.GetLocal("User");
+                if (!string.IsNullOrWhiteSpace(userJson))
+                {
+                    var user = JsonConvert.DeserializeObject<Models.User>(userJson);
+                    if (user != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(c1Name) && !string.IsNullOrWhiteSpace(user.EmergencyContact1Name))
+                        {
+                            c1Name = user.EmergencyContact1Name;
+                            c1Phone = user.EmergencyContact1Phone ?? string.Empty;
+                        }
+                        if (string.IsNullOrWhiteSpace(c2Name) && !string.IsNullOrWhiteSpace(user.EmergencyContact2Name))
+                        {
+                            c2Name = user.EmergencyContact2Name;
+                            c2Phone = user.EmergencyContact2Phone ?? string.Empty;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            SyncSingleContact(1, c1Name, c1Phone);
+            SyncSingleContact(2, c2Name, c2Phone);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SyncEmergencyContacts error: {ex.Message}");
+        }
+    }
+
+    private void SyncSingleContact(int slot, string name, string phone)
+    {
+        var id = $"emergency_contact_{slot}";
+        var existing = AllAvailableQuickActions.FirstOrDefault(x => x.Id == id || (x.IsCustom && x.ActionType == "CustomContact" && string.Equals(x.PhoneNumber, phone, StringComparison.OrdinalIgnoreCase)));
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(phone))
+        {
+            if (existing != null)
+            {
+                AllAvailableQuickActions.Remove(existing);
+            }
+            return;
+        }
+
+        if (existing != null)
+        {
+            existing.Id = id;
+            existing.Title = name.Trim();
+            existing.PhoneNumber = phone.Trim();
+            existing.Subtitle = $"Emergency Contact: {phone.Trim()}";
+            existing.IsEnabled = true;
+            existing.IsCustom = true;
+            existing.ActionType = "CustomContact";
+            EnsureSolidVectorIcons(existing);
+        }
+        else
+        {
+            var item = new QuickActionItem
+            {
+                Id = id,
+                Title = name.Trim(),
+                PhoneNumber = phone.Trim(),
+                Subtitle = $"Emergency Contact: {phone.Trim()}",
+                ActionType = "CustomContact",
+                IsCustom = true,
+                IsEnabled = true
+            };
+            EnsureSolidVectorIcons(item);
+            AllAvailableQuickActions.Add(item);
         }
     }
 
