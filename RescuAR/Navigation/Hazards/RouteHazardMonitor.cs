@@ -23,7 +23,7 @@ public sealed class RouteHazardMonitor
     public readonly record struct RetryContext(RouteResult Route, string Snapshot,
         bool InternetAvailable, int CurrentSegment);
     public readonly record struct Assessment(RouteHazardGeometry.RouteHazardIntersection Unsafe,
-        RouteHazard? Escaping, RetryContext Retry);
+        RouteHazard? Escaping, RetryContext Retry, double SafePrefixEndProgressMeters = double.PositiveInfinity);
 
     public void Reset()
     {
@@ -51,10 +51,11 @@ public sealed class RouteHazardMonitor
     }
 
     public Assessment Assess(RouteResult route, double progress, IReadOnlyList<RouteHazard> hazards,
-        bool internetAvailable)
+        bool internetAvailable, string? snapshotFingerprint = null)
     {
         var best = RouteHazardGeometry.RouteHazardIntersection.None;
         RouteHazard? escaping = null;
+        double safePrefixEnd = double.PositiveInfinity;
         bool sameRoute = ReferenceEquals(currentRoute, route);
         bool hasPosition = RouteDisplayProgressPolicy.TryAtDistance(route, progress, out var position);
         foreach (var hazard in hazards)
@@ -67,10 +68,14 @@ public sealed class RouteHazardMonitor
                 : RouteHazardGeometry.FindFirstIntersection(route, progress, one);
             if (intersection.IsAffected && (!best.IsAffected || intersection.DistanceAheadMeters < best.DistanceAheadMeters))
                 best = intersection;
+            // An unchanged, validated escape hazard cannot have a later
+            // re-entry on this accepted route. All other exclusions clip at entry.
+            if (!acceptedEscape && intersection.IsAffected)
+                safePrefixEnd = Math.Min(safePrefixEnd, RouteHazardGeometry.FirstEntryProgress(route, progress, hazard));
             if (acceptedEscape && hasPosition && position.RoadCoordinate.DistanceTo(hazard.Coordinate) <= hazard.RadiusMeters)
                 escaping ??= hazard;
         }
-        var context = new RetryContext(route, Fingerprint(hazards), internetAvailable,
+        var context = new RetryContext(route, snapshotFingerprint ?? Fingerprint(hazards), internetAvailable,
             hasPosition ? position.SegmentIndex : -1);
         if (sameRoute)
         {
@@ -79,7 +84,7 @@ public sealed class RouteHazardMonitor
             if (!HasCurrentInputs(context)) unavailableSegments.Clear();
             latestContext = context;
         }
-        return new(best, escaping, context);
+        return new(best, escaping, context, safePrefixEnd);
     }
 
     private bool HasCurrentInputs(RetryContext context) =>

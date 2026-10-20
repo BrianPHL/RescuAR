@@ -34,6 +34,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance"))
     {
         ARRegistrationChecks.Run(Check);
+        NavigationStabilityChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);
@@ -52,6 +53,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     return;
 }
 ARRegistrationChecks.Run(Check);
+NavigationStabilityChecks.Run(Check);
 await ARHeadingRecoveryChecks.RunAsync(Check);
 await ARRecoveryContinuityChecks.RunAsync(Check);
 ARPlacementHazardChecks.Run(Check);

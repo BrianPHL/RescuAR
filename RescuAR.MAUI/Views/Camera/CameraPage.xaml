@@ -289,8 +289,8 @@
                 InputTransparent="True"
                 ZIndex="21"
                 Margin="8,48,8,0"
-                Padding="12,9"
-                MinimumHeightRequest="94"
+                Padding="10,7"
+                MinimumHeightRequest="64"
                 VerticalOptions="Start"
                 BackgroundColor="#E8FFFFFF"
                 Stroke="#D7DADD"
@@ -300,16 +300,16 @@
                     <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
                 </Border.Shadow>
                 <Grid
-                    ColumnDefinitions="46,*,22"
+                    ColumnDefinitions="32,*,0"
                     ColumnSpacing="8"
-                    RowSpacing="6">
+                    RowSpacing="4">
 
                     <Image
                         x:Name="turnDirectionIconLabel"
                         Grid.Row="0"
                         Source="lucide_arrow_up_teal.png"
-                        WidthRequest="38"
-                        HeightRequest="38"
+                        WidthRequest="28"
+                        HeightRequest="28"
                         HorizontalOptions="Center"
                         VerticalOptions="Center" />
 
@@ -322,7 +322,7 @@
                             x:Name="turnInstructionLabel"
                             Text="Proceed straight for 120 meters"
                             TextColor="#151515"
-                            FontSize="19"
+                            FontSize="16"
                             FontAttributes="Bold"
                             LineBreakMode="WordWrap"
                             LineHeight="1.0" />
@@ -330,13 +330,14 @@
                             x:Name="turnDistanceLabel"
                             Text="877 meters away from the nearest evacuation center"
                             TextColor="#3B3B3B"
-                            FontSize="11.5"
+                            FontSize="11"
                             LineBreakMode="WordWrap"
                             LineHeight="1.08" />
                     </VerticalStackLayout>
 
                     <Image
                         x:Name="turnChevronImage"
+                        IsVisible="False"
                         Grid.Row="0"
                         Grid.Column="2"
                         Source="lucide_chevron_down_black.png"
@@ -358,10 +359,10 @@
                 IsVisible="False"
                 InputTransparent="True"
                 ZIndex="23"
-                Margin="24,150,24,0"
-                Padding="12,8"
+                Margin="8,8,8,0"
+                Padding="10,7"
                 HorizontalOptions="Fill"
-                VerticalOptions="Center"
+                VerticalOptions="Start"
                 BackgroundColor="#E8FFFFFF"
                 Stroke="#70C9D2"
                 StrokeThickness="1"
@@ -484,12 +485,12 @@
             <VerticalStackLayout
                 x:Name="cameraZoomControls"
                 ZIndex="30"
-                Margin="18,0,0,12"
+                Margin="12,0,0,12"
                 Spacing="4"
                 HorizontalOptions="Start"
                 VerticalOptions="End">
                 <Border
-                    WidthRequest="58"
+                    WidthRequest="48"
                     HeightRequest="28"
                     BackgroundColor="#ECFFFFFF"
                     Stroke="#F4FFFFFF"
@@ -506,8 +507,8 @@
                 </Border>
 
                 <Border
-                    WidthRequest="58"
-                    HeightRequest="116"
+                    WidthRequest="48"
+                    HeightRequest="96"
                     BackgroundColor="#ECFFFFFF"
                     Stroke="#F4FFFFFF"
                     StrokeThickness="1"
@@ -547,8 +548,8 @@
 
                 <Border
                     x:Name="cameraFlashlightButton"
-                    WidthRequest="58"
-                    HeightRequest="58"
+                    WidthRequest="48"
+                    HeightRequest="48"
                     BackgroundColor="#ECFFFFFF"
                     Stroke="#F4FFFFFF"
                     StrokeThickness="1"
@@ -620,9 +621,9 @@
             <Border
                 x:Name="cameraModeSwitcherButton"
                 ZIndex="32"
-                WidthRequest="58"
-                HeightRequest="58"
-                Margin="0,0,18,12"
+                WidthRequest="48"
+                HeightRequest="48"
+                Margin="0,0,12,12"
                 HorizontalOptions="End"
                 VerticalOptions="End"
                 BackgroundColor="#ECFFFFFF"

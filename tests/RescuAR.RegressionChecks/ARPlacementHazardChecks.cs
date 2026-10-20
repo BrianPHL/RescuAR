@@ -60,6 +60,9 @@ internal static class ARPlacementHazardChecks
                 !RouteHazardGeometry.FindFirstIntersection(straight, 50, new[] { near }).IsAffected,
                 $"{algorithm}: a passed hazard on a long current segment no longer remains ahead");
             var ahead = RouteHazardGeometry.FindFirstIntersection(straight, 50, new[] { near, far });
+            check(Math.Abs(RouteHazardGeometry.FirstEntryProgress(straight, 0, near) - 10) < .1 &&
+                Math.Abs(RouteHazardGeometry.FirstEntryProgress(straight, 50, far) - 110) < .1,
+                $"{algorithm}: safe-prefix clipping uses circle entry rather than the twenty-metre closest point");
             check(ahead.Hazard == far && Math.Abs(ahead.DistanceAheadMeters - 70) < 0.1,
                 $"{algorithm}: clipping removes the passed hazard and retains the next exclusion");
             check(RouteHazardGeometry.FindFirstIntersection(straight, 20, new[] { near }).IsAffected,
@@ -71,6 +74,8 @@ internal static class ARPlacementHazardChecks
                 $"{algorithm}: normal route matching inside a hazard grants no escape exemption");
             monitor.AcceptRoute(straight, C(0), new[] { originHazard });
             var escape = monitor.Assess(straight, 0, new[] { originHazard }, true);
+            check(double.IsPositiveInfinity(escape.SafePrefixEndProgressMeters),
+                $"{algorithm}: a validated outward escape is not clipped as an unqualified new hazard");
             check(!escape.Unsafe.IsAffected && escape.Escaping == originHazard &&
                 !monitor.Assess(straight, 20, new[] { originHazard }, true).Unsafe.IsAffected,
                 $"{algorithm}: a validated outward escape is not repeatedly rejected by monitoring");

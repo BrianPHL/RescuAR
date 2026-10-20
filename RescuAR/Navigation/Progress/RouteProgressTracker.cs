@@ -229,7 +229,8 @@ public sealed class RouteProgressTracker
         GeoCoordinate gpsCoordinate,
         double? accuracyMeters,
         double? courseDegrees = null,
-        double? speedMetersPerSecond = null)
+        double? speedMetersPerSecond = null,
+        bool observeOnly = false)
     {
         if (!gpsCoordinate.IsValid)
         {
@@ -438,7 +439,7 @@ public sealed class RouteProgressTracker
                     best.CourseAlignmentErrorDegrees,
                     nearestRouteDistanceMeters);
 
-            StoreSnapshot(
+            if (!observeOnly) StoreSnapshot(
                 currentRoute,
                 offRoute);
 
@@ -517,6 +518,10 @@ public sealed class RouteProgressTracker
                 matchConfidence,
                 best.CourseAlignmentErrorDegrees,
                 IndependentCorridorScoreGap: best.MatchScoreGap);
+
+        // Independent recovery can inspect route identity without committing a
+        // held GPS innovation to progress, fusion, arrival or rerouting.
+        if (observeOnly) return accepted;
 
         lock (sync)
         {

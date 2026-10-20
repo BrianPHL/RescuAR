@@ -24,7 +24,7 @@ public partial class CameraPage
     }
 
     private void SetTurnGuidanceVisible(bool visible) =>
-        turnGuidancePanel.IsVisible = visible && !HasArrivalNoticePriority();
+        turnGuidancePanel.IsVisible = visible && !routeHazardBlocksGuidance && !HasArrivalNoticePriority();
 
     private bool CanOfferUserArrival()
     {

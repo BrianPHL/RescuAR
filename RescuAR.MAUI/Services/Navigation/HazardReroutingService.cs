@@ -67,6 +67,10 @@ public sealed class HazardReroutingService
     private DateTimeOffset? lastRemoteRefreshSuccessUtc;
 
     private int remoteRefreshInProgress;
+    private RouteHazard[]? fingerprintInput;
+    private string? cachedFingerprint;
+    private string? persistedFingerprint;
+    private DateTimeOffset lastCachePersistedAt;
 
     private string? lastLoggedHazardId;
 
@@ -97,7 +101,8 @@ public sealed class HazardReroutingService
         IReadOnlyList<RouteHazard> ActiveHazards,
         DateTimeOffset? LastRemoteRefreshSuccessUtc,
         RouteHazard? EscapingHazard = null,
-        RouteHazardMonitor.RetryContext RetryContext = default)
+        RouteHazardMonitor.RetryContext RetryContext = default,
+        double SafePrefixEndProgressMeters = double.PositiveInfinity)
     {
         public static HazardRouteAssessment Safe(
             IReadOnlyList<RouteHazard> hazards,
@@ -141,7 +146,15 @@ public sealed class HazardReroutingService
         }
 
         RouteHazardMonitor.Assessment monitored;
-        lock (sync) monitored = monitor.Assess(route, progressMeters, hazards, internetAvailable);
+        lock (sync)
+        {
+            if (!ReferenceEquals(fingerprintInput, hazards))
+            {
+                fingerprintInput = hazards;
+                cachedFingerprint = RouteHazardMonitor.Fingerprint(hazards);
+            }
+            monitored = monitor.Assess(route, progressMeters, hazards, internetAvailable, cachedFingerprint);
+        }
         RouteHazardGeometry.RouteHazardIntersection intersection = monitored.Unsafe;
 
         if (!intersection.IsAffected ||
@@ -210,7 +223,7 @@ public sealed class HazardReroutingService
             intersection.DistanceAheadMeters,
             intersection.MinimumDistanceMeters,
             hazards,
-            lastSuccess, monitored.Escaping, monitored.Retry);
+            lastSuccess, monitored.Escaping, monitored.Retry, monitored.SafePrefixEndProgressMeters);
     }
 
     public void AcceptRoute(RouteResult route, GeoCoordinate origin,
@@ -437,9 +450,15 @@ public sealed class HazardReroutingService
                     refreshedAtUtc;
             }
 
-            SaveVerifiedHazardCache(
-                hazards,
-                refreshedAtUtc);
+            string fingerprint = RouteHazardMonitor.Fingerprint(hazards);
+            // Retain the live safety refresh cadence. Only unchanged disk
+            // serialization/writes are coalesced to a one-minute heartbeat.
+            if (fingerprint != persistedFingerprint || refreshedAtUtc - lastCachePersistedAt >= TimeSpan.FromMinutes(1))
+            {
+                SaveVerifiedHazardCache(hazards, refreshedAtUtc);
+                persistedFingerprint = fingerprint;
+                lastCachePersistedAt = refreshedAtUtc;
+            }
 
             WriteDebug(
                 "Verified route-hazard snapshot refreshed: " +
@@ -599,7 +618,7 @@ public sealed class HazardReroutingService
 #if RESCUAR_DIAGNOSTICS
         if (developerHazards.Length == 0)
         {
-            return verifiedRemoteHazards.ToArray();
+            return verifiedRemoteHazards;
         }
 
         return verifiedRemoteHazards
@@ -611,7 +630,7 @@ public sealed class HazardReroutingService
             .Select(group => group.Last())
             .ToArray();
 #else
-        return verifiedRemoteHazards.ToArray();
+        return verifiedRemoteHazards;
 #endif
     }
 

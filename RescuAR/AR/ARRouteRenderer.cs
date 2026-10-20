@@ -682,6 +682,15 @@ public static class ARRouteRenderer
     public static void PublishVisibility(bool rootEnabled, Vector3 rootPosition,
         ARCameraPoseBridge.SpatialSnapshot frame)
     {
+        // This is telemetry, not the render/occlusion gate. Four samples per
+        // second satisfy its consumers' one-second freshness budget; context
+        // and visibility transitions still publish immediately.
+        long measuredAt = Environment.TickCount64;
+        var previous = Visibility;
+        if (previous.RouteVersion == appliedRouteVersion && previous.RootEnabled == rootEnabled &&
+            previous.Session == frame.Generation.SessionGeneration &&
+            previous.GroundReference == frame.Anchor.ReferenceGeneration &&
+            measuredAt >= previous.MeasuredAt && measuredAt - previous.MeasuredAt < 250) return;
         int prepared = 0, enabled = 0, depthHidden = 0, prefixHidden = 0;
         int inFront = 0, viewport = 0, enabledArrows = 0;
         int arrowDepthHidden = 0, arrowPrefixHidden = 0;
@@ -743,7 +752,7 @@ public static class ARRouteRenderer
             else if (!arrow.DepthOccluded) arrowPrefixHidden++;
         }
         lock (sync) visibility = new(appliedRouteVersion, frame.Generation.SessionGeneration,
-            frame.Anchor.ReferenceGeneration, Environment.TickCount64, rootEnabled,
+            frame.Anchor.ReferenceGeneration, measuredAt, rootEnabled,
             prepared, enabled, depthHidden, prefixHidden,
             inFront, viewport, enabledArrows, appliedPlacement,
             rootPosition.X, rootPosition.Z, frame.Pose.PositionX, frame.Pose.PositionZ,

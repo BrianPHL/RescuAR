@@ -115,7 +115,8 @@ public sealed class HeadingRevalidationPolicy
         long sessionGeneration = 0,
         long worldFrameGeneration = 0,
         long trackingEpochGeneration = 0,
-        bool requiresValidation = false)
+        bool requiresValidation = false,
+        double? independentYawDegrees = null)
     {
         // Camera positions are session-world coordinates. Replacing a floor
         // anchor does not change that frame and must not erase walking windows.
@@ -395,7 +396,9 @@ public sealed class HeadingRevalidationPolicy
 
         // A GPS jump opposite to tracked AR motion must never rotate the route
         // toward that jump. Such a large discrepancy needs fresh calibration.
-        if (Math.Abs(currentAlignmentErrorDegrees) > 90)
+        if (Math.Abs(currentAlignmentErrorDegrees) > 90 &&
+            !(requiresValidation && independentYawDegrees is double independent && double.IsFinite(independent) &&
+                AngularErrorDegrees(candidateMapToArYawDegrees, independent) <= MaximumCandidateDeviationDegrees))
         {
             ResetCandidateEvidence("GPS contradicts tracked AR direction");
             return CreateDecision(HeadingRevalidationDisposition.SignalsDisagree,

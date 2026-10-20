@@ -42,7 +42,12 @@ public partial class CameraPage
     private long roadApproachEpoch;
     private sealed record RoadApproachCue(LocationReading Reading, GeoCoordinate Target,
         GeoCoordinate Destination, double Yaw, long Session, bool ReturningToRoute,
-        bool ConnectsToDestination);
+        bool ConnectsToDestination, ARRoadApproachBridge.Ownership Owner);
+
+    private ARRoadApproachBridge.Ownership CurrentCueOwnership(string role) =>
+        new(NavigationDestinationBridge.Current.Version, activeRoute?.GeometryFingerprint ?? "ACCESS",
+            _headingAlignmentService.CalibrationRevision, ARCameraPoseBridge.CurrentFrame.TrackingEpoch,
+            ARCameraPoseBridge.CurrentFrame.WorldFrame, role);
 
     private static bool IsRoadApproachFixUsable(LocationReading? reading) =>
         reading is not null && RouteStartupLocationPolicy.CanPlace(reading.Coordinate,
@@ -107,6 +112,7 @@ public partial class CameraPage
         }
         if (!IsRoadApproachFixUsable(reading)) return;
         long session = ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+        var requestedOwner = CurrentCueOwnership("ACCESS_ESTIMATE");
         long epoch;
         lock (routeProgressFusionSync) epoch = roadApproachEpoch;
         bool noRouteAtStart = activeRoute is null;
@@ -122,6 +128,7 @@ public partial class CameraPage
             ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != session ||
             !NavigationDestinationBridge.Current.IsAvailable ||
             NavigationDestinationBridge.Current.Coordinate != destination.Coordinate ||
+            CurrentCueOwnership("ACCESS_ESTIMATE") != requestedOwner ||
             (noRouteAtStart && activeRoute is not null)) return;
         // The GPS loop can produce a newer fix while the heading is sampling.
         lock (routeProgressFusionSync)
@@ -138,6 +145,7 @@ public partial class CameraPage
             ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration != session ||
             !NavigationDestinationBridge.Current.IsAvailable ||
             NavigationDestinationBridge.Current.Coordinate != destination.Coordinate ||
+            CurrentCueOwnership("ACCESS_ESTIMATE") != requestedOwner ||
             (noRouteAtStart && activeRoute is not null)) return;
         if (!target.HasValue)
         {
@@ -151,7 +159,7 @@ public partial class CameraPage
             if (epoch != roadApproachEpoch) return;
             latestRouteStartupReading = reading;
             roadApproachCue = new(reading!, target.Value.Coordinate, destination.Coordinate,
-                heading.Value.MapToArYawDegrees, session, false, target.Value.ConnectsToDestination);
+                heading.Value.MapToArYawDegrees, session, false, target.Value.ConnectsToDestination, requestedOwner);
         }
         routeStartupFailureMessage = target.Value.ConnectsToDestination
             ? "Approach the mapped road - check access"
@@ -174,7 +182,7 @@ public partial class CameraPage
         if ((returningToRoute && !recoveryConnectorVerified) ||
             !destination.IsAvailable || update.MatchConfidence < RouteMatchConfidence.Medium ||
             !IsRoadApproachFixUsable(reading) || !update.SnappedCoordinate.IsValid ||
-            !_headingAlignmentService.HasSessionCalibration ||
+            !HasCurrentRouteHeading() || routeHazardBlocksGuidance ||
             lastHeadingAlignment is not { IsAvailable: true, IsStable: true } ||
             lastHeadingAlignment.Value.SessionGeneration != frame.Generation.SessionGeneration ||
             !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
@@ -183,7 +191,8 @@ public partial class CameraPage
             reading.Coordinate.DistanceTo(update.SnappedCoordinate) > 50) return false;
         lock (routeProgressFusionSync)
             roadApproachCue = new(reading, update.SnappedCoordinate, destination.Coordinate,
-                activeMapToArYawDegrees, frame.Generation.SessionGeneration, returningToRoute, true);
+                activeMapToArYawDegrees, frame.Generation.SessionGeneration, returningToRoute, true,
+                CurrentCueOwnership("MAPPED_TARGET"));
         return true;
     }
 
@@ -205,9 +214,6 @@ public partial class CameraPage
             reading.Coordinate.DistanceTo(destination.Coordinate);
         if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
-        routeLocatorPanel.VerticalOptions = LayoutOptions.Start;
-        routeLocatorPanel.Margin = new Thickness(8, 104, 8, 0);
-        routeLocatorLabel.FontSize = 16;
         bool uncertain = positionObservationHeld || decision.IsObservationHeld ||
             reading.AccuracyMeters > SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters;
         arrivalNoticeCategory = uncertain ? "NEAR_UNCONFIRMED_POSITION_UNCERTAIN" :
@@ -234,13 +240,13 @@ public partial class CameraPage
         var destination = NavigationDestinationBridge.Current;
         var frame = ARCameraPoseBridge.CurrentFrame;
         if (cue is null || !pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
-            dynamicRerouteInProgress || _arCoreService.IsSessionPaused ||
+            dynamicRerouteInProgress || routeHazardBlocksGuidance || !HasCurrentRouteHeading() || _arCoreService.IsSessionPaused ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             !destination.IsAvailable || destination.Coordinate != cue.Destination ||
             (cue.ReturningToRoute && !recoveryConnectorVerified) ||
             !IsRoadApproachFixUsable(cue.Reading) || !frame.IsFresh ||
             !frame.IsTracking || !frame.Pose.IsTracking ||
-            frame.Generation.SessionGeneration != cue.Session)
+            frame.Generation.SessionGeneration != cue.Session || CurrentCueOwnership(cue.Owner.Role) != cue.Owner)
         {
             ARRoadApproachBridge.Clear();
             return false;
@@ -266,8 +272,27 @@ public partial class CameraPage
             ARRoadApproachBridge.Clear();
             return false;
         }
+        Vector2? registeredDirection = null;
+        if (cue.Owner.Role == "MAPPED_TARGET" && activeRoute is { } mappedRoute && GetTrackedRouteMotion() is { } motion)
+        {
+            if (!_routeDisplayProgressPolicy.TryGetRegisteredReference(mappedRoute, cue.Target,
+                DateTimeOffset.UtcNow, motion, out var targetReference))
+            {
+                ARRoadApproachBridge.Clear();
+                return false;
+            }
+            var direction = new Vector2(targetReference.WorldX - frame.Pose.PositionX,
+                targetReference.WorldZ - frame.Pose.PositionZ);
+            if (direction.LengthSquared() < 1) { ARRoadApproachBridge.Clear(); return false; }
+            registeredDirection = direction;
+            // The panel and the floor arrow use the same mapped target.
+            var localDirection = Vector3.Transform(new Vector3(direction.X, 0, direction.Y),
+                Quaternion.Inverse(Quaternion.Normalize(rotation)));
+            angle = Math.Atan2(localDirection.X, -localDirection.Z) * 180 / Math.PI;
+        }
+        ARRoadApproachBridge.SetOwnership(cue.Owner);
         ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
-            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session);
+            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session, cue.Owner, registeredDirection);
         routeLocatorIcon.IsVisible = true;
         routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
         routeLocatorIcon.Rotation = angle;
@@ -285,7 +310,7 @@ public partial class CameraPage
     private bool TryShowNavigationFallback()
     {
         var destination = NavigationDestinationBridge.Current;
-        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible ||
+        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible || routeHazardBlocksGuidance ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             !destination.IsAvailable || lastArGuidanceConfidence.AllowsRouteGeometry)
             return false;

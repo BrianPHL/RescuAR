@@ -100,6 +100,7 @@ public static class MauiProgram
         // Batch 4: Dashboard shared services
         builder.Services.AddSingleton<IDashboardDataService, DashboardDataService>();
         builder.Services.AddSingleton<CommunityReportService>();
+        builder.Services.AddSingleton(new RescuAR.Navigation.Progress.NavigationStabilityOptions());
         builder.Services.AddSingleton<IOsmGeocodingService, OsmGeocodingService>();
         builder.Services.AddSingleton<IWeatherService, WeatherService>();
 

@@ -9,6 +9,7 @@ using Microsoft.Maui.Devices;
 using Microsoft.Maui.Devices.Sensors;
 using RescuAR.AR;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Progress;
 
 namespace RescuAR.MAUI.Services.Navigation;
 
@@ -103,6 +104,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
     private static HeadingAlignmentResult? sessionCalibration;
     private static long calibrationRevision;
+    private readonly HeadingContinuityPolicy continuity = new();
+    public long CalibrationRevision { get { lock (sessionCalibrationSync) return calibrationRevision; } }
 
     public bool IsSupported =>
         OrientationSensor.Default.IsSupported;
@@ -129,7 +132,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 var calibration = sessionCalibration.Value;
                 // A known world correction invalidates render trust, while
                 // retaining a finite starting estimate for independent recovery.
-                return calibration.WorldFrame == ARCameraSpatialController.WorldFrameGeneration
+                return calibration.WorldFrame == ARCameraSpatialController.WorldFrameGeneration &&
+                    calibration.TrackingEpoch == ARCameraPoseBridge.CurrentFrame.TrackingEpoch
                     ? calibration : calibration with { IsStable = false, RequiresMovementValidation = true };
             }
         }
@@ -607,6 +611,32 @@ public sealed class ArHeadingAlignmentService : IDisposable
     /// <summary>Independent sensor observation for diagnosis; never changes calibration.</summary>
     public bool TryGetIndependentObservation(GeoCoordinate location, double? altitudeMeters,
         out HeadingAlignmentResult observation) => TryCreateSample(location, altitudeMeters, out observation, out _);
+
+    /// <summary>Requalifies a healthy pause or withholds contradicted trust. Never rotates geometry from the compass.</summary>
+    public bool ObserveIndependentContinuity(GeoCoordinate location, double? altitudeMeters)
+    {
+        if (!TryCreateSample(location, altitudeMeters, out var sample, out _)) return false;
+        lock (sessionCalibrationSync)
+        {
+            if (sessionCalibration is not { } retained || retained.SessionGeneration != sample.SessionGeneration)
+                return false;
+            var verdict = continuity.Observe(retained.MapToArYawDegrees, sample.MapToArYawDegrees,
+                sample.OrientationObservedAt, sample.SessionGeneration, sample.TrackingEpoch,
+                sample.WorldFrame, calibrationRevision);
+            bool healthyResume = verdict == HeadingContinuityPolicy.Verdict.SupportsRetained &&
+                retained.IsStable && !retained.RequiresMovementValidation && retained.WorldFrame == sample.WorldFrame;
+            if (healthyResume && retained.TrackingEpoch != sample.TrackingEpoch)
+            {
+                sessionCalibration = retained with { TrackingEpoch = sample.TrackingEpoch };
+                calibrationRevision++;
+                return true;
+            }
+            if (verdict != HeadingContinuityPolicy.Verdict.Contradicted || retained.RequiresMovementValidation) return false;
+            sessionCalibration = retained with { IsStable = false, RequiresMovementValidation = true };
+            calibrationRevision++;
+            return true;
+        }
+    }
 
     private void OnOrientationReadingChanged(
         object? sender,

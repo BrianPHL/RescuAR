@@ -130,10 +130,10 @@ internal static class ARRegistrationChecks
         Observe(policy, route, Fix(route, C(10, 5)), at.AddSeconds(3), Motion(10, 0, 0));
         check(!policy.LastRegistrationDecision.Changed, $"{provider}: a single plausible GPS bias is a candidate only");
         Observe(policy, route, Fix(route, C(14, 5)), at.AddSeconds(6), Motion(14, 0, 0));
-        check(policy.LastRegistrationDecision is { Changed: true, State: "COHERENT_CORRECTION" } &&
+        check(!policy.LastRegistrationDecision.Changed &&
             policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(6), Motion(14, 0, 0), out var corrected) &&
-            Math.Abs(corrected.WorldZ - 5) < .02,
-            $"{provider}: repeated independent motion-coherent GPS evidence can correct an initially biased registration");
+            Math.Abs(corrected.WorldZ) < .02,
+            $"{provider}: two correlated fixes cannot translate the mapped world registration");
         var snapshot = policy.LastRegistrationDecision;
         policy.ObserveRegistration(route, Fix(route, C(20, 10)), at.AddSeconds(6), at.AddSeconds(6), Motion(20, 0, 0));
         check(policy.LastRegistrationDecision == snapshot, $"{provider}: duplicate callbacks do not apply another correction");
@@ -142,6 +142,24 @@ internal static class ARRegistrationChecks
             $"{provider}: an unavailable acquisition pair cannot extend stale registration support");
         check(!policy.TryGetRegisteredReference(Road(provider), C(0), at.AddSeconds(6), Motion(14, 0, 0), out _),
             $"{provider}: route replacement cannot inherit an unrelated geographic registration");
+
+        Observe(policy, route, Fix(route, C(28, 15)), at.AddSeconds(20), Motion(28, 0, 0));
+        check(!policy.LastRegistrationDecision.Changed &&
+            policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(20), Motion(28, 0, 0), out var expired) &&
+            Math.Abs(expired.WorldZ) < .02,
+            $"{provider}: expired support is renewed by overlapping uncertainty without reseeding the world");
+        Observe(policy, route, Fix(route, C(55)), at.AddSeconds(24), Motion(32, 0, 0));
+        check(!policy.LastRegistrationDecision.Changed,
+            $"{provider}: non-overlapping single-fix reacquisition cannot reseed a known frame");
+
+        policy.Reset();
+        Observe(policy, route, Fix(route, C(0), 8), at, Motion(0, 0, 0));
+        for (int i = 0; i < 3; i++)
+            Observe(policy, route, Fix(route, C(10 + i * 4, 14), 2), at.AddSeconds(3 + i * 4), Motion(10 + i * 4, 0, 0));
+        check(policy.LastRegistrationDecision is { Changed: true, State: "PRECISION_VALIDATED_BOUNDED_CORRECTION" } &&
+            policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(11), Motion(18, 0, 0), out var bounded) &&
+            Math.Abs(bounded.WorldZ - 2) < .02,
+            $"{provider}: three precise fixes across eight metres correct at most two metres, never the full innovation");
 
         policy.Reset();
         for (int i = 0; i <= 24; i++)

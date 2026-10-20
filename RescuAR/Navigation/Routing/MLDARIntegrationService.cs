@@ -220,7 +220,8 @@ public sealed class MLDARIntegrationService
         int sourceSegmentIndex = -1,
         GeoCoordinate? userCoordinate = null,
         ARRoutePlacement placement = default,
-        RouteDisplayProgressPolicy.RegisteredReference? registeredReference = null)
+        RouteDisplayProgressPolicy.RegisteredReference? registeredReference = null,
+        TimeSpan? maximumRegistrationAge = null)
     {
         ArgumentNullException.ThrowIfNull(
             route);
@@ -231,8 +232,8 @@ public sealed class MLDARIntegrationService
             if (!placement.IsAvailable || retained.Coordinate != snappedReference ||
                 retained.Session != placement.Generation.SessionGeneration ||
                 retained.TrackingEpoch != placement.TrackingEpoch || retained.WorldFrame != placement.WorldFrame ||
-                DateTimeOffset.UtcNow - retained.SupportedAt > TimeSpan.FromSeconds(
-                    RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds) ||
+                DateTimeOffset.UtcNow - retained.SupportedAt > (maximumRegistrationAge ?? TimeSpan.FromSeconds(
+                    RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) ||
                 retained.SupportedAt > DateTimeOffset.UtcNow.AddSeconds(2) || retained.RegisteredAt > retained.SupportedAt ||
                 !double.IsFinite(retained.YawDegrees) ||
                 Math.Abs(Math.IEEERemainder(retained.YawDegrees - mapToArYawDegrees, 360)) >= 0.001 ||

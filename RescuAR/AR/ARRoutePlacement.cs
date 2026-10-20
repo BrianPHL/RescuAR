@@ -23,6 +23,7 @@ public readonly record struct ARRoutePlacement(
 
     public bool IsFor(ARCameraPoseBridge.SpatialSnapshot frame) => !IsAvailable ||
         Generation.SessionGeneration == frame.Generation.SessionGeneration &&
+        TrackingEpoch == frame.TrackingEpoch && WorldFrame == frame.WorldFrame &&
         GroundReference == frame.Anchor.ReferenceGeneration;
 
     public bool HasSameOrigin(ARRoutePlacement other) => IsAvailable == other.IsAvailable &&

@@ -193,6 +193,10 @@ public partial class CameraPage
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         var rendered = ARRouteRenderer.Visibility;
         var calibration = _headingAlignmentService.LastResult;
+        AndroidLog.Info(RouteLogTag, $"NAV_WORKLOAD trip={activeDestinationVersion}; " +
+            $"publishedWindows={Interlocked.Read(ref routeWindowPublishedCount)}; reusedWindows={Interlocked.Read(ref routeWindowReusedCount)}; " +
+            $"visibilitySampleMs=250; assessmentIntervalSec={navigationStability.Options.AssessmentInterval.TotalSeconds:F1}; " +
+            $"calibrationRevision={_headingAlignmentService.CalibrationRevision}; positioning='{navigationStability.Current.Reason}'.");
         var oldReference = lastFieldReference;
         lastFieldReference = frame;
         var anchor = frame.Anchor;

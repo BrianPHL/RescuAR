@@ -102,13 +102,19 @@ public sealed partial class ArCoreService
                 $"routeDepthAllowed={next.RouteDepthAllowed}.");
         }
 
-        if (modeChanged)
+        if (modeChanged || force)
         {
             processedFrameCount =
                 0;
 
             fpsWindowStartTimestamp =
                 now;
+            // Keep every rate in the same sampling window. Previously the
+            // conversion count spanned the old window while its denominator
+            // restarted, producing impossible converted FPS after mode changes.
+            Interlocked.Exchange(ref completedCameraConversions, 0);
+            Interlocked.Exchange(ref deferredCameraConversions, 0);
+            Interlocked.Exchange(ref maximumCameraConversionMilliseconds, 0);
         }
     }
 

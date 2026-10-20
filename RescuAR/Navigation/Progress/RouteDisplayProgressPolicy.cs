@@ -21,11 +21,13 @@ public sealed class RouteDisplayProgressPolicy
     private RegistrationObservation? pendingRegistration;
     private DateTimeOffset? registrationSupportedAt;
     private DateTimeOffset? lastRegistrationObservation;
+    private int registrationConfirmations;
     public RegistrationDecision LastRegistrationDecision { get; private set; }
 
     private readonly record struct RegistrationObservation(GeoCoordinate Coordinate,
         double Accuracy, DateTimeOffset At, RouteBacktrackingPolicy.TrackedMotion Motion);
-    public readonly record struct RegistrationDecision(string State, double InnovationMeters, bool Changed);
+    public readonly record struct RegistrationDecision(string State, double InnovationMeters, bool Changed,
+        double CorrectionX = 0, double CorrectionZ = 0, int EvidenceCount = 0);
     public readonly record struct RegisteredReference(GeoCoordinate Coordinate, float WorldX, float WorldZ,
         long Session, long TrackingEpoch, long WorldFrame, double YawDegrees, DateTimeOffset RegisteredAt,
         DateTimeOffset SupportedAt);
@@ -38,6 +40,7 @@ public sealed class RouteDisplayProgressPolicy
         committedAtGps = 0;
         registration = pendingRegistration = null;
         registrationSupportedAt = lastRegistrationObservation = null;
+        registrationConfirmations = 0;
         LastRegistrationDecision = default;
     }
 
@@ -90,17 +93,39 @@ public sealed class RouteDisplayProgressPolicy
             return LastRegistrationDecision = new("UNPAIRED_OR_UNQUALIFIED", double.NaN, false);
         if (lastRegistrationObservation.HasValue && at <= lastRegistrationObservation.Value)
             return LastRegistrationDecision;
+        if (lastRegistrationObservation.HasValue && at - lastRegistrationObservation.Value < TimeSpan.FromSeconds(1))
+            return LastRegistrationDecision;
         lastRegistrationObservation = at;
         var next = new RegistrationObservation(update.GpsCoordinate, update.AccuracyMeters!.Value, at, motion);
-        bool continuous = registration is { } previous && SameFrame(previous.Motion, motion) &&
-            registrationSupportedAt.HasValue && at >= registrationSupportedAt.Value &&
-            at - registrationSupportedAt.Value <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds);
-        if (!continuous)
+        // Losing GPS support does not create a new AR world. A single later
+        // fix must not replace a retained transform in the same known frame.
+        bool sameFrame = registration is { } previous && SameFrame(previous.Motion, motion);
+        if (registration is null)
         {
             registration = next;
             pendingRegistration = null;
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("ACQUISITION_SEEDED", 0, true);
+        }
+        if (!sameFrame)
+        {
+            // New frame/calibration ownership needs separate, spaced evidence.
+            if (pendingRegistration is not { } seed || !SameFrame(seed.Motion, motion) ||
+                at - seed.At > TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) ||
+                RegistrationResidual(seed, next) > seed.Accuracy + next.Accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
+            {
+                pendingRegistration = next;
+                registrationConfirmations = 1;
+                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false);
+            }
+            registrationConfirmations++;
+            if (at - seed.At < TimeSpan.FromSeconds(3) || registrationConfirmations < 3)
+                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false);
+            registration = next;
+            pendingRegistration = null;
+            registrationConfirmations = 0;
+            registrationSupportedAt = at;
+            return LastRegistrationDecision = new("FRAME_REQUALIFIED", 0, true, EvidenceCount: 3);
         }
 
         double innovation = RegistrationResidual(registration!.Value, next);
@@ -109,22 +134,41 @@ public sealed class RouteDisplayProgressPolicy
             // Keep the same transform. A fresh consistent fix renews support,
             // rather than attaching a stationary road to the current camera.
             pendingRegistration = null;
+            registrationConfirmations = 0;
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("REFERENCE_SUPPORTED", innovation, false);
         }
-        bool correctionConfirmed = pendingRegistration is { } candidate && SameFrame(candidate.Motion, motion) &&
-            at - candidate.At >= TimeSpan.FromSeconds(1) &&
-            at - candidate.At <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) &&
+        // Similar consecutive GPS fixes are often correlated multipath, not
+        // independent proof of a new world origin. Require improved precision,
+        // sustained walking and a discrepancy outside the original uncertainty.
+        bool coherent = pendingRegistration is { } candidate && SameFrame(candidate.Motion, motion) &&
+            at > candidate.At && at - candidate.At <= TimeSpan.FromSeconds(30) &&
             RegistrationResidual(candidate, next) <= RoutePositionObservationPolicy.MotionAllowanceMeters;
+        registrationConfirmations = coherent ? registrationConfirmations + 1 : 1;
+        if (!coherent) pendingRegistration = next;
+        var evidence = pendingRegistration!.Value;
+        double walked = Math.Sqrt(Math.Pow(motion.X - evidence.Motion.X, 2) + Math.Pow(motion.Z - evidence.Motion.Z, 2));
+        bool improvedPrecision = next.Accuracy <= 5 && next.Accuracy <= registration!.Value.Accuracy / 2;
+        bool correctionConfirmed = coherent && registrationConfirmations >= 3 &&
+            at - evidence.At >= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) && walked >= MaximumPdrAdvanceMeters &&
+            improvedPrecision && innovation > registration.Value.Accuracy + next.Accuracy +
+                RoutePositionObservationPolicy.MotionAllowanceMeters;
         if (correctionConfirmed)
         {
-            registration = next;
+            var retained = registration!.Value;
+            var offset = Offset(retained.Coordinate, next.Coordinate, motion.YawDegrees);
+            double dx = motion.X - retained.Motion.X - offset.X, dz = motion.Z - retained.Motion.Z - offset.Z;
+            double weight = Math.Min(1, RoutePositionObservationPolicy.MotionAllowanceMeters / innovation);
+            registration = retained with { Accuracy = Math.Max(next.Accuracy, retained.Accuracy -
+                RoutePositionObservationPolicy.MotionAllowanceMeters), Motion = retained.Motion with {
+                    X = retained.Motion.X + (float)(dx * weight), Z = retained.Motion.Z + (float)(dz * weight) } };
             pendingRegistration = null;
+            registrationConfirmations = 0;
             registrationSupportedAt = at;
-            return LastRegistrationDecision = new("COHERENT_CORRECTION", innovation, true);
+            return LastRegistrationDecision = new("PRECISION_VALIDATED_BOUNDED_CORRECTION", innovation, true,
+                dx * weight, dz * weight, 3);
         }
 
-        pendingRegistration = next;
         // An uncertainty-overlapping fix supports retaining the old reference,
         // but cannot independently establish a different physical placement.
         if (innovation <= registration.Value.Accuracy + next.Accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
@@ -133,13 +177,14 @@ public sealed class RouteDisplayProgressPolicy
     }
 
     public bool TryGetRegisteredReference(RouteResult route, GeoCoordinate coordinate, DateTimeOffset now,
-        RouteBacktrackingPolicy.TrackedMotion current, out RegisteredReference reference)
+        RouteBacktrackingPolicy.TrackedMotion current, out RegisteredReference reference,
+        TimeSpan? maximumSupportAge = null)
     {
         reference = default;
         if (!ReferenceEquals(currentRoute, route) || registration is not { } retained ||
             !coordinate.IsValid || !SameFrame(retained.Motion, current) || !registrationSupportedAt.HasValue ||
             now < registrationSupportedAt.Value ||
-            now - registrationSupportedAt.Value > TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds)) return false;
+            now - registrationSupportedAt.Value > (maximumSupportAge ?? TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds))) return false;
         var offset = Offset(retained.Coordinate, coordinate, retained.Motion.YawDegrees);
         float x = retained.Motion.X + (float)offset.X, z = retained.Motion.Z + (float)offset.Z;
         if (!float.IsFinite(x) || !float.IsFinite(z)) return false;

@@ -21,6 +21,38 @@ public static class RouteHazardGeometry
         return false;
     }
 
+    /// <summary>True circle entry along the polyline, rather than its closest point to the hazard.</summary>
+    public static double FirstEntryProgress(RouteResult route, double progress, RouteHazard hazard)
+    {
+        double scale = Math.PI / 180 * EarthRadiusMeters;
+        double eastScale = scale * Math.Cos(hazard.Coordinate.Latitude * Math.PI / 180);
+        for (int i = 0; i < route.Points.Count - 1; i++)
+        {
+            var from = route.Points[i]; var to = route.Points[i + 1];
+            double span = to.DistanceFromStartMeters - from.DistanceFromStartMeters;
+            if (span <= 0 || to.DistanceFromStartMeters < progress) continue;
+            double x = (from.Coordinate.Longitude - hazard.Coordinate.Longitude) * eastScale;
+            double y = (from.Coordinate.Latitude - hazard.Coordinate.Latitude) * scale;
+            double dx = (to.Coordinate.Longitude - from.Coordinate.Longitude) * eastScale;
+            double dy = (to.Coordinate.Latitude - from.Coordinate.Latitude) * scale;
+            double minimum = Math.Clamp((progress - from.DistanceFromStartMeters) / span, 0, 1);
+            double a = dx * dx + dy * dy;
+            if (a < 1e-12) continue;
+            double sx = x + minimum * dx, sy = y + minimum * dy;
+            if (sx * sx + sy * sy <= hazard.RadiusMeters * hazard.RadiusMeters)
+                return Math.Max(progress, from.DistanceFromStartMeters);
+            double b = 2 * (x * dx + y * dy);
+            double c = x * x + y * y - hazard.RadiusMeters * hazard.RadiusMeters;
+            double discriminant = b * b - 4 * a * c;
+            if (discriminant < 0) continue;
+            double entry = (-b - Math.Sqrt(discriminant)) / (2 * a);
+            double exit = (-b + Math.Sqrt(discriminant)) / (2 * a);
+            if (exit < minimum || entry > 1) continue;
+            return from.DistanceFromStartMeters + span * Math.Max(minimum, entry);
+        }
+        return double.PositiveInfinity;
+    }
+
     public readonly record struct RouteHazardIntersection(
         bool IsAffected,
         RouteHazard? Hazard,
