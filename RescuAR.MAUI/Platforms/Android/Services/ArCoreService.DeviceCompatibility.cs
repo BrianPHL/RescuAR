@@ -21,21 +21,19 @@ public sealed partial class ArCoreService
         "rescuar.arcore.force_depth_off";
 #endif
 
-    private static bool IsDepthDisabledForControlledRetest()
+    private static ARDepthCompatibilityPolicy.DepthConfigurationDecision GetDepthConfigurationDecision()
     {
-        // A native depth-worker abort cannot be caught by managed exception
-        // handling. Use the existing plane-only path on field-confirmed profiles.
-        bool affectedProfile = ARDepthCompatibilityPolicy.DisableAutomaticDepth(
-            AndroidBuild.Model, (int)AndroidBuild.VERSION.SdkInt);
+        bool forceOn = false, forceOff = false, diagnosticRetest = false;
 #if RESCUAR_DIAGNOSTICS
+        // The requested field candidate exercises supported Depth again. The
+        // production quarantine remains until this device retest is accepted.
+        diagnosticRetest = true;
         try
         {
             var intent = global::Microsoft.Maui.ApplicationModel.Platform
                 .CurrentActivity?.Intent;
-            if (intent?.GetBooleanExtra("rescuar.arcore.force_depth_on", false) == true)
-                return false;
-            if (intent?.GetBooleanExtra(ForceDepthOffIntentExtra, false) == true)
-                return true;
+            forceOn = intent?.GetBooleanExtra("rescuar.arcore.force_depth_on", false) == true;
+            forceOff = intent?.GetBooleanExtra(ForceDepthOffIntentExtra, false) == true;
         }
         catch (Exception exception)
         {
@@ -43,11 +41,12 @@ public sealed partial class ArCoreService
                 DiagnosticPrivacyPolicy.FormatException(exception));
         }
 #endif
-        if (affectedProfile)
-            Log.Warn(Tag,
-                "Depth disabled on known native-crash device/OS profile; " +
-                "using Plane-only ground acquisition.");
-        return affectedProfile;
+        var decision = ARDepthCompatibilityPolicy.Evaluate(AndroidBuild.Model,
+            (int)AndroidBuild.VERSION.SdkInt, diagnosticRetest, forceOn, forceOff);
+        Log.Info(Tag, $"ARCORE_DEPTH_CONFIGURATION mode={decision.Mode}; " +
+            $"disabled={decision.DisableDepth}; model={AndroidBuild.Model}; " +
+            $"api={(int)AndroidBuild.VERSION.SdkInt}; diagnosticRetest={diagnosticRetest}.");
+        return decision;
     }
 
     private void LogDeviceCompatibilityProfile(

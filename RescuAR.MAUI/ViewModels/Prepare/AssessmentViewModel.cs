@@ -517,10 +517,67 @@ public partial class AssessmentViewModel : ObservableObject
         else if (FinalScorePercentage >= 60) FinalScoreStatus = "Prepared";
         else FinalScoreStatus = "Needs Improvement";
 
-        // Save to Preferences
+        string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                        ?? Preferences.Get("CurrentUserId", "");
+
+        // Save to Preferences (Global and User-scoped)
         Preferences.Set("PASS_Score", FinalScorePercentage);
         Preferences.Set("PASS_Status", FinalScoreStatus);
-        Preferences.Set("PASS_LastDate", DateTime.Now.ToString("MMMM dd, yyyy"));
+        string currentDate = DateTime.Now.ToString("MMMM dd, yyyy");
+        Preferences.Set("PASS_LastDate", currentDate);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            Preferences.Set($"PASS_Score_{userId}", FinalScorePercentage);
+            Preferences.Set($"PASS_Status_{userId}", FinalScoreStatus);
+            Preferences.Set($"PASS_LastDate_{userId}", currentDate);
+        }
+
+        // Save entry into persistent Assessment History JSON list
+        try
+        {
+            string statusColor = FinalScorePercentage >= 80 ? "#15803D" : FinalScorePercentage >= 60 ? "#0A8491" : "#D97706";
+            var newHistoryItem = new AssessmentHistoryItem
+            {
+                Date = currentDate,
+                ScoreText = $"{FinalScorePercentage}%",
+                Status = FinalScoreStatus,
+                StatusColor = statusColor
+            };
+
+            string historyJson = "";
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                historyJson = Preferences.Get($"PASS_AssessmentHistoryJson_{userId}", "");
+            }
+
+            if (string.IsNullOrWhiteSpace(historyJson))
+            {
+                historyJson = Preferences.Get("PASS_AssessmentHistoryJson", "[]");
+            }
+
+            var historyList = System.Text.Json.JsonSerializer.Deserialize<List<AssessmentHistoryItem>>(historyJson) ?? new List<AssessmentHistoryItem>();
+            historyList.Insert(0, newHistoryItem);
+
+            // Keep up to 20 most recent entries
+            if (historyList.Count > 20)
+            {
+                historyList = historyList.Take(20).ToList();
+            }
+
+            string updatedJson = System.Text.Json.JsonSerializer.Serialize(historyList);
+            Preferences.Set("PASS_AssessmentHistoryJson", updatedJson);
+
+            // Also persist user-scoped history if authenticated
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                Preferences.Set($"PASS_AssessmentHistoryJson_{userId}", updatedJson);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error saving assessment history: {ex.Message}");
+        }
 
         IsFinished = true;
     }

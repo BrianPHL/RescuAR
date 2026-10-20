@@ -13,6 +13,7 @@ namespace RescuAR;
 public partial class MyApplication
 {
     private long arGraphicsGeneration;
+    public bool WasArDrawSkipped { get; private set; }
 
     public void BindArGraphicsGeneration(
         long graphicsGeneration)
@@ -45,6 +46,7 @@ public partial class MyApplication
         bool skipEvergineDraw =
             ARCameraTextureBridge.ProcessDrawThreadWork(
                 drawGraphicsGeneration);
+        WasArDrawSkipped = skipEvergineDraw;
 
         /*
          * Apply ARCore spatial state directly on the active Evergine draw
@@ -56,6 +58,10 @@ public partial class MyApplication
             {
                 return;
             }
+
+            // Texture replacement happens during import above, after UpdateFrame.
+            // Bind it here so this draw cannot sample a disposed resize target.
+            ARCameraBackgroundBehavior.ProcessDrawThreadWork(drawGraphicsGeneration);
 
             ARCameraSpatialController.ProcessDrawThreadWork(
                 drawGraphicsGeneration);

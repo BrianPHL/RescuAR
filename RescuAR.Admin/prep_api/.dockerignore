@@ -1,0 +1,30 @@
+.git
+.gitignore
+.Rhistory
+.RData
+.Rproj.user
+.env
+.env.*
+*.zip
+README_IMPLEMENTATION.md
+# ==========================================
+# RescuAR - Generated Geospatial Files
+# ==========================================
+
+# Large generated NAMRIA raster files
+**/validation/work/ulysses_namria_*.tif
+**/validation/work/ulysses_namria_*.tiff
+
+# Temporary validation files
+**/validation/work/*.vrt
+**/validation/work/*.aux.xml
+**/validation/work/*.rds
+
+# Exported project archives
+/RescuAR.Admin.zip
+
+# Android / .NET build outputs
+**/bin/
+**/obj/
+*.apk
+*.aab

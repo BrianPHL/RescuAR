@@ -104,7 +104,22 @@ public class DashboardDataService : IDashboardDataService
 
     public Task<EvacuationData> GetEvacuationDataAsync()
     {
-        return Task.FromResult(new EvacuationData());
+        var data = new EvacuationData();
+        try
+        {
+            var cached = RescuAR.App.Services.Storage.CacheService.LoadEvacuationCenters();
+            if (cached != null && cached.Centers != null && cached.Centers.Count > 0)
+            {
+                var nearest = cached.Centers.FirstOrDefault();
+                if (nearest != null && !string.IsNullOrWhiteSpace(nearest.Name))
+                {
+                    data.CenterName = nearest.Name;
+                }
+            }
+        }
+        catch { }
+
+        return Task.FromResult(data);
     }
 
     public async Task<SafetyCircleOverviewData> GetSafetyCircleDataAsync()

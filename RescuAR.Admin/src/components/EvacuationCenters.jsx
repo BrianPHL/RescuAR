@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
@@ -1205,6 +1206,8 @@ export default function EvacuationCenters() {
             Monitor shelter capacity, classifications, coordinates, and assigned LGU relief officers across Marikina
           </span>
         </div>
+        <div className="page-header-actions">
+          <ExportActions title="evacuation-centers" rows={sortedCenters} columns={[{ label: 'ID', key: 'id' }, { label: 'Name', key: 'name' }, { label: 'Barangay', key: 'barangay' }, { label: 'Classification', key: 'classification' }, { label: 'Status', key: 'status' }, { label: 'Capacity', key: 'capacity' }, { label: 'Current Evacuees', key: 'currentEvacuees' }, { label: 'Contact', key: 'contact' }, { label: 'Head Officer', key: 'headOfficer' }, { label: 'Facilities', key: 'facilities' }, { label: 'Latitude', key: 'latitude' }, { label: 'Longitude', key: 'longitude' }]} disabled={loading} />
         <button
           className="btn-refresh"
           onClick={handleRefresh}
@@ -1213,14 +1216,15 @@ export default function EvacuationCenters() {
           <RefreshCw size={13} className={isRefreshSpinning ? 'spin-icon' : ''} />
           <span>Refresh</span>
         </button>
+        </div>
       </div>
 
       {/* SPLIT PANEL LAYOUT */}
-      <div style={styles.panelContainer}>
+      <div className="admin-responsive-panels" style={styles.panelContainer}>
 
         {/* LEFT PANEL: LIST OF EVACUATION CENTERS */}
-        <div style={styles.leftPanel}>
-          <div style={styles.headerFlex}>
+        <div className="admin-panel-list" style={styles.leftPanel}>
+          <div className="admin-list-header" style={styles.headerFlex}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: 0 }}>List of Evacuation Centers</h2>
             <button style={styles.addButton} onClick={openAddModal}>
               <Plus size={16} />
@@ -1228,7 +1232,7 @@ export default function EvacuationCenters() {
             </button>
           </div>
 
-          <div style={styles.controlsFlex}>
+          <div className="admin-controls" style={styles.controlsFlex}>
             <input
               type="text"
               placeholder="Search for an evacuation center..."
@@ -1270,6 +1274,7 @@ export default function EvacuationCenters() {
             </select>
           </div>
 
+          <div className="admin-table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -1350,8 +1355,9 @@ export default function EvacuationCenters() {
               )}
             </tbody>
           </table>
+          </div>
 
-          <div style={styles.pagination}>
+          <div className="admin-pagination" style={styles.pagination}>
             <span>
               Showing {filteredCenters.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredCenters.length)} of {filteredCenters.length} evacuation centers
             </span>
@@ -1400,7 +1406,7 @@ export default function EvacuationCenters() {
         </div>
 
         {/* RIGHT PANEL: EVACUATION CENTER DETAILS */}
-        <div style={styles.rightPanel}>
+        <div className="admin-panel-details" style={styles.rightPanel}>
           {activeCenter ? (
             <div style={styles.detailsCard}>
               <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: '0 0 14px 0' }}>Evacuation Center Details</h2>
@@ -1527,7 +1533,7 @@ export default function EvacuationCenters() {
       {/* DRAWER MODAL FOR ADDING / EDITING CENTER */}
       {isDrawerOpen && (
         <div style={styles.overlay}>
-          <div style={styles.drawer}>
+          <div className="admin-form-drawer" style={styles.drawer}>
             <div style={styles.drawerHeader}>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>
                 {isEditing ? 'Edit Evacuation Center' : 'Add New Evacuation Center'}

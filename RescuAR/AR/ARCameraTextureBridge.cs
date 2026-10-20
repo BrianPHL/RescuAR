@@ -23,7 +23,7 @@ public static class ARCameraTextureBridge
         TextureSnapshot.Unavailable;
 
     private static long version;
-    private static Action? drawThreadProcessor;
+    private static Func<bool>? drawThreadProcessor;
     private static long processorGraphicsGeneration;
     private static bool processingSuspended = true;
     private static int activeProcessorCalls;
@@ -69,7 +69,7 @@ public static class ARCameraTextureBridge
 
     public static void SetDrawThreadProcessor(
         long graphicsGeneration,
-        Action processor)
+        Func<bool> processor)
     {
         ArgumentNullException.ThrowIfNull(processor);
 
@@ -252,7 +252,7 @@ public static class ARCameraTextureBridge
     public static bool ProcessDrawThreadWork(
         long drawGraphicsGeneration)
     {
-        Action? work = null;
+        Func<bool>? work = null;
         TeardownRequest? teardown = null;
         bool skipDraw;
 
@@ -268,7 +268,7 @@ public static class ARCameraTextureBridge
             {
                 teardown = pendingTeardown;
                 pendingTeardown = null;
-                work = teardown.Action;
+                work = () => { teardown.Action(); return true; };
                 skipDraw = true;
             }
             else if (!skipDraw)
@@ -290,7 +290,7 @@ public static class ARCameraTextureBridge
 
         try
         {
-            work();
+            skipDraw |= work();
         }
         catch (Exception exception)
         {
@@ -316,6 +316,10 @@ public static class ARCameraTextureBridge
                 {
                     teardownAwaitingFrameBoundary = teardown;
                 }
+
+                // The importer may suspend this generation after a GPU error.
+                // Do not present again after that suspension in the same call.
+                skipDraw |= processingSuspended;
             }
         }
 
@@ -373,7 +377,7 @@ public static class ARCameraTextureBridge
     {
         ArgumentNullException.ThrowIfNull(texture);
 
-        if (!metadata.IsValid ||
+        if (!metadata.IsFresh(MaximumTextureAgeMilliseconds, Environment.TickCount64) ||
             !ARRenderGenerationBridge.TryAcceptCallback(
                 metadata.Generation,
                 "camera-texture-publish"))
@@ -400,7 +404,7 @@ public static class ARCameraTextureBridge
             current = new TextureSnapshot(
                 nextVersion,
                 metadata,
-                Environment.TickCount64,
+                metadata.AcquiredAtMonotonicMilliseconds,
                 texture);
 
             return true;

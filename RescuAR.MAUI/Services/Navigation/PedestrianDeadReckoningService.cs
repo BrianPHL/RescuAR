@@ -61,6 +61,7 @@ public sealed class PedestrianDeadReckoningService
     private bool isRunning;
 
     private IDisposable? accelerometerLease;
+    private long sensorGeneration;
 
     private bool hasGravityEstimate;
 
@@ -129,10 +130,11 @@ public sealed class PedestrianDeadReckoningService
 
             try
             {
+                long generation = ++sensorGeneration;
                 accelerometerLease =
                     SharedMotionSensorLeaseManager.AcquireAccelerometer(
                         nameof(PedestrianDeadReckoningService),
-                        OnAccelerometerReadingChanged,
+                        (sender, args) => OnAccelerometerReadingChanged(sender, args, generation),
                         SensorSpeed.UI);
 
                 isRunning =
@@ -159,28 +161,21 @@ public sealed class PedestrianDeadReckoningService
 
     public void Stop()
     {
-        bool shouldStop;
+        IDisposable? lease;
 
         lock (sync)
         {
-            shouldStop =
-                isRunning;
-
             isRunning =
                 false;
+            sensorGeneration++;
+            lease = accelerometerLease;
+            accelerometerLease = null;
 
             peakArmed =
                 false;
         }
 
-        if (!shouldStop)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(
-            ref accelerometerLease,
-            null)?.Dispose();
+        lease?.Dispose();
 
 #if ANDROID
         Log.Debug(
@@ -192,7 +187,8 @@ public sealed class PedestrianDeadReckoningService
 
     private void OnAccelerometerReadingChanged(
         object? sender,
-        AccelerometerChangedEventArgs e)
+        AccelerometerChangedEventArgs e,
+        long generation)
     {
         Vector3 acceleration =
             e.Reading.Acceleration;
@@ -220,7 +216,7 @@ public sealed class PedestrianDeadReckoningService
 
         lock (sync)
         {
-            if (!isRunning)
+            if (!isRunning || generation != sensorGeneration)
             {
                 return;
             }

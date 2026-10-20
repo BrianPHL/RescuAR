@@ -4,6 +4,56 @@ Marikina remains the primary dataset. All named regional datasets present at
 build time are included automatically. Local QC and other test areas can stay
 disconnected from Marikina; no intervening roads are required for local routes.
 
+## Preferred: one source snapshot for both engines
+
+Use a fresh original OSM PBF that covers every intended origin, facility entrance
+and connecting corridor, with a boundary buffer. Joining the existing regional
+files does not fill the roads between them. The current regional inputs remain
+active until a fresh, reviewed central bundle is supplied.
+
+`build/Export-RoutingBundle.py` requires Python 3.11+ and `osmium-tool`. It exports
+one central roads/points pair and retains the exact central PBF for MLD. Both
+GeoJSON files are necessary: a roads-only export drops restriction points.
+Original node IDs, way IDs, versions, timestamps and all scalar OSM tags survive
+the export. Central graphs connect junctions by original node ID and enforce
+point restrictions against those IDs; separate nodes at the same coordinate
+stay separate. Regional exports without IDs keep their previous coordinate matching.
+
+Example from the repository root (the bounds cover the current extracts with
+buffer; review them against actual field origins and entrances):
+
+```powershell
+python build/Export-RoutingBundle.py --source C:/Maps/philippines-latest.osm.pbf --source-url https://download.geofabrik.de/asia/philippines.html --bounds 121.00,14.60,121.16,14.745 --output C:/Maps/rescuar-central-bundle
+python build/Export-RoutingBundle.py --verify --output C:/Maps/rescuar-central-bundle
+```
+
+The exporter retains complete ways, rejects duplicate/deleted objects and
+missing way-node references, preserves every tagged node, and writes to a new
+staging directory. If the source has no replication time, supply its documented
+UTC time with `--snapshot`. The manifest records source provenance, timestamp,
+requested/actual bounds, counts, exporter version and source/output/policy hashes.
+Output identities are checked before publishing the staging bundle.
+
+After reviewing coverage and facility reachability:
+
+1. Copy `CENTRAL_ROADS.geojson`, `CENTRAL_POINTS.geojson` and
+   `routing-manifest.json` together into `RescuAR/Navigation/Data/Resources/`.
+2. Copy that bundle's `central.osm.pbf` and the **same** manifest into
+   `RescuAR/Navigation/Data/routing-inputs/`.
+3. Retire regional files from these active directories. Runtime discovery and
+   Docker also give a complete central bundle precedence, so retained historical
+   files cannot silently contaminate it. A partial or mismatched bundle fails.
+4. Build/install the app and build/deploy MLD together. Compare the app's logged
+   dataset ID with the server startup manifest. OSRM responses do not yet carry
+   a dataset identity handshake; do not infer deployment parity from an HTTP success.
+5. Repeat local route checks in each area and intended cross-area trips, then
+   perform the original field walks. Missing OSM passages require verified edits
+   in the common source used by both engines.
+
+The old mixed-date normalization below remains a compatibility path. Its output
+selects the latest **available** objects; it cannot reconstruct absent later
+changes/deletions or establish a coherent snapshot.
+
 ## 1. Offline A* and map display
 
 1. Keep backups outside `RescuAR/Navigation/Data/Resources/`.
@@ -73,8 +123,8 @@ See the [official image](https://github.com/project-osrm/osrm-backend/pkgs/conta
 | Hazards | Both app providers use the same segment validation: outward escape from a starting hazard is allowed, movement deeper inside and re-entry are rejected. |
 
 A* and MLD share eligibility and preferences; exact routes can still differ
-because A* chooses nearby facility vertices and OSRM projects endpoints onto
-segments. Different source snapshots, absent POINTS and conditional OSM
+because endpoint candidate scoring differs between A* and OSRM. Both project
+ordinary endpoints onto road segments. Different source snapshots, absent POINTS and conditional OSM
 restrictions can also affect results. Conditional restrictions are not evaluated
 by this static policy. An eligible mapped road is not a guarantee of current
 disaster-time passability.
@@ -84,7 +134,10 @@ not a new UI confirmation flow. Road-centerline geometry remains an approximatio
 of a walking route unless the source supplies a separate footway/sidewalk.
 Gravel/fine gravel/pebblestone multiply cost by 4/3; mud and sand multiply it by 2.
 MLD returns `NoSegment` when the bounded endpoint search finds no eligible road;
-the client treats it as no route so offline fallback can proceed normally.
+the client reports an unmatched endpoint and tries bounded offline matching.
+`NoRoute` remains an authoritative disconnected result and does not trigger
+ordinary A* fallback. Invalid server responses and transport failures are logged
+separately and may recover through independently validated offline routing.
 OSRM's [small-component option](https://github.com/Project-OSRM/osrm-backend/blob/v5.27.1/src/tools/extract.cpp#L49)
 affects endpoint matching; the Docker build supplies it automatically.
 
@@ -138,16 +191,17 @@ server containing them all.
    other-city.osm.pbf
    ```
 
-   Prefer the same source snapshot for every extract and derive each area's
-   GeoJSON from that source. Do not combine the old GeoJSON-derived
+   Existing extracts can come from different source dates. Derive each area's
+   GeoJSON from its original source. Do not combine the old GeoJSON-derived
    `marikina-routing.osm.pbf` with current exports. Keep obsolete extracts and
    backups outside `routing-inputs/`. See [Osmium's merge rules](https://docs.osmcode.org/osmium/latest/osmium-merge.html).
    The build excludes `type=route` and `type=route_master` relations (records
    grouping bus, numbered-road, hiking, or other routes), which the walking
    profile does not use. It keeps all nodes, road lines, and other relation
-   types. Different source dates can work when the retained shared objects
-   have identical versions and content. Conflicts in retained objects still
-   require matching source snapshots; do not bypass the version check.
+   types. For overlapping objects, it merges the available history and selects
+   the latest available version of each object. This compatibility path
+   does not reconstruct later missing edits/deletions; prefer a fresh central snapshot. It still checks that only one version remains
+   per object and that every road node exists. See [Osmium's time filter](https://docs.osmcode.org/osmium/latest/osmium-time-filter.html).
 2. On your local computer with Docker Desktop running, open PowerShell in
    `D:\Projects\RescuAR\RescuAR\Navigation\Data\` and run (not Railway SSH):
 
@@ -157,9 +211,9 @@ server containing them all.
    ```
 
    No region build arguments are required. The build excludes unused route
-   groups, sorts and merges all `.osm.pbf` inputs, rejects conflicting retained
-   object versions, checks road-node references, and prepares OSRM using the
-   evacuation foot profile and MLD algorithm.
+   groups, sorts and merges all `.osm.pbf` inputs, resolves overlapping objects
+   to their latest available versions, checks road-node references, and prepares
+   OSRM using the evacuation foot profile and MLD algorithm.
    An empty input folder fails with an instruction to add extracts.
    Policy/Lua test failures also stop the build. The extra Python/Lua build
    tools stay in the intermediate merger stage, outside the deployed image.

@@ -55,12 +55,8 @@ public static class ARFloodDepthBridge
                 return snapshot;
             }
 
-            Clear(invalidReason);
-
-            lock (sync)
-            {
-                return current;
-            }
+            Clear(invalidReason, snapshot.Version);
+            return FloodDepthSnapshot.UnavailableWithVersion(snapshot.Version, snapshot.Generation);
         }
     }
 
@@ -77,7 +73,8 @@ public static class ARFloodDepthBridge
             return;
         }
 
-        if (!double.IsFinite(localDepthMeters) || localDepthMeters <= 0.0)
+        if (!double.IsFinite(localDepthMeters) || localDepthMeters <= 0.0 ||
+            !float.IsFinite(horizontalExtentMeters))
         {
             Clear("invalid/non-positive local depth");
             return;
@@ -141,12 +138,15 @@ public static class ARFloodDepthBridge
             $"depth={depth:F2}m; source='{next.Source}'.");
     }
 
-    public static long Clear(string reason = "cleared")
+    public static long Clear(string reason = "cleared", long? expectedVersion = null)
     {
         long nextVersion;
 
         lock (sync)
         {
+            if (expectedVersion.HasValue && current.Version != expectedVersion.Value)
+                return current.Version;
+
             if (!current.IsAvailable &&
                 current.Generation == ARRenderGenerationBridge.Current)
             {

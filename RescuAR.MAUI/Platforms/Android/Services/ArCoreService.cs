@@ -78,6 +78,13 @@ public sealed partial class ArCoreService : IArCoreService
         new();
 
     private PendingCameraFrame? pendingCameraFrame;
+    // Accessed only on the owning draw thread; metadata belongs to the actual
+    // submitted conversion, never to a newer frame waiting in the producer slot.
+    private ARFrameMetadata? pendingCameraConversionMetadata;
+    private long cameraConversionStartedAt;
+    private long completedCameraConversions;
+    private long deferredCameraConversions;
+    private long maximumCameraConversionMilliseconds;
 
     private CancellationTokenSource? frameLoopCancellation;
     private volatile Task? frameLoopTask;
@@ -201,8 +208,9 @@ public sealed partial class ArCoreService : IArCoreService
      * confidence window before an Anchor is created.
      *
      * When several sweeps contain no DepthPoint, intermediate sweeps retain
-     * only the lower-center probe. A complete nine-ray Plane/Depth sweep still
-     * runs every sixth interval. This limits ARCore's repeated
+     * two lower-view probes so same-frame floor support remains possible.
+     * A complete Plane/Depth sweep still runs every sixth interval.
+     * This limits ARCore's repeated
      * depth-not-yet-available work without stopping floor verification.
      */
     private static readonly (float XOffset, float ZOffset)[]
@@ -240,7 +248,7 @@ public sealed partial class ArCoreService : IArCoreService
     };
 
     private const int GroundDepthCandidateSampleCount = 3;
-    private const int GroundDepthRequiredSpatialSamples = 2;
+    private const int GroundDepthRequiredSpatialSamples = ARGroundProbePlan.MinimumSpatialSamples;
 
     private const long GroundPlaneSearchIntervalMilliseconds =
         250;
@@ -270,7 +278,7 @@ public sealed partial class ArCoreService : IArCoreService
         0.35f;
 
     private const int GroundPlaneRequiredSpatialSamples =
-        2;
+        ARGroundProbePlan.MinimumSpatialSamples;
 
     private const float GroundPlaneMaximumYDeltaMeters =
         0.12f;
@@ -556,13 +564,9 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 8: Configuring DepthMode when supported.");
 
-            forceDepthDisabledForExperiment =
-                IsDepthDisabledForControlledRetest();
-
-            depthExperimentMode =
-                forceDepthDisabledForExperiment
-                    ? "FORCED_DEPTH_OFF"
-                    : "DEPTH_SESSION_STABLE";
+            var depthConfiguration = GetDepthConfigurationDecision();
+            forceDepthDisabledForExperiment = depthConfiguration.DisableDepth;
+            depthExperimentMode = depthConfiguration.Mode;
 
             depthModeSupported =
                 TryConfigureAutomaticDepth(
@@ -1068,6 +1072,7 @@ public sealed partial class ArCoreService : IArCoreService
         if (ReferenceEquals(importer, currentImporter))
         {
             importer = null;
+            pendingCameraConversionMetadata = null;
         }
 
         lastProcessedTimestamp = long.MinValue;
@@ -1531,8 +1536,32 @@ public sealed partial class ArCoreService : IArCoreService
         replacedFrame?.Dispose();
     }
 
-    private void ProcessPendingCameraFrameOnDrawThread()
+    private bool ProcessPendingCameraFrameOnDrawThread()
     {
+        if (pendingCameraConversionMetadata is { } submittedMetadata)
+        {
+            try
+            {
+                var completedTexture = importer?.TryCompletePendingImport();
+                if (completedTexture is null) return true;
+                pendingCameraConversionMetadata = null;
+                RecordCameraConversionCompleted();
+                if (Environment.TickCount64 - cameraConversionStartedAt >
+                    ARCameraTextureBridge.MaximumTextureAgeMilliseconds)
+                {
+                    ARCameraTextureBridge.Clear();
+                    return true;
+                }
+                RecordCameraImportSuccess();
+                return !ARCameraTextureBridge.Publish(submittedMetadata, completedTexture);
+            }
+            catch (Exception exception)
+            {
+                HandleCameraImportFailure(exception, submittedMetadata.Generation.GraphicsGeneration);
+                return true;
+            }
+        }
+
         PendingCameraFrame? pendingFrame;
 
         lock (pendingCameraFrameLock)
@@ -1546,7 +1575,7 @@ public sealed partial class ArCoreService : IArCoreService
 
         if (pendingFrame is null)
         {
-            return;
+            return false;
         }
 
         if (!ARRenderGenerationBridge.TryAcceptCallback(
@@ -1554,14 +1583,14 @@ public sealed partial class ArCoreService : IArCoreService
                 "pending-camera-import"))
         {
             pendingFrame.Dispose();
-            return;
+            return false;
         }
 
         if (!CanAttemptCameraImport(
                 pendingFrame.Metadata.Generation.GraphicsGeneration))
         {
             pendingFrame.Dispose();
-            return;
+            return false;
         }
 
         try
@@ -1571,7 +1600,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             if (currentGraphicsContext is null)
             {
-                return;
+                return false;
             }
 
             importer ??=
@@ -1580,6 +1609,7 @@ public sealed partial class ArCoreService : IArCoreService
 
             try
             {
+                cameraConversionStartedAt = Environment.TickCount64;
                 var texture =
                     importer.Import(
                         pendingFrame.HardwareBuffer,
@@ -1587,9 +1617,20 @@ public sealed partial class ArCoreService : IArCoreService
                         pendingFrame.OutputWidth,
                         pendingFrame.OutputHeight);
 
+                if (texture is null)
+                {
+                    Interlocked.Increment(ref deferredCameraConversions);
+                    pendingCameraConversionMetadata = pendingFrame.Metadata;
+                    ARCameraTextureBridge.Clear();
+                    // Do not sample the single RGBA target while its conversion
+                    // is pending. Later draw callbacks poll without blocking.
+                    return true;
+                }
+
+                RecordCameraConversionCompleted();
                 RecordCameraImportSuccess();
 
-                ARCameraTextureBridge.Publish(
+                return !ARCameraTextureBridge.Publish(
                     pendingFrame.Metadata,
                     texture);
             }
@@ -1598,6 +1639,7 @@ public sealed partial class ArCoreService : IArCoreService
                 HandleCameraImportFailure(
                     exception,
                     pendingFrame.Metadata.Generation.GraphicsGeneration);
+                return true;
             }
         }
         finally
@@ -1620,6 +1662,19 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         pendingFrame?.Dispose();
+    }
+
+    private void RecordCameraConversionCompleted()
+    {
+        Interlocked.Increment(ref completedCameraConversions);
+        long elapsed = Math.Max(0, Environment.TickCount64 - cameraConversionStartedAt);
+        long previous = Interlocked.Read(ref maximumCameraConversionMilliseconds);
+        while (elapsed > previous)
+        {
+            long observed = Interlocked.CompareExchange(ref maximumCameraConversionMilliseconds, elapsed, previous);
+            if (observed == previous) break;
+            previous = observed;
+        }
     }
 
     private static void CloseHardwareBuffer(
@@ -1887,7 +1942,8 @@ public sealed partial class ArCoreService : IArCoreService
             TryGetSpatialGroundAnchorPose(
                 out float anchorX,
                 out float anchorY,
-                out float anchorZ);
+                out float anchorZ,
+                out System.Numerics.Quaternion? anchorRotation);
 
         if (anchorAvailable)
         {
@@ -1918,6 +1974,7 @@ public sealed partial class ArCoreService : IArCoreService
             anchorAvailable =
                 TryGetProvisionalGroundReference(
                     translation,
+                    frameMetadata.Generation,
                     out anchorX,
                     out anchorY,
                     out anchorZ);
@@ -1971,7 +2028,8 @@ public sealed partial class ArCoreService : IArCoreService
             anchorX,
             anchorY,
             anchorZ,
-            frameMetadata);
+            frameMetadata,
+            anchorRotation);
 
         /*
          * Start/clear retained-anchor recovery from the ARCore frame cadence
@@ -2091,17 +2149,13 @@ public sealed partial class ArCoreService : IArCoreService
         float[] worldRayOrigin =
             new float[3];
 
-        int worldProbeLimit = Math.Min(
-            3,
-            Math.Max(
-                1,
-                powerThermalDecision.MaximumGroundProbesPerSweep -
-                    GroundDepthRequiredSpatialSamples));
+        ARGroundProbePlan probePlan = ARGroundProbePlan.Create(
+            powerThermalDecision.MaximumGroundProbesPerSweep,
+            reducedProbeSweep);
 
         for (int sampleIndex = 0;
-             !reducedProbeSweep &&
              sampleIndex <
-                worldProbeLimit;
+                probePlan.WorldDownProbes;
              sampleIndex++)
         {
             if (!TryConsumeGroundProbeBudget(now))
@@ -2149,15 +2203,13 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         /*
-         * Lower-view samples. Every sample may acquire a real Plane. Only the
-         * first/central-lower sample is used for Depth confidence so successive
-         * depth candidates describe approximately the same physical patch.
+         * Lower-view samples. Every sample may acquire a real Plane. The
+         * nearby lower-view samples support rolling Depth confidence for
+         * approximately the same physical patch.
          */
         for (int sampleIndex = 0;
              sampleIndex <
-                (reducedProbeSweep
-                    ? 1
-                    : GroundPlaneSearchPattern.Length);
+                probePlan.ScreenProbes;
              sampleIndex++)
         {
             if (!TryConsumeGroundProbeBudget(now))
@@ -2876,11 +2928,13 @@ public sealed partial class ArCoreService : IArCoreService
     private bool TryGetSpatialGroundAnchorPose(
         out float anchorX,
         out float anchorY,
-        out float anchorZ)
+        out float anchorZ,
+        out System.Numerics.Quaternion? anchorRotation)
     {
         anchorX = 0;
         anchorY = 0;
         anchorZ = 0;
+        anchorRotation = null;
 
         Google.AR.Core.Anchor? anchor =
             spatialGroundAnchor;
@@ -2913,6 +2967,9 @@ public sealed partial class ArCoreService : IArCoreService
         anchorPose.GetTranslation(
             anchorTranslation,
             0);
+        float[] rotation = new float[4];
+        anchorPose.GetRotationQuaternion(rotation, 0);
+        anchorRotation = new System.Numerics.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
 
         anchorX =
             anchorTranslation[0];
@@ -2930,6 +2987,7 @@ public sealed partial class ArCoreService : IArCoreService
 
     private bool TryGetProvisionalGroundReference(
         float[] cameraTranslation,
+        ARRenderGenerationToken renderGeneration,
         out float anchorX,
         out float anchorY,
         out float anchorZ)
@@ -2978,10 +3036,6 @@ public sealed partial class ArCoreService : IArCoreService
                 ref isGroundAnchorProvisional,
                 1);
 
-            ARGroundStateBridge.PublishProvisional(
-                ARRenderGenerationBridge.Current,
-                "camera-relative provisional ground");
-
             Log.Warn(
                 SpatialPoseTag,
                 "PROVISIONAL ground reference published for emergency-start " +
@@ -2993,6 +3047,35 @@ public sealed partial class ArCoreService : IArCoreService
                 "Plane/Depth verification remains active; do not treat this " +
                 "estimate as a verified physical floor.");
         }
+
+        if (LocalArNavigationPolicy.TryRenewProvisionalReference(
+                cameraTranslation[0], cameraTranslation[1], cameraTranslation[2],
+                provisionalGroundX, provisionalGroundY, provisionalGroundZ, out var renewed))
+        {
+            float distance = LocalArNavigationPolicy.GetHorizontalDistanceMeters(
+                cameraTranslation[0] - provisionalGroundX, cameraTranslation[2] - provisionalGroundZ);
+            ARGroundStateBridge.InvalidateAndSearch(renderGeneration, true,
+                "estimated ground reference exceeded the local window");
+            provisionalGroundX = renewed.X;
+            provisionalGroundZ = renewed.Z;
+            // Keep floor Y, probe budgets and search timers. This is a local
+            // reference handoff, not a new floor search or an AR world change.
+            long replacement;
+            lock (groundAnchorRecoveryLock) replacement = ++groundAnchorReplacementGeneration;
+            ARCameraSpatialController.SetRouteRecoveryRebasePending(true,
+                "estimated ground reference renewed; current route requires rebase");
+            Log.Info(AnchorRecoveryLogTag,
+                $"PROVISIONAL LOCAL FRAME RENEWED: distance={distance:F2}m; " +
+                $"floorY={provisionalGroundY:F2}m; replacementGeneration={replacement}; " +
+                "ground search budget retained.");
+        }
+
+        // Tracking loss suspends trust without discarding this fixed estimate.
+        // Restore its provisional state on every tracked return, including
+        // recovery before a real Plane/Depth anchor has been acquired.
+        ARGroundStateBridge.PublishProvisional(
+            renderGeneration,
+            "camera-relative provisional ground");
 
         anchorX =
             provisionalGroundX;
@@ -3361,6 +3444,13 @@ public sealed partial class ArCoreService : IArCoreService
         float zoomRatio,
         ARFrameMetadata frameMetadata)
     {
+        if (!depthModeEnabled)
+        {
+            if (ARDepthOcclusionBridge.Current.IsAvailable)
+                ARDepthOcclusionBridge.Clear();
+            return;
+        }
+
         long timestamp =
             frameMetadata.FrameTimestamp;
 
@@ -4071,6 +4161,9 @@ public sealed partial class ArCoreService : IArCoreService
             processedFrameCount *
             1000.0 /
             elapsedMilliseconds;
+        long converted = Interlocked.Exchange(ref completedCameraConversions, 0);
+        long deferred = Interlocked.Exchange(ref deferredCameraConversions, 0);
+        long maximumConversionMs = Interlocked.Exchange(ref maximumCameraConversionMilliseconds, 0);
 
         string temperatureText =
             float.IsFinite(
@@ -4082,6 +4175,8 @@ public sealed partial class ArCoreService : IArCoreService
             Tag,
             "Camera pipeline telemetry: " +
             $"fps={fps:F1}, " +
+            $"convertedFps={converted * 1000.0 / elapsedMilliseconds:F1}, " +
+            $"deferredConversions={deferred}, maxConversionMs={maximumConversionMs}, " +
             $"targetMaxFps={powerThermalDecision.TargetMaximumFramesPerSecond}, " +
             $"powerMode={powerThermalDecision.Mode}, " +
             $"batteryTemperature={temperatureText}, " +

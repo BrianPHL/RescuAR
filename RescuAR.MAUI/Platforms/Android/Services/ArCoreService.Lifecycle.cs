@@ -30,6 +30,7 @@ public sealed partial class ArCoreService
     private readonly object lifecycleStateLock = new();
     private readonly object trackedTransitionLock = new();
     private Task trackedTransitionTask = Task.CompletedTask;
+    private Task<ArCoreLifecycleResult>? shutdownTask;
     private ArCoreLifecycleState lifecycleState = ArCoreLifecycleState.Uninitialized;
     private ArCoreLifecycleTarget desiredLifecycleState = ArCoreLifecycleTarget.Paused;
     private ArCoreFailure lastLifecycleFailure = ArCoreFailure.None;
@@ -87,6 +88,13 @@ public sealed partial class ArCoreService
     {
         lock (lifecycleStateLock)
         {
+            if (runIntent.IsShutdown)
+                return Task.FromResult(new ArCoreLifecycleResult(false,
+                    CreateLifecycleSnapshotLocked() with
+                    {
+                        Failure = new ArCoreFailure(ArCoreFailureCode.SessionShutdownFailed,
+                            ArCoreFailureClassification.Terminal, "The ARCore service has been shut down.")
+                    }));
             runIntent.Request(true);
             return EnsureRunningCoreAsync(
                 BeginLifecycleRequest(ArCoreLifecycleTarget.Running,
@@ -109,6 +117,7 @@ public sealed partial class ArCoreService
             if (!gateEntered)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.TimedOut,
                     ArCoreFailureClassification.Recoverable,
                     "Timed out waiting for the ARCore lifecycle owner.");
@@ -122,6 +131,7 @@ public sealed partial class ArCoreService
             if (!runIntent.ActivityResumed)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.ActivityUnavailable,
                     ArCoreFailureClassification.Recoverable,
                     "The Android Activity is not resumed.");
@@ -130,14 +140,16 @@ public sealed partial class ArCoreService
             if (!runIntent.SurfaceReady)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.GraphicsUnavailable,
                     ArCoreFailureClassification.Recoverable,
                     "The Android AR surface is not ready yet.");
             }
 
-            if (lifecycleState is ArCoreLifecycleState.Disposed or ArCoreLifecycleState.Disposing)
+            if (runIntent.IsShutdown)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.SessionShutdownFailed,
                     ArCoreFailureClassification.Terminal,
                     "The ARCore service has already been disposed.");
@@ -147,6 +159,7 @@ public sealed partial class ArCoreService
                     out ArCoreFailure terminalCameraFailure))
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     terminalCameraFailure.Code,
                     terminalCameraFailure.Classification,
                     terminalCameraFailure.Message);
@@ -155,7 +168,8 @@ public sealed partial class ArCoreService
             if (session is not null && !sessionPaused && IsFrameLoopRunning)
             {
                 ActivateRenderGenerationIfReady();
-                SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
+                if (!SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None, requestGeneration))
+                    return SupersededLifecycleRequest(requestGeneration);
                 return CurrentLifecycleResult(true);
             }
 
@@ -166,6 +180,7 @@ public sealed partial class ArCoreService
                 if (!HasCameraPermission())
                 {
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreFailureCode.CameraPermissionDenied,
                         ArCoreFailureClassification.Recoverable,
                         "Camera permission is required before ARCore can resume.");
@@ -178,6 +193,7 @@ public sealed partial class ArCoreService
                     return SupersededLifecycleRequest(requestGeneration);
                 if (!resumed)
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreLifecyclePolicy.ClassifyFailureCode(
                             lastSessionOperationException,
                             ArCoreFailureCode.SessionResumeFailed),
@@ -200,13 +216,14 @@ public sealed partial class ArCoreService
                         Reason = "Retained ARCore session resumed.",
                     };
                 }
-                SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
+                if (!SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None, requestGeneration))
+                    return SupersededLifecycleRequest(requestGeneration);
                 return CurrentLifecycleResult(true);
             }
 
             SetLifecycleState(
                 session is null ? ArCoreLifecycleState.Initializing : ArCoreLifecycleState.Running,
-                ArCoreFailure.None);
+                ArCoreFailure.None, requestGeneration);
 
             ArCoreApk.Availability availability =
                 await WaitForStableAvailabilityAsync(cancellationToken).ConfigureAwait(false);
@@ -219,6 +236,7 @@ public sealed partial class ArCoreService
                 PublishCapabilities(availability, false,
                     "ARCore availability did not stabilize before the bounded retry ended.");
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.AvailabilityPending,
                     ArCoreFailureClassification.Recoverable,
                     "ARCore availability is still being determined.");
@@ -229,6 +247,7 @@ public sealed partial class ArCoreService
                 PublishCapabilities(availability, false,
                     "The device reported ARCore as unsupported.");
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.UnsupportedDevice,
                     ArCoreFailureClassification.Terminal,
                     "ARCore is unsupported on this device.");
@@ -238,6 +257,7 @@ public sealed partial class ArCoreService
             {
                 PublishCapabilities(availability, false, "Camera permission is not granted.");
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.CameraPermissionDenied,
                     ArCoreFailureClassification.Recoverable,
                     "Camera permission is required before ARCore can start.");
@@ -248,6 +268,7 @@ public sealed partial class ArCoreService
                 PublishCapabilities(availability, false,
                     "The Evergine Vulkan graphics context is not ready.");
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.GraphicsUnavailable,
                     ArCoreFailureClassification.Recoverable,
                     "The AR rendering surface is not ready.");
@@ -257,6 +278,7 @@ public sealed partial class ArCoreService
                     out ArCoreFailure nativeBridgeFailure))
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     nativeBridgeFailure.Code,
                     nativeBridgeFailure.Classification,
                     nativeBridgeFailure.Message);
@@ -274,6 +296,7 @@ public sealed partial class ArCoreService
                 catch (InvalidOperationException exception)
                 {
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreFailureCode.ActivityUnavailable,
                         ArCoreFailureClassification.Recoverable,
                         exception.Message);
@@ -281,10 +304,14 @@ public sealed partial class ArCoreService
                 catch (Exception exception)
                 {
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreLifecyclePolicy.ClassifyFailureCode(exception, ArCoreFailureCode.InstallationFailed),
                         ArCoreFailureClassification.Recoverable,
                         $"ARCore installation check failed: {exception.Message}");
                 }
+
+                if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
+                    return SupersededLifecycleRequest(requestGeneration);
 
                 if (installStatus == ArCoreApk.InstallStatus.InstallRequested)
                 {
@@ -296,13 +323,14 @@ public sealed partial class ArCoreService
                         new ArCoreFailure(
                             ArCoreFailureCode.InstallationRequired,
                             ArCoreFailureClassification.Recoverable,
-                            "Complete the ARCore installation, then return to RescuAR."));
+                            "Complete the ARCore installation, then return to RescuAR."), requestGeneration);
                     return CurrentLifecycleResult(false);
                 }
 
                 if (installStatus != ArCoreApk.InstallStatus.Installed)
                 {
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreFailureCode.InstallationFailed,
                         ArCoreFailureClassification.Recoverable,
                         $"Unexpected ARCore install status: {installStatus}.");
@@ -324,6 +352,7 @@ public sealed partial class ArCoreService
                         lastSessionOperationException,
                         ArCoreFailureCode.SessionInitializationFailed);
                     return FailLifecycleRequest(
+                        requestGeneration,
                         code,
                         code == ArCoreFailureCode.UnsupportedDevice
                             ? ArCoreFailureClassification.Terminal
@@ -349,6 +378,7 @@ public sealed partial class ArCoreService
                 if (!resumed)
                 {
                     return FailLifecycleRequest(
+                        requestGeneration,
                         ArCoreLifecyclePolicy.ClassifyFailureCode(
                             lastSessionOperationException,
                             ArCoreFailureCode.SessionResumeFailed),
@@ -368,7 +398,8 @@ public sealed partial class ArCoreService
                 true,
                 "ARCore session is running.",
                 cameraAvailable: true);
-            SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None);
+            if (!SetLifecycleState(ArCoreLifecycleState.Running, ArCoreFailure.None, requestGeneration))
+                return SupersededLifecycleRequest(requestGeneration);
             return CurrentLifecycleResult(true);
         }
         catch (OperationCanceledException)
@@ -376,6 +407,7 @@ public sealed partial class ArCoreService
             if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Running))
                 return SupersededLifecycleRequest(requestGeneration);
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreFailureCode.Cancelled,
                 ArCoreFailureClassification.Recoverable,
                 "The ARCore start request was cancelled.");
@@ -386,6 +418,7 @@ public sealed partial class ArCoreService
                 return SupersededLifecycleRequest(requestGeneration);
             Log.Error(Tag, $"ARCore running transition failed: {exception}");
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreLifecyclePolicy.ClassifyFailureCode(exception, ArCoreFailureCode.Unknown),
                 ArCoreFailureClassification.Recoverable,
                 exception.Message);
@@ -404,6 +437,8 @@ public sealed partial class ArCoreService
     {
         lock (lifecycleStateLock)
         {
+            if (runIntent.IsShutdown)
+                return Task.FromResult(CurrentLifecycleResult(lifecycleState == ArCoreLifecycleState.Disposed));
             runIntent.Request(false);
             return PauseForLifecycleAsync(cancellationToken);
         }
@@ -412,9 +447,14 @@ public sealed partial class ArCoreService
     private async Task<ArCoreLifecycleResult> PauseForLifecycleAsync(
         CancellationToken cancellationToken = default)
     {
-        long requestGeneration = BeginLifecycleRequest(
-            ArCoreLifecycleTarget.Paused,
-            "ARCore pause requested");
+        long requestGeneration;
+        lock (lifecycleStateLock)
+        {
+            if (runIntent.IsShutdown)
+                return CurrentLifecycleResult(lifecycleState == ArCoreLifecycleState.Disposed);
+            requestGeneration = BeginLifecycleRequest(
+                ArCoreLifecycleTarget.Paused, "ARCore pause requested");
+        }
 
         ARRenderGenerationBridge.Suspend(
             Interlocked.Read(ref currentSessionGeneration),
@@ -436,6 +476,7 @@ public sealed partial class ArCoreService
             if (!gateEntered)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.TimedOut,
                     ArCoreFailureClassification.Recoverable,
                     "Timed out waiting to pause ARCore.");
@@ -457,11 +498,11 @@ public sealed partial class ArCoreService
                     "ARCore session is paused");
                 SetLifecycleState(
                     session is null ? ArCoreLifecycleState.Uninitialized : ArCoreLifecycleState.Paused,
-                    ArCoreFailure.None);
+                    ArCoreFailure.None, requestGeneration);
                 return CurrentLifecycleResult(true);
             }
 
-            SetLifecycleState(ArCoreLifecycleState.Pausing, ArCoreFailure.None);
+            SetLifecycleState(ArCoreLifecycleState.Pausing, ArCoreFailure.None, requestGeneration);
             bool paused = await PauseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
 
             if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Paused))
@@ -470,13 +511,15 @@ public sealed partial class ArCoreService
             if (!paused)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.SessionPauseFailed,
                     ArCoreFailureClassification.Recoverable,
                     lastSessionOperationException?.Message ??
                         "The ARCore session did not pause within its bounded deadline.");
             }
 
-            SetLifecycleState(ArCoreLifecycleState.Paused, ArCoreFailure.None);
+            if (!SetLifecycleState(ArCoreLifecycleState.Paused, ArCoreFailure.None, requestGeneration))
+                return SupersededLifecycleRequest(requestGeneration);
             return CurrentLifecycleResult(true);
         }
         catch (OperationCanceledException)
@@ -484,6 +527,7 @@ public sealed partial class ArCoreService
             if (!IsLatestLifecycleRequest(requestGeneration, ArCoreLifecycleTarget.Paused))
                 return SupersededLifecycleRequest(requestGeneration);
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreFailureCode.Cancelled,
                 ArCoreFailureClassification.Recoverable,
                 "The ARCore pause request was cancelled.");
@@ -494,6 +538,7 @@ public sealed partial class ArCoreService
                 return SupersededLifecycleRequest(requestGeneration);
             Log.Error(Tag, $"ARCore pause transition failed: {exception}");
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreFailureCode.SessionPauseFailed,
                 ArCoreFailureClassification.Recoverable,
                 exception.Message);
@@ -507,14 +552,24 @@ public sealed partial class ArCoreService
         }
     }
 
-    public async Task<ArCoreLifecycleResult> ShutdownAsync(
+    public Task<ArCoreLifecycleResult> ShutdownAsync(
         CancellationToken cancellationToken = default)
     {
         lock (lifecycleStateLock)
         {
+            if (shutdownTask is { IsCompleted: false })
+                return shutdownTask.WaitAsync(cancellationToken);
+            if (lifecycleState == ArCoreLifecycleState.Disposed)
+                return Task.FromResult(CurrentLifecycleResult(true));
             runIntent.Shutdown();
-            BeginLifecycleRequest(ArCoreLifecycleTarget.Disposed, "ARCore shutdown requested");
+            long requestGeneration = BeginLifecycleRequest(ArCoreLifecycleTarget.Disposed, "ARCore shutdown requested");
+            return shutdownTask = ShutdownCoreAsync(requestGeneration, cancellationToken);
         }
+    }
+
+    private async Task<ArCoreLifecycleResult> ShutdownCoreAsync(long requestGeneration,
+        CancellationToken cancellationToken)
+    {
         bool gateEntered = false;
 
         try
@@ -527,6 +582,7 @@ public sealed partial class ArCoreService
             if (!gateEntered)
             {
                 return FailLifecycleRequest(
+                    requestGeneration,
                     ArCoreFailureCode.TimedOut,
                     ArCoreFailureClassification.Recoverable,
                     "Timed out waiting to shut down ARCore.");
@@ -537,7 +593,7 @@ public sealed partial class ArCoreService
                 return CurrentLifecycleResult(true);
             }
 
-            SetLifecycleState(ArCoreLifecycleState.Disposing, ArCoreFailure.None);
+            SetLifecycleState(ArCoreLifecycleState.Disposing, ArCoreFailure.None, requestGeneration);
             Interlocked.Increment(ref currentSessionGeneration);
 
             VKGraphicsContext? shutdownGraphicsContext;
@@ -679,13 +735,14 @@ public sealed partial class ArCoreService
                 graphicsTeardownTask = null;
             }
 
-            SetLifecycleState(ArCoreLifecycleState.Disposed, ArCoreFailure.None);
+            SetLifecycleState(ArCoreLifecycleState.Disposed, ArCoreFailure.None, requestGeneration);
             LifecycleChanged = null;
             return CurrentLifecycleResult(true);
         }
         catch (OperationCanceledException)
         {
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreFailureCode.Cancelled,
                 ArCoreFailureClassification.Recoverable,
                 "The ARCore shutdown request was cancelled.");
@@ -694,6 +751,7 @@ public sealed partial class ArCoreService
         {
             Log.Error(Tag, $"ARCore shutdown failed: {exception}");
             return FailLifecycleRequest(
+                requestGeneration,
                 ArCoreFailureCode.SessionShutdownFailed,
                 ArCoreFailureClassification.Recoverable,
                 exception.Message);
@@ -865,6 +923,16 @@ public sealed partial class ArCoreService
             Log.Error(Tag, $"ARCore pause operation failed: {exception}");
             return false;
         }
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private void LogNavigationLifecycleFrame(ArCoreLifecycleState state)
+    {
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        Log.Info(Tag, $"NAV_REFERENCE_LIFECYCLE state={state}; session={frame.Generation.SessionGeneration}; " +
+            $"frameNs={frame.FrameTimestamp}; fresh={frame.IsFresh}; tracking={frame.IsTracking}; " +
+            $"trackingEpoch={frame.TrackingEpoch}; worldFrame={frame.WorldFrame}; " +
+            $"ground={frame.Anchor.ReferenceGeneration}; anchorHasRotation={frame.Anchor.HasRotation}; anchorQ={frame.Anchor.Rotation}.");
     }
 
     private async Task<bool> ResumeSessionCoreAsync(CancellationToken cancellationToken)
@@ -1106,62 +1174,67 @@ public sealed partial class ArCoreService
     }
 
     private ArCoreLifecycleResult FailLifecycleRequest(
+        long requestGeneration,
         ArCoreFailureCode code,
         ArCoreFailureClassification classification,
         string message)
     {
-        if (code is ArCoreFailureCode.CameraUnavailable or
-                    ArCoreFailureCode.CameraPermissionDenied)
-        {
-            lock (lifecycleStateLock)
-            {
-                capabilitySnapshot = capabilitySnapshot with
-                {
-                    Version = ++capabilityVersion,
-                    CapturedAtUtc = DateTimeOffset.UtcNow,
-                    IsCurrent = true,
-                    CameraPermissionGranted = HasCameraPermission(),
-                    CameraAvailable = false,
-                    Reason = message,
-                };
-            }
-        }
-        else if (code is ArCoreFailureCode.NativeBridgeUnavailable or
-                         ArCoreFailureCode.CameraPassthroughUnavailable or
-                         ArCoreFailureCode.RendererUnavailable)
-        {
-            lock (lifecycleStateLock)
-            {
-                capabilitySnapshot = capabilitySnapshot with
-                {
-                    Version = ++capabilityVersion,
-                    CapturedAtUtc = DateTimeOffset.UtcNow,
-                    IsCurrent = true,
-                    NativeBridgeReady =
-                        code == ArCoreFailureCode.NativeBridgeUnavailable
-                            ? false
-                            : capabilitySnapshot.NativeBridgeReady,
-                    Reason = message,
-                };
-            }
-        }
-
         ArCoreFailure failure = new(code, classification, message);
-        SetLifecycleState(
-            ArCoreLifecyclePolicy.GetFailureState(
-                session is not null,
-                sessionPaused),
-            failure);
-        return CurrentLifecycleResult(false);
+        bool applied = SetLifecycleState(
+            ArCoreLifecyclePolicy.GetFailureState(session is not null, sessionPaused),
+            failure, requestGeneration, () =>
+        {
+            if (code is ArCoreFailureCode.CameraUnavailable or
+                        ArCoreFailureCode.CameraPermissionDenied)
+            {
+                lock (lifecycleStateLock)
+                {
+                    capabilitySnapshot = capabilitySnapshot with
+                    {
+                        Version = ++capabilityVersion,
+                        CapturedAtUtc = DateTimeOffset.UtcNow,
+                        IsCurrent = true,
+                        CameraPermissionGranted = HasCameraPermission(),
+                        CameraAvailable = false,
+                        Reason = message,
+                    };
+                }
+            }
+            else if (code is ArCoreFailureCode.NativeBridgeUnavailable or
+                             ArCoreFailureCode.CameraPassthroughUnavailable or
+                             ArCoreFailureCode.RendererUnavailable)
+            {
+                lock (lifecycleStateLock)
+                {
+                    capabilitySnapshot = capabilitySnapshot with
+                    {
+                        Version = ++capabilityVersion,
+                        CapturedAtUtc = DateTimeOffset.UtcNow,
+                        IsCurrent = true,
+                        NativeBridgeReady =
+                            code == ArCoreFailureCode.NativeBridgeUnavailable
+                                ? false
+                                : capabilitySnapshot.NativeBridgeReady,
+                        Reason = message,
+                    };
+                }
+            }
+
+        });
+        return applied ? CurrentLifecycleResult(false) : SupersededLifecycleRequest(requestGeneration);
     }
 
-    private void SetLifecycleState(ArCoreLifecycleState state, ArCoreFailure failure)
+    private bool SetLifecycleState(ArCoreLifecycleState state, ArCoreFailure failure,
+        long? requestGeneration = null, Action? updateCapabilitiesLocked = null)
     {
         ArCoreLifecycleSnapshot snapshot;
         ArCoreLifecycleState previousState;
 
         lock (lifecycleStateLock)
         {
+            if (!ArCoreLifecyclePolicy.CanApplyState(lifecycleState, state,
+                    requestGeneration, lifecycleRequestGeneration)) return false;
+            updateCapabilitiesLocked?.Invoke();
             previousState = lifecycleState;
             lifecycleState = state;
             lastLifecycleFailure = failure;
@@ -1182,13 +1255,14 @@ public sealed partial class ArCoreService
             $"requestGeneration={Interlocked.Read(ref lifecycleRequestGeneration)}, " +
             $"sessionGeneration={Interlocked.Read(ref currentSessionGeneration)}, " +
             $"failure={failure.Code}.");
+        LogNavigationLifecycleFrame(state);
 
         Action<ArCoreLifecycleSnapshot>? handlers =
             LifecycleChanged;
 
         if (handlers is null)
         {
-            return;
+            return true;
         }
 
         foreach (Action<ArCoreLifecycleSnapshot> handler in
@@ -1205,6 +1279,7 @@ public sealed partial class ArCoreService
                     $"{exception.GetType().Name}: {exception.Message}");
             }
         }
+        return true;
     }
 
     private ArCoreLifecycleResult CurrentLifecycleResult(bool success)

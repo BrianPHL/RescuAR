@@ -51,6 +51,16 @@ public readonly record struct ARFrameMetadata(
     long FrameTimestamp,
     ARDisplayGeometrySnapshot DisplayGeometry)
 {
+    // Preserve acquisition time through producer queues and GPU conversion.
+    // Publishing later must not make an old camera or depth frame fresh again.
+    public long AcquiredAtMonotonicMilliseconds { get; init; } = Environment.TickCount64;
+
+    public bool IsFresh(long maximumAgeMilliseconds, long monotonicNow)
+    {
+        long age = monotonicNow - AcquiredAtMonotonicMilliseconds;
+        return IsValid && age >= 0 && age <= maximumAgeMilliseconds;
+    }
+
     public static ARFrameMetadata Invalid =>
         new(
             ARRenderGenerationToken.Invalid,

@@ -183,6 +183,11 @@ namespace RescuAR.App.ViewModels.Authentication
                         var client = RescuAR.Services.SupabaseService.Instance.Client;
                         var authUser = client?.Auth.CurrentUser;
                         var authUserId = authUser?.Id;
+                        if (!string.IsNullOrWhiteSpace(authUserId))
+                        {
+                            Preferences.Default.Set("CurrentUserId", authUserId);
+                        }
+
                         if (client != null && authUser != null && !string.IsNullOrWhiteSpace(authUserId))
                         {
                             string fn = "";

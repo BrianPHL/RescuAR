@@ -13,5 +13,15 @@ namespace RescuAR.App.Views.Summary
             InitializeComponent();
             BindingContext = ViewModel;
         }
+
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
+            if (BindingContext is SummaryViewModel vm)
+            {
+                vm.RefreshUserActivity();
+                _ = vm.LoadLiveSummaryAsync();
+            }
+        }
     }
 }

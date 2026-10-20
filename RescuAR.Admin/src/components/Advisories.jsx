@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect } from 'react';
 import {
   Search,
@@ -369,10 +370,13 @@ export default function Advisories() {
           <h1>Advisories</h1>
           <span className="view-subtitle">Live Public Emergency Broadcasting</span>
         </div>
+        <div className="page-header-actions">
+          <ExportActions title="advisories" rows={filteredAdvisories} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Category', key: 'category' }, { label: 'Severity', key: 'severity' }, { label: 'Status', key: 'status' }, { label: 'Published', key: 'published' }, { label: 'Description', key: 'description' }, { label: 'Recommended Action', key: 'recommendedAction' }, { label: 'Escalation Actions', key: 'escalationActions' }, { label: 'Affected Areas', key: 'affectedAreas' }, { label: 'Starts', key: 'durationStart' }, { label: 'Ends', key: 'durationEnd' }]} disabled={loading} />
         <button className="btn-refresh" onClick={handleRefresh}>
           <RefreshCw size={13} className={isRefreshSpinning ? 'spin-icon' : ''} />
           <span>Refresh</span>
         </button>
+        </div>
       </div>
 
       <div className="stations-split-layout">
@@ -687,6 +691,7 @@ export default function Advisories() {
           onClick={() => setIsModalOpen(false)}
         >
           <div
+            className="admin-form-drawer"
             style={{ width: '420px', backgroundColor: '#fff', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)' }}
             onClick={(e) => e.stopPropagation()}
           >

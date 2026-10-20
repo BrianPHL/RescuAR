@@ -1,0 +1,4 @@
+reference_id,scope,period,measure,value,unit,source_document,source_page,interpretation_limit
+tumana_ondoy_habagat_affected,Barangay Tumana,Ondoy 2009 and Habagat (combined survey recollection),population affected,98.7,percent,Espina (2018),24,Combined Ondoy/Habagat survey evidence; not a spatial polygon and not event-exclusive
+tumana_ondoy_habagat_subside,Barangay Tumana,Ondoy 2009 and Habagat (combined survey recollection),respondents reporting >=1 day for water to subside,92.6,percent,Espina (2018),24,Supporting severity/duration evidence only
+tumana_ondoy_habagat_duration,Barangay Tumana,Ondoy 2009 and Habagat (combined survey recollection),average flood duration,1.2,days,Espina (2018),24,Supporting severity/duration evidence only

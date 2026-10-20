@@ -1,0 +1,11 @@
+variable,value,unit,description,source_document,source_section,source_page
+city_land_area_ha,2314.37,ha,Marikina city land area,Ecological Profile,Table 2 / geo-physical characteristics,9-10
+average_elevation_m_asl,14.7,m,General city elevation above sea level,Ecological Profile,Elevation,10-11
+slope_0_3_percent_share,67.08,percent,Share of city land in 0-3% slope class,Ecological Profile,Slope,11
+river_area_ha_approx,220,ha,Approximate area occupied by the Marikina River/main drainage system,Ecological Profile,Topography,10
+river_usual_level_m_approx,3,m,Typical Marikina River water level under usual conditions,Ecological Profile,Topography,10-11
+river_heavy_rain_level_m_up_to,18,m,River can reach this level during heavy rainfall per profile,Ecological Profile,Topography,11
+population_2020,456059,persons,PSA 2020 city population reported by profile,Ecological Profile,Table 4,12
+gross_density_2020,197.1,persons/ha,City gross population density,Ecological Profile,Table 6,14
+young_dependents_0_14_2020,125575,persons,Household population age 0-14,Ecological Profile,Table 5,13
+young_dependents_0_14_share_2020,27.7,percent,Share of household population age 0-14,Ecological Profile,Table 5,13

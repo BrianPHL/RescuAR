@@ -1,0 +1,23 @@
+{
+  "version": "provisional-1.0.0",
+  "approved": false,
+  "source": "project_provisional_rule",
+  "calibration_event_count": 0,
+  "holdout_event_count": 0,
+  "generated_at": null,
+  "notes": "Default project mapping. This file may be replaced only through the controlled calibration/promotion workflow after independent holdout validation.",
+  "rules": {
+    "Alert": {
+      "return_period": 5,
+      "minimum_hazard": "Low"
+    },
+    "Alarm": {
+      "return_period": 25,
+      "minimum_hazard": "Medium"
+    },
+    "Critical": {
+      "return_period": 100,
+      "minimum_hazard": "High"
+    }
+  }
+}

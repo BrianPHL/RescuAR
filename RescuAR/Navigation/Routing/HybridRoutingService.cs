@@ -1,9 +1,11 @@
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Data;
 using System.Collections.Generic;
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,7 +28,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     private const string LogTag =
         "RescuAR-HybridRouting";
 
-    private static readonly TimeSpan HazardAwareOnlineBudget =
+    private static readonly TimeSpan OnlineRequestBudget =
         TimeSpan.FromSeconds(
             6);
 
@@ -34,6 +36,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     private readonly Func<CancellationToken, Task<RoadGraph>> roadGraphProvider;
     private readonly Func<bool> isInternetAvailable;
     private readonly bool requireEmbeddedPedestrianGraph;
+    private readonly Func<string> roadDatasetId;
 
     private readonly SemaphoreSlim offlineInitializationGate =
         new(
@@ -49,7 +52,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         IRoutingService onlineRoutingService,
         Func<CancellationToken, Task<RoadGraph>> roadGraphProvider,
         Func<bool> isInternetAvailable,
-        bool requireEmbeddedPedestrianGraph = false)
+        bool requireEmbeddedPedestrianGraph = false,
+        Func<string>? roadDatasetId = null)
     {
         this.onlineRoutingService =
             onlineRoutingService ??
@@ -67,6 +71,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 nameof(isInternetAvailable));
 
         this.requireEmbeddedPedestrianGraph = requireEmbeddedPedestrianGraph;
+        this.roadDatasetId = roadDatasetId ?? (() => "unreported");
     }
 
     /// <summary>
@@ -105,11 +110,14 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
 
         try
         {
+            using CancellationTokenSource onlineBudget =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            onlineBudget.CancelAfter(OnlineRequestBudget);
             RouteResult? route =
                 await onlineRoutingService.FindRouteAsync(
                     origin,
                     destination,
-                    cancellationToken);
+                    onlineBudget.Token);
 
             if (route is null)
             {
@@ -144,11 +152,29 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 "Online routing timed out. Falling back to offline A*: " +
                 DiagnosticPrivacyPolicy.FormatException(ex));
         }
+        catch (RoutingEndpointUnmatchedException)
+        {
+            AndroidLog.Warn(LogTag,
+                "MLD endpoint unmatched (NoSegment). Trying bounded offline pedestrian matching; " +
+                "a disconnected NoRoute result remains final.");
+        }
+        catch (InvalidDataException ex)
+        {
+            AndroidLog.Warn(LogTag, "Online response is invalid. Trying independently validated offline routing: " +
+                DiagnosticPrivacyPolicy.FormatException(ex));
+        }
         catch (HttpRequestException ex)
         {
             AndroidLog.Warn(
                 LogTag,
                 "Online routing transport failed. Falling back to offline A*: " +
+                DiagnosticPrivacyPolicy.FormatException(ex));
+        }
+        catch (WebException ex) when (IsTransportFailure(ex))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AndroidLog.Warn(LogTag,
+                "Android routing transport failed. Falling back to offline A*: " +
                 DiagnosticPrivacyPolicy.FormatException(ex));
         }
 
@@ -183,6 +209,12 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                 cancellationToken);
         }
 
+        if (RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
+        {
+            AndroidLog.Warn(LogTag, "HAZARD_ROUTE_UNAVAILABLE reason=DestinationExcluded; choose a safe destination.");
+            return null;
+        }
+
         bool internetAvailable =
             !requireEmbeddedPedestrianGraph && GetInternetAvailabilitySafely();
 
@@ -201,7 +233,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                         cancellationToken);
 
                 onlineBudget.CancelAfter(
-                    HazardAwareOnlineBudget);
+                    OnlineRequestBudget);
 
                 RouteResult? onlineRoute =
                     await hazardAwareOnline.FindRouteAvoidingHazardsAsync(
@@ -253,6 +285,13 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                     "Online hazard-aware MLD transport failed. Falling back to A*: " +
                     DiagnosticPrivacyPolicy.FormatException(ex));
             }
+            catch (WebException ex) when (IsTransportFailure(ex))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AndroidLog.Warn(LogTag,
+                    "Android hazard routing transport failed. Falling back to offline A*: " +
+                    DiagnosticPrivacyPolicy.FormatException(ex));
+            }
             catch (InvalidDataException ex)
             {
                 AndroidLog.Warn(
@@ -260,6 +299,10 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
                     "Online hazard-aware MLD response/request was unusable. " +
                     "Falling back to A*: " +
                     DiagnosticPrivacyPolicy.FormatException(ex));
+            }
+            catch (RoutingEndpointUnmatchedException)
+            {
+                AndroidLog.Warn(LogTag, "MLD hazard endpoint unmatched. Trying bounded hazard-aware A*.");
             }
         }
         else if (internetAvailable)
@@ -339,11 +382,68 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     }
 
     /// <summary>
-    /// Explicit offline route entry point used when an already-active MLD trip
-    /// receives a confirmed Internet-loss event. This guarantees that the
-    /// transition itself is MLD -> A* even if connectivity changes again while
-    /// the replacement calculation is being prepared.
+    /// Ordinary deviations and reverse walking use the same per-trip provider
+    /// and bounded road-access retry. Internet restoration alone must not move
+    /// an offline trip back to MLD. Hazards use the shared safety-first planner,
+    /// which can select either provider after validating the alternative.
+    /// This method calculates geography only; it never changes ARRouteBridge.
     /// </summary>
+    public Task<RouteResult?> FindReplacementRouteAsync(
+        RouteResult activeRoute,
+        GeoCoordinate origin,
+        GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        IReadOnlyList<RouteHazard>? hazards = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(activeRoute);
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (hazards is { Count: > 0 })
+        {
+            AndroidLog.Info(LogTag,
+                $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=HazardSafety; hazards={hazards.Count}.");
+            return FindHazardAvoidingRouteAsync(origin, destination, hazards, cancellationToken);
+        }
+
+        IRoutingService provider = requireEmbeddedPedestrianGraph || IsOfflineRoute(activeRoute)
+            ? new OfflineTripRoutingService(this)
+            : this;
+        AndroidLog.Info(LogTag,
+            $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=RetainTripProvider; selected='{provider.AlgorithmName}'.");
+        return new MLDARIntegrationService(provider).RequestRouteWithDeferredRoadApproachAsync(
+            origin, destination, findRoadAccess, cancellationToken);
+    }
+
+    public async Task<RouteReplacementResult> FindReplacementRouteResultAsync(
+        RouteResult activeRoute, GeoCoordinate origin, GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        IReadOnlyList<RouteHazard>? hazards = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(activeRoute);
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (hazards is { Count: > 0 } && RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
+            return new(null, RouteReplacementFailure.DestinationExcluded);
+        var route = await FindReplacementRouteAsync(activeRoute, origin, destination, findRoadAccess, hazards, cancellationToken);
+        return new(route, route is null ? RouteReplacementFailure.NoRoute : RouteReplacementFailure.None);
+    }
+
+    public static bool IsOfflineRoute(RouteResult route) =>
+        route.Algorithm.Contains("AStar", StringComparison.OrdinalIgnoreCase) ||
+        route.Algorithm.Contains("A*", StringComparison.OrdinalIgnoreCase);
+
+    private sealed class OfflineTripRoutingService(HybridRoutingService owner) : IRoutingService
+    {
+        public string AlgorithmName => "AStar";
+
+        public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+            CancellationToken cancellationToken = default) =>
+            owner.FindOfflineRouteAsync(origin, destination, cancellationToken);
+    }
+
+    /// <summary>Explicit routing against the embedded pedestrian graph.</summary>
     public async Task<RouteResult?> FindOfflineRouteAsync(
         GeoCoordinate origin,
         GeoCoordinate destination,
@@ -416,7 +516,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
 
             existing =
                 new AStarRoutingService(
-                    graph);
+                    graph, roadDatasetId());
 
             offlineRoutingService =
                 existing;
@@ -424,6 +524,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             AndroidLog.Debug(
                 LogTag,
                 "Offline A* provider READY: " +
+                $"dataset='{NavigationDataBootstrap.DatasetId}', " +
                 $"nodes={graph.Nodes.Count}, " +
                 $"directedEdges={graph.Edges.Count}.");
 
@@ -434,6 +535,13 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
             offlineInitializationGate.Release();
         }
     }
+
+    private static bool IsTransportFailure(WebException exception) =>
+        exception.Status is WebExceptionStatus.ConnectFailure or
+            WebExceptionStatus.NameResolutionFailure or WebExceptionStatus.ProxyNameResolutionFailure or
+            WebExceptionStatus.Timeout or WebExceptionStatus.ConnectionClosed or
+            WebExceptionStatus.ReceiveFailure or WebExceptionStatus.SendFailure or
+            WebExceptionStatus.KeepAliveFailure or WebExceptionStatus.RequestCanceled;
 
     private bool GetInternetAvailabilitySafely()
     {

@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Devices.Sensors;
+using Microsoft.Maui.Storage;
 using RescuAR.App.Models;
 using RescuAR.App.Services.AreaStatus;
 using RescuAR.App.Services.Reports;
@@ -65,16 +66,16 @@ public partial class SummaryViewModel : ObservableObject
     private string safeZoneVerifiedBy = "Verified by Marikina LGU";
 
     [ObservableProperty]
-    private string lastArSession = "Ready to practice";
+    private string lastArSession = "Ready to start";
 
     [ObservableProperty]
-    private string preparednessProgressText = "6 of 10 items prepared";
+    private string preparednessProgressText = "0 of 10 items prepared";
 
     [ObservableProperty]
-    private string lastViewedCenterText = "Malanday Evacuation Hub";
+    private string lastViewedCenterText = "Find Nearest Hub";
 
     [ObservableProperty]
-    private string lastViewedAdvisoryText = "Marikina River Gauge";
+    private string lastViewedAdvisoryText = "Active Advisory Feed";
 
     // Dynamic Severity Colors
     [ObservableProperty]
@@ -97,20 +98,134 @@ public partial class SummaryViewModel : ObservableObject
         _advisoryService = new AdvisoryService();
         _statusService = AreaStatusService.Instance;
 
-        // Load real live summary data from Supabase
+        // Load real-time activity metrics immediately and fetch live Supabase data
+        RefreshUserActivity();
         _ = LoadLiveSummaryAsync();
 
-        // Subscribe to real-time admin advisory updates from Supabase (unsubscribe first to prevent listener leaks)
-        RealtimeAdvisoryManager.OnAdvisoryPopupRequested -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnAdvisoryPopupRequested += HandleNewAdvisoryPushed;
+        // Subscribe to real-time admin advisory updates from Supabase
+        RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
+        {
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                await LoadLiveSummaryAsync();
+            });
+        };
     }
 
-    private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
+    public void RefreshUserActivity()
     {
-        MainThread.BeginInvokeOnMainThread(async () =>
+        try
         {
-            await LoadLiveSummaryAsync();
-        });
+            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+                            ?? Preferences.Get("CurrentUserId", "");
+
+            // 1. Real-time Last AR Guidance Session calculation
+            long arTimestampSec = Preferences.Get("LastArSessionTimestamp", 0L);
+            if (arTimestampSec > 0)
+            {
+                var sessionTime = DateTimeOffset.FromUnixTimeSeconds(arTimestampSec).ToLocalTime();
+                var diff = DateTimeOffset.Now - sessionTime;
+
+                string timeAgo;
+                if (diff.TotalMinutes < 1)
+                {
+                    timeAgo = "Just now";
+                }
+                else if (diff.TotalMinutes < 60)
+                {
+                    int mins = Math.Max(1, (int)diff.TotalMinutes);
+                    timeAgo = $"{mins} min{(mins == 1 ? "" : "s")} ago";
+                }
+                else if (diff.TotalHours < 24 && sessionTime.Date == DateTime.Today)
+                {
+                    int hours = (int)diff.TotalHours;
+                    timeAgo = $"{hours} hr{(hours == 1 ? "" : "s")} ago";
+                }
+                else if (sessionTime.Date == DateTime.Today.AddDays(-1))
+                {
+                    timeAgo = $"Yesterday, {sessionTime:h:mm tt}";
+                }
+                else
+                {
+                    timeAgo = sessionTime.ToString("MMM d, yyyy");
+                }
+
+                LastArSession = timeAgo;
+            }
+            else
+            {
+                LastArSession = "Ready to start";
+            }
+
+            // 2. Real-time Preparedness Checklist Progress
+            int completed = -1;
+            int total = -1;
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                completed = Preferences.Get($"PASS_ChecklistCompleted_{userId}", -1);
+                total = Preferences.Get($"PASS_ChecklistTotal_{userId}", -1);
+            }
+            if (completed < 0 || total <= 0)
+            {
+                completed = Preferences.Get("PASS_ChecklistCompleted", -1);
+                total = Preferences.Get("PASS_ChecklistTotal", -1);
+            }
+
+            if (completed >= 0 && total > 0)
+            {
+                int pct = (int)Math.Round((double)completed * 100 / total);
+                PreparednessProgressText = $"{completed} of {total} items prepared ({pct}%)";
+            }
+            else
+            {
+                int defaultTotal = 10;
+                int defaultCompleted = 0;
+                for (int i = 1; i <= defaultTotal; i++)
+                {
+                    bool isDefaultTrue = i <= 3 || (i >= 5 && i <= 7);
+                    if (Preferences.Get($"item_{i}", isDefaultTrue))
+                    {
+                        defaultCompleted++;
+                    }
+                }
+                int pct = (int)Math.Round((double)defaultCompleted * 100 / defaultTotal);
+                PreparednessProgressText = $"{defaultCompleted} of {defaultTotal} items prepared ({pct}%)";
+            }
+
+            // 3. Real-time Last Viewed Evacuation Center
+            string savedCenter = Preferences.Get("LastViewedEvacuationCenter", "");
+            if (!string.IsNullOrWhiteSpace(savedCenter))
+            {
+                LastViewedCenterText = savedCenter;
+            }
+            else if (!string.IsNullOrWhiteSpace(SafeZoneName))
+            {
+                LastViewedCenterText = SafeZoneName;
+            }
+            else
+            {
+                LastViewedCenterText = "Find Nearest Hub";
+            }
+
+            // 4. Real-time Last Viewed Advisory
+            string savedAdvisory = Preferences.Get("LastViewedAdvisory", "");
+            if (!string.IsNullOrWhiteSpace(savedAdvisory))
+            {
+                LastViewedAdvisoryText = savedAdvisory;
+            }
+            else if (!string.IsNullOrWhiteSpace(RiskTitle) && RiskTitle != "No Active Emergency Advisories")
+            {
+                LastViewedAdvisoryText = RiskTitle;
+            }
+            else
+            {
+                LastViewedAdvisoryText = "Active Advisory Feed";
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"RefreshUserActivity Error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -192,11 +307,15 @@ public partial class SummaryViewModel : ObservableObject
                 SafeZoneAddress = $"{centerName}, Marikina City";
                 SafeZoneVerifiedBy = "Verified by Marikina Disaster Risk Reduction Management Office (DRRMO)";
             }
+
+            // Refresh user activity metrics with the latest live data
+            RefreshUserActivity();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"SummaryViewModel Load Error: {ex.Message}");
             PopulateDefaultChecklist();
+            RefreshUserActivity();
         }
     }
 
@@ -284,22 +403,31 @@ public partial class SummaryViewModel : ObservableObject
         }
     }
 
-    [ObservableProperty]
-    private int unreadNotificationsCount = 2;
-
     [RelayCommand]
     private async Task OpenNotificationsAsync()
     {
-        UnreadNotificationsCount = 0;
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("NotificationsPage");
+            await Shell.Current.DisplayAlert(
+                "Emergency Broadcasts",
+                "Real-time notifications are active for Marikina River water levels and LGU advisories.",
+                "OK");
         }
     }
 
     [RelayCommand]
     private async Task ViewSafeZoneDetailsAsync()
     {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(SafeZoneName))
+            {
+                Preferences.Set("LastViewedEvacuationCenter", SafeZoneName);
+            }
+            RefreshUserActivity();
+        }
+        catch { }
+
         if (Shell.Current != null)
         {
             await Shell.Current.GoToAsync("Prepare/EvacuationCenterInfo");
@@ -309,6 +437,17 @@ public partial class SummaryViewModel : ObservableObject
     [RelayCommand]
     private async Task StartArEvacuationAsync()
     {
+        try
+        {
+            Preferences.Set("LastArSessionTimestamp", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            if (!string.IsNullOrWhiteSpace(SafeZoneName))
+            {
+                Preferences.Set("LastArSessionDestination", SafeZoneName);
+            }
+            RefreshUserActivity();
+        }
+        catch { }
+
         if (Shell.Current != null)
         {
             await Shell.Current.GoToAsync("//Camera");
@@ -327,6 +466,16 @@ public partial class SummaryViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenLastViewedCenterAsync()
     {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(SafeZoneName))
+            {
+                Preferences.Set("LastViewedEvacuationCenter", SafeZoneName);
+            }
+            RefreshUserActivity();
+        }
+        catch { }
+
         if (Shell.Current != null)
         {
             await Shell.Current.GoToAsync("Prepare/EvacuationCenterInfo");
@@ -336,6 +485,16 @@ public partial class SummaryViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenLastViewedAdvisoryAsync()
     {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(RiskTitle) && RiskTitle != "No Active Emergency Advisories")
+            {
+                Preferences.Set("LastViewedAdvisory", RiskTitle);
+            }
+            RefreshUserActivity();
+        }
+        catch { }
+
         if (Shell.Current != null)
         {
             await Shell.Current.GoToAsync("AdvisoryFeedPage");

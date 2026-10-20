@@ -229,7 +229,8 @@ public sealed class RouteProgressTracker
         GeoCoordinate gpsCoordinate,
         double? accuracyMeters,
         double? courseDegrees = null,
-        double? speedMetersPerSecond = null)
+        double? speedMetersPerSecond = null,
+        bool observeOnly = false)
     {
         if (!gpsCoordinate.IsValid)
         {
@@ -307,6 +308,12 @@ public sealed class RouteProgressTracker
                     0,
                     previousSegment -
                     SearchBackwardSegments);
+
+            // Vertex density must not prevent GPS from finding a user walking
+            // back along the same road. Keep this search local in metres too.
+            while (startIndex > 0 && previousCommittedProgress -
+                currentRoute.Points[startIndex].DistanceFromStartMeters < 60.0)
+                startIndex--;
 
             int endIndex =
                 Math.Min(
@@ -393,6 +400,18 @@ public sealed class RouteProgressTracker
         if (best.CrossTrackErrorMeters >
             corridorRadiusMeters)
         {
+            // Segment identity can be ambiguous at a loop or parallel street.
+            // Rerouting needs distance to the whole route, independent of the
+            // continuity/course penalties used to select a progress segment.
+            double nearestRouteDistanceMeters = double.PositiveInfinity;
+            for (int i = 0; i < currentRoute.Points.Count - 1; i++)
+            {
+                SegmentMatch geometric = ProjectOntoSegment(gpsCoordinate,
+                    currentRoute.Points[i], currentRoute.Points[i + 1], i);
+                if (geometric.IsAvailable)
+                    nearestRouteDistanceMeters = Math.Min(nearestRouteDistanceMeters,
+                        geometric.CrossTrackErrorMeters);
+            }
             RouteProgressUpdate offRoute =
                 new(
                     false,
@@ -417,9 +436,10 @@ public sealed class RouteProgressTracker
                     $"the {corridorRadiusMeters:F1} m accuracy-aware corridor",
                     corridorRadiusMeters,
                     matchConfidence,
-                    best.CourseAlignmentErrorDegrees);
+                    best.CourseAlignmentErrorDegrees,
+                    nearestRouteDistanceMeters);
 
-            StoreSnapshot(
+            if (!observeOnly) StoreSnapshot(
                 currentRoute,
                 offRoute);
 
@@ -449,8 +469,8 @@ public sealed class RouteProgressTracker
 
         /*
          * GPS jitter can produce a nearby point behind the previous sample.
-         * Keep route progress monotonic for this first pedestrian milestone.
-         * Intentional backtracking/recovery is a later map-matching concern.
+         * Keep normal route progress monotonic. RouteBacktrackingPolicy uses
+         * the raw match to request a replacement after confirmed reverse walking.
          */
         if (alreadyHasProgress &&
             committedProgress <
@@ -496,7 +516,12 @@ public sealed class RouteProgressTracker
                 string.Empty,
                 corridorRadiusMeters,
                 matchConfidence,
-                best.CourseAlignmentErrorDegrees);
+                best.CourseAlignmentErrorDegrees,
+                IndependentCorridorScoreGap: best.MatchScoreGap);
+
+        // Independent recovery can inspect route identity without committing a
+        // held GPS innovation to progress, fusion, arrival or rerouting.
+        if (observeOnly) return accepted;
 
         lock (sync)
         {
@@ -1132,33 +1157,56 @@ public sealed class RouteProgressTracker
 
         if (!best.IsAvailable) return best;
 
-        // Two adjoining segments of one planned road are the same corridor.
+        // Continuity chooses the corridor, then geometry chooses the physical
+        // position on that corridor. Otherwise a backward-progress penalty can
+        // pull a dense route's match onto an endpoint ahead of the user while
+        // the same road represented by one long segment projects correctly.
+        SegmentMatch corridorWinner = best;
+        foreach (SegmentMatch candidate in candidates)
+        {
+            if (candidate.CrossTrackErrorMeters < best.CrossTrackErrorMeters &&
+                IsSameCorridorNeighbor(route, corridorWinner.SegmentIndex, candidate.SegmentIndex))
+                best = candidate;
+        }
+
+        // Consecutive pieces of one planned road are the same corridor.
         // Treat a genuinely separate branch (or an immediate reversal) as
         // competition; ordinary vertex proximity must not lower confidence.
         double secondBestScore = double.PositiveInfinity;
         foreach (SegmentMatch candidate in candidates)
         {
-            if (candidate.SegmentIndex == best.SegmentIndex ||
-                IsSameCorridorNeighbor(route, best.SegmentIndex,
+            if (candidate.SegmentIndex == corridorWinner.SegmentIndex ||
+                IsSameCorridorNeighbor(route, corridorWinner.SegmentIndex,
                     candidate.SegmentIndex))
                 continue;
             secondBestScore = Math.Min(secondBestScore, candidate.MatchScore);
         }
         double scoreGap = double.IsFinite(secondBestScore)
-            ? Math.Max(0.0, secondBestScore - best.MatchScore)
+            ? Math.Max(0.0, secondBestScore - corridorWinner.MatchScore)
             : double.PositiveInfinity;
-        return best.WithScoreGap(scoreGap);
+        return best.WithScore(corridorWinner.MatchScore, best.CourseAlignmentErrorDegrees).WithScoreGap(scoreGap);
     }
 
     private static bool IsSameCorridorNeighbor(
         RouteResult route, int first, int second)
     {
-        if (Math.Abs(first - second) != 1) return false;
+        if (first == second) return true;
         double firstBearing = CalculateInitialBearingDegrees(
             route.Points[first].Coordinate, route.Points[first + 1].Coordinate);
-        double secondBearing = CalculateInitialBearingDegrees(
-            route.Points[second].Coordinate, route.Points[second + 1].Coordinate);
-        return AbsoluteHeadingDifferenceDegrees(firstBearing, secondBearing) < 140.0;
+        int start = Math.Min(first, second), end = Math.Max(first, second);
+        if (end - start > 64 || route.Points[end].DistanceFromStartMeters -
+            route.Points[start + 1].DistanceFromStartMeters > 30.0) return false;
+        // An adjacent junction is continuous; a separated competitor must
+        // belong to the same uninterrupted, approximately straight stretch.
+        double maximumTurn = end - start == 1 ? 140.0 : 35.0;
+        for (int index = start; index <= end; index++)
+        {
+            double bearing = CalculateInitialBearingDegrees(
+                route.Points[index].Coordinate, route.Points[index + 1].Coordinate);
+            if (AbsoluteHeadingDifferenceDegrees(firstBearing, bearing) >= maximumTurn)
+                return false;
+        }
+        return true;
     }
 
     private static SegmentMatch ScoreCandidate(
@@ -1644,7 +1692,9 @@ public sealed class RouteProgressTracker
         string RejectionReason,
         double CorridorRadiusMeters,
         RouteMatchConfidence MatchConfidence,
-        double CourseAlignmentErrorDegrees);
+        double CourseAlignmentErrorDegrees,
+        double NearestRouteDistanceMeters = double.NaN,
+        double IndependentCorridorScoreGap = double.NaN);
 
     public readonly record struct ProgressSnapshot(
         bool HasRoute,

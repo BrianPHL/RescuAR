@@ -5,12 +5,12 @@ namespace RescuAR.Navigation.Progress;
 
 /// <summary>
 /// Validates a dynamic replacement route before it can atomically replace the
-/// active route, progress state, AR geometry, and displayed distance.
+/// active geographic route and progress. AR placement is validated separately.
 /// </summary>
 public sealed class RouteReplacementPolicy
 {
-    // The AR publisher refuses to align a route beginning over 20 m from
-    // the user's GPS position. Reject it here before replacing route state.
+    // A bounded road approach is permitted only when the caller checks access.
+    // This does not relax the AR publisher's independent 20 m placement limit.
     private const double MaximumOriginOffsetMeters =
         20.0;
 
@@ -54,7 +54,8 @@ public sealed class RouteReplacementPolicy
         GeoCoordinate requestedOrigin,
         GeoCoordinate requestedDestination,
         bool explicitlyJustifiedDetour,
-        DateTimeOffset timestampUtc)
+        DateTimeOffset timestampUtc,
+        bool allowRoadApproach = false)
     {
         ArgumentNullException.ThrowIfNull(
             replacementRoute);
@@ -125,7 +126,8 @@ public sealed class RouteReplacementPolicy
         if (!double.IsFinite(
                 startOffsetMeters) ||
             startOffsetMeters >
-                MaximumOriginOffsetMeters)
+                (allowRoadApproach ? RouteCorridorPolicy.MaximumRecoveryConnectorMeters
+                    : MaximumOriginOffsetMeters))
         {
             return Reject(
                 $"replacement route begins {startOffsetMeters:F1} m from the requested origin");

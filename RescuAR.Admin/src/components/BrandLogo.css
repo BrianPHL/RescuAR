@@ -1,0 +1,31 @@
+/* Brand styling is intentionally scoped to the logo image only. */
+.rescuar-brand-logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.rescuar-brand-logo--header {
+  width: 166px;
+}
+
+.rescuar-brand-logo--auth {
+  width: min(100%, 245px);
+}
+
+.rescuar-brand-logo--card {
+  width: min(100%, 210px);
+  margin-inline: auto;
+}
+
+@media (max-width: 479.98px) {
+  .rescuar-brand-logo--header {
+    width: 133px;
+  }
+
+  .rescuar-brand-logo--auth {
+    width: min(100%, 225px);
+  }
+}

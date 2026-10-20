@@ -24,6 +24,7 @@ public static class NavigationDestinationBridge
 
     private static DestinationSnapshot current =
         DestinationSnapshot.Unavailable;
+    private static long version;
 
     public static bool Prefer2DMapGuidance { get; set; }
 
@@ -100,16 +101,12 @@ public static class NavigationDestinationBridge
                     : SafeZoneFacilityCatalog.GetArrivalRadiusMeters(
                         name);
 
-        DestinationSnapshot next =
-            new(
-                true,
-                name ??
-                    string.Empty,
-                coordinate,
-                effectiveSafeZoneRadiusMeters);
+        DestinationSnapshot next;
 
         lock (sync)
         {
+            next = new DestinationSnapshot(true, name ?? string.Empty, coordinate,
+                effectiveSafeZoneRadiusMeters, ++version);
             current =
                 next;
         }
@@ -130,8 +127,7 @@ public static class NavigationDestinationBridge
     {
         lock (sync)
         {
-            current =
-                DestinationSnapshot.Unavailable;
+            current = DestinationSnapshot.Unavailable with { Version = ++version };
         }
 
         AndroidLog.Debug(
@@ -147,7 +143,8 @@ public static class NavigationDestinationBridge
         bool IsAvailable,
         string Name,
         GeoCoordinate Coordinate,
-        double SafeZoneRadiusMeters)
+        double SafeZoneRadiusMeters,
+        long Version = 0)
     {
         public static DestinationSnapshot Unavailable =>
             new(

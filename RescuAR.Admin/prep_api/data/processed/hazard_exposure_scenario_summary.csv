@@ -1,0 +1,10 @@
+return_period_years,annual_exceedance_probability_pct,minimum_hazard_counted,depth_threshold_counted,estimated_population_exposed,estimated_children_exposed,barangays_with_mapped_exposure,mapped_facilities_exposed,population_baseline_total,children_baseline_total,method
+5,20.0,Low,0.1 m+,279547,88041,16,30,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+5,20.0,Medium,0.5 m+,213843,67607,16,23,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+5,20.0,High,>1.5 m,95869,31974,16,3,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+25,4.0,Low,0.1 m+,312737,98247,16,39,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+25,4.0,Medium,0.5 m+,285842,89902,16,36,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+25,4.0,High,>1.5 m,170376,54992,16,13,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+100,1.0,Low,0.1 m+,326043,102461,16,42,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+100,1.0,Medium,0.5 m+,306454,96403,16,40,471323,147579,Area-weighted; assumes uniform population distribution within each barangay
+100,1.0,High,>1.5 m,233168,74030,16,29,471323,147579,Area-weighted; assumes uniform population distribution within each barangay

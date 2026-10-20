@@ -1,6 +1,7 @@
 using Android.Util;
 using Evergine.Bindings.Vulkan;
 using Evergine.Vulkan;
+using RescuAR.AR;
 using RescuAR.MAUI.Platforms.Android.Vulkan;
 
 namespace RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
@@ -11,15 +12,12 @@ namespace RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
 /// conversion pass.
 ///
 /// The implementation intentionally uses a single command buffer and fence.
-/// This favors correctness and simple lifetime management for the initial
-/// real-time camera passthrough implementation. A later optimization can
-/// replace this with multiple in-flight frames.
+/// Pending conversions retain their resources and are polled on later draw
+/// callbacks. The draw thread never waits for the full GPU watchdog deadline.
 /// </summary>
 internal unsafe sealed class VulkanCameraCommandContext : IDisposable
 {
     private const string Tag = "RescuAR-Vulkan";
-    private const ulong FenceWaitTimeoutNanoseconds =
-        2_000_000_000;
 
     private readonly VKGraphicsContext graphicsContext;
 
@@ -31,6 +29,8 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
     private VkFence conversionFence;
 
     private bool hasSubmittedWork;
+    private bool submissionPending;
+    private long submittedAtMilliseconds;
     private bool disposed;
 
     private VulkanCameraCommandContext(
@@ -106,10 +106,10 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
     /// samples it. The render pass transitions the persistent RGBA target to
     /// its color-attachment layout and finishes it in shader-read-only layout.
     ///
-    /// The method waits for completion before returning. This is intentionally
-    /// conservative for the first real-time implementation.
+    /// Returns false when conversion is still pending after a short wait.
+    /// Callers must retain resources and skip rendering the target until complete.
     /// </summary>
-    public void ConvertFrame(
+    public bool ConvertFrame(
         VulkanExternalFrame sourceFrame,
         VulkanRgbaTarget rgbaTarget,
         VulkanCameraConversionPipeline pipeline,
@@ -151,7 +151,28 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
             pipeline,
             cameraUv);
 
-        SubmitAndWait();
+        Submit();
+        return TryCompleteFrame(ARCameraConversionPolicy.InitialFenceWaitNanoseconds);
+    }
+
+    public bool TryCompleteFrame(ulong timeoutNanoseconds = 0)
+    {
+        ThrowIfDisposed();
+        if (!submissionPending) return true;
+
+        VkFence fence = conversionFence;
+        VkResult result = VulkanNative.vkWaitForFences(
+            graphicsContext.VkDevice, 1, &fence, 1, timeoutNanoseconds);
+        if (result == VkResult.VK_TIMEOUT)
+        {
+            if (Environment.TickCount64 - submittedAtMilliseconds >=
+                ARCameraConversionPolicy.PendingFrameTimeoutMilliseconds)
+                throw new TimeoutException("ARCORE_CAMERA_GPU_TIMEOUT: camera conversion did not complete within two seconds.");
+            return false;
+        }
+        ThrowIfFailed(result, "vkWaitForFences");
+        submissionPending = false;
+        return true;
     }
 
     /// <summary>
@@ -162,13 +183,14 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
     {
         ThrowIfDisposed();
 
-        if (!hasSubmittedWork ||
+        if (!submissionPending ||
             conversionFence.Handle == 0)
         {
             return;
         }
 
-        WaitForFence();
+        if (!TryCompleteFrame())
+            throw new InvalidOperationException("The previous camera conversion is still pending.");
     }
 
     private void ResolveGraphicsQueue()
@@ -299,11 +321,10 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
         }
 
         /*
-         * ConvertFrame waits after every submission, so this should normally
-         * return immediately. Keeping the explicit wait makes the class safe
-         * if that policy changes later.
+         * Poll before reusing the command buffer or resetting its fence.
+         * Incomplete work must stay untouched until a later draw callback.
          */
-        WaitForFence();
+        WaitForPreviousFrame();
 
         VkFence fence =
             conversionFence;
@@ -544,7 +565,7 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
             "vkEndCommandBuffer");
     }
 
-    private void SubmitAndWait()
+    private void Submit()
     {
         VkCommandBuffer submittedBuffer =
             commandBuffer;
@@ -583,34 +604,24 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
 
         hasSubmittedWork =
             true;
-
-        WaitForFence();
-
+        submissionPending = true;
+        submittedAtMilliseconds = Environment.TickCount64;
     }
 
-    private void WaitForFence()
+    // A failed drain must prevent destruction of ALL referenced resources,
+    // including the image, descriptor, target and pipeline owned by the importer.
+    public bool TryDrainForDisposal()
     {
-        VkFence fence =
-            conversionFence;
-
-        VkResult result =
-            VulkanNative.vkWaitForFences(
-                graphicsContext.VkDevice,
-                1,
-                &fence,
-                1,
-                FenceWaitTimeoutNanoseconds);
-
-        if (result == VkResult.VK_TIMEOUT)
+        if (!submissionPending) return true;
+        try
         {
-            throw new TimeoutException(
-                "Timed out after two seconds waiting for the ARCore Vulkan " +
-                "camera conversion fence.");
+            return TryCompleteFrame();
         }
-
-        ThrowIfFailed(
-            result,
-            "vkWaitForFences");
+        catch (Exception exception)
+        {
+            Log.Error(Tag, "Retaining camera conversion resources with uncertain GPU ownership: " + exception.Message);
+            return false;
+        }
     }
 
     private static void ThrowIfFailed(
@@ -627,7 +638,7 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
             $"{operation} failed with {result}.");
 
         throw new InvalidOperationException(
-            $"{operation} failed with {result}.");
+            $"ARCORE_CAMERA_GPU_FAILURE: {operation} failed with {result}.");
     }
 
     private void ThrowIfDisposed()
@@ -655,26 +666,7 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
              * Do not destroy command resources while submitted GPU work may
              * still reference them.
              */
-            bool gpuWorkCompleted = true;
-
-            if (hasSubmittedWork &&
-                conversionFence.Handle != 0)
-            {
-                try
-                {
-                    WaitForFence();
-                }
-                catch (Exception exception)
-                {
-                    gpuWorkCompleted = false;
-                    Log.Error(
-                        Tag,
-                        "Refusing to destroy Vulkan command resources while " +
-                        $"GPU ownership is uncertain: {exception.Message}");
-                }
-            }
-
-            if (!gpuWorkCompleted)
+            if (!TryDrainForDisposal())
             {
                 /*
                  * Leaking handles on a terminal device-loss/timeout path is

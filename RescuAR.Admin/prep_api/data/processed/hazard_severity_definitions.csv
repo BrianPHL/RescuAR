@@ -1,0 +1,4 @@
+hazard_class,severity_rank,flood_depth_threshold,counted_when_minimum_threshold
+Low,1,0.1-0.5 m,Low
+Medium,2,0.5-1.5 m,Low or Medium
+High,3,>1.5 m,"Low, Medium, or High"

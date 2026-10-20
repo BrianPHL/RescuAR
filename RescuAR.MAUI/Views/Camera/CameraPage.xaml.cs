@@ -97,11 +97,19 @@ namespace RescuAR.App.Views.Camera
         private readonly GpsPdrFusionPolicy _gpsPdrFusionPolicy;
         private readonly PdrHeadingSmoother _pdrHeadingSmoother;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
+        private readonly RouteBacktrackingPolicy _routeBacktrackingPolicy = new();
+        private readonly RouteDisplayProgressPolicy _routeDisplayProgressPolicy = new();
+        private RouteBacktrackingPolicy.BacktrackingDecision lastBacktrackingDecision;
+        private readonly DestinationProximityReroutePolicy _destinationProximityReroutePolicy = new();
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
         private readonly HeadingRevalidationPolicy _headingRevalidationPolicy;
         private readonly PedestrianTurnGuidanceService _turnGuidanceService;
         private readonly SafeZoneConfirmationService _safeZoneConfirmationService;
         private RoadGraph? arrivalRoadGraph;
+        private string? lastArrivalHoldReason;
+        private DateTimeOffset lastArrivalHoldLogAt;
+        private Task<RoadGraph?>? arrivalGraphLoadTask;
+        private Task? routeHeadingRecoveryTask;
         private readonly FloodDepthVisualizationService _floodDepthVisualizationService;
         private readonly HazardReroutingService _hazardReroutingService;
 
@@ -118,12 +126,9 @@ namespace RescuAR.App.Views.Camera
 
         private readonly IDispatcherTimer diagnosticTimer;
 
-#if RESCUAR_DIAGNOSTICS && DEBUG
+#if RESCUAR_DIAGNOSTICS
         private const long DetailedStatusLogIntervalMilliseconds =
-            10_000;
-#elif RESCUAR_DIAGNOSTICS
-        private const long DetailedStatusLogIntervalMilliseconds =
-            30_000;
+            5_000;
 #endif
 
         private const long DynamicUiRefreshIntervalMilliseconds =
@@ -141,21 +146,8 @@ namespace RescuAR.App.Views.Camera
         private CancellationTokenSource? routeProgressCancellation;
         private Task? routeProgressTask;
 
-        private CancellationTokenSource? connectivityFailoverCancellation;
         private bool connectivityEventSubscribed;
-        private bool networkLossFailoverInProgress;
-
-        private const int NetworkLossConfirmationMilliseconds =
-            1500;
-
-        private const int NetworkFailoverBusyRetryMilliseconds =
-            250;
-
-        private const int NetworkFailoverMaximumBusyWaitMilliseconds =
-            5000;
-
-        private const int NetworkFailoverArReadyWaitMilliseconds =
-            5000;
+        private RouteResult? routeRetainedAfterNetworkLoss;
 
         private bool routeRequestInProgress;
 
@@ -398,14 +390,11 @@ namespace RescuAR.App.Views.Camera
         private RouteMatchConfidence lastRouteMatchConfidence =
             RouteMatchConfidence.Unavailable;
 
-        private DateTimeOffset? lastVerifiedGpsAt;
-        private double lastVerifiedGpsProgressMeters;
-
         private DateTimeOffset lastRouteLocationFailureLogAt;
 
         private static readonly TimeSpan MaximumPdrRouteWindowGpsAge =
-            TimeSpan.FromSeconds(8);
-        private const double MaximumPdrRouteWindowAdvanceMeters = 8.0;
+            TimeSpan.FromSeconds(RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds);
+        private const double MaximumPdrRouteWindowAdvanceMeters = RouteDisplayProgressPolicy.MaximumPdrAdvanceMeters;
 
         private ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot
             lastArGuidanceConfidence =
@@ -418,10 +407,7 @@ namespace RescuAR.App.Views.Camera
         private DateTimeOffset? routeGeometryWaitingSince;
         private bool routeGeometryWaitLogged;
 
-        private DateTimeOffset? lastVerifiedRouteWindowAt;
-        private long lastVerifiedRouteWindowVersion = -1;
-        private long lastVerifiedGroundGeneration = -1;
-        private GeoCoordinate? lastVerifiedRouteGpsCoordinate;
+        private readonly VerifiedRouteWindowHoldPolicy _verifiedRouteWindowHoldPolicy = new();
 
         private GpsPdrFusionPolicy.GpsFusionAction lastGpsFusionAction =
             GpsPdrFusionPolicy.GpsFusionAction.Ignore;
@@ -598,9 +584,12 @@ namespace RescuAR.App.Views.Camera
             TimeSpan.FromSeconds(8);
 
         public CameraPage(
-            IArCoreService arCoreService)
+            IArCoreService arCoreService,
+            NavigationStabilityOptions? stabilityOptions = null)
         {
             InitializeComponent();
+            navigationStability = new(stabilityOptions);
+            ConfigureCompactArLayout();
             ConfigureFloodSimulationSheet();
 
 #if RESCUAR_DIAGNOSTICS
@@ -632,7 +621,8 @@ namespace RescuAR.App.Views.Camera
                     () =>
                         Connectivity.Current.NetworkAccess ==
                             NetworkAccess.Internet,
-                    requireEmbeddedPedestrianGraph: false);
+                    requireEmbeddedPedestrianGraph: false,
+                    roadDatasetId: () => NavigationDataBootstrap.DatasetId);
 
             _mldArIntegrationService =
                 new MLDARIntegrationService(
@@ -691,6 +681,7 @@ namespace RescuAR.App.Views.Camera
 
             diagnosticTimer.Tick +=
                 OnDiagnosticTimerTick;
+            AttachNavigationUiDiagnostics();
 
             ApplyCameraModuleView(
                 CameraModuleViewMode.ArCamera,
@@ -835,8 +826,7 @@ namespace RescuAR.App.Views.Camera
 
                     if (!arCameraMode && !mapMode)
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
                         if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
                     }
                     else if (!emergencyAdvisoryVisible &&
@@ -850,8 +840,7 @@ namespace RescuAR.App.Views.Camera
                                 lastTurnGuidance);
                         }
 
-                        turnGuidancePanel.IsVisible =
-                            true;
+                        SetTurnGuidanceVisible(true);
                     }
                     else
                     {
@@ -876,6 +865,7 @@ namespace RescuAR.App.Views.Camera
 
                     if (mapMode)
                     {
+                        Populate2DMapDestinationCenters();
                         InitializeOrRefresh2DCameraMap();
                     }
                 });
@@ -940,6 +930,7 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshCameraModuleDynamicUi()
         {
+            confirmUserArrivalButton.IsVisible = CanOfferUserArrival();
             RefreshLowLightFallbackState();
             RefreshFloodGroundTrustState();
 
@@ -962,15 +953,50 @@ namespace RescuAR.App.Views.Camera
                 HasFloodPreviewHeight();
 
             bool hasDestination =
-                NavigationDestinationBridge.Current.IsAvailable;
+                NavigationDestinationBridge.Current.IsAvailable || activeRoute != null;
 
-            endNavigationButton.IsVisible =
-                hasDestination &&
-                !safeZoneConfirmed;
+            if (mapMode)
+            {
+                if (mapRouteSearchCard != null)
+                    mapRouteSearchCard.IsVisible = activeRoute is null && !safeZoneConfirmed;
+                if (mapRouteSummaryPanel != null)
+                    mapRouteSummaryPanel.IsVisible = activeRoute is not null && !safeZoneConfirmed;
 
-            exploreSafeZonesButton.IsVisible =
-                !hasDestination &&
-                !safeZoneConfirmed;
+                if (activeRoute != null)
+                {
+                    endNavigationButton.IsVisible = !safeZoneConfirmed;
+                    exploreSafeZonesButton.IsVisible = false;
+                    startRoutingButton.IsVisible = false;
+                }
+                else
+                {
+                    endNavigationButton.IsVisible = false;
+                    if (_selectedShelterFor2DMap != null)
+                    {
+                        exploreSafeZonesButton.IsVisible = false;
+                        startRoutingButton.IsVisible = !safeZoneConfirmed;
+                    }
+                    else
+                    {
+                        exploreSafeZonesButton.IsVisible = !safeZoneConfirmed;
+                        startRoutingButton.IsVisible = false;
+                    }
+                }
+            }
+            else
+            {
+                if (mapRouteSearchCard != null) mapRouteSearchCard.IsVisible = false;
+                if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
+                startRoutingButton.IsVisible = false;
+
+                endNavigationButton.IsVisible =
+                    hasDestination &&
+                    !safeZoneConfirmed;
+
+                exploreSafeZonesButton.IsVisible =
+                    !hasDestination &&
+                    !safeZoneConfirmed;
+            }
 
             floodSimulationButton.IsVisible = floodMode && !safeZoneConfirmed;
 
@@ -1006,6 +1032,7 @@ namespace RescuAR.App.Views.Camera
             RefreshEmergencyStatusBanner();
             RefreshArTrackingStatusBanner();
             RefreshRouteLocatorCue();
+            ArrangeArOverlays();
         }
 
         private void RefreshLowLightFallbackState()
@@ -1242,6 +1269,12 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshArTrackingStatusBanner()
         {
+            if (safeZoneConfirmed)
+            {
+                arTrackingStatusBanner.IsVisible = false;
+                ARCameraSpatialController.SetRouteRenderingEnabled(false, "arrival already confirmed");
+                return;
+            }
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active &&
                 !cameraPipelineTerminalFailureVisible)
@@ -1252,7 +1285,7 @@ namespace RescuAR.App.Views.Camera
                     (roadDiagnosticAccuracyMeters.HasValue
                         ? $" (GPS ±{roadDiagnosticAccuracyMeters.Value:0} m)" : "") +
                     " - not navigation guidance";
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -1292,13 +1325,7 @@ namespace RescuAR.App.Views.Camera
             ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
                 _arCoreService.TrackingSnapshot;
 
-            bool headingTrusted =
-                lastHeadingAlignment.HasValue &&
-                lastHeadingAlignment.Value.IsAvailable &&
-                lastHeadingAlignment.Value.IsStable &&
-                lastHeadingAlignment.Value.SessionGeneration > 0 &&
-                lastHeadingAlignment.Value.SessionGeneration ==
-                    ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+            bool headingTrusted = HasCurrentRouteHeading();
 
             ARCameraSpatialController.SetRouteHeadingTrust(
                 headingTrusted,
@@ -1397,6 +1424,15 @@ namespace RescuAR.App.Views.Camera
                     AllowsRouteGeometry = false,
                     DisplayMessage = routeRequestInProgress
                         ? "Finding a pedestrian route…"
+                        : activeRoute is not null
+                            ? !ARCameraPoseBridge.CurrentFrame.IsTracking
+                                ? "AR tracking paused — hold the phone steady"
+                                : !ARCameraPoseBridge.CurrentFrame.Anchor.IsAvailable
+                                    ? "Reacquiring ground placement"
+                                    : routeIdentitySuspended || positionObservationHeld ||
+                                        gpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium
+                                        ? "Confirming your route position"
+                                        : "Restoring mapped guidance — follow route instructions"
                         : routeStartupFailureMessage ??
                           "Pedestrian route unavailable — use the 2D map"
                 };
@@ -1404,12 +1440,23 @@ namespace RescuAR.App.Views.Camera
 
             if (activeRoute is not null && arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
             {
+                bool previewReady = approachRoutePreviewPublished && (initialRoadApproachPending || verifiedRecoveryConnector) &&
+                    !positionObservationHeld && latestGpsCoordinate.HasValue && latestGpsTimestamp.HasValue &&
+                    RouteDisplayProgressPolicy.TryAtDistance(activeRoute, progress.RawProgressMeters, out var previewPosition) &&
+                    MappedRoutePreviewPolicy.CanPublish(progress.HasProgress, progress.IsOffRoute,
+                        routeMatchConfidence, latestGpsAccuracy, latestGpsCoordinate.Value,
+                        previewPosition.RoadCoordinate, latestGpsTimestamp.Value, now,
+                        arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
+                            latestGpsCoordinate.Value, previewPosition.RoadCoordinate),
+                        initialRoadApproachPending, verifiedRecoveryConnector);
                 policyConfidence = policyConfidence with
                 {
                     State = policyConfidence.State == ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden
                         ? policyConfidence.State : ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
-                    AllowsRouteGeometry = false,
-                    DisplayMessage = gpsFresh && headingTrusted &&
+                    AllowsRouteGeometry = previewReady && policyConfidence.AllowsRouteGeometry,
+                    DisplayMessage = previewReady && policyConfidence.AllowsRouteGeometry
+                        ? "Mapped route nearby — check walking access"
+                        : gpsFresh && headingTrusted &&
                         gpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
                         routeMatchConfidence >= RouteMatchConfidence.Medium &&
                         continuity.State == ARCameraSpatialController.SpatialContinuityState.Live
@@ -1477,7 +1524,23 @@ namespace RescuAR.App.Views.Camera
                     };
             }
 
+            var placementFrame = ARCameraPoseBridge.CurrentFrame;
+            if (route.IsAvailable && (!route.Placement.IsFor(placementFrame) || !placementFrame.Anchor.IsAvailable ||
+                !LocalArNavigationPolicy.IsGroundReferenceLocal(
+                    placementFrame.Pose.PositionX, placementFrame.Pose.PositionZ,
+                    placementFrame.Anchor.PositionX, placementFrame.Anchor.PositionZ)))
+            {
+                confidence = confidence with
+                {
+                    State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    AllowsRouteGeometry = false,
+                    DisplayMessage = "Refreshing ground placement — follow text guidance"
+                };
+            }
+
             bool geometryStillPreparing = route.IsAvailable &&
+                trackingSnapshot.IsAvailable && trackingSnapshot.IsTracking &&
+                ARCameraPoseBridge.CurrentFrame.IsFresh &&
                 (!routeGeometryQuality.IsCurrentFor(route) ||
                  routeGeometryQuality.State == RouteGeometryQualityState.Pending);
 
@@ -1486,7 +1549,18 @@ namespace RescuAR.App.Views.Camera
                 routeGeometryWaitingSince ??= now;
                 bool timedOut = now - routeGeometryWaitingSince.Value >
                     TimeSpan.FromSeconds(6);
-                if (confidence.State !=
+                var renderedWindow = ARRouteRenderer.Visibility;
+                var currentFrame = ARCameraPoseBridge.CurrentFrame;
+                long renderedAge = Environment.TickCount64 - renderedWindow.MeasuredAt;
+                bool replacingPreparedWindow = !timedOut &&
+                    ARRouteRenderer.ActiveSegmentCount > 0 &&
+                    ARRouteRenderer.AppliedRouteVersion >= routeStartupPublishedVersion &&
+                    routeStartupPublishedVersion >= 0 &&
+                    renderedWindow.RootEnabled && renderedAge >= 0 && renderedAge <= 1000 &&
+                    renderedWindow.Session == route.Generation.SessionGeneration &&
+                    renderedWindow.GroundReference == currentFrame.Anchor.ReferenceGeneration &&
+                    lastArGuidanceConfidence.AllowsRouteGeometry;
+                if (!replacingPreparedWindow && confidence.State !=
                         ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden &&
                     !lowLightFallbackActive)
                 {
@@ -1561,9 +1635,55 @@ namespace RescuAR.App.Views.Camera
                 gpsConfidence,
                 routeMatchConfidence,
                 headingTrusted,
+                routeIdentitySuspended,
                 latestGpsCoordinate,
                 latestGpsAccuracy,
                 now);
+
+            if (confidence.AllowsRouteGeometry && activeRoute is { } registeredRoute &&
+                !IsIndoorRouteTestModeEnabled && !HasSupportedRouteRegistration(registeredRoute,
+                    route.NavigationState.WindowStartProgressMeters, now))
+                confidence = confidence with { AllowsRouteGeometry = false,
+                    State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    DisplayMessage = "Confirming mapped alignment — check the map" };
+
+            // Only a bounded estimate in the same live frame may outlive the
+            // ordinary eight-second display bridge. It never changes progress.
+            if (!confidence.AllowsRouteGeometry && route.IsAvailable &&
+                route.Placement.Source == "BOUNDED_UNCERTAIN_ESTIMATE" &&
+                headingTrusted && !routeIdentitySuspended && !lastOffRouteCandidate &&
+                !dynamicRerouteInProgress && !lowLightFallbackActive &&
+                continuity.State == ARCameraSpatialController.SpatialContinuityState.Live &&
+                placementFrame.Anchor.IsAvailable && routeGeometryQuality.IsCurrentFor(route) &&
+                routeGeometryQuality.State != RouteGeometryQualityState.Pending &&
+                routeGeometryQuality.State != RouteGeometryQualityState.Rejected &&
+                route.Placement.IsFor(placementFrame) &&
+                activeRoute is { } estimatedRoute && verifiedPosition is { Motion: { } estimateFrom } estimateFix &&
+                ReferenceEquals(estimatedRoute, estimateFix.Route) && GetTrackedRouteMotion() is { } estimateTo &&
+                navigationStability.TryEstimate(estimatedRoute, estimateFix.Coordinate, estimateFix.DisplayProgress,
+                    estimateFix.At, now, estimateFrom, estimateTo, out _) &&
+                HasSupportedRouteRegistration(estimatedRoute, route.NavigationState.WindowStartProgressMeters,
+                    now, navigationStability.Options.RecoveryLifetime))
+                confidence = confidence with { State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
+                    AllowsRouteGeometry = true, DisplayMessage = "Position uncertain — estimated progress on last verified path" };
+            if (!headingTrusted && HasCurrentHeadingCandidate())
+                confidence = confidence with { AllowsRouteGeometry = false,
+                    State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    DisplayMessage = "Checking direction — walk carefully with the map until alignment is confirmed" };
+            if (routeHazardBlocksGuidance)
+                confidence = confidence with { AllowsRouteGeometry = IsCurrentHazardPrefix(route) &&
+                    headingTrusted && !routeIdentitySuspended && gpsFresh &&
+                    gpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+                    routeMatchConfidence >= RouteMatchConfidence.Medium && !lowLightFallbackActive &&
+                    placementFrame.Anchor.IsAvailable && route.Placement.IsFor(placementFrame) &&
+                    continuity.State == ARCameraSpatialController.SpatialContinuityState.Live &&
+                    routeGeometryQuality.IsCurrentFor(route) &&
+                    routeGeometryQuality.State != RouteGeometryQualityState.Pending &&
+                    routeGeometryQuality.State != RouteGeometryQualityState.Rejected &&
+                    activeRoute is { } hazardRoute && HasSupportedRouteRegistration(hazardRoute,
+                        route.NavigationState.WindowStartProgressMeters, now),
+                    State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    DisplayMessage = routeHazardNotice ?? "Hazard on route — check the map" };
 
             bool confidenceChanged =
                 confidence.State !=
@@ -1575,6 +1695,9 @@ namespace RescuAR.App.Views.Camera
 
             lastArGuidanceConfidence =
                 confidence;
+
+            LogNavigationFieldSnapshot(confidence, route, progress, continuity,
+                gpsAge.TotalSeconds, latestGpsAccuracy, routeIdentitySuspended, headingTrusted);
 
             bool arCameraMode =
                 currentCameraModuleView ==
@@ -1628,6 +1751,7 @@ namespace RescuAR.App.Views.Camera
 
             bool shouldShow =
                 arCameraMode &&
+                !routeHazardBlocksGuidance &&
                 NavigationDestinationBridge.Current.IsAvailable &&
                 !lowLightFallbackActive &&
                 confidence.State !=
@@ -1635,17 +1759,6 @@ namespace RescuAR.App.Views.Camera
 
             arTrackingStatusBanner.IsVisible =
                 shouldShow;
-
-            turnGuidancePanel.Margin =
-                new Thickness(
-                    8,
-                    lowLightFallbackActive
-                        ? 158
-                        : shouldShow
-                            ? 88
-                            : 48,
-                    8,
-                    0);
 
             RefreshTurnGuidancePanelForCurrentState();
 
@@ -1692,12 +1805,13 @@ namespace RescuAR.App.Views.Camera
                 GpsPdrFusionPolicy.GpsConfidence gpsConfidence,
                 RouteMatchConfidence matchConfidence,
                 bool headingTrusted,
+                bool routeIdentitySuspended,
                 GeoCoordinate? latestGps,
                 double? latestAccuracy,
                 DateTimeOffset now)
         {
-            long groundGeneration =
-                ARCameraPoseBridge.CurrentFrame.Anchor.ReferenceGeneration;
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            long groundGeneration = frame.Anchor.ReferenceGeneration;
 
             bool ready =
                 arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong &&
@@ -1708,6 +1822,10 @@ namespace RescuAR.App.Views.Camera
                 geometry.IsCurrentFor(route) &&
                 geometry.State != RouteGeometryQualityState.Pending &&
                 geometry.State != RouteGeometryQualityState.Rejected &&
+                frame.IsFresh &&
+                route.Placement.IsFor(frame) && frame.Anchor.IsAvailable &&
+                LocalArNavigationPolicy.IsGroundReferenceLocal(frame.Pose.PositionX,
+                    frame.Pose.PositionZ, frame.Anchor.PositionX, frame.Anchor.PositionZ) &&
                 spatial.State == ARCameraSpatialController.SpatialContinuityState.Live &&
                 tracking.IsAvailable && tracking.IsTracking &&
                 headingTrusted &&
@@ -1716,7 +1834,7 @@ namespace RescuAR.App.Views.Camera
                 !dynamicRerouteInProgress &&
                 !safeZoneConfirmed;
 
-            if (ready && confidence.AllowsRouteGeometry &&
+            if (ready && confidence.AllowsRouteGeometry && !routeIdentitySuspended &&
                 gpsFresh &&
                 gpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
                 matchConfidence >= RouteMatchConfidence.Medium &&
@@ -1726,10 +1844,21 @@ namespace RescuAR.App.Views.Camera
                 latestAccuracy.Value >= 0.0 &&
                 latestAccuracy.Value <= 20.0)
             {
-                lastVerifiedRouteWindowAt = now;
-                lastVerifiedRouteWindowVersion = route.Version;
-                lastVerifiedGroundGeneration = groundGeneration;
-                lastVerifiedRouteGpsCoordinate = latestGps;
+                _verifiedRouteWindowHoldPolicy.ObserveVerified(
+                    route.Version, groundGeneration, latestGps.Value, now);
+            }
+
+            GeoCoordinate? holdCoordinate = latestGps;
+            double? holdAccuracy = latestAccuracy;
+            if (activeRoute is { } geographicRoute &&
+                TryGetBoundedDisplayPosition(geographicRoute,
+                    _routeProgressTracker.Current.CommittedProgressMeters, now,
+                    out var heldPosition, out double verifiedAccuracy))
+            {
+                // A weak current fix cannot move an already placed path. Use
+                // the bounded physical reference while live AR still agrees.
+                holdCoordinate = heldPosition.AlignmentCoordinate;
+                holdAccuracy = verifiedAccuracy;
             }
 
             // Keep the exact previously verified geometry for a brief GPS
@@ -1741,17 +1870,8 @@ namespace RescuAR.App.Views.Camera
                 gpsConfidence == GpsPdrFusionPolicy.GpsConfidence.Unavailable ||
                 matchConfidence == RouteMatchConfidence.Unavailable ||
                 lastOffRouteCandidate ||
-                lastVerifiedRouteWindowVersion != route.Version ||
-                lastVerifiedGroundGeneration != groundGeneration ||
-                !lastVerifiedRouteWindowAt.HasValue ||
-                now - lastVerifiedRouteWindowAt.Value > TimeSpan.FromSeconds(6) ||
-                !lastVerifiedRouteGpsCoordinate.HasValue ||
-                !latestGps.HasValue || !latestGps.Value.IsValid ||
-                !latestAccuracy.HasValue ||
-                !double.IsFinite(latestAccuracy.Value) ||
-                latestAccuracy.Value < 0.0 ||
-                latestAccuracy.Value > 25.0 ||
-                latestGps.Value.DistanceTo(lastVerifiedRouteGpsCoordinate.Value) > 15.0)
+                !_verifiedRouteWindowHoldPolicy.CanHold(route.Version, groundGeneration,
+                    holdCoordinate, holdAccuracy, now, routeIdentitySuspended))
             {
                 return confidence;
             }
@@ -1835,11 +1955,16 @@ namespace RescuAR.App.Views.Camera
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
                 ARRoadApproachBridge.Clear();
+                arrivalNoticeCategory = "HIDDEN";
                 routeLocatorPanel.IsVisible = false;
                 return;
             }
 #endif
+            if (TryShowArrivalStatus()) return;
+            if (TryShowRouteHazardStatus()) return;
             if (TryShowRoadApproachCue()) return;
+            if (TryShowNavigationFallback()) return;
+            routeLocatorIcon.IsVisible = true;
             routeLocatorIcon.Rotation = 0;
             RouteLocatorDirection candidateDirection =
                 RouteLocatorDirection.Hidden;
@@ -2018,6 +2143,7 @@ namespace RescuAR.App.Views.Camera
             if (!spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
                 !spatial.Anchor.IsAvailable ||
+                !route.Placement.IsFor(spatial) ||
                 !route.IsAvailable ||
                 route.Points.Count <
                     2)
@@ -2083,11 +2209,11 @@ namespace RescuAR.App.Views.Camera
                     route.Points[i];
 
                 float worldX =
-                    spatial.Anchor.PositionX +
+                    (route.Placement.IsAvailable ? route.Placement.AnchorX : spatial.Anchor.PositionX) +
                         point.X;
 
                 float worldZ =
-                    spatial.Anchor.PositionZ +
+                    (route.Placement.IsAvailable ? route.Placement.AnchorZ : spatial.Anchor.PositionZ) +
                         point.Z;
 
                 float deltaX =
@@ -2227,7 +2353,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -2280,8 +2406,7 @@ namespace RescuAR.App.Views.Camera
 
             if (!shouldShow)
             {
-                turnGuidancePanel.IsVisible =
-                    false;
+                SetTurnGuidanceVisible(false);
 
                 return;
             }
@@ -2289,8 +2414,7 @@ namespace RescuAR.App.Views.Camera
             ApplyPrototypeTurnGuidance(
                 lastTurnGuidance);
 
-            turnGuidancePanel.IsVisible =
-                true;
+            SetTurnGuidanceVisible(true);
         }
 
         private void RefreshEmergencyStatusBanner()
@@ -2310,8 +2434,11 @@ namespace RescuAR.App.Views.Camera
             DisasterAdvisory? advisory =
                 lastEmergencyAdvisoryForStatus;
 
+            if (advisory is null && ApplyRouteHazardStatusBanner()) return;
+
             if (advisory is null)
             {
+                cameraModeStatusBanner.IsVisible = false;
                 cameraModeStatusBanner.BackgroundColor =
                     Color.FromArgb("#DDF7E8");
 
@@ -2330,6 +2457,7 @@ namespace RescuAR.App.Views.Camera
 
                 cameraModeStatusSubtitleLabel.Text =
                     "You will be notified if an emergency is detected nearby.";
+                cameraModeStatusSubtitleLabel.LineBreakMode = LineBreakMode.TailTruncation;
 
                 return;
             }
@@ -2374,7 +2502,10 @@ namespace RescuAR.App.Views.Camera
 
             cameraModeStatusSubtitleLabel.Text =
                 $"{GetEmergencyCategoryLabel(advisory)} Advisory - " +
-                $"{GetEmergencySeverityLabel(advisory)} Severity";
+                $"{GetEmergencySeverityLabel(advisory)} Severity" +
+                (routeHazardNotice is null ? "" : $". {routeHazardNotice}");
+            cameraModeStatusSubtitleLabel.LineBreakMode = routeHazardNotice is null
+                ? LineBreakMode.TailTruncation : LineBreakMode.WordWrap;
         }
 
         private void OnArCameraModeClicked(
@@ -2739,38 +2870,10 @@ namespace RescuAR.App.Views.Camera
         {
             try
             {
-                var shelters = EvacuationCenterRepository.GetEvacuationCenters();
-                if (shelters == null || shelters.Count == 0)
+                if (Shell.Current is not null)
                 {
-                    await DisplayAlert("Safe Zones", "No evacuation centers found.", "OK");
-                    return;
-                }
-
-                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
-
-                var sorted = shelters
-                    .Select(s => new { Shelter = s, Distance = origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude)) })
-                    .OrderBy(s => s.Distance)
-                    .ToList();
-
-                var options = sorted
-                    .Select(s => $"{s.Shelter.Name} ({s.Distance:F0} m)")
-                    .ToArray();
-
-                string action = await DisplayActionSheet(
-                    "Select Safe Zone / Evacuation Center",
-                    "Cancel",
-                    null,
-                    options);
-
-                if (string.IsNullOrEmpty(action) || action == "Cancel")
-                    return;
-
-                int selectedIndex = Array.IndexOf(options, action);
-                if (selectedIndex >= 0 && selectedIndex < sorted.Count)
-                {
-                    var chosen = sorted[selectedIndex].Shelter;
-                    await StartGuidanceToEvacuationCenterAsync(chosen);
+                    await Shell.Current.GoToAsync(
+                        "Prepare/EvacuationCenterInfo");
                 }
             }
             catch (Exception exception)
@@ -2778,9 +2881,101 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
                 Log.Warn(
                     "RescuAR-CameraUI",
-                    $"Explore Safe Zones failed: {DiagnosticPrivacyPolicy.FormatException(exception)}");
+                    $"Explore Safe Zones navigation failed: {DiagnosticPrivacyPolicy.FormatException(exception)}");
 #endif
             }
+        }
+
+        private List<RescuAR.App.Models.EvacuationCenter> _availableEvacuationCenters = new();
+        private List<RescuAR.App.Models.EvacuationCenter> _filteredEvacuationCenters = new();
+        private RescuAR.App.Models.EvacuationCenter? _selectedShelterFor2DMap;
+
+        private void Populate2DMapDestinationCenters()
+        {
+            try
+            {
+                var shelters = EvacuationCenterRepository.GetEvacuationCenters();
+                if (shelters == null || shelters.Count == 0) return;
+
+                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+
+                if (mapFromLocationLabel != null)
+                {
+                    if (latestGpsCoordinateForRouting.HasValue)
+                    {
+                        mapFromLocationLabel.Text = $"Your Location ({origin.Latitude:F4}, {origin.Longitude:F4})";
+                    }
+                    else
+                    {
+                        mapFromLocationLabel.Text = "Your Current Location (Auto-detected)";
+                    }
+                }
+
+                // Sort nearest shelters on top
+                _availableEvacuationCenters = shelters
+                    .OrderBy(s => origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude)))
+                    .ToList();
+
+                ApplyEvacuationCenterFilter(mapCenterSearchEntry?.Text);
+            }
+            catch { }
+        }
+
+        private void ApplyEvacuationCenterFilter(string? searchText)
+        {
+            if (mapDestinationPicker == null) return;
+
+            GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+
+            var query = _availableEvacuationCenters.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                query = query.Where(s => s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            _filteredEvacuationCenters = query.ToList();
+
+            var displayList = _filteredEvacuationCenters.Select(s =>
+            {
+                double distM = origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude));
+                string distText = distM < 1000 ? $"{distM:F0} m" : $"{distM / 1000.0:F1} km";
+                return $"{s.Name} ({distText})";
+            }).ToList();
+
+            mapDestinationPicker.ItemsSource = displayList;
+
+            if (_selectedShelterFor2DMap != null)
+            {
+                int idx = _filteredEvacuationCenters.FindIndex(s => s.Name == _selectedShelterFor2DMap.Name);
+                if (idx >= 0) mapDestinationPicker.SelectedIndex = idx;
+            }
+        }
+
+        private void OnMapCenterSearchTextChanged(object? sender, TextChangedEventArgs e)
+        {
+            ApplyEvacuationCenterFilter(e.NewTextValue);
+        }
+
+        private void OnMapDestinationPickerSelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (mapDestinationPicker == null) return;
+            int idx = mapDestinationPicker.SelectedIndex;
+            if (idx >= 0 && idx < _filteredEvacuationCenters.Count)
+            {
+                _selectedShelterFor2DMap = _filteredEvacuationCenters[idx];
+            }
+            else
+            {
+                _selectedShelterFor2DMap = null;
+            }
+
+            RefreshCameraModuleDynamicUi();
+        }
+
+        private async void OnStartRoutingClicked(object? sender, EventArgs e)
+        {
+            if (_selectedShelterFor2DMap == null) return;
+            await StartGuidanceToEvacuationCenterAsync(_selectedShelterFor2DMap);
         }
 
         private async Task StartGuidanceToEvacuationCenterAsync(RescuAR.App.Models.EvacuationCenter center)
@@ -2988,12 +3183,19 @@ namespace RescuAR.App.Views.Camera
             activeRoute = null;
             activeDestinationCoordinate = null;
             activeDestinationName = string.Empty;
+            _selectedShelterFor2DMap = null;
+            if (mapDestinationPicker != null) mapDestinationPicker.SelectedIndex = -1;
 
             if (turnGuidancePanel != null) turnGuidancePanel.IsVisible = false;
             if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
             if (routeDirectionsSheet != null) routeDirectionsSheet.IsVisible = false;
             if (endNavigationButton != null) endNavigationButton.IsVisible = false;
             try { _ttsCancellation?.Cancel(); } catch { }
+
+            if (currentCameraModuleView == CameraModuleViewMode.Map2D)
+            {
+                Populate2DMapDestinationCenters();
+            }
 
             InitializeOrRefresh2DCameraMap();
 
@@ -3013,7 +3215,7 @@ namespace RescuAR.App.Views.Camera
                 true;
 
             if (NavigationDestinationBridge.Current.IsAvailable)
-                _ = NavigationDataBootstrap.ValidateOnceAsync();
+                _ = GetArrivalGraphSafelyAsync();
 
 #if RESCUAR_DIAGNOSTICS
             lastDetailedStatusLogTimestamp =
@@ -3046,6 +3248,10 @@ namespace RescuAR.App.Views.Camera
 #endif
 
             SubscribeDestinationChanged();
+            // Shell retains Camera while other tabs can select or clear a trip.
+            // Reconcile missed events before reusing a route or arrival latch.
+            if (NavigationDestinationBridge.Current.Version != observedDestinationVersion)
+                OnNavigationDestinationChanged(this, EventArgs.Empty);
             SubscribeEmergencyAdvisories();
             SubscribeConnectivityChanges();
             _arCoreService.LifecycleChanged -=
@@ -3053,7 +3259,7 @@ namespace RescuAR.App.Views.Camera
             _arCoreService.LifecycleChanged +=
                 OnArCoreLifecycleChanged;
 
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 "Camera tab entered");
 
             if (currentFloodVisualization.IsAvailable)
@@ -3096,11 +3302,14 @@ namespace RescuAR.App.Views.Camera
                 ApplyCameraModuleView(
                     currentCameraModuleView,
                     "Camera tab entered");
+                if (NavigationDestinationBridge.Current.IsAvailable && activeRoute is null)
+                    StartRouteRequestIfPossible();
             }
         }
 
         protected override void OnDisappearing()
         {
+            Interlocked.Increment(ref arrivalSessionGeneration);
 #if RESCUAR_DIAGNOSTICS
             ARRouteRenderer.HideRoadDiagnostics();
 #endif
@@ -3118,8 +3327,7 @@ namespace RescuAR.App.Views.Camera
             UnsubscribeConnectivityChanges();
             _arCoreService.LifecycleChanged -=
                 OnArCoreLifecycleChanged;
-            CancelConnectivityFailover(
-                "Camera tab exited");
+            routeRetainedAfterNetworkLoss = null;
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
@@ -3147,8 +3355,7 @@ namespace RescuAR.App.Views.Camera
 
             Dispatcher.Dispatch(
                 () =>
-                    turnGuidancePanel.IsVisible =
-                        false);
+                    SetTurnGuidanceVisible(false));
 
             CancelRouteRequest(
                 "Camera tab exited.");
@@ -3185,8 +3392,11 @@ namespace RescuAR.App.Views.Camera
                     snapshot.Failure))
             {
                 Dispatcher.Dispatch(
-                    () => ApplyTerminalCameraPipelineFailure(
-                        snapshot.Failure));
+                    () =>
+                    {
+                        if (_arCoreService.LifecycleSnapshot != snapshot) return;
+                        ApplyTerminalCameraPipelineFailure(snapshot.Failure);
+                    });
 
                 return;
             }
@@ -3200,6 +3410,7 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
+                    if (_arCoreService.LifecycleSnapshot != snapshot) return;
                     cameraPipelineTerminalFailureVisible =
                         false;
 
@@ -3235,8 +3446,7 @@ namespace RescuAR.App.Views.Camera
                 false,
                 $"terminal camera pipeline failure: {failure.Code}");
 
-            turnGuidancePanel.IsVisible =
-                false;
+            SetTurnGuidanceVisible(false);
 
             floodDepthOcclusionView.IsVisible =
                 false;
@@ -3483,7 +3693,7 @@ namespace RescuAR.App.Views.Camera
                 _headingAlignmentService.ResetSessionCalibration(
                     "creating a new ARCore Session");
 
-                _headingRevalidationPolicy.Reset();
+                _headingRevalidationPolicy.Reset("new ARCore session");
 
                 _pdrHeadingSmoother.Reset();
 
@@ -3678,27 +3888,18 @@ namespace RescuAR.App.Views.Camera
         /// <summary>
         /// Requests a navigation route from the configured provider only when:
         /// - Camera page is active,
-        /// - ARCore has an active (not paused) Session,
         /// - a verified destination has been published.
+        /// AR tracking and heading gate placement separately from geographic routing.
         /// </summary>
         public async Task<bool> TryRequestNavigationRouteAsync()
         {
+            if (safeZoneConfirmed || userArrivalPromptOpen) return false;
 #if ANDROID
             if (!pageIsVisible)
             {
                 LogDetailedDebug(
                     RoutingLogTag,
                     "navigation route request skipped: Camera tab is not active.");
-
-                return false;
-            }
-
-            if (!_arCoreService.IsInitialized ||
-                _arCoreService.IsSessionPaused)
-            {
-                LogDetailedDebug(
-                    RoutingLogTag,
-                    "navigation route request skipped: ARCore Session is not active.");
 
                 return false;
             }
@@ -3775,6 +3976,8 @@ namespace RescuAR.App.Views.Camera
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
+
                 if (locationReading is null)
                 {
                     routeStartupGpsRetryPending = true;
@@ -3825,37 +4028,25 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                /*
-                 * Re-read destination after GPS acquisition in case the user
-                 * changed the selected center while location was resolving.
-                 */
-                destination =
-                    NavigationDestinationBridge.Current;
-
-                if (!destination.IsAvailable)
-                {
-                    Log.Warn(
-                        RoutingLogTag,
-                        "navigation route cancelled: destination was cleared.");
-
-                    return false;
-                }
-
+                activeDestinationVersion = destination.Version;
                 activeDestinationName = destination.Name;
                 activeDestinationCoordinate = destination.Coordinate;
                 activeDestinationSafeZoneRadiusMeters =
                     destination.SafeZoneRadiusMeters;
 
-                RoadGraph arrivalGraph = arrivalRoadGraph ??=
-                    await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                // Online calculation does not wait for offline graph construction.
+                // Arrival and road access stay unavailable until its barriers are loaded.
+                _ = GetArrivalGraphSafelyAsync();
+                RoadGraph? arrivalGraph = arrivalRoadGraph;
                 var initialArrival = _safeZoneConfirmationService.Evaluate(
                     origin, destination.Coordinate,
                     destination.SafeZoneRadiusMeters,
                     locationReading.AccuracyMeters,
                     double.PositiveInfinity,
                     locationReading.Timestamp,
-                    majorRoadBarrier: arrivalGraph.AccessCrossesMajorRoad(
-                        origin, destination.Coordinate));
+                    majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
+                        origin, destination.Coordinate),
+                    destinationVersion: destination.Version);
                 if (initialArrival.IsCandidate)
                 {
                     pendingInitialRoute = null;
@@ -3893,9 +4084,14 @@ namespace RescuAR.App.Views.Camera
                         TimeSpan.FromMinutes(1);
                 Task<RouteResult?> routeWork = reuseComputedRoute
                     ? Task.FromResult(pendingInitialRoute)
-                    : _mldArIntegrationService.RequestRouteWithRoadApproachAsync(
+                    : _mldArIntegrationService.RequestRouteWithDeferredRoadApproachAsync(
                         origin, destination.Coordinate,
-                        FindRoadAccess(locationReading, arrivalGraph, destination.Coordinate), startupWork.Token);
+                        async token =>
+                        {
+                            RoadGraph? accessGraph = await GetArrivalGraphSafelyAsync().WaitAsync(token);
+                            return accessGraph is null ? null : await Task.Run(
+                                () => FindRoadAccess(locationReading, accessGraph, destination.Coordinate, token), token);
+                        }, startupWork.Token);
 
                 if (reuseComputedRoute)
                     Log.Info(RoutingLogTag,
@@ -3928,20 +4124,24 @@ namespace RescuAR.App.Views.Camera
                     $"algorithm='{route?.Algorithm ?? "<none>"}', " +
                     $"points={route?.Points.Count ?? 0}.");
 
+                if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
+
                 if (route is null || route.Points.Count < 2)
                 {
                     pendingInitialRoute = null;
                     // A failed graph result does not invalidate independent
                     // heading work. Reuse it for the nearest-road cue.
                     var approachHeading = await headingWork;
+                    if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
 
                     _mldArIntegrationService.PublishInitialRoute(
                         null,
                         0.0);
                     routeStartupFailureMessage =
                         "No connected pedestrian route — use the 2D map";
-                    await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken,
-                        approachHeading, captureHeading: false);
+                    if (arrivalGraph is not null)
+                        await UpdateRoadApproachAsync(locationReading, arrivalGraph, cancellationToken,
+                            approachHeading, captureHeading: false);
 
                     Log.Warn(
                         RoutingLogTag,
@@ -3951,44 +4151,13 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                ArHeadingAlignmentService.HeadingAlignmentResult?
-                    headingAlignment = await headingWork;
-
                 cancellationToken.ThrowIfCancellationRequested();
-
-                double mapToArYawDegrees;
-
-                if (!headingAlignment.HasValue ||
-                    !headingAlignment.Value.IsAvailable ||
-                    !headingAlignment.Value.IsStable ||
-                    headingAlignment.Value.SessionGeneration !=
-                        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
-                {
-                    pendingInitialRoute = route;
-                    pendingInitialOrigin = origin;
-                    pendingInitialDestination = destination.Coordinate;
-                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
-                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
-                    lastHeadingAlignment = null;
-                    routeStartupFailureMessage =
-                        "Align the phone for AR guidance — use the 2D map";
-                    ARRouteBridge.Clear();
-                    Log.Warn(HeadingLogTag,
-                        "Route calculated, but geographic heading is unverified; " +
-                        "refusing the yaw=0 cyan route fallback.");
-                    return false;
-                }
-
-                lastHeadingAlignment = headingAlignment;
-                mapToArYawDegrees = headingAlignment.Value.MapToArYawDegrees;
-                LogDetailedDebug(HeadingLogTag,
-                    $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
-
+                if (!pageIsVisible) return false;
                 NavigationDestinationBridge.DestinationSnapshot currentDestination =
                     NavigationDestinationBridge.Current;
 
                 if (!currentDestination.IsAvailable ||
-                    currentDestination.Coordinate != destination.Coordinate)
+                    currentDestination.Version != destination.Version)
                 {
                     Log.Warn(
                         RoutingLogTag,
@@ -3996,20 +4165,10 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                // Retain the complete calculated route, but publish no cyan
-                // corridor until independent GPS observations confirm road entry.
-                // This also keeps a route calculated from a road >20 m away
-                // available while the floor arrow guides the approach.
                 ARRouteBridge.Clear();
-                Log.Info(RoutingLogTag,
-                    $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
-                    $"headingStable={headingAlignment.Value.IsStable}, roadEntry=PENDING.");
-
                 ClearRoadApproachCue();
-                routeStartupPublishedVersion = -1;
-                routeStartupFailureMessage = null;
+                lastHeadingAlignment = null;
                 pendingInitialRoute = null;
-
                 activeRoute =
                     route;
 
@@ -4025,11 +4184,14 @@ namespace RescuAR.App.Views.Camera
                 activeDestinationSafeZoneRadiusMeters =
                     destination.SafeZoneRadiusMeters;
 
-                activeMapToArYawDegrees =
-                    mapToArYawDegrees;
-
                 ResetArRouteVisualMode("new route requires independent road-entry confirmation");
                 _routeProgressTracker.SetRoute(route);
+                _hazardReroutingService.AcceptRoute(route, origin);
+                positionObservationHeld = false;
+                ClearRouteHazardNotice();
+                LogAcceptedRoute(route, destination.Version, "START");
+                _routeDisplayProgressPolicy.Reset();
+                ResetGeographicPositionEvidence();
 
                 _gpsPdrFusionPolicy.Reset();
                 RouteProgressTracker.RouteProgressUpdate initialMatch =
@@ -4053,6 +4215,7 @@ namespace RescuAR.App.Views.Camera
                 TrySetRouteRoadApproachCue(initialMatch, returningToRoute: false);
                 lastRouteMatchConfidence = initialMatch.MatchConfidence;
                 lastGpsConfidence = initialFusion.Confidence;
+                lastGpsReliabilityWeight = initialFusion.ReliabilityWeight;
 
                 if (initialMatch.IsAccepted && !initialMatch.IsOffRoute &&
                     initialMatch.MatchConfidence >= RouteMatchConfidence.Medium &&
@@ -4060,22 +4223,81 @@ namespace RescuAR.App.Views.Camera
                     initialFusion.ReliabilityWeight >= 0.35 &&
                     locationReading.AccuracyMeters <= 20.0)
                 {
-                    lastVerifiedGpsAt = locationReading.Timestamp;
-                    lastVerifiedGpsProgressMeters = initialFused.CommittedProgressMeters;
+                    ObserveVerifiedGpsPosition(route, initialFused, locationReading);
                 }
 
                 if (initialFused.IsAccepted && !initialFused.IsOffRoute)
                     UpdateRoadFollowingVisualModeFromAcceptedGps(initialFused);
 
                 _offRouteReroutePolicy.Reset();
+                _routeBacktrackingPolicy.Reset();
+                lastBacktrackingDecision = default;
 
                 _routeReplacementPolicy.Reset();
 
-                _headingRevalidationPolicy.Reset();
+                _headingRevalidationPolicy.Reset("new geographic route accepted");
 
                 UpdateTurnGuidance();
 
                 StartRouteProgress();
+                Log.Info(RoutingLogTag, "Geographic route accepted; GPS progress continues while AR heading recovers.");
+
+                ArHeadingAlignmentService.HeadingAlignmentResult?
+                    headingAlignment = await headingWork;
+                if (!ReferenceEquals(activeRoute, route) ||
+                    !CanApplyRouteRequest(destination.Version, cancellationToken))
+                    return false;
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                double mapToArYawDegrees;
+
+                if (!headingAlignment.HasValue ||
+                    !headingAlignment.Value.IsAvailable ||
+                    !headingAlignment.Value.IsStable ||
+                    headingAlignment.Value.SessionGeneration !=
+                        ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+                {
+                    pendingInitialRoute = route;
+                    pendingInitialOrigin = origin;
+                    pendingInitialDestination = destination.Coordinate;
+                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
+                    nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
+                    lastHeadingAlignment = null;
+                    routeStartupFailureMessage =
+                        "Align the phone for AR guidance — use the 2D map";
+                    ARRouteBridge.Clear();
+                    Log.Warn(HeadingLogTag,
+                        "Route calculated, but geographic heading is unverified; " +
+                        "refusing the yaw=0 cyan route fallback.");
+                    return true;
+                }
+
+                mapToArYawDegrees = headingAlignment.Value.MapToArYawDegrees;
+                LogDetailedDebug(HeadingLogTag,
+                    $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
+
+                // Keep physical road-entry confirmation separate from a short
+                // preview of the actual mapped geometry. The next fresh GPS
+                // update can publish that preview using the placement checks.
+                ARRouteBridge.Clear();
+                Log.Info(RoutingLogTag,
+                    $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
+                    $"headingStable={headingAlignment.Value.IsStable}, roadEntry=PENDING.");
+
+                ClearRoadApproachCue();
+                routeStartupPublishedVersion = -1;
+                routeStartupFailureMessage = null;
+                pendingInitialRoute = null;
+
+                lock (routeProgressFusionSync)
+                {
+                    activeMapToArYawDegrees = mapToArYawDegrees;
+                    lastHeadingAlignment = headingAlignment;
+                    ResetArRouteVisualMode("heading ready; confirm road entry with fresh GPS");
+                    initialRoadApproachPending = true;
+                    roadEntryConfirmation.Reset();
+                }
 
                 var routeSnapshot = ARRouteBridge.Current;
                 LogDetailedDebug(
@@ -4103,8 +4325,8 @@ namespace RescuAR.App.Views.Camera
             }
             catch (Exception ex)
             {
-                routeStartupFailureMessage =
-                    "Pedestrian route unavailable — use the 2D map";
+                if (CanApplyRouteRequest(destination.Version, cancellationToken))
+                    routeStartupFailureMessage = "Pedestrian route unavailable — use the 2D map";
                 Log.Error(
                     RoutingLogTag,
                     $"navigation route request FAILED: {ex}");
@@ -4115,7 +4337,11 @@ namespace RescuAR.App.Views.Camera
             {
                 routeRequestInProgress =
                     false;
-                if (activeDestinationCoordinate.HasValue &&
+                if (pageIsVisible && !safeZoneConfirmed &&
+                    NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
+                    nextDestination.Version != destination.Version)
+                    Dispatcher.Dispatch(StartRouteRequestIfPossible);
+                else if (activeDestinationCoordinate.HasValue &&
                     routeProgressTask is null && pageIsVisible && !safeZoneConfirmed)
                     StartRouteProgress();
             }
@@ -4123,6 +4349,14 @@ namespace RescuAR.App.Views.Camera
             await Task.CompletedTask;
             return false;
 #endif
+        }
+
+        private bool CanApplyRouteRequest(long destinationVersion, CancellationToken cancellationToken)
+        {
+            var destination = NavigationDestinationBridge.Current;
+            return pageIsVisible && !safeZoneConfirmed &&
+                !cancellationToken.IsCancellationRequested && destination.IsAvailable &&
+                destination.Version == destinationVersion;
         }
 
         private void OnLowLightFlashlightClicked(
@@ -4236,8 +4470,70 @@ namespace RescuAR.App.Views.Camera
                     activeDestinationName,
                     StringComparison.Ordinal);
 
-            return sameCoordinate &&
+            return destination.Version == activeDestinationVersion && sameCoordinate &&
                 sameName;
+        }
+
+        private bool HasCurrentRouteHeading() =>
+            _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+            lastHeadingAlignment is { IsAvailable: true, IsStable: true } heading &&
+            _headingAlignmentService.LastResult is { IsStable: true, RequiresMovementValidation: false } current &&
+            heading.SessionGeneration == ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration &&
+            Math.Abs(Math.IEEERemainder(current.MapToArYawDegrees - activeMapToArYawDegrees, 360)) < .001;
+
+        private bool HasCurrentHeadingCandidate() =>
+            _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+            _headingAlignmentService.LastResult is { IsAvailable: true } heading &&
+            double.IsFinite(heading.MapToArYawDegrees) &&
+            heading.SessionGeneration == ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration;
+
+        private Task<RoadGraph?> GetArrivalGraphSafelyAsync() =>
+            arrivalGraphLoadTask ??= LoadArrivalGraphSafelyAsync();
+
+        private async Task<RoadGraph?> LoadArrivalGraphSafelyAsync()
+        {
+            try
+            {
+                return arrivalRoadGraph = await NavigationDataBootstrap.GetRoadGraphAsync();
+            }
+            catch (Exception exception)
+            {
+                AndroidLog.Error(RoutingLogTag,
+                    "Offline graph unavailable; online routing can continue, arrival/access checks are held: " +
+                    DiagnosticPrivacyPolicy.FormatException(exception));
+                return null;
+            }
+        }
+
+        private async Task RecoverRouteHeadingAsync(RouteResult route, LocationReading reading)
+        {
+            try
+            {
+                var heading = await _headingAlignmentService.CaptureAsync(reading.Coordinate,
+                    reading.AltitudeMeters, routeProgressCancellation?.Token ?? CancellationToken.None);
+                if (!pageIsVisible || safeZoneConfirmed || !ReferenceEquals(route, activeRoute) ||
+                    !heading.HasValue || !heading.Value.IsAvailable || !heading.Value.IsStable ||
+                    _arCoreService.IsSessionPaused ||
+                    heading.Value.SessionGeneration != ARCameraPoseBridge.CurrentFrame.Generation.SessionGeneration)
+                    return;
+                lock (routeProgressFusionSync)
+                {
+                    lastHeadingAlignment = heading;
+                    activeMapToArYawDegrees = heading.Value.MapToArYawDegrees;
+                    pendingInitialRoute = null;
+                    routeStartupFailureMessage = null;
+                    ResetArRouteVisualMode("AR heading recovered; require fresh road-entry observations");
+                    initialRoadApproachPending = true;
+                    roadEntryConfirmation.Reset();
+                }
+                AndroidLog.Info(HeadingLogTag, "AR heading recovered without recalculating the geographic route.");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                AndroidLog.Warn(HeadingLogTag, "AR heading recovery deferred: " +
+                    DiagnosticPrivacyPolicy.FormatException(exception));
+            }
         }
 
         private void StartRouteRequestIfPossible()
@@ -4247,8 +4543,12 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            _ =
-                TryRequestNavigationRouteAsync();
+            if (activeRoute is not null && CanResumeRetainedRoute())
+            {
+                if (routeProgressTask is null && !safeZoneConfirmed) StartRouteProgress();
+                return;
+            }
+            _ = TryRequestNavigationRouteAsync();
         }
 
         private void CancelRouteRequest(
@@ -4300,7 +4600,7 @@ namespace RescuAR.App.Views.Camera
 #if ANDROID
             LogDetailedDebug(
                 RerouteLogTag,
-                "Connectivity failover watcher subscribed: " +
+                "Connectivity watcher subscribed: " +
                 $"networkAccess={Connectivity.Current.NetworkAccess}.");
 #endif
         }
@@ -4334,365 +4634,48 @@ namespace RescuAR.App.Views.Camera
             if (e.NetworkAccess ==
                 NetworkAccess.Internet)
             {
-                CancelConnectivityFailover(
-                    "Internet connectivity restored");
+                routeRetainedAfterNetworkLoss = null;
 
 #if ANDROID
                 if (activeRoute is not null &&
-                    IsAStarRoute(
+                    HybridRoutingService.IsOfflineRoute(
                         activeRoute))
                 {
                     LogDetailedDebug(
                         RerouteLogTag,
                         "Internet restored while an offline A* route is active. " +
-                        "Keeping the current offline route after Internet returns.");
+                        "Keeping the current route after Internet returns.");
                 }
 #endif
                 return;
             }
 
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 $"ConnectivityChanged:{e.NetworkAccess}");
         }
 
         /// <summary>
-        /// When a route produced by MLD is active and Internet access is lost,
-        /// retain that route visually while preparing exactly one replacement
-        /// route through the existing offline A* implementation.
+        /// Downloaded route geometry remains usable without Internet. Only an
+        /// actual deviation or hazard needs a new route from the offline graph.
         /// </summary>
-        private void ScheduleNetworkLossFailoverIfNeeded(
-            string reason)
+        private void RetainRouteAfterNetworkLoss(string reason)
         {
 #if ANDROID
-            if (!pageIsVisible ||
-                safeZoneConfirmed ||
-                activeRoute is null ||
-                !IsMldRoute(
-                    activeRoute) ||
-                !activeDestinationCoordinate.HasValue ||
-                Connectivity.Current.NetworkAccess ==
-                    NetworkAccess.Internet ||
-                networkLossFailoverInProgress ||
-                connectivityFailoverCancellation is not null)
-            {
-                return;
-            }
-
-            connectivityFailoverCancellation =
-                new CancellationTokenSource();
-
-            CancellationToken cancellationToken =
-                connectivityFailoverCancellation.Token;
-
-            Log.Warn(
-                RerouteLogTag,
-                "MLD route is active while Internet is unavailable. " +
-                $"Confirming network loss for {NetworkLossConfirmationMilliseconds} ms " +
-                "before switching the active trip to offline A*. " +
-                $"reason='{reason}'.");
-
-            _ =
-                RunNetworkLossFailoverAsync(
-                    reason,
-                    cancellationToken);
+            if (!pageIsVisible || safeZoneConfirmed || activeRoute is null ||
+                Connectivity.Current.NetworkAccess == NetworkAccess.Internet ||
+                ReferenceEquals(routeRetainedAfterNetworkLoss, activeRoute)) return;
+            routeRetainedAfterNetworkLoss = activeRoute;
+            Log.Info(RerouteLogTag,
+                "NETWORK LOSS: retaining downloaded pedestrian route and progress. " +
+                $"Offline routing is used for the next deviation or hazard. reason='{reason}'.");
 #endif
         }
-
-        private async Task RunNetworkLossFailoverAsync(
-            string reason,
-            CancellationToken cancellationToken)
-        {
-#if ANDROID
-            if (networkLossFailoverInProgress)
-            {
-                return;
-            }
-
-            try
-            {
-                await Task.Delay(
-                    NetworkLossConfirmationMilliseconds,
-                    cancellationToken);
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (Connectivity.Current.NetworkAccess ==
-                        NetworkAccess.Internet ||
-                    !pageIsVisible ||
-                    safeZoneConfirmed ||
-                    activeRoute is null ||
-                    !IsMldRoute(
-                        activeRoute) ||
-                    !activeDestinationCoordinate.HasValue)
-                {
-                    return;
-                }
-
-                networkLossFailoverInProgress =
-                    true;
-
-                int busyWaitMilliseconds =
-                    0;
-
-                while ((routeRequestInProgress ||
-                        dynamicRerouteInProgress) &&
-                       busyWaitMilliseconds <
-                           NetworkFailoverMaximumBusyWaitMilliseconds)
-                {
-                    await Task.Delay(
-                        NetworkFailoverBusyRetryMilliseconds,
-                        cancellationToken);
-
-                    busyWaitMilliseconds +=
-                        NetworkFailoverBusyRetryMilliseconds;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (routeRequestInProgress ||
-                    dynamicRerouteInProgress)
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Automatic MLD -> A* transition deferred because another " +
-                        "route operation remained active. Existing MLD guidance is retained.");
-
-                    return;
-                }
-
-                if (Connectivity.Current.NetworkAccess ==
-                        NetworkAccess.Internet ||
-                    activeRoute is null ||
-                    !IsMldRoute(
-                        activeRoute))
-                {
-                    return;
-                }
-
-                int arWaitMilliseconds =
-                    0;
-
-                while (arWaitMilliseconds <
-                    NetworkFailoverArReadyWaitMilliseconds)
-                {
-                    ARCameraPoseBridge.SpatialSnapshot spatial =
-                        ARCameraPoseBridge.CurrentFrame;
-
-                    if (spatial.IsTracking &&
-                        spatial.Pose.IsTracking &&
-                        spatial.Anchor.IsAvailable)
-                    {
-                        break;
-                    }
-
-                    await Task.Delay(
-                        250,
-                        cancellationToken);
-
-                    arWaitMilliseconds +=
-                        250;
-                }
-
-                GeoCoordinate? failoverOrigin =
-                    await ResolveNetworkFailoverOriginAsync(
-                        cancellationToken);
-
-                if (!failoverOrigin.HasValue ||
-                    !failoverOrigin.Value.IsValid)
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Automatic MLD -> A* transition could not obtain a valid " +
-                        "offline GPS origin. Existing MLD route remains active.");
-
-                    return;
-                }
-
-                if (Connectivity.Current.NetworkAccess ==
-                    NetworkAccess.Internet)
-                {
-                    LogDetailedDebug(
-                        RerouteLogTag,
-                        "Internet recovered before offline replacement began; " +
-                        "MLD route retained.");
-
-                    return;
-                }
-
-                Log.Warn(
-                    RerouteLogTag,
-                    "CONFIRMED NETWORK LOSS: transitioning active navigation " +
-                    "from MLD to offline A*. The current MLD AR route will stay " +
-                    "visible until the A* replacement is ready. " +
-                    $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(failoverOrigin.Value.Latitude, failoverOrigin.Value.Longitude)}, " +
-                    $"reason='{reason}'.");
-
-                bool switched =
-                    await TryDynamicRerouteAsync(
-                        failoverOrigin.Value,
-                        "NETWORK_LOSS_MLD_TO_ASTAR",
-                        forceOfflineAStar:
-                            true);
-
-                if (!switched &&
-                    activeRoute is not null &&
-                    IsMldRoute(
-                        activeRoute))
-                {
-                    Log.Warn(
-                        RerouteLogTag,
-                        "MLD -> A* transition did not complete. The existing MLD " +
-                        "route was intentionally retained rather than clearing guidance.");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when Internet returns, destination changes, or page exits.
-            }
-            catch (Exception ex)
-            {
-                Log.Error(
-                    RerouteLogTag,
-                    "Automatic MLD -> A* transition FAILED. Existing route retained. " +
-                    ex);
-            }
-            finally
-            {
-                networkLossFailoverInProgress =
-                    false;
-
-                CancellationTokenSource? completedCancellation =
-                    connectivityFailoverCancellation;
-
-                connectivityFailoverCancellation =
-                    null;
-
-                completedCancellation?.Dispose();
-            }
-#else
-            await Task.CompletedTask;
-#endif
-        }
-
-        private async Task<GeoCoordinate?> ResolveNetworkFailoverOriginAsync(
-            CancellationToken cancellationToken)
-        {
-            GeoCoordinate? recentCoordinate;
-            DateTimeOffset? recentTimestamp;
-
-            lock (routeProgressFusionSync)
-            {
-                recentCoordinate =
-                    latestGpsCoordinateForRouting;
-
-                recentTimestamp =
-                    latestGpsTimestampForRouting;
-            }
-
-            if (recentCoordinate.HasValue &&
-                recentCoordinate.Value.IsValid &&
-                recentTimestamp.HasValue &&
-                DateTimeOffset.UtcNow -
-                    recentTimestamp.Value <=
-                        TimeSpan.FromSeconds(
-                            15))
-            {
-#if ANDROID
-                LogDetailedDebug(
-                    RerouteLogTag,
-                    "Using recent GPS route-progress fix as the offline A* " +
-                    "failover origin.");
-#endif
-                return recentCoordinate.Value;
-            }
-
-            LocationReading? lastKnown =
-                await _locationService.GetLastKnownLocationAsync(
-                    cancellationToken);
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (lastKnown is not null &&
-                lastKnown.Coordinate.IsValid &&
-                DateTimeOffset.UtcNow -
-                    lastKnown.Timestamp <=
-                        TimeSpan.FromSeconds(
-                            30))
-            {
-#if ANDROID
-                LogDetailedDebug(
-                    RerouteLogTag,
-                    "Using recent last-known GPS fix as the offline A* " +
-                    "failover origin.");
-#endif
-                return lastKnown.Coordinate;
-            }
-
-#if ANDROID
-            LogDetailedDebug(
-                RerouteLogTag,
-                "Requesting a fresh GPS fix for the offline A* failover origin.");
-#endif
-
-            LocationReading? current =
-                await _locationService.GetCurrentLocationAsync(
-                    cancellationToken);
-
-            return current?.Coordinate.IsValid ==
-                true
-                    ? current.Coordinate
-                    : null;
-        }
-
-        private void CancelConnectivityFailover(
-            string reason)
-        {
-            CancellationTokenSource? cancellation =
-                connectivityFailoverCancellation;
-
-            connectivityFailoverCancellation =
-                null;
-
-            if (cancellation is null)
-            {
-                return;
-            }
-
-#if ANDROID
-            LogDetailedDebug(
-                RerouteLogTag,
-                $"Cancelling pending network-loss failover: {reason}");
-#endif
-
-            try
-            {
-                cancellation.Cancel();
-            }
-            catch
-            {
-                // Best effort.
-            }
-
-            cancellation.Dispose();
-        }
-
         private static bool IsMldRoute(
             RouteResult route)
         {
             return route.Algorithm.Contains(
                 "MLD",
                 StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsAStarRoute(
-            RouteResult route)
-        {
-            return route.Algorithm.Contains(
-                "AStar",
-                StringComparison.OrdinalIgnoreCase) ||
-                route.Algorithm.Contains(
-                    "A*",
-                    StringComparison.OrdinalIgnoreCase);
         }
 
         private void SubscribeDestinationChanged()
@@ -4727,10 +4710,17 @@ namespace RescuAR.App.Views.Camera
             object? sender,
             EventArgs e)
         {
-#if ANDROID
+            if (Dispatcher.IsDispatchRequired)
+            {
+                Dispatcher.Dispatch(() => OnNavigationDestinationChanged(sender, e));
+                return;
+            }
             NavigationDestinationBridge.DestinationSnapshot destination =
                 NavigationDestinationBridge.Current;
+            if (destination.Version == observedDestinationVersion) return;
+            observedDestinationVersion = destination.Version;
 
+#if ANDROID
             LogDetailedDebug(
                 RoutingLogTag,
                 destination.IsAvailable
@@ -4757,6 +4747,7 @@ namespace RescuAR.App.Views.Camera
 
             activeDestinationCoordinate =
                 null;
+            activeDestinationVersion = 0;
 
             activeDestinationSafeZoneRadiusMeters =
                 SafeZoneConfirmationService.ArrivalRadiusMeters;
@@ -4784,8 +4775,7 @@ namespace RescuAR.App.Views.Camera
             lastGpsConfidence =
                 GpsPdrFusionPolicy.GpsConfidence.Unavailable;
 
-            lastVerifiedGpsAt = null;
-            lastVerifiedGpsProgressMeters = 0.0;
+            verifiedPosition = null;
 
             lastGpsFusionAction =
                 GpsPdrFusionPolicy.GpsFusionAction.Ignore;
@@ -4807,12 +4797,19 @@ namespace RescuAR.App.Views.Camera
             _pdrHeadingSmoother.Reset();
 
             _offRouteReroutePolicy.Reset();
+            _routeBacktrackingPolicy.Reset();
+            _routeDisplayProgressPolicy.Reset();
+            lastBacktrackingDecision = default;
 
             _routeReplacementPolicy.Reset();
 
-            _headingRevalidationPolicy.Reset();
+            _headingRevalidationPolicy.Reset("navigation session cleared");
+            ResetGeographicPositionEvidence();
 
             _hazardReroutingService.ResetSessionState();
+            positionObservationPolicy.Reset();
+            positionObservationHeld = false;
+            ClearRouteHazardNotice();
 
 #if RESCUAR_DIAGNOSTICS
             developerHazardValidationArmed =
@@ -4856,8 +4853,7 @@ namespace RescuAR.App.Views.Camera
                 false,
                 "Navigation destination changed; confidence must be rebuilt.");
 
-            CancelConnectivityFailover(
-                "navigation destination changed");
+            routeRetainedAfterNetworkLoss = null;
 
             ResetTurnGuidance();
 
@@ -4998,8 +4994,7 @@ namespace RescuAR.App.Views.Camera
             lastRouteMatchConfidence =
                 RouteMatchConfidence.Unavailable;
 
-            lastVerifiedGpsAt = null;
-            lastVerifiedGpsProgressMeters = 0.0;
+            verifiedPosition = null;
 
             CancellationTokenSource? cancellation =
                 routeProgressCancellation;
@@ -5066,10 +5061,12 @@ namespace RescuAR.App.Views.Camera
         private async Task RunRouteProgressLoopAsync(
             CancellationToken cancellationToken)
         {
+            var tripDestination = NavigationDestinationBridge.Current;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    if (NavigationDestinationBridge.Current.Version != tripDestination.Version) return;
                     if (safeZoneConfirmed)
                     {
                         await Task.Delay(
@@ -5079,9 +5076,7 @@ namespace RescuAR.App.Views.Camera
                         continue;
                     }
 
-                    bool is2DMapMode = mapModeLayer != null && mapModeLayer.IsVisible;
-                    if (!pageIsVisible ||
-                        (!is2DMapMode && (!_arCoreService.IsInitialized || _arCoreService.IsSessionPaused)))
+                    if (!pageIsVisible)
                     {
                         await Task.Delay(
                             RouteProgressPollInterval,
@@ -5093,13 +5088,14 @@ namespace RescuAR.App.Views.Camera
                     RouteResult? route =
                         activeRoute;
 
-                    RoadGraph arrivalGraph = arrivalRoadGraph ??=
-                        await NavigationDataBootstrap.GetRoadGraphAsync(cancellationToken);
+                    _ = GetArrivalGraphSafelyAsync();
+                    RoadGraph? arrivalGraph = arrivalRoadGraph;
 
                     if (route is null)
                     {
                         LocationReading? arrivalReading =
                             await TryGetRouteLocationAsync(cancellationToken);
+                        if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
                         if (arrivalReading is not null &&
                             activeDestinationCoordinate.HasValue &&
                             DateTimeOffset.UtcNow - arrivalReading.Timestamp <=
@@ -5114,9 +5110,10 @@ namespace RescuAR.App.Views.Camera
                                 arrivalReading.AccuracyMeters,
                                 double.PositiveInfinity,
                                 arrivalReading.Timestamp,
-                                majorRoadBarrier: arrivalGraph.AccessCrossesMajorRoad(
+                                majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                     arrivalReading.Coordinate,
-                                    activeDestinationCoordinate.Value));
+                                    activeDestinationCoordinate.Value),
+                                destinationVersion: tripDestination.Version);
                             HandleSafeZoneDecision(arrival);
                             lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
                             if (mapModeLayer != null && mapModeLayer.IsVisible)
@@ -5128,7 +5125,8 @@ namespace RescuAR.App.Views.Camera
                             }
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
                             {
-                                BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
+                                if (arrivalGraph is not null)
+                                    BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
                                 RetryRouteFromRoadApproachIfReady(cancellationToken);
                             }
                             else ClearRoadApproachCue();
@@ -5136,7 +5134,7 @@ namespace RescuAR.App.Views.Camera
                                 routeStartupFailureMessage ==
                                     ArrivalConfirmationMessage &&
                                 arrival.DistanceToDestinationMeters >
-                                    arrival.ArrivalRadiusMeters + 20.0 &&
+                                    arrival.ArrivalRadiusMeters &&
                                 !routeRequestInProgress)
                             {
                                 routeStartupFailureMessage = null;
@@ -5151,6 +5149,8 @@ namespace RescuAR.App.Views.Camera
                         await TryGetRouteLocationAsync(cancellationToken);
 
                     cancellationToken.ThrowIfCancellationRequested();
+
+                    if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
 
                     if (reading is not null &&
                         (DateTimeOffset.UtcNow - reading.Timestamp >
@@ -5195,6 +5195,7 @@ namespace RescuAR.App.Views.Camera
                         bool verifiedOffCourseThisCycle =
                             false;
 
+
                         GeoCoordinate rerouteOrigin =
                             default;
 
@@ -5211,11 +5212,45 @@ namespace RescuAR.App.Views.Camera
 
                         lock (routeProgressFusionSync)
                         {
+                            if (!ReferenceEquals(route, activeRoute)) continue;
+                            ObserveHeadingContinuity(reading);
+                            // This observer must remain reachable even when the
+                            // retained yaw rejects GPS-to-AR vector innovations.
+                            if (_headingAlignmentService.LastResult is { RequiresMovementValidation: true })
+                            {
+                                var recoveryMatch = _routeProgressTracker.Update(reading.Coordinate,
+                                    reading.AccuracyMeters, reading.CourseDegrees, reading.SpeedMetersPerSecond,
+                                    observeOnly: true);
+                                TryApplyHeadingRevalidation(route, reading, recoveryMatch);
+                            }
                             RouteProgressTracker.ProgressSnapshot beforeGps =
                                 _routeProgressTracker.Current;
 
+                            var observation = positionObservationPolicy.Evaluate(route, reading.Coordinate,
+                                reading.AccuracyMeters, reading.Timestamp, DateTimeOffset.UtcNow,
+                                GetAcquisitionMotion(reading, requireTrustedHeading: false));
+                            var stability = navigationStability.Observe(route, reading.Coordinate, reading.AccuracyMeters,
+                                reading.Timestamp, DateTimeOffset.UtcNow,
+                                GetAcquisitionMotion(reading, requireTrustedHeading: false), observation.IsHeld);
+                            positionObservationHeld = !stability.Reliable;
+                            LogDetailedDebug(ProgressLogTag,
+                                $"NAV_STABILITY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; trip={activeDestinationVersion}; " +
+                                $"reliable={stability.Reliable}; assess={stability.AssessDeviation}; prolonged={stability.ProlongedUncertainty}; " +
+                                $"reliableAgeSec={stability.ReliableAgeSeconds:F1}; intervalSec={navigationStability.Options.AssessmentInterval.TotalSeconds:F1}; " +
+                                $"reason='{stability.Reason}'.");
+                            if (observation.IsConfirmedCorrection)
+                            {
+                                _offRouteReroutePolicy.ResetConfirmation();
+                                _routeBacktrackingPolicy.ResetEvidence();
+                            }
+                            if (observation.IsHeld || observation.IsConfirmedCorrection)
+                                LogDetailedDebug(ProgressLogTag,
+                                    $"NAV_OBSERVATION held={observation.IsHeld}; confirmedCorrection={observation.IsConfirmedCorrection}; " +
+                                    $"sample={reading.Timestamp.ToUnixTimeMilliseconds()}; residual={observation.ResidualMeters:F2}m; " +
+                                    $"reason='{observation.Reason}'.");
+
                             RouteProgressTracker.RouteProgressUpdate matchedGps =
-                                _routeProgressTracker.Update(
+                                positionObservationHeld ? HeldGpsObservation(beforeGps, reading) : _routeProgressTracker.Update(
                                     reading.Coordinate,
                                     reading.AccuracyMeters,
                                     reading.CourseDegrees,
@@ -5227,22 +5262,38 @@ namespace RescuAR.App.Views.Camera
                              * real route match so one accuracy outage cannot
                              * immediately disable otherwise valid PDR.
                              */
-                            if (matchedGps.MatchConfidence !=
+                            if (!positionObservationHeld && matchedGps.MatchConfidence !=
                                 RouteMatchConfidence.Unavailable)
                             {
                                 lastRouteMatchConfidence =
                                     matchedGps.MatchConfidence;
                             }
 
+                            bool nearDestination = activeDestinationCoordinate.HasValue &&
+                                _destinationProximityReroutePolicy.ShouldHold(reading.Coordinate,
+                                    activeDestinationCoordinate.Value, reading.AccuracyMeters,
+                                    reading.Timestamp, DateTimeOffset.UtcNow,
+                                    accessVerified: arrivalRoadGraph is not null &&
+                                        !arrivalRoadGraph.AccessCrossesMajorRoad(reading.Coordinate,
+                                            activeDestinationCoordinate.Value));
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
-                                _offRouteReroutePolicy.Evaluate(
+                                !stability.AssessDeviation ? default : _offRouteReroutePolicy.Evaluate(
                                     matchedGps,
-                                    DateTimeOffset.UtcNow);
+                                    reading.Timestamp,
+                                    destinationProximityUncertain: nearDestination);
 
-                            lastOffRouteCandidate =
+                            DateTimeOffset evaluatedAt = DateTimeOffset.UtcNow;
+                            TimeSpan observationAge = evaluatedAt - reading.Timestamp;
+                            if (stability.AssessDeviation) lastBacktrackingDecision = _routeBacktrackingPolicy.Evaluate(route,
+                                matchedGps, reading.Timestamp, evaluatedAt, nearDestination,
+                                observationAge >= TimeSpan.Zero && observationAge <= TimeSpan.FromSeconds(3) &&
+                                    !_gpsPdrFusionPolicy.IsRouteIdentitySuspended
+                                    ? GetTrackedRouteMotion() : null);
+
+                            if (stability.AssessDeviation) lastOffRouteCandidate =
                                 offRouteDecision.IsCandidate;
 
-                            lastOffRouteConfirmationCount =
+                            if (stability.AssessDeviation) lastOffRouteConfirmationCount =
                                 offRouteDecision.ConfirmationCount;
 
 #if ANDROID
@@ -5260,6 +5311,18 @@ namespace RescuAR.App.Views.Camera
                                     $"reroute={offRouteDecision.ShouldReroute}, " +
                                     $"reason='{offRouteDecision.Reason}'");
                             }
+                            if (lastBacktrackingDecision.IsCandidate)
+                                Log.Warn(RerouteLogTag,
+                                    $"ROUTE_BACKTRACKING algorithm='{route.Algorithm}'; " +
+                                    $"samples={lastBacktrackingDecision.ConfirmationCount}/" +
+                                    $"{lastBacktrackingDecision.RequiredConfirmationCount}; " +
+                                    $"displacement={lastBacktrackingDecision.DisplacementMeters:F1}m; " +
+                                    $"retreat={lastBacktrackingDecision.RetreatMeters:F1}m; " +
+                                    $"arRetreat={lastBacktrackingDecision.ArRetreatMeters:F1}m; " +
+                                    $"evidence={lastBacktrackingDecision.EvidenceSource}; " +
+                                    $"accuracy={reading.AccuracyMeters:F1}m; " +
+                                    $"replan={lastBacktrackingDecision.ShouldReplan}; " +
+                                    $"reason='{lastBacktrackingDecision.Reason}'.");
 #endif
 
                             if (offRouteDecision.ShouldReroute)
@@ -5276,17 +5339,28 @@ namespace RescuAR.App.Views.Camera
                                 rerouteReason =
                                     offRouteDecision.Reason;
                             }
+                            else if (stability.AssessDeviation && lastBacktrackingDecision.ShouldReplan)
+                            {
+                                shouldStartDynamicReroute = true;
+                                rerouteOrigin = reading.Coordinate;
+                                rerouteReason = lastBacktrackingDecision.Reason;
+                            }
 
                             RouteProgressTracker.RouteProgressUpdate fusedGps =
                                 matchedGps;
 
                             GpsPdrFusionPolicy.GpsFusionDecision gpsFusionDecision =
-                                _gpsPdrFusionPolicy.EvaluateGps(
+                                positionObservationHeld
+                                    ? new(GpsPdrFusionPolicy.GpsConfidence.Low, GpsPdrFusionPolicy.GpsFusionAction.HoldLowReliability,
+                                        beforeGps.CommittedProgressMeters, 0, 0, lastGpsRouteIdentityConfirmationCount, 0,
+                                        observation.Reason)
+                                    : _gpsPdrFusionPolicy.EvaluateGps(
                                     beforeGps.HasProgress
                                         ? beforeGps.CommittedProgressMeters
                                         : 0.0,
                                     beforeGps.HasProgress,
-                                    matchedGps);
+                                    matchedGps,
+                                    reading.Timestamp);
 
                             lastGpsConfidence =
                                 gpsFusionDecision.Confidence;
@@ -5332,9 +5406,7 @@ namespace RescuAR.App.Views.Camera
                                     !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
                                     reading.AccuracyMeters <= 20.0)
                                 {
-                                    lastVerifiedGpsAt = reading.Timestamp;
-                                    lastVerifiedGpsProgressMeters =
-                                        fusedGps.CommittedProgressMeters;
+                                    ObserveVerifiedGpsPosition(route, fusedGps, reading);
                                 }
                             }
 
@@ -5372,17 +5444,18 @@ namespace RescuAR.App.Views.Camera
                                     rerouteReason);
                             }
 
+                            LogPositionPipeline(route, reading, matchedGps, fusedGps);
                             bool routeVisualModeChanged =
-                                UpdateRoadFollowingVisualModeFromAcceptedGps(
+                                !positionObservationHeld && UpdateRoadFollowingVisualModeFromAcceptedGps(
                                     fusedGps);
 
                             publishedRealProgress =
-                                TryApplyHeadingRevalidation(
+                                !positionObservationHeld && TryApplyHeadingRevalidation(
                                     route,
                                     reading,
                                     fusedGps);
 
-                            if (!publishedRealProgress &&
+                            if (!positionObservationHeld && !publishedRealProgress &&
                                 arRouteVisualMode ==
                                 ArRouteVisualMode.ApproachOrOffCourseShort)
                             {
@@ -5400,9 +5473,12 @@ namespace RescuAR.App.Views.Camera
                                         matchedGps,
                                         "GPS");
                             }
-                            else if (!publishedRealProgress &&
+                            else if (!positionObservationHeld && !publishedRealProgress &&
                                      fusedGps.IsAccepted &&
                                      (fusedGps.ShouldPublishWindow ||
+                                      !ARRouteBridge.Current.IsAvailable ||
+                                      Math.Abs(fusedGps.RawProgressMeters -
+                                          ARRouteBridge.Current.NavigationState.WindowStartProgressMeters) >= 3.0 ||
                                       routeVisualModeChanged))
                             {
                                 publishedRealProgress =
@@ -5467,14 +5543,12 @@ namespace RescuAR.App.Views.Camera
                                         safeZoneEvaluationRemainingMeters,
                                         reading.Timestamp,
                                         majorRoadBarrier: !developerArrivalTest &&
-                                            arrivalGraph.AccessCrossesMajorRoad(
+                                            (arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                                 reading.Coordinate,
-                                                safeZoneEvaluationCoordinate));
+                                                safeZoneEvaluationCoordinate)),
+                                        destinationVersion: tripDestination.Version);
 
                                 safeZoneDecision =
-                                    decision;
-
-                                lastSafeZoneDecision =
                                     decision;
 
                                 /*
@@ -5492,6 +5566,7 @@ namespace RescuAR.App.Views.Camera
                                         false;
 
                                     _offRouteReroutePolicy.ResetConfirmation();
+                                    _routeBacktrackingPolicy.ResetEvidence();
 
                                     lastOffRouteCandidate =
                                         false;
@@ -5536,6 +5611,8 @@ namespace RescuAR.App.Views.Camera
 
                             if (hazardProgress.HasProgress)
                             {
+                                if (shouldStartDynamicReroute)
+                                    _hazardReroutingService.AllowRetryForPositionChange(route);
                                 hazardRerouteOwnsThisCycle =
                                     StartHazardRerouteIfNeeded(
                                         route,
@@ -5564,8 +5641,15 @@ namespace RescuAR.App.Views.Camera
                         }
 #endif
                     }
+                    else
+                    {
+                        lock (routeProgressFusionSync)
+                            navigationStability.Observe(route, default, null, DateTimeOffset.UtcNow,
+                                DateTimeOffset.UtcNow, null, observationHeld: true);
+                    }
+                    if (!publishedRealProgress) TryPublishUncertainRouteEstimate(route);
 #if RESCUAR_DIAGNOSTICS
-                    else if (IndoorRouteTestMode)
+                    if (reading is null && IndoorRouteTestMode)
                     {
                         indoorStationaryPollCount++;
                     }
@@ -5758,8 +5842,7 @@ namespace RescuAR.App.Views.Camera
                 Dispatcher.Dispatch(
                     () =>
                     {
-                        turnGuidancePanel.IsVisible =
-                            true;
+                        SetTurnGuidanceVisible(true);
 
                         turnInstructionLabel.Text =
                             allPassed
@@ -6103,6 +6186,8 @@ namespace RescuAR.App.Views.Camera
                     Connectivity.Current.NetworkAccess ==
                         NetworkAccess.Internet);
 
+            UpdateRouteHazardNotice(route, assessment);
+
             if (!assessment.IsUnsafe ||
                 assessment.PrimaryHazard is null)
             {
@@ -6111,6 +6196,10 @@ namespace RescuAR.App.Views.Camera
 
             RouteHazard hazard =
                 assessment.PrimaryHazard;
+
+            // Safety monitoring continues during an outage, but uncertain
+            // estimates are never promoted to routing origins or failed-route caches.
+            if (!navigationStability.Current.Reliable) return true;
 
             if (dynamicRerouteInProgress ||
                 routeRequestInProgress)
@@ -6125,7 +6214,7 @@ namespace RescuAR.App.Views.Camera
             }
 
             if (!_hazardReroutingService.TryReserveReroute(
-                    hazard,
+                    assessment,
                     out string reservationReason))
             {
                 LogDetailedDebug(
@@ -6152,9 +6241,9 @@ namespace RescuAR.App.Views.Camera
                 TryDynamicRerouteAsync(
                     origin,
                     $"ROUTE_HAZARD:{hazard.Id}",
-                    forceOfflineAStar: false,
                     hazardsToAvoid: assessment.ActiveHazards,
-                    triggeringHazard: hazard);
+                    triggeringHazard: hazard,
+                    hazardAssessment: assessment);
 
             return true;
 #else
@@ -6342,14 +6431,15 @@ namespace RescuAR.App.Views.Camera
         private async Task<bool> TryDynamicRerouteAsync(
             GeoCoordinate origin,
             string reason,
-            bool forceOfflineAStar = false,
             IReadOnlyList<RouteHazard>? hazardsToAvoid = null,
-            RouteHazard? triggeringHazard = null)
+            RouteHazard? triggeringHazard = null,
+            HazardReroutingService.HazardRouteAssessment? hazardAssessment = null)
         {
 #if ANDROID
             if (safeZoneConfirmed ||
                 !pageIsVisible ||
                 !activeDestinationCoordinate.HasValue ||
+                activeRoute is null ||
                 routeRequestInProgress ||
                 dynamicRerouteInProgress)
             {
@@ -6358,12 +6448,15 @@ namespace RescuAR.App.Views.Camera
 
             GeoCoordinate destination =
                 activeDestinationCoordinate.Value;
+            long destinationVersion = activeDestinationVersion;
+            if (!CanApplyRouteRequest(destinationVersion, CancellationToken.None)) return false;
 
             string destinationName =
                 activeDestinationName;
 
             bool hazardAware =
                 hazardsToAvoid is { Count: > 0 };
+            RouteResult routeBeforeReroute = activeRoute;
 
             routeRequestInProgress =
                 true;
@@ -6387,62 +6480,66 @@ namespace RescuAR.App.Views.Camera
                 Log.Warn(
                     RerouteLogTag,
                     "DYNAMIC REROUTE STARTED: " +
+                    $"trip={destinationVersion}, " +
                     $"reason='{reason}', " +
+                    $"previousAlgorithm='{routeBeforeReroute.Algorithm}', " +
                     $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(origin.Latitude, origin.Longitude)}, " +
                     $"destination='{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'. " +
-                    "The current AR route remains visible until a replacement route is ready.");
+                    "The geographic route is retained until a validated replacement is ready.");
 
                 if (hazardAware &&
                     triggeringHazard is not null)
                 {
-                    ApplyPrototypeHazardReroutingState(
-                        triggeringHazard);
+                    if (hazardAssessment.HasValue)
+                        UpdateRouteHazardNotice(routeBeforeReroute, hazardAssessment.Value, findingAlternative: true);
                 }
                 else
                 {
                     ApplyPrototypeReroutingState();
                 }
 
-                RouteResult? replacementRoute;
-
-                if (hazardAware)
-                {
-                    replacementRoute =
-                        await _hybridRoutingService.FindHazardAvoidingRouteAsync(
-                            origin,
-                            destination,
-                            hazardsToAvoid!,
-                            cancellationToken);
-                }
-                else if (forceOfflineAStar)
-                {
-                    replacementRoute =
-                        await _hybridRoutingService.FindOfflineRouteAsync(
-                            origin,
-                            destination,
-                            cancellationToken);
-                }
-                else
-                {
-                    replacementRoute =
-                        await _mldArIntegrationService.RequestRouteAsync(
-                            origin,
-                            destination,
-                            cancellationToken);
-                }
+                LocationReading? rerouteReading;
+                lock (routeProgressFusionSync) rerouteReading = latestRouteStartupReading;
+                RouteReplacementResult replacement =
+                    await _hybridRoutingService.FindReplacementRouteResultAsync(
+                        routeBeforeReroute,
+                        origin,
+                        destination,
+                        async token =>
+                        {
+                            if (rerouteReading is null || rerouteReading.Coordinate.DistanceTo(origin) > 5 ||
+                                !IsCurrentRouteStartupLocationAcceptable(rerouteReading)) return null;
+                            RoadGraph? accessGraph = await GetArrivalGraphSafelyAsync().WaitAsync(token);
+                            return accessGraph is null ? null : await Task.Run(
+                                () => FindRoadAccess(rerouteReading, accessGraph, destination, token), token);
+                        },
+                        hazardsToAvoid,
+                        cancellationToken);
+                RouteResult? replacementRoute = replacement.Route;
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (!CanApplyRouteRequest(destinationVersion, cancellationToken))
+                {
+                    lastRerouteResult = "Cancelled";
+                    return false;
+                }
                 if (replacementRoute is null ||
                     replacementRoute.Points.Count <
                         2)
                 {
                     lastRerouteResult =
-                        "NoRoute";
+                        replacement.Failure == RouteReplacementFailure.DestinationExcluded ? "DestinationExcluded" : "NoRoute";
+
+                    if (hazardAssessment.HasValue && ReferenceEquals(activeRoute, routeBeforeReroute))
+                    {
+                        if (_hazardReroutingService.MarkNoRoute(hazardAssessment.Value, replacement.Failure))
+                            UpdateRouteHazardNotice(routeBeforeReroute, hazardAssessment.Value);
+                    }
 
                     Log.Warn(
                         RerouteLogTag,
-                        "Dynamic reroute returned no usable route. Retaining current guidance.");
+                        $"Dynamic reroute returned no usable route: reason={replacement.Failure}. Retaining current guidance.");
 
                     return false;
                 }
@@ -6465,34 +6562,26 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                ARCameraPoseBridge.SpatialSnapshot spatial =
-                    ARCameraPoseBridge.CurrentFrame;
-
-                if (!spatial.IsTracking ||
-                    !spatial.Pose.IsTracking ||
-                    !spatial.Anchor.IsAvailable)
+                // Geographic navigation must survive an AR tracking outage.
+                // New geometry is held until subsequent fresh road-entry fixes
+                // and the normal AR placement checks establish its alignment.
+                bool routeAccepted = false;
+                RoadGraph? replacementGraph = await GetArrivalGraphSafelyAsync().WaitAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!CanApplyRouteRequest(destinationVersion, cancellationToken)) return false;
+                if (replacementGraph is null)
                 {
-                    lastRerouteResult =
-                        "WaitingForAR";
-
-                    Log.Warn(
-                        RerouteLogTag,
-                        "Replacement route is ready, but ARCore/ground anchor is not currently usable. " +
-                        "Retaining the existing route; a later confirmed off-route sequence may retry.");
-
+                    lastRerouteResult = "ReplacementAccessUnverified";
+                    Log.Warn(RerouteLogTag, "Replacement access cannot be checked without barrier data; geographic route retained.");
                     return false;
                 }
-
-                float arOriginOffsetX =
-                    spatial.Pose.PositionX -
-                    spatial.Anchor.PositionX;
-
-                float arOriginOffsetZ =
-                    spatial.Pose.PositionZ -
-                    spatial.Anchor.PositionZ;
-
-                bool published =
-                    false;
+                if (replacementGraph.AccessCrossesMajorRoad(origin,
+                    replacementRoute.Points[0].Coordinate))
+                {
+                    lastRerouteResult = "ReplacementRejected";
+                    Log.Warn(RerouteLogTag, "Replacement origin access crosses a major road; route retained.");
+                    return false;
+                }
 
                 bool destinationStillCurrent;
 
@@ -6502,6 +6591,7 @@ namespace RescuAR.App.Views.Camera
                 lock (routeProgressFusionSync)
                 {
                     destinationStillCurrent =
+                        CanApplyRouteRequest(destinationVersion, cancellationToken) &&
                         activeDestinationCoordinate.HasValue &&
                         activeDestinationCoordinate.Value ==
                             destination &&
@@ -6522,46 +6612,33 @@ namespace RescuAR.App.Views.Camera
                                 explicitlyJustifiedDetour:
                                     hazardAware,
                                 timestampUtc:
-                                    DateTimeOffset.UtcNow);
+                                    DateTimeOffset.UtcNow,
+                                allowRoadApproach: true);
                     }
 
                     if (destinationStillCurrent &&
                         replacementDecision.IsAccepted)
                     {
-                        published =
-                            _mldArIntegrationService.PublishProgressWindow(
-                                replacementRoute,
-                                0.0,
-                                replacementRoute.Points[0].Coordinate,
-                                activeMapToArYawDegrees,
-                                arOriginOffsetX,
-                                arOriginOffsetZ,
-                                arWindowMeters:
-                                    GetCurrentArRouteVisualWindowMeters(),
-                                clearRouteOnFailure:
-                                    false,
-                                sourceSegmentIndex:
-                                    0,
-                                userCoordinate:
-                                    origin);
-                    }
-
-                    if (published)
-                    {
+                        routeAccepted = true;
+                        ARRouteBridge.Clear();
+                        ResetArRouteVisualMode("replacement requires fresh road-entry confirmation");
+                        initialRoadApproachPending = true;
                         activeRoute =
                             replacementRoute;
 
                         _routeProgressTracker.SetRoute(
                             replacementRoute);
+                        _hazardReroutingService.AcceptRoute(replacementRoute, origin,
+                            hazardAware ? hazardsToAvoid : null);
+                        positionObservationHeld = false;
+                        LogAcceptedRoute(replacementRoute, destinationVersion, hazardAware ? "HAZARD" : "REPLAN");
+                        _routeDisplayProgressPolicy.Reset();
+                        ResetGeographicPositionEvidence();
 
                         lastRouteMatchConfidence =
                             RouteMatchConfidence.Unavailable;
 
-                        lastVerifiedGpsAt = null;
-                        lastVerifiedGpsProgressMeters = 0.0;
-
-                        _routeProgressTracker.MarkWindowPublished(
-                            0.0);
+                        verifiedPosition = null;
 
                         recoveryConnectorVerified =
                             false;
@@ -6570,10 +6647,11 @@ namespace RescuAR.App.Views.Camera
 
                         _pdrHeadingSmoother.Reset();
 
-                        _headingRevalidationPolicy.Reset();
+                        _headingRevalidationPolicy.Reset("replacement geographic route accepted");
 
                         _offRouteReroutePolicy.MarkRerouteCompleted(
                             DateTimeOffset.UtcNow);
+                        _routeBacktrackingPolicy.MarkRerouteCompleted(DateTimeOffset.UtcNow);
 
                         lastOffRouteCandidate =
                             false;
@@ -6619,14 +6697,14 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
-                if (!published)
+                if (!routeAccepted)
                 {
                     lastRerouteResult =
-                        "PublishFailed";
+                        "ReplacementRejected";
 
                     Log.Warn(
                         RerouteLogTag,
-                        "Replacement route could not be published. Existing AR route retained.");
+                        "Replacement route could not be accepted. Existing route retained.");
 
                     return false;
                 }
@@ -6636,21 +6714,20 @@ namespace RescuAR.App.Views.Camera
                 lastRerouteResult =
                     hazardAware
                         ? "HazardComplete"
-                        : forceOfflineAStar
-                            ? "OfflineFailoverComplete"
-                            : "Complete";
+                        : "Complete";
+
+                UpdateRouteHazardNotice(replacementRoute, _hazardReroutingService.AssessRoute(
+                    replacementRoute, 0, Connectivity.Current.NetworkAccess == NetworkAccess.Internet));
 
                 string completionMessage =
                     (hazardAware
                         ? "HAZARD REROUTE COMPLETE: "
-                        : forceOfflineAStar
-                            ? "NETWORK FAILOVER MLD -> A* COMPLETE: "
-                            : "DYNAMIC REROUTE COMPLETE: ") +
+                        : "DYNAMIC REROUTE COMPLETE: ") +
                     $"algorithm='{replacementRoute.Algorithm}', " +
+                    $"trip={destinationVersion}, " +
                     $"points={replacementRoute.Points.Count}, " +
                     $"distance={replacementRoute.TotalDistanceMeters:F1} m, " +
-                    $"routeVersion={ARRouteBridge.Current.Version}, " +
-                    $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m" +
+                    "AR geometry awaits fresh road-entry and tracking confirmation" +
                     (hazardAware
                         ? $", triggeringHazard='{triggeringHazard?.Id ?? "<unknown>"}', " +
                           $"avoidedHazards={hazardsToAvoid!.Count}."
@@ -6686,15 +6763,19 @@ namespace RescuAR.App.Views.Camera
             }
             finally
             {
-                if (!hazardAware && !forceOfflineAStar &&
+                if (!hazardAware &&
                     lastRerouteResult is not ("Complete" or "Cancelled" or
                         "DestinationChanged"))
                 {
                     lock (routeProgressFusionSync)
+                    {
                         _offRouteReroutePolicy.MarkRerouteFailed(
                             DateTimeOffset.UtcNow,
                             awaitingConfirmation: lastRerouteResult ==
                                 "AwaitingRouteConfirmation");
+                        _routeBacktrackingPolicy.MarkRerouteFailed(DateTimeOffset.UtcNow,
+                            awaitingConfirmation: lastRerouteResult == "AwaitingRouteConfirmation");
+                    }
                 }
 
                 dynamicRerouteInProgress =
@@ -6703,10 +6784,13 @@ namespace RescuAR.App.Views.Camera
                 routeRequestInProgress =
                     false;
 
+                if (pageIsVisible && !safeZoneConfirmed &&
+                    NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
+                    nextDestination.Version != destinationVersion)
+                    Dispatcher.Dispatch(StartRouteRequestIfPossible);
+
                 if (lastRerouteResult !=
                         "Complete" &&
-                    lastRerouteResult !=
-                        "OfflineFailoverComplete" &&
                     lastRerouteResult !=
                         "HazardComplete" &&
                     lastTurnGuidance.IsAvailable)
@@ -6716,14 +6800,14 @@ namespace RescuAR.App.Views.Camera
                         {
                             if (currentCameraModuleView ==
                                     CameraModuleViewMode.ArCamera &&
+                                CanApplyRouteRequest(destinationVersion, cancellationToken) &&
                                 !emergencyAdvisoryVisible &&
                                 !safeZoneConfirmed)
                             {
                                 ApplyPrototypeTurnGuidance(
                                     lastTurnGuidance);
 
-                                turnGuidancePanel.IsVisible =
-                                    true;
+                                SetTurnGuidanceVisible(true);
                             }
                         });
                 }
@@ -6739,7 +6823,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                Dispatcher.Dispatch(() => turnGuidancePanel.IsVisible = false);
+                Dispatcher.Dispatch(() => SetTurnGuidanceVisible(false));
                 return;
             }
 #endif
@@ -6794,6 +6878,7 @@ namespace RescuAR.App.Views.Camera
                 navigationState.VisualKind !=
                     RouteVisualKind.RouteWindow)
             {
+                if (TryShowGeographicRecoveryGuidance(acceptedRoute, acceptedProgress)) return;
                 ResetTurnGuidance();
 
 #if ANDROID
@@ -6810,8 +6895,7 @@ namespace RescuAR.App.Views.Camera
                 Dispatcher.Dispatch(
                     () =>
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
                     });
 
                 return;
@@ -6966,8 +7050,7 @@ namespace RescuAR.App.Views.Camera
                         emergencyAdvisoryVisible ||
                         safeZoneConfirmed)
                     {
-                        turnGuidancePanel.IsVisible =
-                            false;
+                        SetTurnGuidanceVisible(false);
 
                         return;
                     }
@@ -6975,8 +7058,7 @@ namespace RescuAR.App.Views.Camera
                     ApplyPrototypeTurnGuidance(
                         guidance);
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
                 });
         }
 
@@ -7542,7 +7624,7 @@ namespace RescuAR.App.Views.Camera
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
-                turnGuidancePanel.IsVisible = false;
+                SetTurnGuidanceVisible(false);
                 return;
             }
 #endif
@@ -7724,8 +7806,7 @@ namespace RescuAR.App.Views.Camera
             }
 
             turnDistanceLabel.Text =
-                $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} meters away from the " +
-                "nearest evacuation center";
+                $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m to {activeDestinationName ?? "selected evacuation center"}";
 
             if (!_isVoiceMuted &&
                 !string.IsNullOrWhiteSpace(turnInstructionLabel.Text) &&
@@ -7816,52 +7897,6 @@ namespace RescuAR.App.Views.Camera
             return maximumDistance;
         }
 
-        private void ApplyPrototypeHazardReroutingState(
-            RouteHazard hazard)
-        {
-            Dispatcher.Dispatch(
-                () =>
-                {
-                    if (currentCameraModuleView !=
-                            CameraModuleViewMode.ArCamera ||
-                        emergencyAdvisoryVisible ||
-                        safeZoneConfirmed)
-                    {
-                        return;
-                    }
-
-                    turnGuidancePanel.BackgroundColor =
-                        Color.FromArgb("#FFF4DE");
-
-                    turnGuidancePanel.Stroke =
-                        new SolidColorBrush(
-                            Color.FromArgb("#E7B85D"));
-
-                    turnInstructionLabel.TextColor =
-                        Color.FromArgb("#8A4B00");
-
-                    turnDistanceLabel.TextColor =
-                        Color.FromArgb("#7B5700");
-
-                    turnDirectionIconLabel.Source =
-                        "lucide_ellipsis_amber.png";
-
-                    turnChevronImage.Source =
-                        "lucide_chevron_down_amber.png";
-
-                    turnInstructionLabel.Text =
-                        "Hazard ahead - finding a safer route";
-
-                    turnDistanceLabel.Text =
-                        string.IsNullOrWhiteSpace(hazard.Title)
-                            ? $"{hazard.Category} reported on the current route."
-                            : hazard.Title;
-
-                    turnGuidancePanel.IsVisible =
-                        true;
-                });
-        }
-
         private void ApplyPrototypeReroutingState()
         {
             Dispatcher.Dispatch(
@@ -7900,8 +7935,7 @@ namespace RescuAR.App.Views.Camera
                     turnDistanceLabel.Text =
                         "Please wait while guidance is updated.";
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
                 });
         }
 
@@ -7946,8 +7980,7 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
-                    turnGuidancePanel.IsVisible =
-                        false;
+                    SetTurnGuidanceVisible(false);
 
                     turnDirectionIconLabel.Source =
                         "lucide_arrow_up_teal.png";
@@ -7977,9 +8010,44 @@ namespace RescuAR.App.Views.Camera
         }
 
         private void HandleSafeZoneDecision(
-            SafeZoneConfirmationService.SafeZoneDecision decision)
+            SafeZoneConfirmationService.SafeZoneDecision decision,
+            bool userReported = false)
         {
+            if (Dispatcher.IsDispatchRequired)
+            {
+                Dispatcher.Dispatch(() => HandleSafeZoneDecision(decision, userReported));
+                return;
+            }
+            var selectedDestination = NavigationDestinationBridge.Current;
+            if (safeZoneConfirmed || !selectedDestination.IsAvailable ||
+                decision.DestinationVersion != selectedDestination.Version) return;
+            long arrivalGeneration = Interlocked.Read(ref arrivalSessionGeneration);
+            // Both routed and unrouted trips publish the same arrival state.
+            // Otherwise an unrouted trip evaluates proximity but its UI keeps
+            // displaying the initial unavailable decision.
+            bool arrivalStatusChanged = !lastSafeZoneDecision.IsAvailable ||
+                lastSafeZoneDecision.IsCandidate != decision.IsCandidate ||
+                lastSafeZoneDecision.ConfirmationCount != decision.ConfirmationCount ||
+                lastSafeZoneDecision.Reason != decision.Reason ||
+                Math.Round(lastSafeZoneDecision.DistanceToDestinationMeters) !=
+                    Math.Round(decision.DistanceToDestinationMeters);
+            lastSafeZoneDecision = decision;
+            if (arrivalStatusChanged && !decision.IsConfirmed)
+                Dispatcher.Dispatch(RefreshCameraModuleDynamicUi);
 #if ANDROID
+            if (!decision.IsConfirmed && (!decision.IsCandidate || decision.IsObservationHeld) && decision.IsAvailable &&
+                decision.DistanceToDestinationMeters <= SafeZoneConfirmationService.CandidateResetDistanceMeters &&
+                (lastArrivalHoldReason != decision.Reason ||
+                 DateTimeOffset.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
+            {
+                lastArrivalHoldReason = decision.Reason;
+                lastArrivalHoldLogAt = DateTimeOffset.UtcNow;
+                Log.Info(SafeZoneLogTag,
+                    $"ARRIVAL HELD: distance={decision.DistanceToDestinationMeters:F1}m, " +
+                    $"radius={decision.ArrivalRadiusMeters:F1}m, accuracy={decision.AccuracyMeters?.ToString("F1") ?? "unknown"}m, " +
+                    $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - decision.ObservedAt).TotalSeconds):F1}s, " +
+                    $"accessDataReady={arrivalRoadGraph is not null}, reason='{decision.Reason}'.");
+            }
             if (decision.IsCandidate &&
                 decision.ConfirmationCount !=
                     lastLoggedSafeZoneConfirmationCount)
@@ -8028,19 +8096,35 @@ namespace RescuAR.App.Views.Camera
 
             safeZoneConfirmed =
                 true;
+            arrivalWasUserReported = userReported;
+
+            CancelRouteRequest("arrival confirmed");
+            pendingInitialRoute = null;
+            ClearRoadApproachCue();
 
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
 
             StopRouteProgress(
-                "destination vicinity confirmed");
+                userReported ? "arrival reported by user" : "destination vicinity confirmed");
+
+            ARRouteBridge.Clear();
+            _verifiedRouteWindowHoldPolicy.Reset();
+            lastArGuidanceConfidence = ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot.NotReady with
+            {
+                DisplayMessage = "Arrival confirmed — guidance completed"
+            };
+            ARCameraSpatialController.SetRouteRenderingEnabled(false, "arrival confirmed; guidance completed");
+            ARCameraSpatialController.SetRouteRecoveryRebasePending(false, "completed trip needs no route rebase");
+            anchorRecoveryInProgress = false;
 
             ResetTurnGuidance();
 
 #if ANDROID
             Log.Info(
                 SafeZoneLogTag,
-                "DESTINATION VICINITY CONFIRMED: " +
+                (userReported ? "USER ARRIVAL CONFIRMED: " : "DESTINATION VICINITY CONFIRMED: ") +
+                $"source={(userReported ? "USER_REPORTED" : "GPS_VICINITY")}, " +
                 $"destination='{DiagnosticPrivacyPolicy.FormatRouteLabel(activeDestinationName)}', " +
                 $"distanceToDestination={decision.DistanceToDestinationMeters:F1} m, " +
                 $"safeZoneRadius={decision.ArrivalRadiusMeters:F1} m, " +
@@ -8067,11 +8151,15 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 () =>
                 {
-                    turnGuidancePanel.IsVisible =
-                        false;
-
+                    if (Interlocked.Read(ref arrivalSessionGeneration) != arrivalGeneration ||
+                        NavigationDestinationBridge.Current.Version != selectedDestination.Version ||
+                        !safeZoneConfirmed) return;
+                    SetTurnGuidanceVisible(false);
                     safeZoneDestinationLabel.Text =
                         destinationName;
+                    safeZoneTitleLabel.Text = userReported
+                        ? "Arrival Confirmed by You"
+                        : "You're Near the\nEvacuation Center";
 
                     RouteProgressTracker.ProgressSnapshot safeZoneProgress =
                         _routeProgressTracker.Current;
@@ -8098,8 +8186,9 @@ namespace RescuAR.App.Views.Camera
                         $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
-                        "You've arrived at the evacuation center. " +
-                        "Follow posted signs to its entrance and check local advisories.";
+                        userReported
+                            ? "You reported that you are at this destination. GPS has not verified your arrival. Follow on-site instructions and local advisories."
+                            : "Your GPS position is near the destination. Follow posted signs to its entrance and check local advisories.";
 
                     safeZoneConfirmationOverlay.IsVisible =
                         true;
@@ -8109,12 +8198,18 @@ namespace RescuAR.App.Views.Camera
         private void ResetSafeZoneConfirmation(
             string reason)
         {
+            Interlocked.Increment(ref arrivalSessionGeneration);
+            arrivalWasUserReported = false;
+            arrivalNoticeCategory = "HIDDEN";
             bool hadArrivalState =
                 safeZoneConfirmed ||
                 lastSafeZoneDecision.ConfirmationCount >
                     0;
 
-            _safeZoneConfirmationService.Reset();
+            _safeZoneConfirmationService.Reset(NavigationDestinationBridge.Current.Version);
+            _destinationProximityReroutePolicy.Reset();
+            lastArrivalHoldReason = null;
+            lastArrivalHoldLogAt = default;
 
             lastSafeZoneDecision =
                 SafeZoneConfirmationService.SafeZoneDecision.Unavailable;
@@ -8153,6 +8248,7 @@ namespace RescuAR.App.Views.Camera
 
                     safeZoneDestinationLabel.Text =
                         "Evacuation Center";
+                    safeZoneTitleLabel.Text = "You're Near the\nEvacuation Center";
 
                     safeZoneDetailsLabel.Text =
                         "Follow posted signs to the entrance and check local advisories.";
@@ -8783,8 +8879,7 @@ namespace RescuAR.App.Views.Camera
                      * Avoid competing navigation and emergency banners. AR,
                      * GPS, and PDR continue behind the full-screen treatment.
                      */
-                    turnGuidancePanel.IsVisible =
-                        false;
+                    SetTurnGuidanceVisible(false);
 
                     emergencyAdvisoryOverlay.IsVisible =
                         true;
@@ -9422,8 +9517,7 @@ namespace RescuAR.App.Views.Camera
                     ApplyPrototypeTurnGuidance(
                         lastTurnGuidance);
 
-                    turnGuidancePanel.IsVisible =
-                        true;
+                    SetTurnGuidanceVisible(true);
 
                     RefreshEmergencyStatusBanner();
                 });
@@ -9725,14 +9819,15 @@ namespace RescuAR.App.Views.Camera
             LocationReading reading,
             RouteProgressTracker.RouteProgressUpdate update)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (!HasCurrentHeadingCandidate()) return false;
 
 #if ANDROID
             if (!update.IsAccepted ||
                 update.IsOffRoute ||
+                !RouteDisplayProgressPolicy.TryAtDistance(route, update.RawProgressMeters, out var displayPosition) ||
                 !TryGetRouteSegmentBearing(
                     route,
-                    update.SegmentIndex,
+                    displayPosition.SegmentIndex,
                     out double routeTangentBearingDegrees))
             {
                 return false;
@@ -9741,33 +9836,49 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
-            if (!spatial.IsTracking ||
+            if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
-                !spatial.Anchor.IsAvailable)
+                GetTrackedRouteMotion(requireTrustedHeading: false) is null ||
+                reading.Timestamp > DateTimeOffset.UtcNow ||
+                DateTimeOffset.UtcNow - reading.Timestamp > TimeSpan.FromSeconds(3) ||
+                !ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+                    Environment.TickCount64, out var observedFrame, out long poseSkew))
             {
                 return false;
             }
 
+            if (_headingAlignmentService.LastResult is not { IsAvailable: true } calibration ||
+                calibration.SessionGeneration != observedFrame.Generation.SessionGeneration) return false;
+            lastHeadingAlignment = calibration;
             HeadingRevalidationDecision decision =
                 _headingRevalidationPolicy.Evaluate(
-                    activeMapToArYawDegrees,
+                    calibration.MapToArYawDegrees,
                     reading.Coordinate,
                     reading.AccuracyMeters,
                     reading.SpeedMetersPerSecond,
                     reading.CourseDegrees,
                     update.MatchConfidence,
                     routeTangentBearingDegrees,
-                    spatial.Pose.PositionX,
-                    spatial.Pose.PositionZ,
-                    DateTimeOffset.UtcNow);
+                    observedFrame.Pose.PositionX,
+                    observedFrame.Pose.PositionZ,
+                    reading.Timestamp,
+                    observedFrame.Generation.SessionGeneration,
+                    observedFrame.WorldFrame,
+                    observedFrame.TrackingEpoch,
+                    calibration.RequiresMovementValidation,
+                    _headingAlignmentService.TryGetIndependentObservation(reading.Coordinate,
+                        reading.AltitudeMeters, out var independent) ? independent.MapToArYawDegrees : null);
 
-            if (decision.Disposition ==
-                    HeadingRevalidationDisposition.AwaitingConfirmation ||
-                decision.Disposition ==
-                    HeadingRevalidationDisposition.SignalsDisagree ||
-                decision.Disposition ==
-                    HeadingRevalidationDisposition.CorrectionCooldown)
+            long headingLogTimestamp = Environment.TickCount64;
+            if (decision.Disposition != lastLoggedHeadingDisposition ||
+                lastLoggedHeadingResetVersion != _headingRevalidationPolicy.EvidenceResetVersion ||
+                lastHeadingDecisionLogTimestamp == long.MinValue ||
+                headingLogTimestamp - lastHeadingDecisionLogTimestamp >= 5_000 ||
+                decision.ShouldApplyCorrection)
             {
+                lastLoggedHeadingDisposition = decision.Disposition;
+                lastLoggedHeadingResetVersion = _headingRevalidationPolicy.EvidenceResetVersion;
+                lastHeadingDecisionLogTimestamp = headingLogTimestamp;
                 LogDetailedDebug(
                     HeadingLogTag,
                     "HEADING REVALIDATION: " +
@@ -9776,13 +9887,23 @@ namespace RescuAR.App.Views.Camera
                     $"{decision.RequiredConfirmationCount}, " +
                     $"gpsMove={decision.GpsDisplacementMeters:F1} m, " +
                     $"arMove={decision.ArDisplacementMeters:F1} m, " +
+                    $"gpsAccuracy={reading.AccuracyMeters:F1} m, " +
+                    $"reportedSpeed={reading.SpeedMetersPerSecond:F2} m/s, " +
                     $"gpsBearing={decision.GpsDisplacementBearingDegrees:F1} deg, " +
                     $"gpsCourse={decision.GpsCourseDegrees:F1} deg, " +
                     $"routeBearing={decision.RouteTangentBearingDegrees:F1} deg, " +
                     $"arMovement={decision.ArMovementAzimuthDegrees:F1} deg, " +
                     $"candidateYaw={decision.CandidateYawDegrees:F1} deg, " +
                     $"error={decision.AlignmentErrorDegrees:F1} deg, " +
-                    $"reason='{decision.Reason}'.");
+                    $"reason='{decision.Reason}'; " +
+                    $"evidenceReset={_headingRevalidationPolicy.EvidenceResetVersion}; " +
+                    $"resetReason='{_headingRevalidationPolicy.LastEvidenceResetReason}'.");
+                LogDetailedDebug(HeadingLogTag,
+                    $"NAV_HEADING_PAIR sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                    $"frameNs={observedFrame.FrameTimestamp}; skewMs={poseSkew}; " +
+                    $"trackingEpoch={observedFrame.TrackingEpoch}; worldFrame={observedFrame.WorldFrame}; " +
+                    $"source={calibration.Source}; recovery={calibration.RequiresMovementValidation}; " +
+                    $"mode={arRouteVisualMode}.");
             }
 
             if (!decision.ShouldApplyCorrection)
@@ -9793,41 +9914,39 @@ namespace RescuAR.App.Views.Camera
             double previousYawDegrees =
                 activeMapToArYawDegrees;
 
-            activeMapToArYawDegrees =
-                decision.CorrectedYawDegrees;
-
-            bool published =
-                TryPublishMovingRouteWindow(
-                    route,
-                    update,
-                    "GPS/HEADING-REVALIDATION");
-
-            if (!published)
-            {
-                activeMapToArYawDegrees =
-                    previousYawDegrees;
-
-                Log.Warn(
-                    HeadingLogTag,
-                    "Movement-confirmed heading correction was not applied because the corrected local route window could not be published.");
-
-                return false;
-            }
-
-            _headingRevalidationPolicy.MarkCorrectionApplied(
-                DateTimeOffset.UtcNow);
-
             double residualAlignmentErrorDegrees =
                 NormalizeSignedDegrees(
                     decision.CandidateYawDegrees -
                     decision.CorrectedYawDegrees);
 
-            lastHeadingAlignment =
-                _headingAlignmentService.ApplyMovementValidatedYaw(
-                    decision.CorrectedYawDegrees,
-                    decision.ConfirmationCount,
-                    residualAlignmentErrorDegrees,
-                    DateTimeOffset.UtcNow);
+            if (!_headingAlignmentService.TryApplyMovementValidatedYaw(decision.CorrectedYawDegrees,
+                    decision.ConfirmationCount, residualAlignmentErrorDegrees, DateTimeOffset.UtcNow,
+                    observedFrame.Generation.SessionGeneration, observedFrame.TrackingEpoch,
+                    observedFrame.WorldFrame, out var corrected)) return false;
+
+            // Calibration recovery is independent of geometry publication.
+            // Invalidate old-yaw display evidence, retaining geographic progress,
+            // route identity and arrival inputs. A partial correction stays hidden.
+            activeMapToArYawDegrees = corrected.MapToArYawDegrees;
+            lastHeadingAlignment = corrected;
+            ClearRoadApproachCue();
+            _headingRevalidationPolicy.MarkCorrectionApplied(DateTimeOffset.UtcNow);
+            positionObservationPolicy.Reset();
+            _routeDisplayProgressPolicy.Reset();
+            verifiedPosition = null;
+            _verifiedRouteWindowHoldPolicy.Reset();
+            approachRoutePreviewPublished = false;
+            ARRouteBridge.Clear();
+            ARCameraSpatialController.SetRouteRenderingEnabled(false,
+                corrected.IsStable ? "heading corrected; republishing mapped geometry" : "heading correction awaiting independent validation");
+            bool published = false;
+            if (corrected.IsStable)
+            {
+                ObserveVerifiedGpsPosition(route, update, reading);
+                published = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong
+                    ? TryPublishMovingRouteWindow(route, update, "GPS/HEADING-REVALIDATION")
+                    : TryPublishApproachToRouteVisual(route, update, "GPS/HEADING-REVALIDATION");
+            }
 
             Log.Warn(
                 HeadingLogTag,
@@ -9839,9 +9958,9 @@ namespace RescuAR.App.Views.Camera
                 $"observedError={decision.AlignmentErrorDegrees:F1} deg, " +
                 $"confirmations={decision.ConfirmationCount}/" +
                 $"{decision.RequiredConfirmationCount}, " +
-                $"segment={update.SegmentIndex}.");
+                $"segment={update.SegmentIndex}; stable={corrected.IsStable}; published={published}.");
 
-            return true;
+            return published;
 #else
             return false;
 #endif
@@ -9932,18 +10051,6 @@ namespace RescuAR.App.Views.Camera
             }
 
             if (!IsIndoorRouteTestModeEnabled &&
-                lastRouteMatchConfidence <
-                    RouteMatchConfidence.Medium)
-            {
-                RecordPdrStepRejection(
-                    e,
-                    "ROUTE_MATCH_LOW",
-                    $"confidence={lastRouteMatchConfidence}");
-
-                return;
-            }
-
-            if (!IsIndoorRouteTestModeEnabled &&
                 _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
             {
                 RecordPdrStepRejection(
@@ -10016,6 +10123,18 @@ namespace RescuAR.App.Views.Camera
 
             lock (routeProgressFusionSync)
             {
+                // Check before advancing trip progress, even when the visual
+                // window has not moved far enough to need publication yet.
+                if (!ReferenceEquals(route, activeRoute) ||
+                    (!IsIndoorRouteTestModeEnabled &&
+                     !TryGetBoundedDisplayPosition(route,
+                         _routeProgressTracker.Current.CommittedProgressMeters + fusedStepAdvanceMeters,
+                         DateTimeOffset.UtcNow, out _, out _)))
+                {
+                    RecordPdrStepRejection(e, "POSITION_ANCHOR_EXPIRED",
+                        "PDR requires the same tracked reference within 8 seconds and 8 meters of verified GPS");
+                    return;
+                }
                 update =
                     _routeProgressTracker.AdvanceDeadReckoning(
                         fusedStepAdvanceMeters);
@@ -10084,7 +10203,7 @@ namespace RescuAR.App.Views.Camera
 
         /// <summary>
         /// Compares a short rolling ARCore walking/camera direction estimate to
-        /// the current cyan route tangent in the SAME ARCore coordinate frame.
+        /// the current geographic route tangent in the SAME ARCore coordinate frame.
         ///
         /// This remains intentionally AR-relative and does not require another
         /// compass reading at step time.
@@ -10115,7 +10234,7 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial =
                 ARCameraPoseBridge.CurrentFrame;
 
-            if (!spatial.IsTracking ||
+            if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking)
             {
                 unavailableReason =
@@ -10132,15 +10251,18 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            ARRouteBridge.RouteSnapshot route =
-                ARRouteBridge.Current;
-
-            if (!route.IsAvailable ||
-                route.Points.Count <
-                    2)
+            RouteResult? route = activeRoute;
+            RouteDisplayProgressPolicy.DisplayPosition displayPosition = default;
+            double progress = _routeProgressTracker.Current.CommittedProgressMeters;
+            bool positionReady = route is not null && (IsIndoorRouteTestModeEnabled
+                ? RouteDisplayProgressPolicy.TryAtDistance(route, progress, out displayPosition)
+                : TryGetBoundedDisplayPosition(route, progress, DateTimeOffset.UtcNow,
+                    out displayPosition, out _));
+            if (!positionReady || route is null || !HasCurrentRouteHeading() ||
+                !TryGetRouteSegmentBearing(route, displayPosition.SegmentIndex, out double bearing))
             {
                 unavailableReason =
-                    "rendered route tangent is unavailable";
+                    "bounded geographic route reference is unavailable";
 
                 return false;
             }
@@ -10199,19 +10321,11 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            ArHorizontalRoutePoint first =
-                route.Points[0];
-
-            ArHorizontalRoutePoint second =
-                route.Points[1];
-
-            double routeDeltaX =
-                second.X -
-                first.X;
-
-            double routeDeltaZ =
-                second.Z -
-                first.Z;
+            double bearingRadians = DegreesToRadians(bearing);
+            var routeDirection = MapToArCoordinates.Rotate(Math.Sin(bearingRadians),
+                Math.Cos(bearingRadians), activeMapToArYawDegrees);
+            double routeDeltaX = routeDirection.X;
+            double routeDeltaZ = routeDirection.Z;
 
             double routeHorizontalMagnitude =
                 Math.Sqrt(
@@ -10286,6 +10400,10 @@ namespace RescuAR.App.Views.Camera
         private void ResetArRouteVisualMode(
             string reason)
         {
+            _verifiedRouteWindowHoldPolicy.Reset();
+            // The next publication establishes the earliest reusable version
+            // for this road entry, including after a replacement route.
+            routeStartupPublishedVersion = -1;
             /*
              * A newly requested route has not yet proven that the device is
              * physically inside its route corridor. Start conservatively with the
@@ -10304,6 +10422,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 false;
+            approachRoutePreviewPublished = false;
             initialRoadApproachPending = false;
             ClearRoadApproachCue();
 
@@ -10334,6 +10453,7 @@ namespace RescuAR.App.Views.Camera
 
             recoveryConnectorVerified =
                 true;
+            approachRoutePreviewPublished = false;
 
             if (arRouteVisualMode ==
                 ArRouteVisualMode.ApproachOrOffCourseShort)
@@ -10381,7 +10501,9 @@ namespace RescuAR.App.Views.Camera
             lock (routeProgressFusionSync)
                 fixTimestamp = latestGpsTimestampForRouting ?? DateTimeOffset.MinValue;
             bool accessVerified = arrivalRoadGraph is not null &&
-                !arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, update.SnappedCoordinate);
+                activeRoute is { } route &&
+                RouteDisplayProgressPolicy.TryResolveGps(route, update, out var displayPosition) &&
+                !arrivalRoadGraph.AccessCrossesMajorRoad(update.GpsCoordinate, displayPosition.RoadCoordinate);
             bool confirmed = roadEntryConfirmation.Observe(
                 update.IsAccepted && accessVerified, update.IsOffRoute, update.CrossTrackErrorMeters,
                 update.CorridorRadiusMeters, update.MatchConfidence, update.AccuracyMeters,
@@ -10408,6 +10530,7 @@ namespace RescuAR.App.Views.Camera
             arRouteVisualMode =
                 ArRouteVisualMode.RoadFollowingLong;
             initialRoadApproachPending = false;
+            approachRoutePreviewPublished = false;
             ClearRoadApproachCue();
 
             roadFollowingReentryConfirmationCount =
@@ -10429,9 +10552,9 @@ namespace RescuAR.App.Views.Camera
         }
 
         /// <summary>
-        /// Holds mapped route geometry until independent fixes confirm road entry.
-        /// Confirmed off-route observations use a floor arrow and screen cue;
-        /// they never create a straight GPS-to-road cyan connector.
+        /// Previews the actual nearby route before independent road-entry fixes.
+        /// Confirmed off-route observations retain access cues without creating
+        /// a straight GPS-to-road cyan connector.
         /// </summary>
         private bool TryPublishApproachToRouteVisual(
             RouteResult route,
@@ -10439,9 +10562,24 @@ namespace RescuAR.App.Views.Camera
             string progressSource = "GPS")
         {
 #if ANDROID
-            if (initialRoadApproachPending)
+            if (initialRoadApproachPending || recoveryConnectorVerified)
             {
-                TrySetRouteRoadApproachCue(update, returningToRoute: false);
+                TrySetRouteRoadApproachCue(update, returningToRoute: !initialRoadApproachPending);
+                if (TryPublishMovingRouteWindow(route, update,
+                        $"{progressSource}/MAPPED-ROUTE-PREVIEW", allowApproachPreview: true))
+                    return true;
+                // A failed publication can mean the next tracked frame or
+                // anchor is temporarily unavailable. Retain valid mapped
+                // geometry so the independent visibility gates can hide it
+                // during the outage and restore it when tracking recovers.
+                var preview = ARRouteBridge.Current;
+                if (approachRoutePreviewPublished && preview.IsAvailable &&
+                    preview.NavigationState.VisualKind == RouteVisualKind.RouteWindow &&
+                    HasCurrentRouteHeading() && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
+                    RouteDisplayProgressPolicy.TryResolveGps(route, update, out var position) &&
+                    CanPublishMappedRoutePreview(route, update, position))
+                    return false;
+                approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;
             }
@@ -10460,10 +10598,32 @@ namespace RescuAR.App.Views.Camera
         private bool TryPublishMovingRouteWindow(
             RouteResult route,
             RouteProgressTracker.RouteProgressUpdate update,
-            string progressSource = "GPS")
+            string progressSource = "GPS",
+            bool allowApproachPreview = false)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+            bool pdrStep = update.RejectionReason == "PDR_STEP";
+            bool syntheticStep = IsIndoorRouteTestModeEnabled &&
+                update.RejectionReason == "INDOOR_TEST_SYNTHETIC";
+            // New GPS placements still need the existing fusion/identity
+            // gates. Weak fixes may retain verified geometry, never replace it.
+            if (!pdrStep && !syntheticStep &&
+                (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
+                 lastGpsReliabilityWeight < 0.35 ||
+                 _gpsPdrFusionPolicy.IsRouteIdentitySuspended)) return false;
+            RouteDisplayProgressPolicy.DisplayPosition displayPosition;
+            bool positionReady = pdrStep
+                ? TryGetBoundedDisplayPosition(route, update.CommittedProgressMeters,
+                    DateTimeOffset.UtcNow, out displayPosition, out _)
+                : syntheticStep
+                    ? RouteDisplayProgressPolicy.TryAtDistance(route, update.CommittedProgressMeters, out displayPosition)
+                    : TryGetObservedDisplayPosition(route, out displayPosition);
+            if (!positionReady) return false;
+            bool approachPreview = allowApproachPreview &&
+                CanPublishMappedRoutePreview(route, update, displayPosition);
+            if (!HasCurrentRouteHeading() ||
+                (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong && !approachPreview))
             {
+                approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;
             }
@@ -10476,7 +10636,7 @@ namespace RescuAR.App.Views.Camera
                 _arCoreService.TrackingSnapshot;
 
             bool tracking =
-                spatial.IsTracking &&
+                spatial.IsFresh && spatial.IsTracking &&
                 spatial.Pose.IsTracking &&
                 trackingSnapshot.IsRenderableFor(
                     spatial.Generation.SessionGeneration);
@@ -10501,10 +10661,11 @@ namespace RescuAR.App.Views.Camera
 
             /*
              * The route root remains attached to the retained ground anchor.
-             * Rebase the active local route window horizontally near the
-             * current AR camera position so the guidance moves with the user.
+             * Clip the active local window in the retained geographic-to-world
+             * registration. Camera movement must not translate the mapped road.
              *
-             * This publisher is used after mapped road entry is confirmed.
+             * Before confirmed entry only a short, access-checked section of
+             * the mapped polyline is shown. Confirmed entry enables the longer window.
              * Neither GPS nor PDR drives the Evergine camera; they
              * only advance route progress and republish route geometry.
              */
@@ -10516,25 +10677,7 @@ namespace RescuAR.App.Views.Camera
                 spatial.Pose.PositionZ -
                 spatial.Anchor.PositionZ;
 
-            bool pdrStep = update.RejectionReason == "PDR_STEP";
-            bool syntheticStep = IsIndoorRouteTestModeEnabled &&
-                update.RejectionReason == "INDOOR_TEST_SYNTHETIC";
-            if (pdrStep)
-            {
-                TimeSpan gpsAge = lastVerifiedGpsAt.HasValue
-                    ? DateTimeOffset.UtcNow - lastVerifiedGpsAt.Value
-                    : TimeSpan.MaxValue;
-                if (gpsAge < TimeSpan.Zero ||
-                    gpsAge > MaximumPdrRouteWindowGpsAge ||
-                    update.CommittedProgressMeters -
-                        lastVerifiedGpsProgressMeters >
-                            MaximumPdrRouteWindowAdvanceMeters ||
-                    lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
-                    lastRouteMatchConfidence < RouteMatchConfidence.Medium ||
-                    _gpsPdrFusionPolicy.IsRouteIdentitySuspended)
-                    return false;
-            }
-            else if (!syntheticStep &&
+            if (!pdrStep && !syntheticStep &&
                 (update.AccuracyMeters is not double sampleAccuracy ||
                  !double.IsFinite(sampleAccuracy) || sampleAccuracy > 20.0 ||
                  !update.GpsCoordinate.IsValid))
@@ -10542,23 +10685,31 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            bool published =
+            bool published = syntheticStep ?
                 _mldArIntegrationService.PublishProgressWindow(
                     route,
-                    update.CommittedProgressMeters,
-                    update.SnappedCoordinate,
+                    displayPosition.ProgressMeters,
+                    displayPosition.RoadCoordinate,
                     activeMapToArYawDegrees,
                     arOriginOffsetX,
                     arOriginOffsetZ,
                     arWindowMeters: GetCurrentArRouteVisualWindowMeters(),
-                    sourceSegmentIndex: update.SegmentIndex,
-                    userCoordinate: pdrStep || syntheticStep
-                        ? null : update.GpsCoordinate);
+                    sourceSegmentIndex: displayPosition.SegmentIndex,
+                    userCoordinate: syntheticStep ? null : displayPosition.AlignmentCoordinate,
+                    placement: CaptureRoutePlacement(spatial, progressSource, pdrStep))
+                : PublishRegisteredRouteWindow(route, displayPosition, spatial, progressSource);
 
             if (!published)
             {
                 return false;
             }
+
+            if (approachPreview && !approachRoutePreviewPublished)
+                AndroidLog.Info(ProgressLogTag,
+                    $"MAPPED ROUTE PREVIEW: algorithm='{route.Algorithm}', " +
+                    $"window={ApproachRouteVisualWindowMeters:F1}m, crossTrack={update.CrossTrackErrorMeters:F1}m. " +
+                    "Physical road entry remains unconfirmed.");
+            approachRoutePreviewPublished = approachPreview;
 
             if (routeStartupPublishedVersion < 0 && activeDestinationCoordinate.HasValue)
             {
@@ -10574,6 +10725,7 @@ namespace RescuAR.App.Views.Camera
                 ProgressLogTag,
                 $"{progressSource} MOVING WINDOW: " +
                 $"segment={update.SegmentIndex}, " +
+                $"displayProgress={displayPosition.ProgressMeters:F1} m, " +
                 $"progress={update.CommittedProgressMeters:F1} m, " +
                 $"remaining={update.RemainingMeters:F1} m, " +
                 $"crossTrack={update.CrossTrackErrorMeters:F1} m, " +
@@ -10605,9 +10757,11 @@ namespace RescuAR.App.Views.Camera
             ARCameraPoseBridge.SpatialSnapshot spatial,
             ARCameraSpatialController.RouteWorldCorrectionRequest request)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+                return CompleteApproachAnchorRecovery(spatial);
 
 #if ANDROID
+            long destinationVersion = activeDestinationVersion;
             RouteResult? route =
                 activeRoute;
 
@@ -10645,81 +10799,27 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            RouteProgressTracker.ProgressSnapshot progress =
-                _routeProgressTracker.Current;
-
             double startDistanceMeters;
-            GeoCoordinate referenceCoordinate;
-            int sourceSegmentIndex;
 
-            if (progress.HasProgress &&
-                progress.SnappedCoordinate.IsValid)
-            {
-                startDistanceMeters =
-                    progress.CommittedProgressMeters;
-
-                referenceCoordinate =
-                    progress.SnappedCoordinate;
-
-                sourceSegmentIndex =
-                    progress.SegmentIndex;
-            }
-            else
-            {
-                startDistanceMeters =
-                    route.Points[0]
-                        .DistanceFromStartMeters;
-
-                referenceCoordinate =
-                    route.Points[0]
-                        .Coordinate;
-
-                sourceSegmentIndex =
-                    0;
-            }
-
-            /*
-             * This is the same placement rule used by the normal GPS/PDR
-             * moving-window publisher:
-             *
-             * local route origin = current camera - current ground anchor.
-             *
-             * Therefore, after the new route version locks its root to the
-             * corrected Anchor, the first projected route point is again near
-             * the current camera instead of remaining in ARCore's old world
-             * coordinates.
-             */
-            float arOriginOffsetX =
-                spatial.Pose.PositionX -
-                spatial.Anchor.PositionX;
-
-            float arOriginOffsetZ =
-                spatial.Pose.PositionZ -
-                spatial.Anchor.PositionZ;
+            // A known frame change needs a newly qualified registration.
+            // Reusing a current camera offset would silently invent alignment.
 
             bool published;
 
             lock (routeProgressFusionSync)
             {
-                published =
-                    _mldArIntegrationService.PublishProgressWindow(
-                        route,
-                        startDistanceMeters,
-                        referenceCoordinate,
-                        activeMapToArYawDegrees,
-                        arOriginOffsetX,
-                        arOriginOffsetZ,
-                        arWindowMeters:
-                            GetCurrentArRouteVisualWindowMeters(),
-                        clearRouteOnFailure:
-                            false,
-                        sourceSegmentIndex:
-                            sourceSegmentIndex);
+                if (!ReferenceEquals(route, activeRoute) ||
+                    !CanApplyRouteRequest(destinationVersion, CancellationToken.None) ||
+                    ARRouteBridge.Current.Version != request.RouteVersion ||
+                    !TryResolveRecentRouteDisplayPosition(route, out var displayPosition))
+                    return false;
+                startDistanceMeters = displayPosition.ProgressMeters;
+                published = PublishRegisteredRouteWindow(route, displayPosition, spatial, "WORLD-CORRECTION");
 
                 if (published)
                 {
                     _routeProgressTracker.MarkWindowPublished(
-                        startDistanceMeters);
+                        _routeProgressTracker.Current.CommittedProgressMeters);
                 }
             }
 
@@ -10751,7 +10851,7 @@ namespace RescuAR.App.Views.Camera
                 $"oldLockedRoot=({request.LockedRootX:F2},{request.LockedRootZ:F2}), " +
                 $"correctedAnchor=({spatial.Anchor.PositionX:F2},{spatial.Anchor.PositionZ:F2}), " +
                 $"camera=({spatial.Pose.PositionX:F2},{spatial.Pose.PositionZ:F2}), " +
-                $"arOffset=({arOriginOffsetX:F2},{arOriginOffsetZ:F2}) m, " +
+                "placement=QUALIFIED_ACQUISITION, " +
                 $"progress={startDistanceMeters:F1} m, " +
                 $"algorithm='{route.Algorithm}'. " +
                 "Route progress was preserved; ARCore was not restarted.");
@@ -10775,9 +10875,13 @@ namespace RescuAR.App.Views.Camera
         private bool TryRebaseRouteAfterAnchorRecovery(
             ARCameraPoseBridge.SpatialSnapshot spatial)
         {
-            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong) return false;
+            if (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong)
+                return CompleteApproachAnchorRecovery(spatial);
+
+            if (TryRetainWindowAcrossGroundHandoff(spatial)) return true;
 
 #if ANDROID
+            long destinationVersion = activeDestinationVersion;
             RouteResult? route =
                 activeRoute;
 
@@ -10793,66 +10897,29 @@ namespace RescuAR.App.Views.Camera
                 return false;
             }
 
-            if (!spatial.IsTracking ||
+            if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
                 !spatial.Anchor.IsAvailable)
             {
                 return false;
             }
 
-            RouteProgressTracker.ProgressSnapshot progress =
-                _routeProgressTracker.Current;
-
             double startDistanceMeters;
-            GeoCoordinate referenceCoordinate;
-            int sourceSegmentIndex;
-
-            if (progress.HasProgress &&
-                progress.SnappedCoordinate.IsValid)
+            bool published;
+            lock (routeProgressFusionSync)
             {
-                startDistanceMeters =
-                    progress.CommittedProgressMeters;
-
-                referenceCoordinate =
-                    progress.SnappedCoordinate;
-
-                sourceSegmentIndex =
-                    progress.SegmentIndex;
+                if (!ReferenceEquals(route, activeRoute) ||
+                    !CanApplyRouteRequest(destinationVersion, CancellationToken.None))
+                    return false;
+                if (!TryGetBoundedDisplayPosition(route, _routeProgressTracker.Current.CommittedProgressMeters,
+                        DateTimeOffset.UtcNow, out var displayPosition, out _))
+                    return CompleteGroundHandoffAwaitingPosition();
+                startDistanceMeters = displayPosition.ProgressMeters;
+                published = PublishRegisteredRouteWindow(route, displayPosition, spatial, "GROUND-REBASE");
+                if (published)
+                    _routeProgressTracker.MarkWindowPublished(
+                        _routeProgressTracker.Current.CommittedProgressMeters);
             }
-            else
-            {
-                startDistanceMeters =
-                    route.Points[0]
-                        .DistanceFromStartMeters;
-
-                referenceCoordinate =
-                    route.Points[0]
-                        .Coordinate;
-
-                sourceSegmentIndex =
-                    0;
-            }
-
-            float arOriginOffsetX =
-                spatial.Pose.PositionX -
-                spatial.Anchor.PositionX;
-
-            float arOriginOffsetZ =
-                spatial.Pose.PositionZ -
-                spatial.Anchor.PositionZ;
-
-            bool published =
-                _mldArIntegrationService.PublishProgressWindow(
-                    route,
-                    startDistanceMeters,
-                    referenceCoordinate,
-                    activeMapToArYawDegrees,
-                    arOriginOffsetX,
-                    arOriginOffsetZ,
-                arWindowMeters:
-                    GetCurrentArRouteVisualWindowMeters(),
-                sourceSegmentIndex:
-                    sourceSegmentIndex);
 
             if (!published)
             {
@@ -10863,9 +10930,6 @@ namespace RescuAR.App.Views.Camera
 
                 return false;
             }
-
-            _routeProgressTracker.MarkWindowPublished(
-                startDistanceMeters);
 
             ARRouteBridge.RouteSnapshot recoveredRoute =
                 ARRouteBridge.Current;
@@ -10883,18 +10947,41 @@ namespace RescuAR.App.Views.Camera
                 $"camera=(" +
                 $"{spatial.Pose.PositionX:F2}," +
                 $"{spatial.Pose.PositionZ:F2}), " +
-                $"localOffset=(" +
-                $"{arOriginOffsetX:F2}," +
-                $"{arOriginOffsetZ:F2}) m, " +
+                "placement=QUALIFIED_ACQUISITION, " +
                 $"window={GetCurrentArRouteVisualWindowMeters():F1} m, " +
                 $"routeVersion={recoveredRoute.Version}. " +
-                "Old AR-world continuity was intentionally discarded; " +
+                "World registration was preserved across floor renewal; " +
                 "geographic route progress was preserved.");
 
             return true;
 #else
             return false;
 #endif
+        }
+
+        private bool TryResolveRecentRouteDisplayPosition(RouteResult route,
+            out RouteDisplayProgressPolicy.DisplayPosition position)
+        {
+            lock (routeProgressFusionSync)
+                return _routeDisplayProgressPolicy.TryResolvePdr(route,
+                    _routeProgressTracker.Current.CommittedProgressMeters, DateTimeOffset.UtcNow, out position);
+        }
+
+        private bool CanPublishMappedRoutePreview(RouteResult route,
+            RouteProgressTracker.RouteProgressUpdate update,
+            RouteDisplayProgressPolicy.DisplayPosition position)
+        {
+            DateTimeOffset fixTimestamp;
+            lock (routeProgressFusionSync)
+                fixTimestamp = latestGpsTimestampForRouting ?? DateTimeOffset.MinValue;
+            return ReferenceEquals(route, activeRoute) && (initialRoadApproachPending || recoveryConnectorVerified) &&
+                !positionObservationHeld && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
+                MappedRoutePreviewPolicy.CanPublish(update.IsAccepted, update.IsOffRoute,
+                    update.MatchConfidence, update.AccuracyMeters, update.GpsCoordinate,
+                    position.RoadCoordinate, fixTimestamp, DateTimeOffset.UtcNow,
+                    arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
+                            update.GpsCoordinate, position.RoadCoordinate),
+                    initialRoadApproachPending, recoveryConnectorVerified);
         }
 
         private static void LogRouteDirectionDiagnostics(
@@ -11156,6 +11243,26 @@ namespace RescuAR.App.Views.Camera
             EventArgs e)
         {
 #if ANDROID
+            if (pageIsVisible && !safeZoneConfirmed && !_arCoreService.IsSessionPaused &&
+                latestRouteStartupReading is { } orientationLocation)
+                ObserveHeadingContinuity(orientationLocation);
+            // Location acquisition may wait up to fifteen seconds. Bounded
+            // display continuity must not wait behind that asynchronous request.
+            if (pageIsVisible && activeRoute is { } continuityRoute && !safeZoneConfirmed &&
+                currentCameraModuleView == CameraModuleViewMode.ArCamera)
+                TryPublishUncertainRouteEstimate(continuityRoute);
+            if (activeRoute is { } headingRoute && !routeRequestInProgress && pageIsVisible &&
+                !safeZoneConfirmed && !HasCurrentRouteHeading() &&
+                _headingAlignmentService.LastResult is not { RequiresMovementValidation: true } &&
+                _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+                currentCameraModuleView == CameraModuleViewMode.ArCamera &&
+                IsRoadApproachFixUsable(latestRouteStartupReading) &&
+                routeHeadingRecoveryTask is not { IsCompleted: false } &&
+                DateTimeOffset.UtcNow >= nextHeadingRetryAt)
+            {
+                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(5);
+                routeHeadingRecoveryTask = RecoverRouteHeadingAsync(headingRoute, latestRouteStartupReading!);
+            }
             if ((routeStartupGpsRetryPending || pendingInitialRoute is not null) &&
                 activeRoute is null && !routeRequestInProgress && pageIsVisible &&
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
@@ -11174,7 +11281,7 @@ namespace RescuAR.App.Views.Camera
              * one-second poll is only a safety net for Android network handoffs
              * that do not surface a timely event.
              */
-            ScheduleNetworkLossFailoverIfNeeded(
+            RetainRouteAfterNetworkLoss(
                 "diagnostic connectivity poll");
 
             ARCameraPoseBridge.SpatialSnapshot spatial =
@@ -11214,7 +11321,15 @@ namespace RescuAR.App.Views.Camera
             long serviceReplacementGeneration =
                 _arCoreService.GroundAnchorReplacementGeneration;
 
-            if (serviceReplacementGeneration >
+            if (safeZoneConfirmed)
+            {
+                handledGroundAnchorReplacementGeneration = serviceReplacementGeneration;
+                anchorRecoveryInProgress = false;
+                activeGroundAnchorReplacementGeneration = -1;
+                ARCameraSpatialController.SetRouteRecoveryRebasePending(false,
+                    "arrival confirmed; completed guidance has no geometry to rebase");
+            }
+            else if (serviceReplacementGeneration >
                 handledGroundAnchorReplacementGeneration)
             {
                 if (!anchorRecoveryInProgress ||
@@ -11270,7 +11385,11 @@ namespace RescuAR.App.Views.Camera
                                 false,
                                 activeRoute is null
                                     ? "no active route requires recovery rebasing"
-                                    : "current route window republished in the replacement local frame");
+                                    : arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong
+                                        ? "approach handoff complete; waiting for a fresh mapped preview"
+                                    : ARRouteBridge.Current.IsAvailable
+                                        ? "current route window placed in the replacement local frame"
+                                        : "ground tracking restored; awaiting a verified route position");
 
                         handledGroundAnchorReplacementGeneration =
                             Math.Max(
@@ -11328,6 +11447,10 @@ namespace RescuAR.App.Views.Camera
 
             if (worldCorrectionRequest.IsPending)
             {
+                // Unlike an ordinary floor handoff, this changes the frame in
+                // which the walking displacement was measured. Reset before
+                // acknowledging the correction, including superseded requests.
+                lock (routeProgressFusionSync) _headingRevalidationPolicy.Reset("AR world correction");
                 ARRouteBridge.RouteSnapshot correctionRoute =
                     ARRouteBridge.Current;
 
@@ -11569,6 +11692,7 @@ namespace RescuAR.App.Views.Camera
                 $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +
                 $"{lastSafeZoneDecision.RequiredConfirmationCount}, " +
                 $"safeZoneConfirmed={safeZoneConfirmed}, " +
+                $"arrivalSource={(safeZoneConfirmed ? (arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY") : "UNCONFIRMED")}, " +
                 $"safeZoneDistance=" +
                 $"{(lastSafeZoneDecision.IsAvailable && double.IsFinite(lastSafeZoneDecision.DistanceToDestinationMeters) ? lastSafeZoneDecision.DistanceToDestinationMeters.ToString("F1") : "<none>")}m, " +
                 $"devSafeZoneValidation={EnableDeveloperSafeZoneValidation}, " +

@@ -1,0 +1,13 @@
+{
+  "event_id": "mcdrrmo_carina_2024",
+  "source_method": "manual_georeferencing",
+  "source_is_observed_flood": false,
+  "reference_independent_of_lipad": false,
+  "coverage_verified": false,
+  "trace_reviewed": false,
+  "reviewer_approved": false,
+  "native_crs_verified": false,
+  "reviewer_name": "",
+  "observation_definition": "",
+  "evidence_provenance": ""
+}

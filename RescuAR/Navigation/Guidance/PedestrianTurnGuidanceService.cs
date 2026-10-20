@@ -242,9 +242,8 @@ public sealed class PedestrianTurnGuidanceService
     /// intentionally mirrors the geographic classifier above so both systems
     /// use the same spacing, threshold, sign convention, and turn labels.
     ///
-    /// AR horizontal azimuth uses 0 degrees = +Z and +90 degrees = +X,
-    /// matching geographic north/east before map-to-AR rotation. A yaw
-    /// rotation therefore cannot reverse left and right.
+    /// North maps to -Z. AR azimuth atan2(X,Z) winds opposite to geographic
+    /// bearing, so reverse the angular difference when classifying a turn.
     /// </summary>
     public VisibleTurnGuidanceSnapshot EvaluateVisibleRoute(
         IReadOnlyList<ArHorizontalRoutePoint> points)
@@ -375,8 +374,8 @@ public sealed class PedestrianTurnGuidanceService
 
             double signedDelta =
                 NormalizeSignedDegrees(
-                    futureBearing -
-                        baselineBearing);
+                    baselineBearing -
+                        futureBearing);
 
             if (Math.Abs(
                     signedDelta) <

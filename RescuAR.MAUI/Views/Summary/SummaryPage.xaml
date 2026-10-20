@@ -48,54 +48,25 @@
                        HorizontalOptions="Center"
                        VerticalOptions="Center" />
 
-                <!-- Presentable & Functional Notification Bell with Badge -->
-                <Grid Grid.Column="2" WidthRequest="38" HeightRequest="38" VerticalOptions="Center">
-                    <Border StrokeThickness="0"
-                            BackgroundColor="#F1F5F9"
-                            StrokeShape="RoundRectangle 12"
-                            WidthRequest="38"
-                            HeightRequest="38"
-                            HorizontalOptions="Center"
-                            VerticalOptions="Center">
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
-                        </Border.GestureRecognizers>
-                        
-                        <!-- Vector Bell Icon -->
-                        <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-                              Fill="#0A8491"
-                              WidthRequest="20"
-                              HeightRequest="20"
-                              Aspect="Uniform"
-                              HorizontalOptions="Center"
-                              VerticalOptions="Center"
-                              InputTransparent="True" />
-                    </Border>
-
-                    <!-- Unread Count Badge (Visible when Count > 0) -->
-                    <Border BackgroundColor="#EF4444"
-                            StrokeThickness="1.5"
-                            Stroke="#FFFFFF"
-                            StrokeShape="RoundRectangle 9"
-                            WidthRequest="18"
-                            HeightRequest="18"
-                            HorizontalOptions="End"
-                            VerticalOptions="Start"
-                            Margin="0,-2,-2,0"
-                            InputTransparent="True">
-                        <Border.Triggers>
-                            <DataTrigger TargetType="Border" Binding="{Binding UnreadNotificationsCount}" Value="0">
-                                <Setter Property="IsVisible" Value="False" />
-                            </DataTrigger>
-                        </Border.Triggers>
-                        <Label Text="{Binding UnreadNotificationsCount}"
-                               TextColor="#FFFFFF"
-                               FontSize="9"
-                               FontAttributes="Bold"
-                               HorizontalOptions="Center"
-                               VerticalOptions="Center" />
-                    </Border>
-                </Grid>
+                <!-- Bell / Alerts Icon -->
+                <Border Grid.Column="2"
+                        StrokeThickness="0"
+                        BackgroundColor="#F1F5F9"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                    </Border.GestureRecognizers>
+                    <Path Data="M12,2A2,2 0 0,0 10,4A7,7 0 0,0 3,11V16L1,18V19H23V18L21,16V11A7,7 0 0,0 14,4A2,2 0 0,0 12,2M10,20A2,2 0 0,0 12,22A2,2 0 0,0 14,20H10Z"
+                          Fill="#0F766E"
+                          WidthRequest="18"
+                          HeightRequest="18"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Border>
             </Grid>
         </Border>
 
@@ -120,18 +91,12 @@
                         <Shadow Brush="#0F172A" Offset="0,4" Radius="8" Opacity="0.04" />
                     </Border.Shadow>
                     <VerticalStackLayout Spacing="12">
-                        <!-- Top Pill Row -->
+                        <!-- Top Indicator Row (Badge removed, direct bold text) -->
                         <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                            <Border StrokeShape="RoundRectangle 8"
-                                    BackgroundColor="{Binding BadgeBgColor}"
-                                    Padding="10,5"
-                                    HorizontalOptions="Start"
-                                    StrokeThickness="0">
-                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                    <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding BadgeTextColor}" VerticalOptions="Center" />
-                                    <Label Text="{Binding RiskBadgeText}" TextColor="{Binding BadgeTextColor}" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
-                                </HorizontalStackLayout>
-                            </Border>
+                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding BadgeTextColor}" VerticalOptions="Center" />
+                                <Label Text="{Binding RiskBadgeText}" TextColor="{Binding BadgeTextColor}" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
 
                             <Label Grid.Column="1" Text="{Binding LastUpdatedText}" TextColor="#94A3B8" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
                         </Grid>
@@ -311,7 +276,13 @@
                         <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="14">
                             <!-- Last AR Session -->
                             <Label Grid.Row="0" Grid.Column="0" Text="Last AR Guidance Session" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
-                            <Label Grid.Row="0" Grid.Column="1" Text="{Binding LastArSession}" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" HorizontalOptions="End" VerticalOptions="Center" />
+                            <HorizontalStackLayout Grid.Row="0" Grid.Column="1" HorizontalOptions="End" Spacing="4" VerticalOptions="Center">
+                                <HorizontalStackLayout.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding StartArEvacuationCommand}" />
+                                </HorizontalStackLayout.GestureRecognizers>
+                                <Label Text="{Binding LastArSession}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center" />
+                                <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
 
                             <!-- Preparedness Progress -->
                             <Label Grid.Row="1" Grid.Column="0" Text="Preparedness Progress" TextColor="#64748B" FontSize="13" VerticalOptions="Center" />
@@ -319,7 +290,7 @@
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenPreparednessChecklistCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
-                                <Label Text="{Binding PreparednessProgressText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="{Binding PreparednessProgressText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center" />
                                 <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
 
@@ -329,7 +300,7 @@
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenLastViewedCenterCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
-                                <Label Text="{Binding LastViewedCenterText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="{Binding LastViewedCenterText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center" />
                                 <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
 
@@ -339,7 +310,7 @@
                                 <HorizontalStackLayout.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenLastViewedAdvisoryCommand}" />
                                 </HorizontalStackLayout.GestureRecognizers>
-                                <Label Text="{Binding LastViewedAdvisoryText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="{Binding LastViewedAdvisoryText}" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center" />
                                 <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                             </HorizontalStackLayout>
                         </Grid>

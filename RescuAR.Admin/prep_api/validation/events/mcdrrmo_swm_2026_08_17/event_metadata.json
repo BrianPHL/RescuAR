@@ -1,0 +1,33 @@
+{
+  "event_id": "mcdrrmo_swm_2026_08_17",
+  "event_name": "Enhanced Southwest Monsoon — Marikina 2026 August 17",
+  "event_date": "2026-08-17",
+  "event_date_range": "2026-08-17",
+  "role": "reference_only",
+  "event_status": "source_ready_georeference_pending",
+  "calibration_eligible": false,
+  "map_type": "water_level_snapshot",
+  "source_agency_attribution": "Marikina City Government map (provided through MCDRRMO contact); methodology to verify",
+  "source_filename": "SOUTHWEST MONSOON HABAGAT MAYMAY.jpeg",
+  "source_map": "source_map.jpeg",
+  "source_sha256": "921366212030c214cf61d41d348d1e76e37f2268fcbbfb0beaaf7828efb12062",
+  "image_dimensions_pixels": [
+    2048,
+    1489
+  ],
+  "priority": "conditional",
+  "georeference_status": "not_georeferenced",
+  "observed_geometry_status": "not_available",
+  "observation_domain_status": "not_available",
+  "source_is_field_observed": null,
+  "manual_qc_approval": false,
+  "limitations": [
+    "Legend includes flood levels and water-level label of 16.9 metres; distinguish river stage from inundation depth. Not assumed an independent surveyed polygon.",
+    "Map depicts Marikina; actual surveyed coverage unknown.",
+    "Raster image is not a georeferenced flood polygon and has no native GIS CRS.",
+    "Do not treat uncoloured areas as verified dry without independent coverage documentation.",
+    "Never trace these references using LiPAD hazard predictions.",
+    "Do not use this event to calibrate scenario rules unless a separately justified historical trigger state and calibration role exist.",
+    "Do not use modern demographic estimates to claim historical affected-person validation."
+  ]
+}

@@ -190,6 +190,7 @@ namespace RescuAR.MAUI.Evergine
                         {
                             application.UpdateFrame(gameTime);
                             application.DrawFrame(gameTime);
+                            idle = application is MyApplication { WasArDrawSkipped: true };
                         }
                         catch (Exception exception)
                         {

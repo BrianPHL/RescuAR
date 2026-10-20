@@ -3,6 +3,7 @@ using Android.Util;
 using Evergine.Bindings.Vulkan;
 using Evergine.Common.Graphics;
 using Evergine.Vulkan;
+using RescuAR.AR;
 using RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
 using System.Reflection;
 
@@ -58,14 +59,6 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
     private VulkanCameraConversionPipeline? conversionPipeline;
     private VulkanCameraCommandContext? commandContext;
 
-    /*
-     * These two fields are only used by the ordinary non-external fallback
-     * path. ARCore on the tested Samsung device uses the external YCbCr path.
-     */
-    private VkImage directImage;
-    private VkDeviceMemory directMemory;
-
-    private bool imported;
     private bool disposed;
     private bool hasLoggedCameraUv;
 
@@ -105,7 +98,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
     /// the Stage-A compatibility path. Once ARCore display geometry is wired,
     /// callers should use the overload that supplies cameraUv.
     /// </summary>
-    public Texture ImportHardwareBuffer(
+    public Texture? ImportHardwareBuffer(
         HardwareBuffer hardwareBuffer)
     {
         return ImportHardwareBuffer(
@@ -129,7 +122,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
     /// VulkanExternalFrame, updates the descriptor image view, and redraws
     /// into the same VulkanRgbaTarget / Evergine Texture.
     /// </summary>
-    public Texture ImportHardwareBuffer(
+    public Texture? ImportHardwareBuffer(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv)
     {
@@ -145,14 +138,14 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
 
     /// <summary>
     /// Imports the current ARCore HardwareBuffer and converts it into an RGBA
-    /// target whose dimensions match the actual Evergine display viewport.
+    /// target with the Evergine viewport's aspect ratio and bounded dimensions.
     ///
     /// The source HardwareBuffer can remain 1920x1080 while the output target
-    /// is portrait (for example 1080x1968). ARCore's transformed UVs select
+    /// is portrait. ARCore's transformed UVs select
     /// the correct crop/orientation, while the output target dimensions
     /// preserve the viewport aspect ratio without stretching.
     /// </summary>
-    public Texture ImportHardwareBuffer(
+    public Texture? ImportHardwareBuffer(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
         uint outputWidth,
@@ -161,16 +154,13 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         ThrowIfNotDrawThread();
         ThrowIfDisposed();
 
+        if (commandContext is not null && !commandContext.TryCompleteFrame())
+            throw new InvalidOperationException("ARCORE_CAMERA_GPU_FAILURE: complete the pending camera conversion before importing another frame.");
+
         if (vulkanDeviceLost)
         {
-            if (ImportedTexture is not null)
-            {
-                return ImportedTexture;
-            }
-
             throw new InvalidOperationException(
-                "The Vulkan camera path is unavailable because the Vulkan " +
-                "device was previously lost.");
+                "VK_ERROR_DEVICE_LOST: the Vulkan camera path is unavailable for this graphics generation.");
         }
 
         ArgumentNullException.ThrowIfNull(
@@ -201,6 +191,8 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
                 "Camera output height must be nonzero.");
         }
 
+        (outputWidth, outputHeight) = ARCameraConversionPolicy.GetTargetSize(outputWidth, outputHeight);
+
         if (hardwareBuffer.IsClosed)
         {
             throw new InvalidOperationException(
@@ -227,33 +219,15 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
                 outputHeight);
         }
 
-        if (query.FormatProperties.format ==
-            VkFormat.VK_FORMAT_UNDEFINED)
-        {
-            throw new NotSupportedException(
-                "The HardwareBuffer returned VK_FORMAT_UNDEFINED " +
-                "without a valid external format.");
-        }
-
-        /*
-         * The normal ARCore path on the tested device is external YCbCr.
-         * Preserve the concrete-format fallback behavior as import-once.
-         */
-        if (imported)
-        {
-            return ImportedTexture
-                ?? throw new InvalidOperationException(
-                    "The importer is marked as imported, " +
-                    "but ImportedTexture is null.");
-        }
-
-        return ImportOrdinaryBuffer(
-            hardwareBuffer,
-            nativeBuffer.Pointer,
-            query);
+        // The former concrete-format path imported only its first image and
+        // returned it as every subsequent frame, without UV conversion. Do not
+        // represent that frozen image as live, registered AR passthrough.
+        throw new NotSupportedException(
+            "Live AR camera conversion requires an external YCbCr hardware buffer; " +
+            $"the camera supplied {query.FormatProperties.format} without an external format.");
     }
 
-    private Texture ImportOrUpdateExternalCameraBuffer(
+    private Texture? ImportOrUpdateExternalCameraBuffer(
         HardwareBuffer hardwareBuffer,
         nint nativeHardwareBuffer,
         VulkanHardwareBufferQueryResult query,
@@ -269,16 +243,6 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
 
         if (!HasCompleteExternalPipeline())
         {
-            /*
-             * If a previous concrete-format fallback was initialized, remove
-             * it before switching this importer to the external ARCore path.
-             */
-            if (directImage.Handle != 0 ||
-                directMemory.Handle != 0)
-            {
-                CleanupDirectResources();
-            }
-
             return InitializeExternalCameraPipeline(
                 hardwareBuffer,
                 nativeHardwareBuffer,
@@ -300,6 +264,9 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
                 "ARCore camera format or dimensions changed. " +
                 "Rebuilding persistent Vulkan camera resources.");
 
+            // The conversion fence does not cover Evergine's later sampling
+            // of the target. Drain those draws before replacing that texture.
+            WaitForGraphicsDeviceIdle(graphicsContext);
             CleanupExternalResources();
 
             return InitializeExternalCameraPipeline(
@@ -333,16 +300,11 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
                 "Disabling further ARCore Vulkan camera imports for the " +
                 "remainder of this graphics-device lifetime.");
 
-            if (ImportedTexture is not null)
-            {
-                return ImportedTexture;
-            }
-
             throw;
         }
     }
 
-    private Texture InitializeExternalCameraPipeline(
+    private Texture? InitializeExternalCameraPipeline(
         HardwareBuffer hardwareBuffer,
         nint nativeHardwareBuffer,
         VulkanHardwareBufferQueryResult query,
@@ -392,31 +354,25 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
                 VulkanCameraCommandContext.Create(
                     graphicsContext);
 
-            commandContext.ConvertFrame(
-                externalFrame,
-                rgbaTarget,
-                conversionPipeline,
-                cameraUv);
-
             ImportedTexture =
                 rgbaTarget.Texture
                 ?? throw new InvalidOperationException(
                     "The RGBA target did not expose an Evergine texture.");
 
-            imported =
-                true;
+            bool complete = commandContext.ConvertFrame(
+                externalFrame, rgbaTarget, conversionPipeline, cameraUv);
 
             Log.Debug(
                 Tag,
                 "ARCore camera pipeline initialized. " +
-                "First external YCbCr frame converted to RGBA.");
+                "First external YCbCr conversion submitted.");
 
             LogCameraUvIfChanged(
                 cameraUv);
 
             LogPersistentHandles();
 
-            return ImportedTexture;
+            return complete ? ImportedTexture : null;
         }
         catch (InvalidOperationException exception)
             when (exception.Message.Contains(
@@ -442,7 +398,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         }
     }
 
-    private Texture UpdateExternalCameraFrame(
+    private Texture? UpdateExternalCameraFrame(
         HardwareBuffer hardwareBuffer,
         nint nativeHardwareBuffer,
         VulkanHardwareBufferQueryResult query,
@@ -480,79 +436,36 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
          */
         currentCommands.WaitForPreviousFrame();
 
-        VulkanExternalFrame? nextFrame =
-            null;
-
+        VulkanExternalFrame nextFrame = externalFrameImporter.Import(
+            hardwareBuffer, nativeHardwareBuffer, query, currentYcbcr);
         try
         {
-            nextFrame =
-                externalFrameImporter.Import(
-                    hardwareBuffer,
-                    nativeHardwareBuffer,
-                    query,
-                    currentYcbcr);
-
             currentPipeline.UpdateExternalFrame(
                 nextFrame);
-
-            /*
-             * ConvertFrame resets/re-records the reusable command buffer and
-             * submits a fullscreen draw into the SAME persistent RGBA image.
-             *
-             * cameraUv is pushed into the fragment shader for this frame.
-             *
-             * ConvertFrame waits for completion before returning.
-             */
-            currentCommands.ConvertFrame(
-                nextFrame,
-                currentTarget,
-                currentPipeline,
-                cameraUv);
-
-            VulkanExternalFrame? previousFrame =
-                externalFrame;
-
-            externalFrame =
-                nextFrame;
-
-            nextFrame =
-                null;
-
-            previousFrame?.Dispose();
-
-            imported =
-                true;
-
-            LogCameraUvIfChanged(
-                cameraUv);
-
-            return currentTexture;
         }
         catch
         {
-            nextFrame?.Dispose();
-
-            /*
-             * If the descriptor was already changed to the failed next frame,
-             * restore the last valid image view when possible. No old frame is
-             * destroyed until a new conversion has completed successfully.
-             */
-            if (externalFrame is not null &&
-                !externalFrame.IsDisposed)
-            {
-                try
-                {
-                    currentPipeline.UpdateExternalFrame(
-                        externalFrame);
-                }
-                catch
-                {
-                    // Preserve the original update failure.
-                }
-            }
-
+            nextFrame.Dispose();
             throw;
         }
+
+        // The previous submission has completed. Transfer ownership BEFORE
+        // submitting the next image, so a timeout cannot free an in-use image
+        // or rewrite a descriptor still referenced by pending GPU commands.
+        VulkanExternalFrame? previousFrame = externalFrame;
+        externalFrame = nextFrame;
+        previousFrame?.Dispose();
+        bool complete = currentCommands.ConvertFrame(
+            nextFrame, currentTarget, currentPipeline, cameraUv);
+        LogCameraUvIfChanged(cameraUv);
+        return complete ? currentTexture : null;
+    }
+
+    public Texture? TryCompletePendingImport()
+    {
+        ThrowIfNotDrawThread();
+        ThrowIfDisposed();
+        return commandContext?.TryCompleteFrame() == true ? ImportedTexture : null;
     }
 
     private bool HasCompleteExternalPipeline()
@@ -697,262 +610,6 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
             $"0x{commandContext.CommandBuffer.Handle:X}");
     }
 
-    /// <summary>
-    /// Retains the previous ordinary Vulkan-format fallback for HardwareBuffers
-    /// that expose a concrete VkFormat rather than an Android external format.
-    /// </summary>
-    private Texture ImportOrdinaryBuffer(
-        HardwareBuffer hardwareBuffer,
-        nint nativeHardwareBuffer,
-        VulkanHardwareBufferQueryResult query)
-    {
-        VkFormat format =
-            query.FormatProperties.format;
-
-        VkExternalMemoryImageCreateInfo externalMemoryInfo =
-            new()
-            {
-                sType =
-                    VkStructureType
-                        .VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-
-                pNext = null,
-
-                handleTypes =
-                    VkExternalMemoryHandleTypeFlags
-                        .VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID
-            };
-
-        VkImageCreateInfo imageInfo =
-            new()
-            {
-                sType =
-                    VkStructureType
-                        .VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-
-                pNext =
-                    &externalMemoryInfo,
-
-                flags = 0,
-
-                imageType =
-                    VkImageType.VK_IMAGE_TYPE_2D,
-
-                format =
-                    format,
-
-                extent =
-                    new VkExtent3D
-                    {
-                        width =
-                            checked((uint)hardwareBuffer.Width),
-
-                        height =
-                            checked((uint)hardwareBuffer.Height),
-
-                        depth = 1
-                    },
-
-                mipLevels = 1,
-                arrayLayers = 1,
-
-                samples =
-                    VkSampleCountFlags.VK_SAMPLE_COUNT_1_BIT,
-
-                tiling =
-                    VkImageTiling.VK_IMAGE_TILING_OPTIMAL,
-
-                usage =
-                    VkImageUsageFlags.VK_IMAGE_USAGE_SAMPLED_BIT,
-
-                sharingMode =
-                    VkSharingMode.VK_SHARING_MODE_EXCLUSIVE,
-
-                queueFamilyIndexCount = 0,
-                pQueueFamilyIndices = null,
-
-                initialLayout =
-                    VkImageLayout.VK_IMAGE_LAYOUT_UNDEFINED
-            };
-
-        VkImage createdImage =
-            default;
-
-        VkResult result =
-            VulkanNative.vkCreateImage(
-                graphicsContext.VkDevice,
-                &imageInfo,
-                null,
-                &createdImage);
-
-        Log.Debug(
-            Tag,
-            $"vkCreateImage returned {result}");
-
-        if (result != VkResult.VK_SUCCESS)
-        {
-            throw new InvalidOperationException(
-                $"vkCreateImage failed with {result}.");
-        }
-
-        directImage =
-            createdImage;
-
-        try
-        {
-            VkMemoryDedicatedAllocateInfo dedicatedInfo =
-                new()
-                {
-                    sType =
-                        VkStructureType
-                            .VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-
-                    pNext = null,
-
-                    image =
-                        directImage,
-
-                    buffer =
-                        default
-                };
-
-            VkImportAndroidHardwareBufferInfoANDROID importInfo =
-                new()
-                {
-                    sType =
-                        VkStructureType
-                            .VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
-
-                    pNext =
-                        &dedicatedInfo,
-
-                    buffer =
-                        nativeHardwareBuffer
-                };
-
-            VkPhysicalDeviceMemoryProperties memoryProperties =
-                new();
-
-            VulkanNative.vkGetPhysicalDeviceMemoryProperties(
-                graphicsContext.VkPhysicalDevice,
-                &memoryProperties);
-
-            uint memoryTypeIndex =
-                VulkanMemoryHelper.FindMemoryType(
-                    ref memoryProperties,
-                    query.MemoryTypeBits);
-
-            VkMemoryAllocateInfo allocationInfo =
-                new()
-                {
-                    sType =
-                        VkStructureType
-                            .VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-
-                    pNext =
-                        &importInfo,
-
-                    allocationSize =
-                        query.AllocationSize,
-
-                    memoryTypeIndex =
-                        memoryTypeIndex
-                };
-
-            VkDeviceMemory createdMemory =
-                default;
-
-            result =
-                VulkanNative.vkAllocateMemory(
-                    graphicsContext.VkDevice,
-                    &allocationInfo,
-                    null,
-                    &createdMemory);
-
-            Log.Debug(
-                Tag,
-                $"vkAllocateMemory returned {result}");
-
-            if (result != VkResult.VK_SUCCESS)
-            {
-                throw new InvalidOperationException(
-                    $"vkAllocateMemory failed with {result}.");
-            }
-
-            directMemory =
-                createdMemory;
-
-            VkBindImageMemoryInfo bindInfo =
-                new()
-                {
-                    sType =
-                        VkStructureType
-                            .VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
-
-                    pNext = null,
-
-                    image =
-                        directImage,
-
-                    memory =
-                        directMemory,
-
-                    memoryOffset = 0
-                };
-
-            result =
-                VulkanNative.vkBindImageMemory2(
-                    graphicsContext.VkDevice,
-                    1,
-                    &bindInfo);
-
-            Log.Debug(
-                Tag,
-                $"vkBindImageMemory2 returned {result}");
-
-            if (result != VkResult.VK_SUCCESS)
-            {
-                throw new InvalidOperationException(
-                    $"vkBindImageMemory2 failed with {result}.");
-            }
-
-            PixelFormat pixelFormat =
-                ConvertVulkanFormatToEvergine(
-                    format);
-
-            TextureDescription textureDescription =
-                TextureDescription.CreateTexture2DDescription(
-                    checked((uint)hardwareBuffer.Width),
-                    checked((uint)hardwareBuffer.Height),
-                    pixelFormat);
-
-            ImportedTexture =
-                resourceFactory.GetTextureFromNativePointer(
-                    (nint)directImage.Handle,
-                    ref textureDescription);
-
-            if (ImportedTexture is null)
-            {
-                throw new InvalidOperationException(
-                    "Evergine returned a null texture wrapper.");
-            }
-
-            imported =
-                true;
-
-            Log.Debug(
-                Tag,
-                "Evergine texture wrapper created successfully.");
-
-            return ImportedTexture;
-        }
-        catch
-        {
-            CleanupDirectResources();
-            throw;
-        }
-    }
-
     private static ResourceFactory ResolveResourceFactory(
         VKGraphicsContext graphicsContext)
     {
@@ -994,25 +651,18 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         return factory;
     }
 
-    private static PixelFormat ConvertVulkanFormatToEvergine(
-        VkFormat format)
-    {
-        if (format ==
-            VkFormat.VK_FORMAT_R8G8B8A8_UNORM)
-        {
-            return PixelFormat.R8G8B8A8_UNorm;
-        }
-
-        throw new NotSupportedException(
-            $"No Evergine PixelFormat mapping exists " +
-            $"for Vulkan format {format}.");
-    }
-
     private void CleanupExternalResources()
     {
+        if (commandContext is not null && !commandContext.TryDrainForDisposal())
+        {
+            // Retain this generation's entire resource set until device teardown.
+            // Destroying only the image/descriptor after a failed fence wait can
+            // cause the subsequent VK_ERROR_DEVICE_LOST seen in field captures.
+            return;
+        }
         /*
          * Command work must finish before resources referenced by it are
-         * destroyed. CommandContext.Dispose() performs a defensive fence wait.
+         * destroyed. Keep the complete set if the fence has not completed.
          */
         commandContext?.Dispose();
 
@@ -1049,52 +699,6 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
 
         ImportedTexture =
             null;
-
-        imported =
-            false;
-    }
-
-    private void CleanupDirectResources()
-    {
-        /*
-         * The direct fallback texture wrapper does not belong to a helper
-         * object, so this path owns it directly.
-         */
-        ImportedTexture?.Dispose();
-
-        ImportedTexture =
-            null;
-
-        VkDevice device =
-            graphicsContext.VkDevice;
-
-        if (device.Handle != 0)
-        {
-            if (directImage.Handle != 0)
-            {
-                VulkanNative.vkDestroyImage(
-                    device,
-                    directImage,
-                    null);
-
-                directImage =
-                    default;
-            }
-
-            if (directMemory.Handle != 0)
-            {
-                VulkanNative.vkFreeMemory(
-                    device,
-                    directMemory,
-                    null);
-
-                directMemory =
-                    default;
-            }
-        }
-
-        imported =
-            false;
     }
 
     private void ThrowIfDisposed()
@@ -1170,7 +774,6 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         }
 
         CleanupExternalResources();
-        CleanupDirectResources();
 
         disposed =
             true;

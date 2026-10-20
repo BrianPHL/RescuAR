@@ -97,30 +97,26 @@
                             </Border>
 
                             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                <Label Text="{Binding Report.PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                                <Label Text="{Binding Report.PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" LineBreakMode="TailTruncation" />
                                 <Label Text="{Binding Report.PostedAtText}" TextColor="#64748B" FontSize="12" />
                             </VerticalStackLayout>
 
-                            <!-- Category Badge -->
+                            <!-- Category Badge (No icon, cleanly aligned pill) -->
                             <Border Grid.Column="2"
                                     BackgroundColor="{Binding Report.CategoryBadgeColor}"
                                     StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 14"
+                                    StrokeShape="RoundRectangle 12"
                                     Padding="10,4"
+                                    HorizontalOptions="End"
                                     VerticalOptions="Center">
-                                <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
-                                    <Path Data="{Binding Report.CategoryIcon}"
-                                          Fill="{Binding Report.CategoryTextColor}"
-                                          WidthRequest="12"
-                                          HeightRequest="12"
-                                          Aspect="Uniform"
-                                          VerticalOptions="Center" />
-                                    <Label Text="{Binding Report.Category}"
-                                           TextColor="{Binding Report.CategoryTextColor}"
-                                           FontSize="12"
-                                           FontAttributes="Bold"
-                                           VerticalOptions="Center" />
-                                </HorizontalStackLayout>
+                                <Label Text="{Binding Report.Category}"
+                                       TextColor="{Binding Report.CategoryTextColor}"
+                                       FontSize="11"
+                                       FontAttributes="Bold"
+                                       HorizontalOptions="Center"
+                                       VerticalOptions="Center"
+                                       HorizontalTextAlignment="Center"
+                                       VerticalTextAlignment="Center" />
                             </Border>
                         </Grid>
 
@@ -256,8 +252,9 @@
                                                 WidthRequest="36" HeightRequest="36"
                                                 StrokeShape="RoundRectangle 18"
                                                 StrokeThickness="0"
-                                                BackgroundColor="#008080">
-                                            <Label Text="{Binding AuthorName[0]}"
+                                                BackgroundColor="#008080"
+                                                VerticalOptions="Start">
+                                            <Label Text="{Binding AuthorInitial}"
                                                    TextColor="#FFFFFF"
                                                    FontSize="16"
                                                    FontAttributes="Bold"
@@ -266,16 +263,19 @@
                                         </Border>
 
                                         <!-- Author Name & Time -->
-                                        <HorizontalStackLayout Grid.Row="0" Grid.Column="1" Spacing="8" VerticalOptions="Center">
-                                            <Label Text="{Binding AuthorName}"
+                                        <Grid Grid.Row="0" Grid.Column="1" ColumnDefinitions="*, Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                            <Label Grid.Column="0"
+                                                   Text="{Binding DisplayAuthorName}"
                                                    TextColor="#0F172A"
                                                    FontSize="13"
-                                                   FontAttributes="Bold" />
-                                            <Label Text="{Binding PostedAtText}"
+                                                   FontAttributes="Bold"
+                                                   LineBreakMode="TailTruncation" />
+                                            <Label Grid.Column="1"
+                                                   Text="{Binding PostedAtText}"
                                                    TextColor="#94A3B8"
                                                    FontSize="11"
                                                    VerticalOptions="Center" />
-                                        </HorizontalStackLayout>
+                                        </Grid>
 
                                         <!-- Content -->
                                         <Label Grid.Row="1" Grid.Column="1"

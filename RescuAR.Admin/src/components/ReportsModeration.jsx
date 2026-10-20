@@ -1,3 +1,4 @@
+import ExportActions from './ExportActions';
 import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Check, X, Clock, ShieldCheck, MapPin, User } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -151,6 +152,7 @@ export default function ReportsModeration({ service = reportsModerationService, 
           <h1>Reports Moderation</h1>
           <span className="view-subtitle">{lastUpdated ? `Last updated: ${lastUpdated}` : 'Loading reports...'}</span>
         </div>
+        <ExportActions title="reports-moderation" rows={filteredReports} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Description', key: 'description' }, { label: 'Reported By', key: 'posted_by' }, { label: 'Category', key: 'category' }, { label: 'Status', key: 'status' }, { label: 'Address', key: 'address' }, { label: 'Latitude', key: 'latitude' }, { label: 'Longitude', key: 'longitude' }, { label: 'Created At', key: 'created_at' }]} disabled={loading} />
       </div>
 
       {state.error && <div role="alert" style={{ marginTop: '16px', padding: '12px 16px', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c' }}>{state.error}</div>}
@@ -383,7 +385,7 @@ export default function ReportsModeration({ service = reportsModerationService, 
         </div>
 
         {/* Right Column: Detailed Inspector Card */}
-        <div style={{ width: '380px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="reports-details-column" style={{ width: '380px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-main)', margin: 0 }}>
               Report Details

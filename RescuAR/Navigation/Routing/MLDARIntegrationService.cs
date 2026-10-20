@@ -167,21 +167,36 @@ public sealed class MLDARIntegrationService
     /// Uses the same provider for a bounded mapped-road start when a direct
     /// origin request cannot route. AR still aligns to the actual GPS reading.
     /// </summary>
-    public async Task<RouteResult?> RequestRouteWithRoadApproachAsync(
+    public Task<RouteResult?> RequestRouteWithRoadApproachAsync(
         GeoCoordinate origin, GeoCoordinate destination,
         AStarRoutingService.RoadApproachTarget? roadAccess,
         CancellationToken cancellationToken = default)
+        => RequestRouteWithDeferredRoadApproachAsync(origin, destination,
+            _ => Task.FromResult(roadAccess), cancellationToken);
+
+    /// <summary>Direct routing starts before offline access lookup or graph initialization.</summary>
+    public async Task<RouteResult?> RequestRouteWithDeferredRoadApproachAsync(
+        GeoCoordinate origin, GeoCoordinate destination,
+        Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(findRoadAccess);
         RouteResult? route = await RequestRouteAsync(origin, destination, cancellationToken);
-        if (route is { Points.Count: >= 2 } ||
-            roadAccess is not { ConnectsToDestination: true } access ||
-            !access.Coordinate.IsValid) return route;
+        if (route is { Points.Count: >= 2 } &&
+            route.Points[0].Coordinate.IsValid &&
+            origin.DistanceTo(route.Points[0].Coordinate) <= 50) return route;
+        cancellationToken.ThrowIfCancellationRequested();
+        var roadAccess = await findRoadAccess(cancellationToken);
+        if (roadAccess is not { ConnectsToDestination: true } access ||
+            !access.Coordinate.IsValid) return null;
         double distance = origin.DistanceTo(access.Coordinate);
-        if (!double.IsFinite(distance) || distance <= 1 || distance > 50) return route;
+        if (!double.IsFinite(distance) || distance <= 1 || distance > 50) return null;
         cancellationToken.ThrowIfCancellationRequested();
         AndroidLog.Info(LogTag,
             $"ROAD APPROACH ROUTE RETRY: provider='{routingService.AlgorithmName}', distance={distance:F1}m.");
-        return await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
+        route = await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
+        return route is { Points.Count: >= 2 } && route.Points[0].Coordinate.IsValid &&
+            origin.DistanceTo(route.Points[0].Coordinate) <= 50 ? route : null;
     }
 
     /// <summary>
@@ -203,18 +218,46 @@ public sealed class MLDARIntegrationService
         double arWindowMeters = 7.5,
         bool clearRouteOnFailure = true,
         int sourceSegmentIndex = -1,
-        GeoCoordinate? userCoordinate = null)
+        GeoCoordinate? userCoordinate = null,
+        ARRoutePlacement placement = default,
+        RouteDisplayProgressPolicy.RegisteredReference? registeredReference = null,
+        TimeSpan? maximumRegistrationAge = null)
     {
         ArgumentNullException.ThrowIfNull(
             route);
         if (!IsCameraOffsetAcceptable(arOriginOffsetX, arOriginOffsetZ))
             return false;
-        if (userCoordinate.HasValue &&
+        if (registeredReference is { } retained)
+        {
+            if (!placement.IsAvailable || retained.Coordinate != snappedReference ||
+                retained.Session != placement.Generation.SessionGeneration ||
+                retained.TrackingEpoch != placement.TrackingEpoch || retained.WorldFrame != placement.WorldFrame ||
+                DateTimeOffset.UtcNow - retained.SupportedAt > (maximumRegistrationAge ?? TimeSpan.FromSeconds(
+                    RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) ||
+                retained.SupportedAt > DateTimeOffset.UtcNow.AddSeconds(2) || retained.RegisteredAt > retained.SupportedAt ||
+                !double.IsFinite(retained.YawDegrees) ||
+                Math.Abs(Math.IEEERemainder(retained.YawDegrees - mapToArYawDegrees, 360)) >= 0.001 ||
+                !float.IsFinite(retained.WorldX) || !float.IsFinite(retained.WorldZ)) return false;
+            arOriginOffsetX = retained.WorldX - placement.AnchorX;
+            arOriginOffsetZ = retained.WorldZ - placement.AnchorZ;
+            placement = placement with { AlignmentSource = "QUALIFIED_ACQUISITION",
+                RegistrationSample = retained.RegisteredAt.ToUnixTimeMilliseconds(),
+                RegisteredWorldX = retained.WorldX, RegisteredWorldZ = retained.WorldZ };
+        }
+        else if (userCoordinate.HasValue &&
             !TryApplyGpsToRouteOffset(userCoordinate.Value, snappedReference,
                 mapToArYawDegrees, ref arOriginOffsetX, ref arOriginOffsetZ))
         {
             if (clearRouteOnFailure) ARRouteBridge.Clear();
             return false;
+        }
+
+        if (placement.IsAvailable)
+        {
+            var gpsOffset = userCoordinate.HasValue ? GeographicOffset(userCoordinate.Value, snappedReference) : (0.0, 0.0);
+            var rotatedOffset = MapToArCoordinates.Rotate(gpsOffset.Item1, gpsOffset.Item2, mapToArYawDegrees);
+            placement = placement with { GpsToRoadEast = gpsOffset.Item1, GpsToRoadNorth = gpsOffset.Item2,
+                GpsToRoadX = (float)rotatedOffset.X, GpsToRoadZ = (float)rotatedOffset.Z };
         }
 
         bool published =
@@ -231,7 +274,7 @@ public sealed class MLDARIntegrationService
                     progressMeters,
                     sourceSegmentIndex),
                 ProgressLogTag,
-                clearRouteOnFailure);
+                clearRouteOnFailure, placement);
 
         if (published)
         {
@@ -289,11 +332,7 @@ public sealed class MLDARIntegrationService
                 "GPS-to-graph displacement too uncertain for an AR route origin.");
             return false;
         }
-        double latitude = user.Latitude * Math.PI / 180.0;
-        double east = (routePoint.Longitude - user.Longitude) *
-            Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude);
-        double north = (routePoint.Latitude - user.Latitude) *
-            Math.PI / 180.0 * 6371008.8;
+        var (east, north) = GeographicOffset(user, routePoint);
         var offset = MapToArCoordinates.Rotate(east, north, yawDegrees);
         arOffsetX += (float)offset.X;
         arOffsetZ += (float)offset.Z;
@@ -301,10 +340,22 @@ public sealed class MLDARIntegrationService
             arOffsetX, arOffsetZ, out _);
     }
 
-    private static bool IsCameraOffsetAcceptable(float x, float z) =>
-        float.IsFinite(x) && float.IsFinite(z) &&
-        MathF.Sqrt(x * x + z * z) <=
-            LocalArNavigationPolicy.MaximumCameraToAnchorOffsetMeters;
+    private static (double East, double North) GeographicOffset(GeoCoordinate user, GeoCoordinate routePoint)
+    {
+        double latitude = user.Latitude * Math.PI / 180.0;
+        return ((routePoint.Longitude - user.Longitude) * Math.PI / 180.0 * 6371008.8 * Math.Cos(latitude),
+            (routePoint.Latitude - user.Latitude) * Math.PI / 180.0 * 6371008.8);
+    }
+
+    private static bool IsCameraOffsetAcceptable(float x, float z)
+    {
+        if (LocalArNavigationPolicy.IsGroundReferenceLocal(x, z, 0, 0)) return true;
+        AndroidLog.Warn(ProgressLogTag,
+            $"AR_PUBLICATION_REJECTED reason=GROUND_REFERENCE_TOO_DISTANT; " +
+            $"cameraOffset=({x:F2},{z:F2})m; maximum=" +
+            $"{LocalArNavigationPolicy.MaximumCameraToAnchorOffsetMeters:F1}m.");
+        return false;
+    }
 
     private static bool PublishWindow(
         RouteResult route,
@@ -316,7 +367,8 @@ public sealed class MLDARIntegrationService
         double arWindowMeters,
         int sourceSegmentIndex,
         string logTag,
-        bool clearRouteOnFailure)
+        bool clearRouteOnFailure,
+        ARRoutePlacement placement = default)
     {
         if (!ValidateLocalRouteOriginOffset(
                 arOriginOffsetX,
@@ -426,7 +478,7 @@ public sealed class MLDARIntegrationService
             route.TotalDistanceMeters,
             RouteVisualKind.RouteWindow,
             startDistanceMeters,
-            sourceSegmentIndex);
+            sourceSegmentIndex, placement);
 
         return true;
     }

@@ -5,6 +5,13 @@ namespace RescuAR.MAUI.Services;
 /// </summary>
 public static class ArCoreLifecyclePolicy
 {
+    public static bool CanApplyState(ArCoreLifecycleState current, ArCoreLifecycleState next,
+        long? requestGeneration, long latestGeneration) =>
+        (!requestGeneration.HasValue || requestGeneration.Value == latestGeneration) &&
+        (current != ArCoreLifecycleState.Disposed || next == ArCoreLifecycleState.Disposed) &&
+        (current != ArCoreLifecycleState.Disposing || next is ArCoreLifecycleState.Disposing or
+            ArCoreLifecycleState.Disposed or ArCoreLifecycleState.Faulted);
+
     public static bool IsLatestRequest(long requestGeneration, ArCoreLifecycleTarget requestedTarget, long latestGeneration, ArCoreLifecycleTarget desiredTarget) =>
         requestGeneration == latestGeneration && requestedTarget == desiredTarget;
 

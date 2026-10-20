@@ -130,6 +130,8 @@ public static class ARCameraSpatialController
 
     private static long worldCorrectionRequestGeneration;
 
+    public static long WorldFrameGeneration { get { lock (sync) return worldCorrectionRequestGeneration; } }
+
     private static RouteWorldCorrectionRequest pendingWorldCorrectionRequest =
         RouteWorldCorrectionRequest.Unavailable;
 
@@ -766,6 +768,7 @@ public static class ARCameraSpatialController
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
+        ARRoutePlacement placement = ARRouteRenderer.AppliedPlacement;
 
         if (anchor.IsAvailable &&
             anchor.ReferenceGeneration != appliedGroundReferenceGeneration)
@@ -822,6 +825,9 @@ public static class ARCameraSpatialController
         lock (sync)
         {
             routeAlignmentTrusted =
+                placement.IsFor(frame) &&
+                LocalArNavigationPolicy.IsGroundReferenceLocal(
+                    frame.Pose.PositionX, frame.Pose.PositionZ, anchor.PositionX, anchor.PositionZ) &&
                 !pendingWorldCorrectionRequest.IsPending &&
                 !routeRecoveryRebasePending;
 
@@ -1000,10 +1006,10 @@ public static class ARCameraSpatialController
             !routeRootHorizontalLocked)
         {
             lockedRouteRootX =
-                anchor.PositionX;
+                placement.IsAvailable ? placement.AnchorX : anchor.PositionX;
 
             lockedRouteRootZ =
-                anchor.PositionZ;
+                placement.IsAvailable ? placement.AnchorZ : anchor.PositionZ;
 
             routeRootHorizontalLocked =
                 true;
@@ -1048,6 +1054,9 @@ public static class ARCameraSpatialController
         lock (sync)
         {
             routeAlignmentCorrectionPending =
+                !placement.IsFor(frame) ||
+                !LocalArNavigationPolicy.IsGroundReferenceLocal(
+                    frame.Pose.PositionX, frame.Pose.PositionZ, anchor.PositionX, anchor.PositionZ) ||
                 pendingWorldCorrectionRequest.IsPending ||
                 routeRecoveryRebasePending;
         }
@@ -1150,11 +1159,10 @@ public static class ARCameraSpatialController
             hasValidRouteSpatialPlacement = false;
         }
 
-        // Approach arrows have their own trust gates and do not need an
-        // already-published evacuation route. Raw-road diagnostics take priority.
-        if (ARRoadApproachRenderer.ProcessDrawThreadWork(frame,
-                routeGroundHeightPlausible, roadDiagnostic.Active))
-            route.IsEnabled = false;
+        // The access arrow supplements any independently trusted mapped
+        // route window. It must not replace that geometry while entry is pending.
+        ARRoadApproachRenderer.ProcessDrawThreadWork(frame,
+            routeGroundHeightPlausible, roadDiagnostic.Active);
 
         bool routeHeldFromLastValidPlacement =
             route.IsEnabled &&
@@ -1174,6 +1182,7 @@ public static class ARCameraSpatialController
                 routeRootTransform.Position,
                 frame);
         }
+        ARRouteRenderer.PublishVisibility(route.IsEnabled, routeRootTransform.Position, frame);
 
         LogVisualContinuityHoldIfChanged(
             trackingValid,

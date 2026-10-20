@@ -59,7 +59,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
     public const string FallbackBaseUrl =
         "https://rescuar-production-2c22.up.railway.app";
 
-    private static readonly HttpClient httpClient =
+    private static readonly HttpClient sharedHttpClient =
         new()
         {
             Timeout =
@@ -68,6 +68,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         };
 
     private readonly string[] baseUrls;
+    private readonly HttpClient httpClient;
 
     public string AlgorithmName =>
         "MLD (Railway OSRM)";
@@ -84,7 +85,14 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     public MLDRoutingService(
         params string[] baseUrls)
+        : this(sharedHttpClient, baseUrls)
     {
+    }
+
+    /// <summary>The caller retains ownership of the supplied HTTP client.</summary>
+    public MLDRoutingService(HttpClient httpClient, params string[] baseUrls)
+    {
+        this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         if (baseUrls is null ||
             baseUrls.Length == 0)
         {
@@ -643,7 +651,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
         AndroidLog.Debug(
             LogTag,
-            $"MLD endpoint request: {requestUrl}");
+            $"MLD endpoint request: {new Uri(baseUrl).GetLeftPart(UriPartial.Authority)}; " +
+            $"inputs={string.Join(";", coordinates.Select(c => DiagnosticPrivacyPolicy.FormatCoordinate(c.Latitude, c.Longitude)))}");
 
         using HttpResponseMessage response =
             await httpClient.GetAsync(
@@ -658,7 +667,10 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         {
             return ParseRoutes(
                 json,
-                algorithmName);
+                algorithmName,
+                new RouteProvenance("MLD", DatasetId: response.Headers.TryGetValues("X-RescuAR-Dataset-Id", out var ids)
+                    ? DiagnosticToken(ids.FirstOrDefault()) : "unreported",
+                    RequestedCoordinates: coordinates.ToArray()));
         }
 
         if ((int)response.StatusCode <
@@ -669,6 +681,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                     out string code) &&
                 IsNoRouteCode(code))
             {
+                if (string.Equals(code, "NoSegment", StringComparison.OrdinalIgnoreCase))
+                    throw new RoutingEndpointUnmatchedException();
                 return Array.Empty<RouteResult>();
             }
 
@@ -686,25 +700,39 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     private static IReadOnlyList<RouteResult> ParseRoutes(
         string json,
-        string algorithmName)
+        string algorithmName,
+        RouteProvenance provenance)
     {
-        using JsonDocument document =
-            JsonDocument.Parse(
-                json);
+        using JsonDocument document = ParseResponseDocument(json);
 
         JsonElement root =
             document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("OSRM response must be an object.");
+        var snapped = new List<GeoCoordinate>();
+        if (root.TryGetProperty("waypoints", out var waypoints) && waypoints.ValueKind == JsonValueKind.Array)
+            foreach (var waypoint in waypoints.EnumerateArray())
+                if (waypoint.ValueKind == JsonValueKind.Object && waypoint.TryGetProperty("location", out var pair) &&
+                    pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 &&
+                    pair[0].ValueKind == JsonValueKind.Number && pair[1].ValueKind == JsonValueKind.Number &&
+                    pair[0].TryGetDouble(out double lon) && pair[1].TryGetDouble(out double lat) &&
+                    new GeoCoordinate(lat, lon) is { IsValid: true } coordinate) snapped.Add(coordinate);
+        provenance = (provenance ?? RouteProvenance.Unreported) with { SnappedWaypoints = snapped.ToArray(),
+            DataVersion = root.TryGetProperty("data_version", out var dataVersion) && dataVersion.ValueKind == JsonValueKind.String
+                ? DiagnosticToken(dataVersion.GetString()) : "unreported" };
 
         string code =
             root.TryGetProperty(
                 "code",
-                out JsonElement codeElement)
+                out JsonElement codeElement) && codeElement.ValueKind == JsonValueKind.String
                 ? codeElement.GetString() ??
                   string.Empty
                 : string.Empty;
 
         if (IsNoRouteCode(code))
         {
+            if (string.Equals(code, "NoSegment", StringComparison.OrdinalIgnoreCase))
+                throw new RoutingEndpointUnmatchedException();
             return Array.Empty<RouteResult>();
         }
 
@@ -725,7 +753,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             routesElement.GetArrayLength() ==
                 0)
         {
-            return Array.Empty<RouteResult>();
+            throw new InvalidDataException("OSRM Ok response contains no routes.");
         }
 
         List<RouteResult> routes =
@@ -737,7 +765,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             RouteResult? route =
                 ParseRouteElement(
                     routeElement,
-                    algorithmName);
+                    algorithmName, provenance);
 
             if (route is not null)
             {
@@ -746,7 +774,16 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             }
         }
 
+        if (routes.Count == 0)
+            throw new InvalidDataException("OSRM Ok response contains no usable geometry.");
         return routes;
+    }
+
+    private static JsonDocument ParseResponseDocument(string json)
+    {
+        try { return JsonDocument.Parse(json); }
+        catch (JsonException exception)
+        { throw new InvalidDataException("OSRM response is not valid JSON.", exception); }
     }
 
     private static bool IsNoRouteCode(string code) =>
@@ -755,12 +792,15 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     private static RouteResult? ParseRouteElement(
         JsonElement route,
-        string algorithmName)
+        string algorithmName, RouteProvenance provenance)
     {
+        if (route.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("OSRM route must be an object.");
         double apiDistanceMeters =
             route.TryGetProperty(
                 "distance",
                 out JsonElement distanceElement) &&
+            distanceElement.ValueKind == JsonValueKind.Number &&
             distanceElement.TryGetDouble(
                 out double parsedDistance)
                 ? parsedDistance
@@ -769,6 +809,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
         if (!route.TryGetProperty(
                 "geometry",
                 out JsonElement geometry) ||
+            geometry.ValueKind != JsonValueKind.Object ||
             !geometry.TryGetProperty(
                 "coordinates",
                 out JsonElement coordinateArray) ||
@@ -794,21 +835,20 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             if (pair.ValueKind !=
                     JsonValueKind.Array ||
                 pair.GetArrayLength() <
-                    2)
+                    2 || pair[0].ValueKind != JsonValueKind.Number ||
+                pair[1].ValueKind != JsonValueKind.Number || !pair[0].TryGetDouble(out double longitude) ||
+                !pair[1].TryGetDouble(out double latitude))
             {
-                return null;
+                throw new InvalidDataException("OSRM geometry contains a malformed coordinate.");
             }
 
             GeoCoordinate coordinate =
                 new(
-                    pair[1]
-                        .GetDouble(),
-                    pair[0]
-                        .GetDouble());
+                    latitude, longitude);
 
             if (!coordinate.IsValid)
             {
-                return null;
+                throw new InvalidDataException("OSRM geometry contains an invalid coordinate.");
             }
 
             if (previous is GeoCoordinate prior)
@@ -839,17 +879,23 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             return null;
         }
 
-        double totalDistanceMeters =
-            apiDistanceMeters >
-            0.0
-                ? apiDistanceMeters
-                : cumulativeDistanceMeters;
+        // Progress uses the full returned geometry. Its terminal cumulative
+        // distance must agree with TotalDistanceMeters, even if the server's
+        // distance calculation or precision differs.
+        double totalDistanceMeters = cumulativeDistanceMeters;
+        if (double.IsFinite(apiDistanceMeters) &&
+            Math.Abs(apiDistanceMeters - totalDistanceMeters) > 5.0)
+            AndroidLog.Warn(LogTag, $"OSRM distance differs from geometry: api={apiDistanceMeters:F1} m, geometry={totalDistanceMeters:F1} m.");
 
         return new RouteResult(
             points,
             totalDistanceMeters,
-            algorithmName);
+            algorithmName, provenance);
     }
+
+    private static string DiagnosticToken(string? value) => string.IsNullOrWhiteSpace(value)
+        ? "unreported" : new string(value.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':')
+            .Take(128).ToArray());
 
     private static IReadOnlyList<GeoCoordinate> BuildBypassCandidates(
         RouteResult route,
@@ -1103,9 +1149,10 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                 JsonDocument.Parse(
                     json);
 
-            if (!document.RootElement.TryGetProperty(
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty(
                     "code",
-                    out JsonElement codeElement))
+                    out JsonElement codeElement) || codeElement.ValueKind != JsonValueKind.String)
             {
                 return false;
             }

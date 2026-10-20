@@ -1,0 +1,64 @@
+RESCUAR / PREP — ULYSSES VALIDATION REPORT
+
+IMPORTANT INTERPRETATION:
+This evaluates LiPAD reference hazard scenarios against a NAMRIA-derived Ulysses flood reference.
+Because Ulysses is not independently assigned here to one specific LiPAD return-period/severity scenario, the 9-scenario comparison is a sensitivity analysis, not proof that the best-scoring scenario is the true Ulysses return period.
+
+Observed NAMRIA flood area inside analysis domain: 19.4772 km²
+Analysis domain: Full Marikina boundary (no separate observation-domain mask supplied)
+
+VALIDATION DECISION:
+DOES NOT YET MEET THE PROJECT ACCEPTABLE ACCURACY RATE — no evaluated LiPAD scenario reaches F1 >= 0.85; investigate the spatial errors and do not tune the independent reference to force a pass.
+
+Best spatial IoU/CSI scenario (descriptive):
+100-Year / Low+ | Precision=0.937 Recall=0.749 F1=0.833 IoU=0.713
+Spatial areas: TP=14.59 km² | FP=0.976 km² | FN=4.887 km²
+Primary acceptable accuracy rate (F1 >= 0.85): FAIL | observed F1=0.833
+Supporting spatial diagnostics: Precision=PASS | Recall=FAIL | F1=FAIL | IoU=PASS
+
+Lowest population WAPE scenario (descriptive):
+100-Year / Low+ | WAPE=26.84% | Spearman=0.641
+Population target status: WAPE=FAIL | Spearman=FAIL
+
+Project acceptance and supporting targets:
+Primary acceptable spatial accuracy rate: F1 >= 0.85 (85%)
+Supporting diagnostics (reported separately from the primary acceptance decision):
+Recall >= 0.8
+Precision >= 0.8
+F1 >= 0.85
+IoU/CSI >= 0.7
+Population WAPE <= 20%
+Population Spearman >= 0.8
+
+Limitations:
+- One historical event (Ulysses) is being tested.
+- NAMRIA survey/map coverage is incomplete.
+- No independent observation-domain mask was supplied; false-positive interpretation outside mapped/surveyed coverage is therefore uncertain.
+- Manual georeferencing/digitization introduces positional uncertainty.
+- Population exposure assumes uniform population distribution within barangays.
+- Derived exposed population is not a direct observed affected-person count.
+- Areas outside the NAMRIA mapped extent must not be described as safe/non-flooded.
+- Internal consistency must be reported separately from external flood-model accuracy.
+
+SPATIAL PARTITION AND CONFUSION MATRIX (km2):
+Rows: predicted flooded / predicted dry; columns: reference flooded / reference dry.
+TN and overall-area accuracy are CONDITIONAL on complete observation coverage.
+Ulysses was previously used for scenario comparison: this spatial holdout is retrospective, NOT blind or independent event validation.
+Partition geometry: C:/Users/Josh/Documents/Project/RescuAR/RescuAR.Admin/prep_api/validation/partitions/ulysses_spatial_partition.gpkg
+full_city | F1=0.833 (FAIL) | Recall=0.749 (FAIL) | Precision=0.937 (PASS) | IoU=0.713 (PASS)
+  predicted flooded: TP=14.590 | FP=0.976 km2
+  predicted dry:     FN=4.887 | TN=2.226 km2
+development | F1=0.842 (FAIL) | Recall=0.763 (FAIL) | Precision=0.940 (PASS) | IoU=0.728 (PASS)
+  predicted flooded: TP=11.838 | FP=0.760 km2
+  predicted dry:     FN=3.673 | TN=1.837 km2
+holdout | F1=0.794 (FAIL) | Recall=0.694 (FAIL) | Precision=0.927 (PASS) | IoU=0.658 (FAIL)
+  predicted flooded: TP=2.752 | FP=0.216 km2
+  predicted dry:     FN=1.214 | TN=0.389 km2
+
+All nine scenarios and geographic subsets: spatial_partition_confusion_matrix.csv
+Threshold gap audit: spatial_partition_acceptance_review.csv
+Population split: spatial_partition_population_proxy.csv (derived proxy only; NOT counts of affected people).
+development population proxy (100-Year/Low+): WAPE=27.21% (FAIL); Spearman=0.618 (FAIL)
+holdout population proxy (100-Year/Low+): WAPE=27.59% (FAIL); Spearman=0.898 (PASS)
+Support thresholds never override F1-only PRIMARY acceptance. The all_targets_met field is now the conjunction of all six tests.
+The full-city 100-Year / Low+ example was selected descriptively from already inspected Ulysses data; do not select a new winning scenario using holdout results.

@@ -7,6 +7,12 @@ namespace RescuAR.Navigation.Projection;
 /// <summary>Direction cues never manufacture a walking route.</summary>
 public static class RoadApproachCuePolicy
 {
+    public static bool IsAccessDirectionReliable(double distance, double? accuracy) =>
+        double.IsFinite(distance) && distance <= 50 &&
+        accuracy is double meters && double.IsFinite(meters) && meters >= 0 &&
+        meters <= RouteStartupLocationPolicy.MaximumPlacementAccuracyMeters &&
+        distance > Math.Max(5.0, meters);
+
     public static bool TryGetDirection(GeoCoordinate origin, GeoCoordinate target,
         double mapToArYawDegrees, out Vector2 direction, out double distance)
     {

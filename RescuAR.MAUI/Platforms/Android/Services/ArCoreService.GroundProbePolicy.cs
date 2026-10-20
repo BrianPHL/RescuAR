@@ -10,7 +10,6 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 public sealed partial class ArCoreService
 {
     private const int MaximumGroundProbesPerSearchWindow = 144;
-    private const int MaximumGroundProbesPerSession = 600;
     private const long GroundProbeSearchWindowCooldownMilliseconds = 30_000;
     private const long MaximumGroundProbeBackoffMilliseconds = 8_000;
     private const long GroundProbeMetricsIntervalMilliseconds = 10_000;
@@ -18,6 +17,7 @@ public sealed partial class ArCoreService
     private int groundProbesThisSweep;
     private int groundProbesThisSearchWindow;
     private int groundProbesThisSession;
+    private readonly ARGroundProbeBudget groundProbeBudget = new();
     private int groundProbeFailureStreak;
     private long groundProbeSuspendedUntilTimestamp = long.MinValue;
     private long lastGroundProbeMetricsTimestamp = long.MinValue;
@@ -36,6 +36,7 @@ public sealed partial class ArCoreService
         groundProbesThisSweep = 0;
         groundProbesThisSearchWindow = 0;
         groundProbesThisSession = 0;
+        groundProbeBudget.Reset();
         groundProbeFailureStreak = 0;
         groundProbeSuspendedUntilTimestamp = long.MinValue;
         lastGroundProbeMetricsTimestamp = long.MinValue;
@@ -61,11 +62,10 @@ public sealed partial class ArCoreService
             return false;
         }
 
-        if (groundProbesThisSession >= MaximumGroundProbesPerSession)
+        if (!groundProbeBudget.HasCapacity(now))
         {
-            groundProbeSuspendedUntilTimestamp = long.MaxValue;
             RecordGroundProbeRejection(GroundProbeRejection.Budget);
-            LogGroundProbeMetricsIfNeeded(now, "session probe budget exhausted");
+            LogGroundProbeMetricsIfNeeded(now, "rolling probe budget exhausted; waiting for renewal");
             return false;
         }
 
@@ -92,12 +92,12 @@ public sealed partial class ArCoreService
     private bool TryConsumeGroundProbeBudget(long now)
     {
         int sweepLimit = Math.Max(
-            1,
+            ARGroundProbePlan.MinimumSpatialSamples,
             powerThermalDecision.MaximumGroundProbesPerSweep);
 
         if (groundProbesThisSweep >= sweepLimit ||
             groundProbesThisSearchWindow >= MaximumGroundProbesPerSearchWindow ||
-            groundProbesThisSession >= MaximumGroundProbesPerSession)
+            !groundProbeBudget.TryConsume(now))
         {
             RecordGroundProbeRejection(GroundProbeRejection.Budget);
             LogGroundProbeMetricsIfNeeded(now, "probe denied by budget");
@@ -199,7 +199,8 @@ public sealed partial class ArCoreService
         Log.Info(
             SpatialPoseTag,
             "ARCORE_GROUND_PROBE_METRICS " +
-            $"session={groundProbesThisSession}/{MaximumGroundProbesPerSession}; " +
+            $"sessionTotal={groundProbesThisSession}; " +
+            $"budgetWindow={groundProbeBudget.Used}/{ARGroundProbeBudget.Capacity}; " +
             $"searchWindow={groundProbesThisSearchWindow}/{MaximumGroundProbesPerSearchWindow}; " +
             $"sweep={groundProbesThisSweep}/{powerThermalDecision.MaximumGroundProbesPerSweep}; " +
             $"failureStreak={groundProbeFailureStreak}; " +

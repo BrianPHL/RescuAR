@@ -8,6 +8,7 @@ using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
 using RescuAR.Navigation.Hazards;
 using System.Text.Json;
+using RescuAR.MAUI.Platforms.Android.Services;
 
 int passed = 0;
 void Check(bool condition, string name)
@@ -16,36 +17,52 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
-foreach (bool activityFirst in new[] { true, false })
+if (args.Contains("--startup-scene"))
 {
-    var intent = new ArCoreRunIntent();
-    intent.Request(true);
-    intent.SetSurfaceReady(true);
-    Check(intent.ShouldRun, "requested camera has both prerequisites");
-    intent.SetActivityResumed(false);
-    intent.SetActivityResumed(false);
-    intent.SetSurfaceReady(false);
-    intent.SetSurfaceReady(false);
-    Check(intent.Requested && !intent.ShouldRun, "duplicate pauses retain camera intent");
-    if (activityFirst) intent.SetActivityResumed(true);
-    else intent.SetSurfaceReady(true);
-    Check(!intent.ShouldRun, "one returning prerequisite cannot resume alone");
-    if (activityFirst) intent.SetSurfaceReady(true);
-    else intent.SetActivityResumed(true);
-    Check(intent.ShouldRun, "both resume callback orders work");
-    intent.SetSurfaceReady(false);
-    intent.Request(false);
-    intent.SetActivityResumed(true);
-    intent.SetSurfaceReady(true);
-    Check(!intent.ShouldRun, "late surface cannot undo Camera-tab exit");
-    intent.Request(true);
-    Check(intent.ShouldRun, "explicit camera re-entry resumes");
-    intent.Shutdown();
-    intent.SetActivityResumed(true);
-    intent.SetSurfaceReady(true);
-    intent.Request(true);
-    Check(!intent.ShouldRun, "late callbacks cannot revive shutdown");
+    StartupSceneChecks.Run(Check);
+    Console.WriteLine($"{passed} startup-scene regression checks passed.");
+    return;
 }
+if (args.Contains("--ground-flood"))
+{
+    ARGroundFloodChecks.Run(Check);
+    Console.WriteLine($"{passed} ground/flood regression checks passed.");
+    return;
+}
+if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery") || args.Contains("--alignment-recovery"))
+{
+    if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance"))
+    {
+        ARRegistrationChecks.Run(Check);
+        NavigationStabilityChecks.Run(Check);
+        await ARHeadingRecoveryChecks.RunAsync(Check);
+    }
+    await ARRecoveryContinuityChecks.RunAsync(Check);
+    ARPlacementHazardChecks.Run(Check);
+    ARGroundFloodChecks.Run(Check);
+    ARFieldValidationChecks.Run(Check);
+    RouteBacktrackingChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    StartupSceneChecks.Run(Check);
+    if (args.Contains("--ar-guidance") || args.Contains("--placement-hazards") || args.Contains("--guidance-recovery") || args.Contains("--alignment-recovery"))
+    {
+        await ARGuidanceParityChecks.RunAsync(Check);
+        if (args.Contains("--ar-guidance") || args.Contains("--alignment-recovery")) await ARSystemAuditChecks.RunAsync(Check);
+    }
+    Console.WriteLine($"{passed} {(args.Contains("--alignment-recovery") ? "alignment-recovery" : args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
+    return;
+}
+ARRegistrationChecks.Run(Check);
+NavigationStabilityChecks.Run(Check);
+await ARHeadingRecoveryChecks.RunAsync(Check);
+await ARRecoveryContinuityChecks.RunAsync(Check);
+ARPlacementHazardChecks.Run(Check);
+ARGroundFloodChecks.Run(Check);
+ARFieldValidationChecks.Run(Check);
+RouteBacktrackingChecks.Run(Check);
+RouteDisplayProgressChecks.Run(Check);
+StartupSceneChecks.Run(Check);
+await ARGuidanceParityChecks.RunAsync(Check);
 ArHorizontalRoutePoint P(float x, float z, double d) => new(x, z, d);
 Check(ARRouteGeometrySanitizer.Prepare(
     new[] { P(0,0,0), P(float.NaN,1,1), P(2,0,2) }, 65).Points.Count == 0,
@@ -243,6 +260,28 @@ Check(reverseRoute is not null && Math.Abs(reverseRoute.TotalDistanceMeters - 10
     "reverse-only partial edge seeds only its reachable endpoint");
 Check(await reverseService.FindRouteAsync(C(100), C(200)) is null,
     "partial edge cannot bypass pedestrian one-way restrictions");
+var sparseService = new AStarRoutingService(new RoadGraphBuilder().Build(new[] {
+    Way("residential", C(0), C(400)) }));
+var midDestination = await sparseService.FindRouteAsync(C(0), C(200));
+Check(midDestination is not null && midDestination.Points[^1].Coordinate.DistanceTo(C(200)) < 0.1 &&
+    Math.Abs(midDestination.TotalDistanceMeters - 200) < 1,
+    "AStar reaches a destination midway along a sparse segment without requiring a nearby vertex");
+var sameSegment = await sparseService.FindRouteAsync(C(100), C(200));
+Check(sameSegment is not null && Math.Abs(sameSegment.TotalDistanceMeters - 100) < 1,
+    "two partial endpoints on the same segment do not detour through its vertices");
+Check(await sparseService.FindRouteAsync(C(0),C(200,80)) is null &&
+    sparseService.FindRoadApproachTarget(C(0),C(200,80)) is { ConnectsToDestination: false, DestinationComponentCount: 0 },
+    "a custom pin without mapped access inside fifty metres cannot turn a nearest-road arrow into an evacuation route");
+var deadEndService = new AStarRoutingService(new RoadGraphBuilder().Build(new[] {
+    Way("residential", C(0), C(50), new Dictionary<string,string> { ["oneway:foot"]="yes" }),
+    new GeoJsonRoadFeature { Highway="residential", Coordinates=new[] { C(-100,10),C(0,10),C(100,10) } },
+    Way("residential", C(0,10), C(0), new Dictionary<string,string> { ["oneway:foot"]="yes" }) }));
+var alternativeStart = await deadEndService.FindRouteAsync(C(20), C(-100,10));
+Check(alternativeStart is not null && alternativeStart.Points[0].Coordinate.DistanceTo(C(20,10)) < 0.1,
+    "nearby reachable segment is considered when the closest one-way segment is a directed dead end");
+var reachableAccess = deadEndService.FindRoadApproachTarget(C(20), C(-100,10));
+Check(reachableAccess is { ConnectsToDestination: true } && reachableAccess.Value.Coordinate.DistanceTo(C(20,10)) < 0.1,
+    "road approach proves directed reachability rather than just weak connectivity");
 var wallGraph = new RoadGraphBuilder().Build(new[] { new GeoJsonRoadFeature
     { Highway="path", Coordinates=new[] { C(0),C(100),C(200) } } },
     new[] { new GeoJsonPointFeature { Barrier="wall", Coordinate=C(100) } });
@@ -252,6 +291,25 @@ var gradeGraph = new RoadGraphBuilder().Build(new[] {
     new GeoJsonRoadFeature { Highway="path", Coordinates=new[] { C(-100),C(0),C(100) },
         Tags=new Dictionary<string,string> { ["bridge"]="yes" } } });
 Check(!CanReach(gradeGraph,C(-100),C(0,100)), "bridge interior does not connect to the road beneath it");
+GeoJsonRoadFeature SourceWay(GeoCoordinate[] coordinates, string[] identifiers) =>
+    new() { Highway="path", Coordinates=coordinates, OsmNodeIds=identifiers };
+var distinctSourceNodes = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","5","6" }) });
+Check(!CanReach(distinctSourceNodes,C(-100),C(0,100)),
+    "different OSM nodes at the same coordinate cannot manufacture a junction");
+var sharedSourceNodes = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","2","6" }) });
+Check(CanReach(sharedSourceNodes,C(-100),C(0,100)),
+    "matching OSM node IDs retain an actual mapped junction");
+var sourceBarrierGraph = new RoadGraphBuilder().Build(new[] {
+    SourceWay(new[] { C(-100),C(0),C(100) }, new[] { "1","2","3" }),
+    SourceWay(new[] { C(0,-100),C(0),C(0,100) }, new[] { "4","5","6" }) },
+    new[] { new GeoJsonPointFeature { OsmId="2", Barrier="gate", Coordinate=C(0),
+        Tags=new Dictionary<string,string> { ["locked"]="yes" } } });
+Check(!CanReach(sourceBarrierGraph,C(-100),C(100)) && CanReach(sourceBarrierGraph,C(0,-100),C(0,100)),
+    "central barrier restrictions split their source node without blocking a distinct colocated node");
 var preferenceGraph = new RoadGraphBuilder().Build(new[] {
     Way("primary",C(0),C(200)),
     Way("residential",C(0),C(0,20)), Way("residential",C(0,20),C(200,20)),
@@ -292,11 +350,28 @@ Check(endpointUrl.Contains("radiuses=20;50") && bypassUrl.Contains("radiuses=20;
     "MLD endpoints use shared bounds while hazard bypasses remain steering hints");
 var parseRoutes = typeof(MLDRoutingService).GetMethod("ParseRoutes",
     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" })!).Count == 0,
-    "MLD out-of-range endpoint is a no-route result rather than an endpoint failure");
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" })!).Count == 0,
-    "MLD invalid interior geometry cannot manufacture a shortcut");
+bool endpointUnmatched = false;
+try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD",RouteProvenance.Unreported }); }
+catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is RoutingEndpointUnmatchedException)
+{ endpointUnmatched = true; }
+Check(endpointUnmatched, "MLD NoSegment is distinguished from a disconnected NoRoute result");
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD",RouteProvenance.Unreported })!).Count == 0,
+    "MLD NoRoute remains an authoritative disconnected result");
+var geometryRoute = ((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
+    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD",RouteProvenance.Unreported })!)[0];
+Check(Math.Abs(geometryRoute.TotalDistanceMeters - geometryRoute.Points[^1].DistanceFromStartMeters) < 0.01,
+    "MLD progress and total distance use the same physical geometry");
+bool invalidGeometryRejected = false;
+try { parseRoutes.Invoke(null,new object[] {
+    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD",RouteProvenance.Unreported }); }
+catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is InvalidDataException)
+{ invalidGeometryRejected = true; }
+Check(invalidGeometryRejected, "MLD invalid interior geometry is an invalid response, not a disconnected route");
+var readOsrmCode = typeof(MLDRoutingService).GetMethod("TryReadOsrmCode",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+Check(new[] { "[]", "{\"code\":123}", "broken JSON" }.All(body =>
+    !(bool)readOsrmCode.Invoke(null, new object?[] { body, null })!),
+    "malformed HTTP error bodies cannot crash MLD outcome classification");
 using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0.001,0]]},\"properties\":{\"highway\":\"service\",\"foot\":\"yes\",\"access\":\"no\",\"tunnel\":\"building_passage\"}}]}")))
 {
@@ -304,6 +379,18 @@ using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     Check(exportedRoads.Count == 1 && pedestrianFilter.IsWalkable(exportedRoads[0]),
         "flat exported tags preserve pedestrian permission and building passage access");
 }
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[121,14],[121.001,14]]},\"properties\":{\"highway\":\"path\",\"osm_node_ids\":[\"123\",\"456\"]}}]}")))
+    Check((await new GeoJsonRoadLoader().LoadRoadsAsync(json))[0].OsmNodeIds.SequenceEqual(new[] { "123", "456" }),
+        "central export node identifiers survive parsing into the routing graph");
+bool incompleteIdsRejected = false;
+using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+    "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[121,14],[121.001,14]]},\"properties\":{\"highway\":\"path\",\"osm_node_ids\":[\"123\"]}}]}")))
+{
+    try { await new GeoJsonRoadLoader().LoadRoadsAsync(json); }
+    catch (InvalidDataException) { incompleteIdsRejected = true; }
+}
+Check(incompleteIdsRejected, "incomplete central source IDs fail instead of reverting to invented coordinate junctions");
 using (var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
     "{\"type\":\"FeatureCollection\",\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[0,0],[0,95],[0.001,0]]},\"properties\":{\"highway\":\"path\"}}]}")))
     Check((await new GeoJsonRoadLoader().LoadRoadsAsync(json)).Count == 0,
@@ -318,6 +405,25 @@ var qcLocal = await regionalService.FindRouteAsync(new(14.71374502,121.01964361)
 var marikinaLocal = await regionalService.FindRouteAsync(new(14.644776,121.094967),new(14.660172,121.118353));
 Check(qcLocal is not null && qcLocal.Points.Count > 1, "QC tester request routes on the expanded offline network");
 Check(marikinaLocal is not null && marikinaLocal.Points.Count > 1, "Marikina request routes on the expanded offline network");
+var qc2Street = actualRoads.First(road => road.OsmId == "13845789");
+var qc2Local = await regionalService.FindRouteAsync(qc2Street.Coordinates[0],qc2Street.Coordinates[^1]);
+Check(qc2Local is not null && qc2Local.Points.Count > 1,
+    "QC_TEST2 Hilario Moncado Street provides an actual local AStar route");
+Check(await regionalService.FindRouteAsync(new(14.644776,121.094967), new(14.647648,121.103974)) is not null,
+    "embedded Concepcion Elementary destination can match the nearby road segment");
+string tipPointsResource = NavigationDataBootstrap.GeoJsonResourcePrefix + "QC_TIP_POINTS.GEOJSON";
+if (NavigationDataBootstrap.GetGeoJsonResourceNames("POINTS").Contains(tipPointsResource))
+{
+    using Stream tipPoints = NavigationDataBootstrap.OpenGeoJsonResource(tipPointsResource);
+    var restrictions = await new GeoJsonRoadLoader().LoadPointsAsync(tipPoints);
+    string[] missingBarrierIds = { "8678367374", "8931729696", "11489648941", "246784995",
+        "11484349473", "10783437609", "12497591656", "8628789127" };
+    Check(restrictions.Count == 1309 && missingBarrierIds.All(id => restrictions.Any(p => p.OsmId == id &&
+        EvacuationRoutingPolicy.IsBlockedPoint(p.Barrier, p.Tags))),
+        "TIP points preserve all eight previously missing source access barriers");
+}
+Check(NavigationDataBootstrap.DatasetId.StartsWith("regional-") || NavigationDataBootstrap.DatasetId.StartsWith("central-"),
+    "routing diagnostics identify the exact embedded policy and source data");
 var balboaBend = actualRoads.Where(road => road.OsmId == "48381228").ToArray();
 if (balboaBend.Length > 0)
 {
@@ -369,39 +475,105 @@ Check(geometry.Points.Count <= ARRouteRenderer.MaximumRouteSegments+1 &&
 
 var now = DateTimeOffset.UtcNow;
 var arrival = new SafeZoneConfirmationService();
-Check(!arrival.Evaluate(C(0),C(1),75,5,100,now).IsConfirmed,
-    "arrival needs a second observation");
-Check(!arrival.Evaluate(C(0),C(1),75,5,100,now).IsConfirmed,
+SafeZoneConfirmationService.SafeZoneDecision ObserveArrival(double seconds,
+    double distance = 1, double? accuracy = 5, bool barrier = false,
+    double? fixAge = null) => arrival.Evaluate(C(distance), C(0), 75, accuracy,
+        double.PositiveInfinity, now.AddSeconds(seconds - (fixAge ?? 0)),
+        majorRoadBarrier: barrier, evaluatedAt: now.AddSeconds(seconds));
+Check(!ObserveArrival(0).IsConfirmed, "arrival starts a proximity observation sequence");
+Check(!ObserveArrival(0).IsConfirmed,
     "duplicate GPS observation cannot confirm arrival");
-var blocked = arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(1),
-    majorRoadBarrier:true);
+var blocked = ObserveArrival(1, barrier: true);
 Check(!blocked.IsConfirmed && blocked.ConfirmationCount == 0,
     "major road cancels proximity-only arrival");
-arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(2));
-Check(arrival.Evaluate(C(0),C(1),75,5,100,now.AddSeconds(3)).IsConfirmed,
-    "two unobstructed new observations confirm vicinity");
+ObserveArrival(2);
+ObserveArrival(5);
+Check(ObserveArrival(8).IsConfirmed,
+    "repeated fresh observations confirm vicinity without requiring a mapped route");
+arrival.Reset();
+Check(!ObserveArrival(0, distance: 60, accuracy: 8.5).IsCandidate &&
+    !ObserveArrival(4, distance: 60, accuracy: 8.5).IsConfirmed,
+    "field-test fixes sixty metres from the pin cannot confirm arrival inside a broad facility profile");
+Check(ObserveArrival(5, distance: 24, accuracy: 5).IsCandidate &&
+    ObserveArrival(6, distance: 41, accuracy: 5).IsObservationHeld &&
+    !arrival.Current.IsConfirmed && arrival.Current.ConfirmationCount == 1,
+    "boundary uncertainty pauses arrival without counting a fix outside the automatic radius");
+ObserveArrival(7);
+Check(ObserveArrival(8, accuracy: 30).ConfirmationCount == 0,
+    "weak arrival fixes reset the consecutive sequence");
+ObserveArrival(9);
+Check(ObserveArrival(10, fixAge: 6).ConfirmationCount == 0 &&
+    !ObserveArrival(11, fixAge: -3).IsCandidate,
+    "stale and future arrival fixes cannot check in");
+arrival.Reset();
+ObserveArrival(0);
+Check(ObserveArrival(13).ConfirmationCount == 1,
+    "arrival evidence expires across a long GPS outage");
+arrival.Reset();
+ObserveArrival(0);
+ObserveArrival(0.1);
+Check(!ObserveArrival(0.2).IsConfirmed,
+    "a burst of GPS fixes cannot satisfy arrival dwell time");
+Check(SafeZoneFacilityCatalog.GetArrivalRadiusMeters("SV Tennis Court") == 30,
+    "unprofiled test destinations default to thirty metres");
 var sample = default(RouteProgressTracker.RouteProgressUpdate) with
 {
     IsAccepted=true, IsOffRoute=true, CrossTrackErrorMeters=35,
-    AccuracyMeters=5, MatchConfidence=RouteMatchConfidence.High
+    AccuracyMeters=5, MatchConfidence=RouteMatchConfidence.High,
+    NearestRouteDistanceMeters=double.NaN, CorridorRadiusMeters=15
 };
 bool Trigger(OffRouteReroutePolicy policy, DateTimeOffset at)
 {
     policy.Evaluate(sample,at);
-    policy.Evaluate(sample,at.AddMilliseconds(100));
-    return policy.Evaluate(sample,at.AddMilliseconds(200)).ShouldReroute;
+    policy.Evaluate(sample,at.AddSeconds(2));
+    return policy.Evaluate(sample,at.AddSeconds(4)).ShouldReroute;
 }
 var reroute = new OffRouteReroutePolicy();
 Check(Trigger(reroute,now), "three reliable off-route observations trigger");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+Check(reroute.Evaluate(sample, now).ConfirmationCount == 1 &&
+    !reroute.Evaluate(sample, now.AddMilliseconds(100)).ShouldReroute,
+    "duplicate and burst GPS observations do not satisfy reroute confirmation");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+reroute.Evaluate(sample with { AccuracyMeters = 50, MatchConfidence = RouteMatchConfidence.Unavailable }, now.AddSeconds(2));
+reroute.Evaluate(sample, now.AddSeconds(4));
+Check(reroute.Evaluate(sample, now.AddSeconds(6)).ShouldReroute,
+    "one weak fix does not discard recent reliable deviation evidence");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+reroute.Evaluate(sample with { IsOffRoute = false }, now.AddSeconds(2));
+Check(reroute.Evaluate(sample, now.AddSeconds(4)).ConfirmationCount == 1,
+    "reliable return to the route clears deviation evidence");
+reroute.Reset();
+reroute.Evaluate(sample, now);
+Check(reroute.Evaluate(sample, now.AddSeconds(16)).ConfirmationCount == 1,
+    "old deviation evidence expires after a GPS outage");
+reroute.Reset();
 reroute.MarkRerouteFailed(now,awaitingConfirmation:true);
-Check(!Trigger(reroute,now.AddSeconds(2)) && Trigger(reroute,now.AddSeconds(4)),
+Check(!reroute.Evaluate(sample,now.AddSeconds(2)).ShouldReroute && Trigger(reroute,now.AddSeconds(4)),
     "pending confirmation retries after three seconds");
+reroute.Reset();
 reroute.MarkRerouteFailed(now);
-Check(!Trigger(reroute,now.AddSeconds(5)) && Trigger(reroute,now.AddSeconds(11)),
+Check(!reroute.Evaluate(sample,now.AddSeconds(9)).ShouldReroute && Trigger(reroute,now.AddSeconds(10)),
     "failed route retries after ten seconds");
-reroute.MarkRerouteCompleted(now);
-Check(!Trigger(reroute,now.AddSeconds(11)) && Trigger(reroute,now.AddSeconds(46)),
-    "successful route retains forty-five second cooldown");
+reroute.MarkRerouteFailed(now.AddSeconds(15));
+Check(!reroute.Evaluate(sample,now.AddSeconds(34)).ShouldReroute && Trigger(reroute,now.AddSeconds(35)),
+    "repeated route failures back off instead of repeatedly rerouting");
+reroute.MarkRerouteCompleted(now.AddSeconds(40));
+Check(!reroute.Evaluate(sample,now.AddSeconds(59)).ShouldReroute && Trigger(reroute,now.AddSeconds(60)),
+    "a successful replacement permits a new confirmed deviation after twenty seconds");
+var ambiguousDeviation = sample with { MatchConfidence = RouteMatchConfidence.Low,
+    NearestRouteDistanceMeters = 80, CrossTrackErrorMeters = 85, CorridorRadiusMeters = 15 };
+reroute.Reset();
+reroute.Evaluate(ambiguousDeviation, now);
+reroute.Evaluate(ambiguousDeviation, now.AddSeconds(2));
+Check(reroute.Evaluate(ambiguousDeviation, now.AddSeconds(4)).ShouldReroute,
+    "clear distance from the whole route can confirm deviation despite ambiguous segment identity");
+reroute.Reset();
+Check(!reroute.Evaluate(ambiguousDeviation with { NearestRouteDistanceMeters = 5 }, now).IsCandidate,
+    "continuity scoring cannot reroute a user already near another segment of the route");
 
 var previous = Route(C(0),C(100));
 var progress = default(RouteProgressTracker.ProgressSnapshot) with
@@ -417,6 +589,15 @@ replacement.Reset();
 replacement.Evaluate(previous,progress,candidateA,C(0),C(100),false,now);
 Check(replacement.Evaluate(previous,progress,candidateA,C(0),C(100),false,
     now.AddSeconds(4)).IsAccepted, "consistent second detour can replace route");
+var roadStartReplacement = Route(C(38), C(100));
+replacement.Reset();
+Check(!replacement.Evaluate(previous, progress, roadStartReplacement, C(0), C(100),
+    false, now).IsAccepted && replacement.Evaluate(previous, progress, roadStartReplacement,
+    C(0), C(100), false, now, allowRoadApproach: true).IsAccepted,
+    "a checked thirty-eight metre road approach can update navigation without permitting AR placement");
+Check(!replacement.Evaluate(previous, progress, Route(C(51), C(100)), C(0), C(100),
+    false, now, allowRoadApproach: true).IsAccepted,
+    "replacement routes cannot silently snap beyond the fifty metre access limit");
 Check(BundledEvacuationCenterCatalog.Centers.Count == 9 &&
     BundledEvacuationCenterCatalog.Centers.All(c =>
         BundledEvacuationCenterCatalog.IsUsableCoordinate(c.Coordinate)) &&
@@ -473,6 +654,57 @@ var hybridOffline = new HybridRoutingService(offlineSpy,
     _ => Task.FromResult(new RoadGraph(nodes,edges)), () => false);
 Check(await hybridOffline.FindRouteAsync(C(0,1),C(100,8)) is not null && offlineSpy.Calls == 0,
     "offline route skips the online provider");
+var androidTransport = new HybridRoutingService(new ThrowingRoutingService(
+    new System.Net.WebException("network unavailable", System.Net.WebExceptionStatus.ConnectFailure)),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await androidTransport.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "Android WebException transport failures use the existing offline graph");
+var androidTimeout = new HybridRoutingService(new ThrowingRoutingService(
+    new System.Net.WebException("request timed out", System.Net.WebExceptionStatus.RequestCanceled)),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await androidTimeout.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "Android transport cancellation falls back when the caller has not cancelled");
+var cancelledTransport = new HybridRoutingService(new ThrowingRoutingService(
+    new OperationCanceledException()), _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await cancelledTransport.FindRouteAsync(C(0,1), C(100,8)) is not null,
+    "an online timeout falls back to offline routing");
+bool callerCancellationPropagated = false;
+using (var cancelledRequest = new CancellationTokenSource())
+{
+    cancelledRequest.Cancel();
+    try { await androidTransport.FindRouteAsync(C(0,1), C(100,8), cancelledRequest.Token); }
+    catch (OperationCanceledException) { callerCancellationPropagated = true; }
+}
+Check(callerCancellationPropagated, "caller cancellation never launches an offline fallback");
+var noRouteGraphLoads = 0;
+var onlineNoRoute = new HybridRoutingService(new EmptyRoutingService(),
+    _ => { noRouteGraphLoads++; return Task.FromResult(new RoadGraph(nodes,edges)); }, () => true);
+Check(await onlineNoRoute.FindRouteAsync(C(0,1),C(100,8)) is null && noRouteGraphLoads == 0,
+    "an authoritative online NoRoute result still preserves the routing policy");
+var unmatchedOnline = new HybridRoutingService(new ThrowingRoutingService(new RoutingEndpointUnmatchedException()),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await unmatchedOnline.FindRouteAsync(C(0,1),C(100,8)) is not null &&
+    await unmatchedOnline.FindRouteAsync(C(0,100),C(100,8)) is null,
+    "MLD NoSegment tries offline matching without widening its origin radius");
+var invalidOnline = new HybridRoutingService(new ThrowingRoutingService(new InvalidDataException("bad geometry")),
+    _ => Task.FromResult(new RoadGraph(nodes,edges)), () => true);
+Check(await invalidOnline.FindRouteAsync(C(0,1),C(100,8)) is not null,
+    "invalid online responses can recover with an independently checked offline route");
+int deferredAccessCalls = 0;
+var deferredRoute = await new MLDARIntegrationService(new FixedRoutingService(Route(C(0),C(100))))
+    .RequestRouteWithDeferredRoadApproachAsync(C(0),C(100), _ =>
+    { deferredAccessCalls++; return Task.FromResult<AStarRoutingService.RoadApproachTarget?>(null); });
+Check(deferredRoute is not null && deferredAccessCalls == 0,
+    "a valid direct route does not wait for offline road-access graph initialization");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), null) is null,
+    "unknown road coverage cannot silently route from a pin one hundred metres away");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), new(C(0), true)) is null,
+    "an unusable road retry cannot return the rejected distant route");
+Check(await new MLDARIntegrationService(new FixedRoutingService(Route(C(100), C(200))))
+    .RequestRouteWithRoadApproachAsync(C(0), C(200), new(C(38), true)) is null,
+    "a road retry cannot return a route outside the bounded approach area");
 
 bool Angle(GeoCoordinate target, System.Numerics.Quaternion rotation, double expected) =>
     RoadApproachCuePolicy.TryGetAngle(C(0),target,0,rotation,out double angle,out _) &&
@@ -723,6 +955,176 @@ Check(connectedAccess is { RoadComponentNodeCount:3, DestinationComponentCount:1
     pendingAccess is { RoadComponentNodeCount:2, DestinationComponentCount:0 },
     "road approach reports local connectivity without inventing a connection");
 
+bool CanPreview(GeoCoordinate gps, GeoCoordinate matched, double? accuracy = 12,
+    bool accepted = true, bool offRoute = false, bool access = true,
+    RouteMatchConfidence confidence = RouteMatchConfidence.Medium,
+    DateTimeOffset? fix = null) => MappedRoutePreviewPolicy.CanPublish(
+        accepted, offRoute, confidence, accuracy, gps, matched, fix ?? now, now, access);
+Check(CanPreview(C(0,-8.2), C(0)) &&
+    !RouteCorridorPolicy.CanEnterRoadFollowing(true,false,8.2,25,RouteMatchConfidence.Medium,12),
+    "nearby mapped route can be previewed without widening physical road-entry confirmation");
+Check(!CanPreview(C(0,-21),C(0)) && !CanPreview(C(0),C(0),accuracy:21) &&
+    !CanPreview(C(0),C(0),accuracy:null) && !CanPreview(C(0),C(0),accuracy:double.NaN),
+    "mapped preview rejects excessive displacement and uncertain GPS");
+Check(!CanPreview(C(0),C(0),accepted:false) && !CanPreview(C(0),C(0),offRoute:true) &&
+    !CanPreview(C(0),C(0),access:false) &&
+    !CanPreview(C(0),C(0),confidence:RouteMatchConfidence.Low),
+    "no route match, confirmed deviation, blocked access and ambiguous matches cannot produce a preview");
+Check(!CanPreview(C(0),C(0),fix:now.AddSeconds(-6)) &&
+    !CanPreview(C(0),C(0),fix:now.AddSeconds(3)) &&
+    !CanPreview(C(0),new GeoCoordinate(121,14)),
+    "stale, future and invalid positions cannot display a mapped preview");
+Check(!RoadApproachCuePolicy.IsAccessDirectionReliable(1.6,12) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(8.2,20) &&
+    RoadApproachCuePolicy.IsAccessDirectionReliable(8.2,3) &&
+    RoadApproachCuePolicy.IsAccessDirectionReliable(35,20),
+    "access arrows distinguish a supported lateral direction from GPS or map offset uncertainty");
+Check(!RoadApproachCuePolicy.IsAccessDirectionReliable(35,null) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(double.NaN,12) &&
+    !RoadApproachCuePolicy.IsAccessDirectionReliable(51,12),
+    "invalid or distant access targets cannot create an arrow");
+var mappedPreviewGeometry = Route(C(0),C(3),C(3,20));
+foreach (string algorithm in new[] { "AStar", "MLD (Railway OSRM)" })
+{
+    var previewRoute = new RouteResult(mappedPreviewGeometry.Points,
+        mappedPreviewGeometry.TotalDistanceMeters, algorithm);
+    var previewTracker = new RouteProgressTracker();
+    previewTracker.SetRoute(previewRoute);
+    var match = previewTracker.Update(C(0,-8.2),12);
+    Check(MappedRoutePreviewPolicy.CanPublish(match.IsAccepted,match.IsOffRoute,
+        match.MatchConfidence,match.AccuracyMeters,match.GpsCoordinate,
+        match.SnappedCoordinate,now,now,true),
+        $"{algorithm} route match permits actual geometry while road entry is still pending");
+    bool published = new MLDARIntegrationService(new EmptyRoutingService()).PublishProgressWindow(
+        previewRoute,match.CommittedProgressMeters,match.SnappedCoordinate,0,0,0,
+        arWindowMeters:LocalArNavigationPolicy.ApproachWindowMeters,
+        sourceSegmentIndex:match.SegmentIndex,userCoordinate:match.GpsCoordinate);
+    var preview = ARRouteBridge.Current;
+    Check(published && preview.IsAvailable && preview.Algorithm == algorithm &&
+        preview.NavigationState.VisualKind == RouteVisualKind.RouteWindow && preview.Points.Count == 3,
+        $"{algorithm} pending-entry preview publishes a cyan polyline with its mapped corner");
+    Check(Math.Abs(preview.Points[0].X)<0.01 && Math.Abs(preview.Points[0].Z+8.2)<0.01 &&
+        Math.Abs(preview.Points[1].X-3)<0.01 && Math.Abs(preview.Points[1].Z+8.2)<0.01,
+        $"{algorithm} preview starts on mapped geometry and never draws a GPS-to-road connector");
+}
+ARRouteBridge.Clear();
+
+arrival.Reset();
+ObserveArrival(0,distance:14.5,accuracy:11);
+var tipBoundaryNoise = ObserveArrival(4.935,distance:41,accuracy:9);
+Check(tipBoundaryNoise.IsObservationHeld && tipBoundaryNoise.ConfirmationCount == 1 &&
+    !tipBoundaryNoise.IsConfirmed,
+    "TIP boundary jitter holds earlier arrival evidence without confirming the uncertain position");
+Check(ObserveArrival(9.490,distance:2.8,accuracy:14).IsConfirmed &&
+    ObserveArrival(13.964,distance:8.1,accuracy:10).IsConfirmed,
+    "two qualifying observations complete arrival across a brief uncertain boundary sample");
+arrival.Reset();
+ObserveArrival(0);
+Check(ObserveArrival(4,distance:9.7,accuracy:25.5).IsObservationHeld &&
+    !ObserveArrival(13,distance:9.7,accuracy:25.5).IsCandidate &&
+    ObserveArrival(14).ConfirmationCount == 1,
+    "weak nearby fixes cannot extend the arrival evidence timeout");
+arrival.Reset();
+ObserveArrival(0);
+Check(!ObserveArrival(4,distance:52.7,accuracy:27.9).IsCandidate &&
+    ObserveArrival(5).ConfirmationCount == 1,
+    "a large GPS departure resets arrival instead of bridging separate visits");
+arrival.Reset();
+ObserveArrival(0);
+Check(!ObserveArrival(4,barrier:true).IsCandidate && arrival.Current.ConfirmationCount == 0,
+    "a mapped major-road barrier cancels held arrival evidence immediately");
+
+var nearDestination = new DestinationProximityReroutePolicy();
+bool HoldNear(double seconds,double distance,double accuracy=12,bool access=true) =>
+    nearDestination.ShouldHold(C(distance),C(0),accuracy,now.AddSeconds(seconds),
+        now.AddSeconds(seconds),access);
+Check(HoldNear(0,17.5,21.5) && HoldNear(4,52.7,27.9),
+    "a nearby destination observation suppresses a brief TIP GPS jump");
+var nearOffRoute = new RouteProgressTracker.RouteProgressUpdate(true,true,false,0,0,0,10,
+    52.8,10,C(52.8),C(0),"OFF_ROUTE",15,RouteMatchConfidence.High,double.NaN,52.8);
+var nearRerouteDecision = new OffRouteReroutePolicy().Evaluate(nearOffRoute,now,true);
+Check(!nearRerouteDecision.ShouldReroute && nearRerouteDecision.ConfirmationCount == 0,
+    "near-destination drift cannot build an off-route rerouting sequence");
+Check(HoldNear(8,80,10) && !HoldNear(10,85,10),
+    "two independent accurate departures restore normal routing away from the destination");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!HoldNear(31,50,29), "destination proximity hold expires without new nearby evidence");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!HoldNear(2,20,12,access:false), "major-road access uncertainty cannot suppress necessary rerouting");
+nearDestination.Reset();
+HoldNear(0,20);
+Check(!nearDestination.ShouldHold(C(20),C(500),12,now.AddSeconds(1),now.AddSeconds(1)),
+    "changing the destination discards the previous proximity hold");
+
+Check(RouteAnchorRecoveryPolicy.Evaluate(false,true,true) == RouteAnchorRecoveryAction.DiscardPreview &&
+    RouteAnchorRecoveryPolicy.Evaluate(true,true,true) == RouteAnchorRecoveryAction.RebaseRoute,
+    "a tracked replacement anchor releases approach recovery without waiting for physical road entry");
+Check(RouteAnchorRecoveryPolicy.Evaluate(false,false,true) == RouteAnchorRecoveryAction.WaitForFloor &&
+    RouteAnchorRecoveryPolicy.Evaluate(false,true,false) == RouteAnchorRecoveryAction.WaitForFloor,
+    "stale tracking or mismatched ground generation cannot complete an approach anchor handoff");
+
+Check(UserArrivalConfirmationPolicy.CanOffer(C(0),C(29.8),27,now,now),
+    "the indoor screenshot's nearby uncertain fix can offer user-reported arrival");
+arrival.Reset();
+Check(!ObserveArrival(0,distance:29.8,accuracy:27).IsConfirmed &&
+    !ObserveArrival(8,distance:29.8,accuracy:27).IsConfirmed,
+    "manual arrival eligibility does not relax automatic GPS confirmation");
+Check(!UserArrivalConfirmationPolicy.CanOffer(C(0),C(76),5,now,now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),51,now,now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),null,now,now),
+    "manual arrival is unavailable for distant pins or unbounded GPS uncertainty");
+Check(!UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),27,now.AddSeconds(-121),now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),27,now.AddSeconds(3),now) &&
+    !UserArrivalConfirmationPolicy.CanOffer(new(double.NaN,0),C(10),27,now,now),
+    "manual arrival rejects stale, future and invalid location evidence");
+
+var cameraTarget = ARCameraConversionPolicy.GetTargetSize(1080,1901);
+Check(cameraTarget.Width == 727 && cameraTarget.Height == 1280 &&
+    (long)cameraTarget.Width * cameraTarget.Height < 1080L * 1901 / 2,
+    "TIP camera conversion uses less than half the former output pixels");
+Check(Math.Abs(cameraTarget.Width/(double)cameraTarget.Height - 1080.0/1901) < 0.001 &&
+    ARCameraConversionPolicy.GetTargetSize(1901,1080) == (1280u,727u) &&
+    ARCameraConversionPolicy.GetTargetSize(640,480) == (640u,480u),
+    "conversion preserves portrait and landscape proportions without upscaling");
+Check(ArCameraImportFailurePolicy.Classify(new TimeoutException(
+    "ARCORE_CAMERA_GPU_TIMEOUT: pending conversion")) == ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new InvalidOperationException(
+        "ARCORE_CAMERA_GPU_FAILURE: vkWaitForFences failed")) == ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new InvalidOperationException("VK_ERROR_DEVICE_LOST")) ==
+        ArCameraImportFailureDisposition.TerminalRenderer &&
+    ArCameraImportFailurePolicy.Classify(new TimeoutException("unrelated transient timeout")) ==
+        ArCameraImportFailureDisposition.RetryWithBackoff,
+    "uncertain GPU ownership is terminal while unrelated transient import failures retain bounded retries");
+
+bool conversionPending = true;
+int cameraCallbacks = 0;
+ARCameraTextureBridge.SetDrawThreadProcessor(987, () => { cameraCallbacks++; return conversionPending; });
+ARCameraTextureBridge.ResumeProcessing(987);
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987) && cameraCallbacks == 1,
+    "a pending conversion skips drawing its unfinished target");
+conversionPending = false;
+Check(!ARCameraTextureBridge.ProcessDrawThreadWork(987) && cameraCallbacks == 2,
+    "drawing resumes after the conversion callback reports completion");
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(986) && cameraCallbacks == 2,
+    "an old draw generation cannot consume current camera work");
+ARCameraTextureBridge.SetDrawThreadProcessor(987, () =>
+{
+    ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
+    return false;
+});
+ARCameraTextureBridge.ResumeProcessing(987);
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987),
+    "terminal suspension inside import prevents presentation in the same draw callback");
+var cameraTeardown = ARCameraTextureBridge.RequestDrawThreadTeardownAsync(987, () => { });
+Check(ARCameraTextureBridge.ProcessDrawThreadWork(987) && !cameraTeardown.IsCompleted,
+    "pending conversion support preserves the draw-boundary teardown barrier");
+ARCameraTextureBridge.CompleteDrawThreadFrame(987);
+Check(cameraTeardown.IsCompletedSuccessfully,
+    "graphics teardown completes only after the skipped draw is acknowledged");
+
+await ARSystemAuditChecks.RunAsync(Check);
 Console.WriteLine($"{passed} regression checks passed.");
 
 sealed class FixedRoutingService(RouteResult route) : IRoutingService
@@ -743,6 +1145,20 @@ sealed class CountingRoutingService(RouteResult route) : IRoutingService
         Calls++;
         return Task.FromResult<RouteResult?>(route);
     }
+}
+
+sealed class ThrowingRoutingService(Exception failure) : IRoutingService
+{
+    public string AlgorithmName => "MLD transport fixture";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default) => Task.FromException<RouteResult?>(failure);
+}
+
+sealed class EmptyRoutingService : IRoutingService
+{
+    public string AlgorithmName => "MLD NoRoute fixture";
+    public Task<RouteResult?> FindRouteAsync(GeoCoordinate origin, GeoCoordinate destination,
+        CancellationToken cancellationToken = default) => Task.FromResult<RouteResult?>(null);
 }
 
 

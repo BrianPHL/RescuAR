@@ -21,4 +21,7 @@ public sealed class GeoJsonRoadFeature
 
     public IReadOnlyList<GeoCoordinate> Coordinates { get; init; } =
         [];
+
+    /// <summary>Canonical exports preserve one source node ID per coordinate.</summary>
+    public IReadOnlyList<string> OsmNodeIds { get; init; } = [];
 }

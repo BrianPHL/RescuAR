@@ -5,7 +5,14 @@
   "main": "syncWorker.js",
   "scripts": {
     "start": "node syncWorker.js",
-    "verify-history": "node verifyHistory.js"
+    "verify-history": "node verifyHistory.js",
+    "test:archive": "node scripts/testHistoricalArchive.js",
+    "collect:historical": "node scripts/collectHistoricalPagasa.js",
+    "collect:ulysses": "node scripts/collectHistoricalPagasa.js --event ulysses_2020 --start \"2020-11-11 00:00\" --end \"2020-11-13 23:59\" --stations all --step-hours 12",
+    "build:training": "node scripts/buildTrainingDataset.js",
+    "build:ulysses-training": "node scripts/buildTrainingDataset.js --event ulysses_2020",
+    "validate:historical": "node scripts/validateHistoricalData.js",
+    "validate:ulysses": "node scripts/validateHistoricalData.js --event ulysses_2020"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

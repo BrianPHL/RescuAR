@@ -71,7 +71,8 @@ public static class ARRouteBridge
         double windowStartProgressMeters =
             double.NaN,
         int sourceSegmentIndex =
-            -1)
+            -1,
+        ARRoutePlacement placement = default)
     {
         ArgumentNullException.ThrowIfNull(
             points);
@@ -87,7 +88,7 @@ public static class ARRouteBridge
                 sourceSegmentIndex);
 
         ARRenderGenerationToken generation =
-            ARRenderGenerationBridge.Current;
+            placement.IsAvailable ? placement.Generation : ARRenderGenerationBridge.Current;
 
         RouteSnapshot next;
         int suppressedCount =
@@ -95,7 +96,7 @@ public static class ARRouteBridge
 
         lock (sync)
         {
-            if (IsEquivalentPublication(
+            if (current.Placement.HasSameOrigin(placement) && IsEquivalentPublication(
                     current,
                     points,
                     normalizedAlgorithm,
@@ -136,7 +137,7 @@ public static class ARRouteBridge
                         normalizedAlgorithm,
                         totalDistanceMeters,
                         copy,
-                        navigationState);
+                        navigationState, placement);
 
                 equivalentPublicationSuppressionCount =
                     0;
@@ -182,6 +183,17 @@ public static class ARRouteBridge
             $"windowProgress=" +
             $"{(next.NavigationState.IsAvailable ? next.NavigationState.WindowStartProgressMeters.ToString("F1") : "<none>")} m, " +
             $"sourceSegment={next.NavigationState.SourceSegmentIndex}");
+        LogPublishedGeometry(next);
+    }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private static void LogPublishedGeometry(RouteSnapshot snapshot)
+    {
+        int chunk = 0;
+        foreach (var points in RescuAR.Navigation.Diagnostics.NavigationGeometryTrace.ArChunks(snapshot.Points))
+            AndroidLog.Info(LogTag, $"NAV_AR_GEOMETRY route={snapshot.Version}; " +
+                $"sample={snapshot.Placement.ObservationTime?.ToUnixTimeMilliseconds()}; " +
+                $"pointCount={snapshot.Points.Count}; chunk={chunk++}; points={points}.");
     }
 
     internal static void PublishGeometryQuality(
@@ -434,7 +446,8 @@ public static class ARRouteBridge
             string algorithm,
             double totalDistanceMeters,
             IReadOnlyList<ArHorizontalRoutePoint> points,
-            RouteNavigationState navigationState)
+            RouteNavigationState navigationState,
+            ARRoutePlacement placement = default)
         {
             Version =
                 version;
@@ -456,6 +469,7 @@ public static class ARRouteBridge
 
             NavigationState =
                 navigationState;
+            Placement = placement;
         }
 
         public long Version { get; }
@@ -465,6 +479,7 @@ public static class ARRouteBridge
         public double TotalDistanceMeters { get; }
         public IReadOnlyList<ArHorizontalRoutePoint> Points { get; }
         public RouteNavigationState NavigationState { get; }
+        public ARRoutePlacement Placement { get; }
     }
 
     public readonly record struct RouteGeometryQualitySnapshot(

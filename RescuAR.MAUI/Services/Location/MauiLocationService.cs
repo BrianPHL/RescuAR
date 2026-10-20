@@ -20,6 +20,7 @@ namespace RescuAR.MAUI.Services.Location;
 /// </summary>
 public sealed class MauiLocationService : ILocationService
 {
+    private readonly ReliableLocationCache reliableLocations = new();
     private const string LogTag =
         "RescuAR-GPS";
 
@@ -176,16 +177,17 @@ public sealed class MauiLocationService : ILocationService
             Microsoft.Maui.Devices.Sensors.Location? location =
                 await Geolocation.Default.GetLastKnownLocationAsync();
 
-            return ToReadingAndLog(
+            ToReadingAndLog(
                 "LAST_KNOWN",
                 location);
+            return GetRetainedLocation();
         }
         catch (FeatureNotEnabledException)
         {
             WriteLog(
                 "Location services are disabled.");
 
-            return null;
+            return GetRetainedLocation();
         }
         catch (PermissionException)
         {
@@ -194,9 +196,26 @@ public sealed class MauiLocationService : ILocationService
 
             return null;
         }
+        catch (Exception exception) when (exception is not OperationCanceledException &&
+            exception is not OutOfMemoryException)
+        {
+            WriteLog("Cached device location lookup failed: " +
+                DiagnosticPrivacyPolicy.FormatException(exception));
+            return GetRetainedLocation();
+        }
     }
 
-    private static LocationReading? ToReadingAndLog(
+    private LocationReading? GetRetainedLocation()
+    {
+        var reading = reliableLocations.Get();
+        WriteLog(reading is null ? "LAST_RELIABLE: no qualified recent location retained."
+            : $"LAST_RELIABLE: accuracy={reading.AccuracyMeters:F1} m, " +
+              $"age={(DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds:F1}s, " +
+              $"timestamp={reading.Timestamp:O}; original acquisition time retained.");
+        return reading;
+    }
+
+    private LocationReading? ToReadingAndLog(
         string source,
         Microsoft.Maui.Devices.Sensors.Location? location)
     {
@@ -231,6 +250,7 @@ public sealed class MauiLocationService : ILocationService
                 location.Speed,
                 location.Course,
                 location.Timestamp);
+        reliableLocations.Observe(reading);
 
         WriteLog(
             $"{source}: " +

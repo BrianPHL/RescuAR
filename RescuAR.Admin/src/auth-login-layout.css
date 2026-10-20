@@ -1,0 +1,142 @@
+/*
+ * Login positioning patch for the split-screen RescuAR auth page.
+ * Loaded by Auth.jsx after the existing global theme. These rules are scoped
+ * to the auth page, leaving sidebar/dashboard typography and layouts unchanged.
+ */
+
+@media (min-width: 992px) {
+  .auth-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .auth-page .auth-shell {
+    height: calc(100vh - 20px);
+    height: calc(100dvh - 20px);
+    min-height: 0;
+    grid-template-columns: minmax(280px, 31%) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .auth-page .auth-panel {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .auth-page .auth-panel-inner {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    position: relative;
+    display: block;
+    padding: 0;
+  }
+
+  /* Center horizontally and locate the complete login block in the pink area. */
+  .auth-page .auth-content-anchor {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -65%);
+    width: min(360px, calc(100% - 48px));
+    max-width: 360px;
+  }
+
+  .auth-page .auth-form-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .auth-page .auth-hero {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .auth-page .auth-hero-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+/* Short desktop windows: allow the form to scroll rather than clipping it. */
+@media (min-width: 992px) and (max-height: 600px) {
+  .auth-page .auth-panel-inner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    height: auto;
+    min-height: 100%;
+    padding: 24px 0;
+  }
+
+  .auth-page .auth-content-anchor {
+    position: static;
+    transform: none;
+    margin: auto 0;
+  }
+}
+
+/* Mobile and tablet: show the login form without the decorative image. */
+@media (max-width: 991.98px) {
+  .auth-page {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .auth-page .auth-shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .auth-page .auth-panel {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .auth-page .auth-panel-inner {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 22px;
+  }
+
+  .auth-page .auth-content-anchor {
+    position: static;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    transform: none;
+  }
+
+  .auth-page .auth-form-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .auth-page .auth-hero {
+    display: none;
+  }
+}

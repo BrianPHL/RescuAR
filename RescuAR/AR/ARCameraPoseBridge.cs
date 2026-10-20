@@ -18,7 +18,9 @@ public static class ARCameraPoseBridge
 {
     public const long MaximumPoseAgeMilliseconds = 750;
 
-    private const int FrameHistoryCapacity = 12;
+    // Bounded ~3 s acquisition-time history for navigation as well as the
+    // existing camera/depth coherence lookup. Historical poses never render.
+    private const int FrameHistoryCapacity = 160;
 
     private static readonly object sync =
         new();
@@ -127,7 +129,8 @@ public static class ARCameraPoseBridge
         float anchorX,
         float anchorY,
         float anchorZ,
-        ARFrameMetadata metadata)
+        ARFrameMetadata metadata,
+        System.Numerics.Quaternion? anchorRotation = null)
     {
         if (!metadata.IsValid ||
             !ARRenderGenerationBridge.TryAcceptCallback(
@@ -152,6 +155,20 @@ public static class ARCameraPoseBridge
                 nearPlane,
                 farPlane);
 
+        double rotationLengthSquared = (double)rotationX * rotationX +
+            (double)rotationY * rotationY + (double)rotationZ * rotationZ +
+            (double)rotationW * rotationW;
+        if (!float.IsFinite(positionX) || !float.IsFinite(positionY) || !float.IsFinite(positionZ) ||
+            !double.IsFinite(rotationLengthSquared) || rotationLengthSquared < 0.0001 ||
+            !projection.IsAvailable)
+        {
+            PublishTrackingUnavailable("Invalid camera pose or projection", metadata);
+            return;
+        }
+        if (groundState.HasGroundReference &&
+            (!float.IsFinite(anchorX) || !float.IsFinite(anchorY) || !float.IsFinite(anchorZ)))
+            groundState = groundState with { Trust = ARGroundTrust.None };
+
         PoseSnapshot pose =
             new(
                 isTracking,
@@ -169,7 +186,8 @@ public static class ARCameraPoseBridge
                 groundState,
                 anchorX,
                 anchorY,
-                anchorZ);
+                anchorZ,
+                anchorRotation);
 
         long nextVersion =
             Interlocked.Increment(
@@ -179,12 +197,14 @@ public static class ARCameraPoseBridge
             new(
                 nextVersion,
                 metadata,
-                Environment.TickCount64,
+                metadata.AcquiredAtMonotonicMilliseconds,
                 isTracking,
                 trackingFailureReason ?? string.Empty,
                 pose,
                 projection,
-                anchor);
+                anchor,
+                CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
+                ARCameraSpatialController.WorldFrameGeneration);
 
         lock (sync)
         {
@@ -231,12 +251,14 @@ public static class ARCameraPoseBridge
             new(
                 nextVersion,
                 metadata,
-                Environment.TickCount64,
+                metadata.AcquiredAtMonotonicMilliseconds,
                 false,
                 trackingFailureReason ?? string.Empty,
                 PoseSnapshot.Unavailable,
                 projection,
-                AnchorSnapshot.Unavailable);
+                AnchorSnapshot.Unavailable,
+                CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
+                ARCameraSpatialController.WorldFrameGeneration);
 
         lock (sync)
         {
@@ -309,6 +331,49 @@ public static class ARCameraPoseBridge
 
         return timestampSkewNanoseconds <=
             maximumTimestampSkewNanoseconds;
+    }
+
+    /// <summary>
+    /// Finds a tracked pose near a GPS/orientation acquisition time. Receipt
+    /// time is converted to the existing monotonic frame clock once. This is
+    /// observation evidence only; CurrentFrame keeps its 750 ms render limit.
+    /// </summary>
+    public static bool TryGetObservationFrame(DateTimeOffset observedAt, DateTimeOffset now,
+        long monotonicNow, out SpatialSnapshot snapshot, out long skewMilliseconds)
+    {
+        snapshot = SpatialSnapshot.Unavailable;
+        skewMilliseconds = long.MaxValue;
+        double age = (now - observedAt).TotalMilliseconds;
+        var live = CurrentFrame;
+        if (!double.IsFinite(age) || age < 0 || age > 3_000 || !live.IsTracking ||
+            !live.Pose.IsTracking || live.TrackingEpoch != CurrentTrackingEpoch(live.Generation.SessionGeneration) ||
+            live.WorldFrame != ARCameraSpatialController.WorldFrameGeneration) return false;
+        long target = monotonicNow - (long)Math.Round(age);
+        lock (sync)
+        {
+            for (int index = 0; index < frameHistoryCount; index++)
+            {
+                var candidate = frameHistory[(frameHistoryWriteIndex - 1 - index +
+                    FrameHistoryCapacity) % FrameHistoryCapacity];
+                if (candidate.Generation != live.Generation || !candidate.IsTracking ||
+                    !candidate.Pose.IsTracking || candidate.TrackingEpoch != live.TrackingEpoch ||
+                    candidate.WorldFrame != live.WorldFrame) continue;
+                long skew = AbsoluteTimestampDifference(candidate.PublishedAtMonotonicMilliseconds, target);
+                if (skew >= skewMilliseconds) continue;
+                skewMilliseconds = skew;
+                snapshot = candidate;
+            }
+        }
+        if (skewMilliseconds <= 250) return true;
+        snapshot = SpatialSnapshot.Unavailable;
+        return false;
+    }
+
+    private static long CurrentTrackingEpoch(long session)
+    {
+        var tracking = ARTrackingStateBridge.Current;
+        return tracking.SessionGeneration == session
+            ? tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount : 0;
     }
 
     public static void PublishProjectionTelemetry(
@@ -423,10 +488,13 @@ public static class ARCameraPoseBridge
         float farPlane)
     {
         if (columnMajorValues is null ||
-            columnMajorValues.Length < 16)
+            columnMajorValues.Length < 16 || !float.IsFinite(nearPlane) ||
+            !float.IsFinite(farPlane) || nearPlane <= 0 || farPlane <= nearPlane)
         {
             return ProjectionSnapshot.Unavailable;
         }
+        for (int index = 0; index < 16; index++)
+            if (!float.IsFinite(columnMajorValues[index])) return ProjectionSnapshot.Unavailable;
 
         /*
          * ARCore supplies column-major storage. Store named mathematical
@@ -478,7 +546,9 @@ public static class ARCameraPoseBridge
             string trackingFailureReason,
             PoseSnapshot pose,
             ProjectionSnapshot projection,
-            AnchorSnapshot anchor)
+            AnchorSnapshot anchor,
+            long trackingEpoch = 0,
+            long worldFrame = 0)
         {
             Version = version;
             Metadata = metadata;
@@ -489,6 +559,8 @@ public static class ARCameraPoseBridge
             Pose = pose;
             Projection = projection;
             Anchor = anchor;
+            TrackingEpoch = trackingEpoch;
+            WorldFrame = worldFrame;
         }
 
         public long Version { get; }
@@ -503,6 +575,8 @@ public static class ARCameraPoseBridge
         public PoseSnapshot Pose { get; }
         public ProjectionSnapshot Projection { get; }
         public AnchorSnapshot Anchor { get; }
+        public long TrackingEpoch { get; }
+        public long WorldFrame { get; }
 
         public bool IsFresh =>
             PublishedAtMonotonicMilliseconds != long.MinValue &&
@@ -519,7 +593,9 @@ public static class ARCameraPoseBridge
                 reason,
                 PoseSnapshot.Unavailable,
                 ProjectionSnapshot.Unavailable,
-                AnchorSnapshot.Unavailable);
+                AnchorSnapshot.Unavailable,
+                TrackingEpoch,
+                WorldFrame);
     }
 
     public readonly struct PoseSnapshot
@@ -582,12 +658,17 @@ public static class ARCameraPoseBridge
             ARGroundStateBridge.GroundStateSnapshot groundState,
             float positionX,
             float positionY,
-            float positionZ)
+            float positionZ,
+            System.Numerics.Quaternion? rotation = null)
         {
             GroundState = groundState;
             PositionX = positionX;
             PositionY = positionY;
             PositionZ = positionZ;
+            var value = rotation.GetValueOrDefault();
+            HasRotation = groundState.Trust == ARGroundTrust.Verified && rotation.HasValue &&
+                float.IsFinite(value.LengthSquared()) && value.LengthSquared() > 0.0001f;
+            Rotation = HasRotation ? System.Numerics.Quaternion.Normalize(value) : default;
         }
 
         public ARGroundStateBridge.GroundStateSnapshot GroundState { get; }
@@ -599,6 +680,8 @@ public static class ARCameraPoseBridge
         public float PositionX { get; }
         public float PositionY { get; }
         public float PositionZ { get; }
+        public bool HasRotation { get; }
+        public System.Numerics.Quaternion Rotation { get; }
     }
 
     public readonly struct ProjectionSnapshot

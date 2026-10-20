@@ -1,245 +1,92 @@
-# RescuAR Navigation Routing Module
+# RescuAR routing
 
-This directory contains the core routing implementations for RescuAR, adhering to the [`IRoutingService`](IRoutingService.cs) contract.
+`IRoutingService` is the geographic routing contract. `HybridRoutingService`
+prefers online OSRM/MLD and initializes offline A* only when required.
+`MLDARIntegrationService` returns complete routes and publishes short AR windows
+separately. The selected provider's result does not establish trustworthy AR placement.
 
----
+## Inputs and policy
 
-## 1. Routing Architecture Overview
+A* builds one cached `RoadGraph` from embedded road **and point** GeoJSON in
+`Navigation/Data/Resources/`. Named regional files are supported; they are not
+rejected because there is more than one file. Restriction points are required
+for locked gates, walls and explicit pedestrian prohibitions.
 
-Routing in RescuAR follows the **Strategy Pattern**. Higher-level modules (Map Rendering, AR Projection, ViewModels, Hazard Monitoring) depend exclusively on the `IRoutingService` interface rather than concrete pathfinding implementations.
+When `CENTRAL_ROADS.geojson`, `CENTRAL_POINTS.geojson` and `routing-manifest.json`
+are present, only that pair is active. Missing partners or mismatched data/policy
+hashes fail validation. Otherwise primary and regional resources load together.
+The exact embedded data/policy identity appears in startup diagnostics.
 
-```
-                               ┌────────────────────────────────┐
-                               │  Consumers (ViewModels, AR)   │
-                               └───────────────┬────────────────┘
-                                               │ Consumes
-                                               ▼
-                               ┌────────────────────────────────┐
-                               │        IRoutingService         │
-                               └───────────────┬────────────────┘
-                                               │
-               ┌───────────────────────────────┴───────────────────────────────┐
-               ▼                                                               ▼
-┌───────────────────────────────┐                               ┌───────────────────────────────┐
-│      AStarRoutingService      │                               │      MLDRoutingService        │
-│   (Offline Pedestrian A*)     │                               │    (Online OSRM MLD Server)   │
-└──────────────┬────────────────┘                               └──────────────┬────────────────┘
-               │ Loads                                                         │ HTTP REST
-               ▼                                                               ▼
-┌───────────────────────────────┐                               ┌───────────────────────────────┐
-│     In-Memory RoadGraph       │                               │   Railway OSRM Instance       │
-│     (ROADS.geojson)           │                               │   (Multi-Level Dijkstra)      │
-└───────────────────────────────┘                               └───────────────────────────────┘
-```
+MLD reads original OSM PBF through `Navigation/Data/Dockerfile`, using
+`profiles/evacuation-foot.lua` and the shared `evacuation-policy.json`.
+A central PBF and manifest take precedence over historical regional inputs.
+The server prints its dataset identity at startup. This is operator evidence;
+OSRM route responses currently provide no app/server identity handshake.
+Map updates require a new extraction, image build and deployment.
 
----
+See [QC_IMPORT.md](../Data/QC_IMPORT.md) for the common-source export and
+activation procedure. A merged file cannot supply unmapped subdivision roads
+or missing connecting corridors. Verified additions must reach both engines.
 
-## 2. Deep Dive: A* vs MLD Algorithms
+## Endpoint matching and routes
 
-| Dimension | **Offline A\* Algorithm (`AStarRoutingService`)** | **Online MLD Algorithm (`MLDRoutingService`)** |
-| :--- | :--- | :--- |
-| **Execution Environment** | On-Device Local Memory (100% Offline) | Remote Cloud Server via HTTP REST API |
-| **Data Source** | Embedded [`ROADS.geojson`](../Data/Resources/ROADS.geojson) dataset | Railway-hosted preprocessed OSRM binary graph |
-| **Core Mechanism** | Min-Heap Priority Queue evaluated with Haversine heuristic (\(f = g + h\)) | Pre-partitioned Multi-Level Dijkstra (MLD) hierarchy |
-| **Use Case** | Emergency scenarios without cellular/internet connectivity | Online navigation with real-time server-side map data |
-| **Network Dependency** | Zero internet required | Requires active network connection |
+Both engines bound ordinary origin matching to 20 m and destination matching
+to 50 m. A* uses a spatial segment index for both endpoints, temporary projected
+endpoints, and multiple nearby candidates in one directed search. Weak components
+prune candidates; directed traversal establishes reachability. Pedestrian one-way,
+barrier, grade and hazard rules remain enforced. Same-segment endpoints can route
+without detouring through stored vertices.
+Central graphs use source OSM node IDs for junctions and point restrictions;
+legacy resources retain coordinate matching. Colocated distinct source nodes
+do not create a central routing connection.
 
----
+Preference cost selects a route; physical geometry meters determine cumulative
+progress and total distance in both adapters. No straight off-network connector
+is added to the returned route. A checked road approach may retry from mapped
+access within 50 m of the actual origin. Access lookup runs only after a direct
+route fails, so offline graph construction does not delay valid online routing.
 
-## 3. Algorithm Specifications & Functions
+## Provider outcomes
 
-### A. Offline A\* Engine (`AStarRoutingService.cs`)
+| Outcome | Hybrid action |
+|---|---|
+| Internet unavailable | Use embedded A* immediately. |
+| Transport failure or six-second online budget expires | Try A*. Caller cancellation propagates. |
+| OSRM `NoSegment` | Report unmatched endpoint, then try bounded offline matching. |
+| OSRM `NoRoute` | Return no route; do not override a disconnected online result. |
+| Invalid server JSON/geometry | Report invalid response, then independently validate an offline route. |
+| No safe online hazard alternative | Try hazard-aware A*, then validate the returned geometry. |
 
-* **Primary Function**: Calculates optimal pedestrian routes locally using the in-memory [`RoadGraph`](../Models/RoadGraph.cs).
-* **Key Steps**:
-  1. **Node Snapping**: Locates nearest `RoadNode` for origin and destination `GeoCoordinate`s.
-  2. **\(f(n) = g(n) + h(n)\) Evaluation**:
-     - \(g(n)\): Accumulated walking distance / edge cost.
-     - \(h(n)\): Haversine straight-line distance heuristic (`node.Coordinate.DistanceTo(target.Coordinate)`).
-  3. **Path Reconstruction**: Rebuilds ordered [`RoutePoint`](../Models/RoutePoint.cs) waypoints and calculates cumulative distance.
+The primary Railway URL is the only default MLD endpoint. The historical
+`FallbackBaseUrl` declaration does not enable a second server.
 
-### B. Online MLD Engine (`MLDRoutingService.cs`)
+## Camera navigation and AR
 
-* **Primary Function**: Interfaces with the Railway-hosted OSRM engine (`https://rescuar-production.up.railway.app`) preprocessed with Multi-Level Dijkstra.
-* **Key Steps**:
-  1. Formulates HTTP GET requests formatted for foot profiles (`/route/v1/foot/...`).
-  2. Queries primary or fallback server endpoints (`PrimaryBaseUrl` / `FallbackBaseUrl`).
-  3. Deserializes OSRM GeoJSON polyline geometry into canonical [`RouteResult`](../Models/RouteResult.cs).
+While Camera is visible, valid geographic routes are accepted before heading
+acquisition finishes. GPS progress, confirmed deviation and arrival evaluation
+continue during AR startup or pauses. Heading recovery reuses the active route
+without restarting geographic progress. AR windows still require current session
+heading, tracking, an anchor and independent road-entry evidence.
 
----
+Online routing can continue if the offline graph fails. Arrival and mapped road
+access are held until the restriction graph is available; missing barrier data
+never authorizes automatic check-in. Arrival still requires the existing fresh,
+accurate independent GPS observations within the configured confirmation boundary.
 
-## 4. Accessing & Implementing Routing in Other Modules
+Camera currently owns this navigation state. Leaving Camera stops its progress
+loop. Shared background/map navigation is a separate change.
 
-### Method A: Consuming Routing in ViewModels / Services
+## Validation
 
-Inject `IRoutingService` into target classes (e.g., `MapViewModel`):
+From the repository root:
 
-```csharp
-using System.Threading.Tasks;
-using RescuAR.Navigation.Models;
-using RescuAR.Navigation.Routing;
-
-public class MapViewModel
-{
-    private readonly IRoutingService _routingService;
-
-    public MapViewModel(IRoutingService routingService)
-    {
-        _routingService = routingService;
-    }
-
-    public async Task CalculateRouteToEvacuationCenterAsync(
-        GeoCoordinate userPosition, 
-        GeoCoordinate centerPosition)
-    {
-        // Compute route regardless of underlying algorithm
-        RouteResult? route = await _routingService.FindRouteAsync(userPosition, centerPosition);
-
-        if (route == null)
-        {
-            // Handle unreachable destination
-            return;
-        }
-
-        System.Console.WriteLine($"Algorithm: {route.Algorithm}");
-        System.Console.WriteLine($"Total Distance: {route.TotalDistanceMeters:F1} m");
-
-        // Pass waypoints to Map display or AR Overlay
-        foreach (RoutePoint point in route.Points)
-        {
-            RenderWaypointOnMap(point.Coordinate.Latitude, point.Coordinate.Longitude);
-        }
-    }
-}
+```powershell
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj
+python tests/routing-bundle-checks.py
+./build/Verify-ARCoreReleaseReadiness.ps1
 ```
 
----
-
-### Method B: Hybrid Online/Offline Fallback Manager
-
-For disaster management, implement a resilience wrapper that attempts online MLD routing first, automatically falling back to offline A* pathfinding when network connection fails:
-
-```csharp
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using RescuAR.Navigation.Models;
-
-namespace RescuAR.Navigation.Routing;
-
-public sealed class HybridRoutingManager : IRoutingService
-{
-    private readonly MLDRoutingService _mldOnline;
-    private readonly AStarRoutingService _aStarOffline;
-    private readonly Func<bool> _isNetworkAvailable;
-
-    public string AlgorithmName => _isNetworkAvailable() ? _mldOnline.AlgorithmName : _aStarOffline.AlgorithmName;
-
-    public HybridRoutingManager(
-        MLDRoutingService mldOnline,
-        AStarRoutingService aStarOffline,
-        Func<bool> isNetworkAvailable)
-    {
-        _mldOnline = mldOnline;
-        _aStarOffline = aStarOffline;
-        _isNetworkAvailable = isNetworkAvailable;
-    }
-
-    public async Task<RouteResult?> FindRouteAsync(
-        GeoCoordinate origin, 
-        GeoCoordinate destination, 
-        CancellationToken cancellationToken = default)
-    {
-        if (_isNetworkAvailable())
-        {
-            try
-            {
-                RouteResult? onlineRoute = await _mldOnline.FindRouteAsync(origin, destination, cancellationToken);
-                if (onlineRoute != null)
-                {
-                    return onlineRoute;
-                }
-            }
-            catch
-            {
-                // Fall through to offline search on network timeout or exception
-            }
-        }
-
-        // Offline A* routing execution
-        return await _aStarOffline.FindRouteAsync(origin, destination, cancellationToken);
-    }
-}
-```
-
----
-
-### Method C: Converting Routes to AR World Space (`MLDARIntegrationService.cs`)
-
-To render calculated routes in Augmented Reality (3D world space):
-
-```csharp
-using RescuAR.Navigation.Models;
-using RescuAR.Navigation.Routing;
-
-public class ARNavigationPresenter
-{
-    private readonly MLDARIntegrationService _arIntegrationService;
-
-    public ARNavigationPresenter(MLDARIntegrationService arIntegrationService)
-    {
-        _arIntegrationService = arIntegrationService;
-    }
-
-    public void ProjectRouteToAR(RouteResult route, GeoCoordinate userCurrentLocation)
-    {
-        // Transforms GeoCoordinates into AR 3D World Vector points (Evergine / Unity)
-        var arWaypoints = _arIntegrationService.TransformRouteToARPoints(route, userCurrentLocation);
-        
-        // Render 3D arrows/path in camera view
-    }
-}
-```
-
----
-
-### Method D: Dependency Injection Setup (`MauiProgram.cs`)
-
-Register services during application startup:
-
-```csharp
-public static MauiProgram CreateMauiProgram()
-{
-    var builder = MauiProgram.CreateBuilder();
-
-    // 1. Build and register in-memory RoadGraph singleton for offline A*
-    builder.Services.AddSingleton<RoadGraph>(sp => 
-    {
-        string geoJson = File.ReadAllText("Path/To/ROADS.geojson");
-        var loader = new GeoJsonRoadLoader();
-        var features = loader.LoadRoadFeatures(geoJson);
-        return new RoadGraphBuilder().BuildGraph(features);
-    });
-
-    // 2. Register Routing Implementations
-    builder.Services.AddSingleton<AStarRoutingService>();
-    builder.Services.AddSingleton<MLDRoutingService>();
-
-    // 3. Register primary IRoutingService boundary
-    builder.Services.AddSingleton<IRoutingService, AStarRoutingService>();
-
-    return builder.Build();
-}
-```
-
----
-
-## 5. File Manifest
-
-| File | Type | Description |
-| :--- | :--- | :--- |
-| [`IRoutingService.cs`](IRoutingService.cs) | Interface | Core contract implemented by all routing engines. |
-| [`AStarRoutingService.cs`](AStarRoutingService.cs) | Class | Offline A\* search algorithm engine. |
-| [`MLDRoutingService.cs`](MLDRoutingService.cs) | Class | Online adapter for Railway OSRM MLD REST API. |
-| [`MLDARIntegrationService.cs`](MLDARIntegrationService.cs) | Class | Transforms GPS route points to 3D AR coordinates. |
-| [`MLDRoutingDiagnostic.cs`](MLDRoutingDiagnostic.cs) | Class | Health and latency diagnostics for online routing. |
+Repeat the three field walks with full-session logs after installing the rebuilt
+app. Record app and server data identities, route result, GPS match, AR hold reason
+and arrival decision. Host checks do not verify device placement, mapped coverage
+or the deployed server.

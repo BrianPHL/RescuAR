@@ -166,7 +166,7 @@ public static class ARGroundStateBridge
         string reason)
     {
         if (!renderGeneration.IsValid ||
-            !ARRenderGenerationBridge.IsCurrentSession(
+            !ARRenderGenerationBridge.IsCurrent(
                 renderGeneration))
         {
             return Current;
@@ -179,6 +179,7 @@ public static class ARGroundStateBridge
 
         lock (sync)
         {
+            if (!ARRenderGenerationBridge.IsCurrent(renderGeneration)) return current;
             if (!advanceReferenceGeneration &&
                 current.RenderGeneration == renderGeneration &&
                 current.State == state &&

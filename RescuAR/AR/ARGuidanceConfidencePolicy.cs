@@ -65,16 +65,6 @@ public static class ARGuidanceConfidencePolicy
                     spatial.State));
         }
 
-        if (spatial.State ==
-            ARCameraSpatialController.SpatialContinuityState.ShortHold)
-        {
-            return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Degraded,
-                score,
-                true,
-                "Tracking interrupted — hold the phone steady");
-        }
-
         if (rerouteInProgress)
         {
             return new GuidanceConfidenceSnapshot(
@@ -83,6 +73,10 @@ public static class ARGuidanceConfidencePolicy
                 false,
                 "Updating your route — follow text guidance");
         }
+
+        if (spatial.State == ARCameraSpatialController.SpatialContinuityState.ShortHold &&
+            !spatial.AllowsFrozenPlacement)
+            return Hidden(score, "Tracking interrupted — waiting for a trusted position");
 
         if (!gpsFresh ||
             gpsConfidence ==
@@ -127,10 +121,13 @@ public static class ARGuidanceConfidencePolicy
         if (verifiedRecovery)
         {
             return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Recovery,
+                spatial.State == ARCameraSpatialController.SpatialContinuityState.ShortHold
+                    ? GuidanceConfidenceState.Degraded : GuidanceConfidenceState.Recovery,
                 score,
                 true,
-                "Returning to the route — follow the short cyan arrow");
+                spatial.State == ARCameraSpatialController.SpatialContinuityState.ShortHold
+                    ? "Tracking interrupted — hold the phone steady"
+                    : "Returning to the route — follow the short cyan arrow");
         }
 
         bool fullGuidance =
@@ -145,10 +142,13 @@ public static class ARGuidanceConfidencePolicy
         if (fullGuidance)
         {
             return new GuidanceConfidenceSnapshot(
-                GuidanceConfidenceState.Full,
+                spatial.State == ARCameraSpatialController.SpatialContinuityState.ShortHold
+                    ? GuidanceConfidenceState.Degraded : GuidanceConfidenceState.Full,
                 score,
                 true,
-                "AR guidance readiness: Full");
+                spatial.State == ARCameraSpatialController.SpatialContinuityState.ShortHold
+                    ? "Tracking interrupted — hold the phone steady"
+                    : "AR guidance readiness: Full");
         }
 
         bool degradedGuidance =

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -44,6 +45,7 @@ namespace RescuAR.App.ViewModels.Reports
             {
                 Report = match;
                 UpdateNoCommentsState();
+                _ = _reportService.EnrichCommentsUsernamesAsync(Report.Comments);
                 return;
             }
 
@@ -55,6 +57,7 @@ namespace RescuAR.App.ViewModels.Reports
                 {
                     Report = match;
                     UpdateNoCommentsState();
+                    _ = _reportService.EnrichCommentsUsernamesAsync(Report.Comments);
                 }
             }
             catch (Exception ex)
@@ -91,9 +94,106 @@ namespace RescuAR.App.ViewModels.Reports
             var text = NewCommentText.Trim();
             NewCommentText = string.Empty;
 
-            var authorName = Microsoft.Maui.Storage.Preferences.Default.Get("UserName", "User");
-            await _reportService.AddCommentAsync(Report.Id, text, authorName);
+            var (authorName, userId) = await GetCurrentCommenterInfoAsync();
+            await _reportService.AddCommentAsync(Report.Id, text, authorName, userId);
             UpdateNoCommentsState();
+        }
+
+        private async Task<(string authorName, string userId)> GetCurrentCommenterInfoAsync()
+        {
+            string userId = string.Empty;
+            string resolvedUsername = string.Empty;
+
+            try
+            {
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync();
+                var authUser = client?.Auth?.CurrentUser ?? client?.Auth?.CurrentSession?.User;
+                if (authUser != null)
+                {
+                    userId = authUser.Id ?? string.Empty;
+
+                    // 1. Retrieve the registered username from the user profile table
+                    if (!string.IsNullOrWhiteSpace(userId) && client != null)
+                    {
+                        try
+                        {
+                            var userResp = await client.From<User>()
+                                .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, userId)
+                                .Get();
+
+                            var dbUser = userResp?.Models?.FirstOrDefault();
+                            if (dbUser != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(dbUser.Username))
+                                {
+                                    resolvedUsername = dbUser.Username.Trim();
+                                }
+                                else
+                                {
+                                    string full = $"{dbUser.FirstName} {dbUser.LastName}".Trim();
+                                    if (!string.IsNullOrWhiteSpace(full))
+                                    {
+                                        resolvedUsername = full;
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error retrieving commenter profile: {ex.Message}");
+                        }
+                    }
+
+                    // 2. Fallback to auth metadata if user profile record was not retrieved
+                    if (string.IsNullOrWhiteSpace(resolvedUsername) && authUser.UserMetadata != null)
+                    {
+                        if (authUser.UserMetadata.TryGetValue("username", out var u) && u != null && !string.IsNullOrWhiteSpace(u.ToString()))
+                        {
+                            resolvedUsername = u.ToString()!.Trim();
+                        }
+                        else if (authUser.UserMetadata.TryGetValue("full_name", out var fn) && fn != null && !string.IsNullOrWhiteSpace(fn.ToString()))
+                        {
+                            resolvedUsername = fn.ToString()!.Trim();
+                        }
+                        else if (authUser.UserMetadata.TryGetValue("name", out var n) && n != null && !string.IsNullOrWhiteSpace(n.ToString()))
+                        {
+                            resolvedUsername = n.ToString()!.Trim();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error checking current user session: {ex.Message}");
+            }
+
+            // 3. Fallback to locally saved preferences if available
+            if (string.IsNullOrWhiteSpace(resolvedUsername))
+            {
+                string prefUser = Microsoft.Maui.Storage.Preferences.Default.Get("UserName", "").Trim();
+                if (!string.IsNullOrWhiteSpace(prefUser) && !string.Equals(prefUser, "User", StringComparison.OrdinalIgnoreCase))
+                {
+                    resolvedUsername = prefUser;
+                }
+                else
+                {
+                    string fname = Microsoft.Maui.Storage.Preferences.Default.Get("UserFirstName", "").Trim();
+                    string lname = Microsoft.Maui.Storage.Preferences.Default.Get("UserLastName", "").Trim();
+                    string storedFullName = $"{fname} {lname}".Trim();
+                    if (!string.IsNullOrWhiteSpace(storedFullName))
+                    {
+                        resolvedUsername = storedFullName;
+                    }
+                }
+            }
+
+            // 4. Default fallback name if unavailable
+            if (string.IsNullOrWhiteSpace(resolvedUsername) || string.Equals(resolvedUsername, "User", StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedUsername = "Resident";
+            }
+
+            return (resolvedUsername, userId);
         }
 
         [RelayCommand]

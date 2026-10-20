@@ -407,3 +407,10 @@ EvergineContent.cs
 **/wwwroot/evergine.js
 
 RescuAR-FieldLog-OnDevice-2MB-Numbered.ps1
+
+# PAGASA historical data collection
+RescuAR.Admin/scraper/data/historical/raw/
+RescuAR.Admin/scraper/data/historical/processed/
+
+# Temporary scraper outputs
+RescuAR.Admin/scraper/logs/

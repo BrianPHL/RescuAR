@@ -140,7 +140,9 @@ public sealed class GeoJsonRoadLoader
                         ReadTags(properties),
 
                     Coordinates =
-                        coordinates
+                        coordinates,
+
+                    OsmNodeIds = ReadNodeIds(properties, coordinates.Count)
                 });
         }
 
@@ -255,6 +257,23 @@ public sealed class GeoJsonRoadLoader
                 });
         }
 
+        return result;
+    }
+
+    private static IReadOnlyList<string> ReadNodeIds(JsonElement properties, int coordinateCount)
+    {
+        if (!properties.TryGetProperty("osm_node_ids", out JsonElement identifiers))
+            return Array.Empty<string>();
+        if (identifiers.ValueKind != JsonValueKind.Array || identifiers.GetArrayLength() != coordinateCount)
+            throw new InvalidDataException("OSM node IDs must match every road coordinate.");
+        var result = new List<string>(coordinateCount);
+        foreach (JsonElement identifier in identifiers.EnumerateArray())
+        {
+            string? value = identifier.ValueKind == JsonValueKind.String ? identifier.GetString() : identifier.ToString();
+            if (!long.TryParse(value, out long parsed) || parsed <= 0)
+                throw new InvalidDataException("Road contains an invalid OSM node ID.");
+            result.Add(parsed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
         return result;
     }
 

@@ -51,29 +51,7 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- Quick Navigation Action Cards -->
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                    <Border Grid.Column="0" BackgroundColor="#F0FDF4" Stroke="#DCFCE7" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding NavigateToChecklistCommand}" />
-                        </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="6">
-                            <Label Text="Kit Checklist" TextColor="#166534" FontSize="14" FontAttributes="Bold" />
-                            <Label Text="Track essential supplies" TextColor="#15803D" FontSize="11" />
-                        </VerticalStackLayout>
-                    </Border>
-
-                    <Border Grid.Column="1" BackgroundColor="#EFF6FF" Stroke="#DBEAFE" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="14">
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding NavigateToEvacuationCommand}" />
-                        </Border.GestureRecognizers>
-                        <VerticalStackLayout Spacing="6">
-                            <Label Text="Evacuation Info" TextColor="#1E40AF" FontSize="14" FontAttributes="Bold" />
-                            <Label Text="Find centers &amp; hotlines" TextColor="#1D4ED8" FontSize="11" />
-                        </VerticalStackLayout>
-                    </Border>
-                </Grid>
-
+        
                 <!-- Section: Assessment Breakdown Accordions -->
                 <VerticalStackLayout Spacing="14">
                     <Label Text="Readiness Breakdown" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
@@ -157,7 +135,8 @@
                 <VerticalStackLayout Spacing="12">
                     <Label Text="Assessment History" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
                     
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding History}" Spacing="8">
+                    <!-- Saved Assessment History List -->
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding History}" Spacing="8" IsVisible="{Binding HasHistory}">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate x:DataType="vm:AssessmentHistoryItem">
                                 <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="14">
@@ -172,6 +151,14 @@
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
+
+                    <!-- Empty State for New / Unassessed Users -->
+                    <Border StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 12" BackgroundColor="#FFFFFF" Padding="16" IsVisible="{Binding HasNoHistory}">
+                        <VerticalStackLayout Spacing="6" HorizontalOptions="Center" VerticalOptions="Center">
+                            <Label Text="No Assessment History Yet" TextColor="#475569" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" />
+                            <Label Text="Complete an interactive assessment to record your readiness score history." TextColor="#94A3B8" FontSize="12" HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                    </Border>
                 </VerticalStackLayout>
 
             </VerticalStackLayout>

@@ -52,12 +52,8 @@ public static class ARDepthOcclusionBridge
             if (!ARRenderGenerationBridge.IsCurrent(snapshot.Generation) ||
                 !snapshot.IsFresh)
             {
-                Clear();
-
-                lock (sync)
-                {
-                    return current;
-                }
+                Clear(snapshot.Version);
+                return DepthSnapshot.UnavailableWithVersion(snapshot.Version);
             }
 
             return snapshot;
@@ -93,14 +89,22 @@ public static class ARDepthOcclusionBridge
         ArgumentNullException.ThrowIfNull(rentedDepthMillimeters);
         ArgumentNullException.ThrowIfNull(viewToTextureUv);
 
-        if (!metadata.IsValid ||
+        if (!metadata.IsFresh(MaximumDepthAgeMilliseconds, Environment.TickCount64) ||
             !ARRenderGenerationBridge.TryAcceptCallback(
                 metadata.Generation,
                 "depth-publish") ||
             width <= 0 ||
             height <= 0 ||
-            rentedDepthMillimeters.Length < width * height ||
+            rentedDepthMillimeters.LongLength < (long)width * height ||
             viewToTextureUv.Length < 8 ||
+            !float.IsFinite(cameraX) || !float.IsFinite(cameraY) || !float.IsFinite(cameraZ) ||
+            !float.IsFinite(rotationX) || !float.IsFinite(rotationY) ||
+            !float.IsFinite(rotationZ) || !float.IsFinite(rotationW) ||
+            (double)rotationX * rotationX + (double)rotationY * rotationY +
+                (double)rotationZ * rotationZ + (double)rotationW * rotationW < 0.0001 ||
+            !float.IsFinite(principalPointX) || !float.IsFinite(principalPointY) ||
+            !float.IsFinite(groundWorldY) ||
+            (groundState.HasGroundReference && groundState.RenderGeneration != metadata.Generation) ||
             !float.IsFinite(focalLengthX) ||
             !float.IsFinite(focalLengthY) ||
             focalLengthX <= 0.0f ||
@@ -111,36 +115,37 @@ public static class ARDepthOcclusionBridge
             return false;
         }
 
-        long nextVersion = Interlocked.Increment(ref version);
+        for (int i = 0; i < 8; i++)
+            if (!float.IsFinite(viewToTextureUv[i])) return false;
+
         long now = Environment.TickCount64;
-
-        DepthSnapshot next = new(
-            nextVersion,
-            metadata,
-            now,
-            true,
-            width,
-            height,
-            rentedDepthMillimeters,
-            viewToTextureUv,
-            cameraX,
-            cameraY,
-            cameraZ,
-            rotationX,
-            rotationY,
-            rotationZ,
-            rotationW,
-            focalLengthX,
-            focalLengthY,
-            principalPointX,
-            principalPointY,
-            textureWidth,
-            textureHeight,
-            groundState,
-            groundWorldY);
-
         lock (sync)
         {
+            DepthSnapshot next = new(
+                ++version,
+                metadata,
+                metadata.AcquiredAtMonotonicMilliseconds,
+                true,
+                width,
+                height,
+                rentedDepthMillimeters,
+                viewToTextureUv,
+                cameraX,
+                cameraY,
+                cameraZ,
+                rotationX,
+                rotationY,
+                rotationZ,
+                rotationW,
+                focalLengthX,
+                focalLengthY,
+                principalPointX,
+                principalPointY,
+                textureWidth,
+                textureHeight,
+                groundState,
+                groundWorldY);
+
             RetireCurrentBufferLocked(now);
             current = next;
             rentedBufferCount++;
@@ -151,15 +156,15 @@ public static class ARDepthOcclusionBridge
         return true;
     }
 
-    public static void Clear()
+    public static void Clear(long? expectedVersion = null)
     {
-        long nextVersion = Interlocked.Increment(ref version);
         long now = Environment.TickCount64;
 
         lock (sync)
         {
+            if (expectedVersion.HasValue && current.Version != expectedVersion.Value) return;
             RetireCurrentBufferLocked(now);
-            current = DepthSnapshot.UnavailableWithVersion(nextVersion);
+            current = DepthSnapshot.UnavailableWithVersion(++version);
             ReclaimRetiredBuffersLocked(now);
             LogBufferMetricsIfNeededLocked(now);
         }

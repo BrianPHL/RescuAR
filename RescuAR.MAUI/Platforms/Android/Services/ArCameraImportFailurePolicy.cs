@@ -33,7 +33,9 @@ internal static class ArCameraImportFailurePolicy
                 return ArCameraImportFailureDisposition.TerminalUnsupportedFormat;
             }
 
-            if (current.Message.Contains(
+            if (current.Message.Contains("ARCORE_CAMERA_GPU_TIMEOUT", StringComparison.Ordinal) ||
+                current.Message.Contains("ARCORE_CAMERA_GPU_FAILURE", StringComparison.Ordinal) ||
+                current.Message.Contains(
                     "VK_ERROR_DEVICE_LOST",
                     StringComparison.OrdinalIgnoreCase))
             {

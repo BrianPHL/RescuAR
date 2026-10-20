@@ -39,6 +39,7 @@
 
 		<!-- Android ABI targets -->
 		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+		<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
 
 		<!--
 			Validated AR compatibility profile. Change one layer at a time and
@@ -52,10 +53,11 @@
 	</PropertyGroup>
 
 	<!--
-		Native Android build-tool paths.
+		Pinned Android native-rebuild tools.
 
 		Update these version folders only when your installed NDK or CMake
-		version changes.
+		version changes. Ordinary MAUI builds can use ANDROID_NDK_HOME for
+		their installed NDK without changing the native bridge toolchain.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
 		<NativeBridgeAbi>arm64-v8a</NativeBridgeAbi>
@@ -82,6 +84,7 @@
 		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' and '$(ANDROID_HOME)' != ''">$(ANDROID_HOME)</AndroidSdkDirectory>
 		<AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == ''">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
 
+		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == '' and '$(ANDROID_NDK_HOME)' != '' and '$(BuildNativeBridgeOnBuild)' != 'true'">$(ANDROID_NDK_HOME)</AndroidNdkDirectory>
 		<AndroidNdkDirectory Condition="'$(AndroidNdkDirectory)' == ''">$(AndroidSdkDirectory)\ndk\$(NativeBridgeNdkVersion)</AndroidNdkDirectory>
 		<AndroidCMakeDirectory Condition="'$(AndroidCMakeDirectory)' == ''">$(AndroidSdkDirectory)\cmake\$(NativeBridgeCMakeVersion)</AndroidCMakeDirectory>
 
@@ -102,7 +105,7 @@
 	<!-- MAUI resources -->
 	<ItemGroup>
 		<!-- App icon -->
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#FFFFFF" />
 
 		<!-- Splash screen -->
 		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0B132B" BaseSize="128,128" />
@@ -169,7 +172,16 @@
 		<_RescuArBuildProfileLine Include="correctiveBatch=$(RescuArCorrectiveBatch)" />
 		<_RescuArBuildProfileLine Include="validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 	</ItemGroup>
-	<Target Name="GenerateRescuArBuildProfileAsset" BeforeTargets="PrepareForBuild">
+	<Target Name="GenerateRescuArBuildProfileAsset" BeforeTargets="PrepareForBuild" DependsOnTargets="InitializeSourceControlInformation">
+		<PropertyGroup>
+			<RescuArSourceRevision Condition="'$(RescuArSourceRevision)' == 'unavailable' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</RescuArSourceRevision>
+		</PropertyGroup>
+		<ItemGroup>
+			<AssemblyMetadata Remove="RescuAR.SourceRevision" />
+			<AssemblyMetadata Include="RescuAR.SourceRevision" Value="$(RescuArSourceRevision)" />
+			<_RescuArBuildProfileLine Include="sourceRevision=$(RescuArSourceRevision)" />
+			<_RescuArBuildProfileLine Include="configuration=$(Configuration)" />
+		</ItemGroup>
 		<MakeDir Directories="$(IntermediateOutputPath)" />
 		<WriteLinesToFile File="$(IntermediateOutputPath)rescuar-build-profile.txt" Lines="@(_RescuArBuildProfileLine)" Overwrite="true" Encoding="UTF-8" />
 	</Target>

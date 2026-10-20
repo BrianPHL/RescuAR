@@ -12,57 +12,60 @@
     BackgroundColor="#F8FAFC">
 
     <Grid>
-        <!-- Virtualized Shelters CollectionView -->
-        <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
-            
-            <!-- Collection Header: Search, Category Picker & Section Title -->
-            <CollectionView.Header>
-                <VerticalStackLayout Padding="20,24,20,12" Spacing="20">
-                    
-                    <!-- Search Box & Dropdown Category Filter -->
-                    <VerticalStackLayout Spacing="10">
-                        <Label Text="Search &amp; Category Filter" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+        <!-- Virtualized Shelters CollectionView with Pull-To-Refresh -->
+        <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}" RefreshColor="#007E8A">
+            <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
+                
+                <!-- Collection Header: Search, Category Picker & Section Title -->
+                <CollectionView.Header>
+                    <VerticalStackLayout Padding="20,24,20,12" Spacing="20">
                         
-                        <!-- Search Input Box -->
-                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,4">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="44">
-                                <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.41L13.03,15.15C11.9,15.69 10.61,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5A4.5,4.5 0 0,0 5,9.5A4.5,4.5 0 0,0 9.5,14A4.5,4.5 0 0,0 14,9.5A4.5,4.5 0 0,0 9.5,5Z"
-                                      Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
-                                <Entry Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="Search shelter name, barangay, or officer..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
-                            </Grid>
-                        </Border>
+                        <!-- Search Box & Dropdown Category Filter -->
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Search &amp; Category Filter" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" />
+                            
+                            <!-- Search Input Box -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,4">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="44">
+                                    <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.41L13.03,15.15C11.9,15.69 10.61,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5A4.5,4.5 0 0,0 5,9.5A4.5,4.5 0 0,0 9.5,14A4.5,4.5 0 0,0 14,9.5A4.5,4.5 0 0,0 9.5,5Z"
+                                          Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1" Text="{Binding SearchText, Mode=TwoWay}" Placeholder="Search shelter name, barangay, or officer..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
 
-                        <!-- Dropdown Category Picker -->
-                        <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,0">
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="46">
-                                <Path Data="M10,18.17V14.41L19.5,4.91H4.5L10,10.41V18.17M21,3A1,1 0 0,1 22,4C22,4.27 21.89,4.53 21.71,4.71L14,12.42V20A1,1 0 0,1 13.42,20.83L9.42,22.83C8.86,23.11 8,22.7 8,22V12.42L0.29,4.71C0.11,4.53 0,4.27 0,4A1,1 0 0,1 1,3H21Z"
-                                      Fill="#007E8A" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
-                                <Picker Grid.Column="1"
-                                        ItemsSource="{Binding CategoryNames}"
-                                        SelectedItem="{Binding SelectedCategoryDropdown, Mode=TwoWay}"
-                                        Title="Select Classification..."
-                                        TitleColor="#94A3B8"
-                                        TextColor="#0F172A"
-                                        FontSize="14"
-                                        FontAttributes="Bold"
-                                        VerticalOptions="Center" />
-                                <Path Grid.Column="2" Data="M7,10L12,15L17,10H7Z" Fill="#64748B" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True" />
-                            </Grid>
-                        </Border>
-                    </VerticalStackLayout>
-
-                    <!-- Section Title & Map Toggle -->
-                    <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
-                        <VerticalStackLayout Grid.Column="0" Spacing="2">
-                            <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
-                            <Label Text="Nearest shelter is listed first" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                            <!-- Dropdown Category Picker -->
+                            <Border BackgroundColor="#FFFFFF" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,0">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center" HeightRequest="46">
+                                    <Path Data="M10,18.17V14.41L19.5,4.91H4.5L10,10.41V18.17M21,3A1,1 0 0,1 22,4C22,4.27 21.89,4.53 21.71,4.71L14,12.42V20A1,1 0 0,1 13.42,20.83L9.42,22.83C8.86,23.11 8,22.7 8,22V12.42L0.29,4.71C0.11,4.53 0,4.27 0,4A1,1 0 0,1 1,3H21Z"
+                                          Fill="#007E8A" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                                    <Picker Grid.Column="1"
+                                            ItemsSource="{Binding CategoryNames}"
+                                            SelectedItem="{Binding SelectedCategoryDropdown, Mode=TwoWay}"
+                                            Title="Select Classification..."
+                                            TitleColor="#94A3B8"
+                                            TextColor="#0F172A"
+                                            FontSize="14"
+                                            FontAttributes="Bold"
+                                            VerticalOptions="Center" />
+                                    <Path Grid.Column="2" Data="M7,10L12,15L17,10H7Z" Fill="#64748B" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True" />
+                                </Grid>
+                            </Border>
                         </VerticalStackLayout>
-                        <Button Grid.Column="1" Text="Interactive 2D Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
-                                Command="{Binding NavigateToMapCommand}" />
-                    </Grid>
 
-                </VerticalStackLayout>
-            </CollectionView.Header>
+
+                        <!-- Section Title & Map Toggle -->
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center" Margin="0,4,0,0">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                <Label Text="Evacuation Shelters" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                                <Label Text="{Binding ShelterSectionSubtitle}" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" />
+                                <Label Text="{Binding LocationStatusDescription}" TextColor="#475569" FontSize="12" />
+                            </VerticalStackLayout>
+                            <Button Grid.Column="1" Text="Interactive Map" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="12" HeightRequest="38" FontSize="13" FontAttributes="Bold" Padding="16,0"
+                                    Command="{Binding NavigateToMapCommand}" />
+                        </Grid>
+
+                    </VerticalStackLayout>
+                </CollectionView.Header>
 
             <!-- Card Template -->
             <CollectionView.ItemTemplate>
@@ -224,6 +227,7 @@
             </CollectionView.Footer>
 
         </CollectionView>
+        </RefreshView>
 
         <!-- FULL DETAILS OVERLAY POPUP DIALOG -->
         <Grid IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#660F172A" Padding="16,20">
@@ -269,11 +273,35 @@
                                 <Image Source="{Binding SelectedCenter.FacilityImageUrl}" Aspect="AspectFill" HeightRequest="140" />
                             </Border>
 
-                            <!-- Map Section -->
+                            <!-- Map Section with Enlarge Option -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Location Map Preview" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
-                                <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="130" BackgroundColor="#F1F5F9">
-                                    <mapsui:MapControl x:Name="PopupMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" HeightRequest="130" />
+                                <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                    <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
+                                        <Label Text="Location Map Preview" TextColor="#334155" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
+                                        <Label Text="• Location Pins" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                
+                                </Grid>
+
+                                <!-- Map Preview Container with Floating Maximize Button in Corner -->
+                                <Border StrokeShape="RoundRectangle 14" StrokeThickness="0" HeightRequest="140" BackgroundColor="#F1F5F9">
+                                    <Grid>
+                                        <mapsui:MapControl x:Name="PopupMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" HeightRequest="140" />
+
+                                        <!-- Floating Maximize Button in Top-Right corner of map -->
+                                        <Border HorizontalOptions="End" VerticalOptions="Start" Margin="8"
+                                                BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#E2E8F0" StrokeShape="RoundRectangle 8"
+                                                WidthRequest="32" HeightRequest="32" Padding="0">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding EnlargeMapCommand}" />
+                                            </Border.GestureRecognizers>
+                                            <Border.Shadow>
+                                                <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.12" />
+                                            </Border.Shadow>
+                                            <Path Data="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z"
+                                                  Fill="#0A8491" WidthRequest="14" HeightRequest="14" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Border>
+                                    </Grid>
                                 </Border>
                             </VerticalStackLayout>
 
@@ -393,6 +421,110 @@
                         </Grid>
                     </VerticalStackLayout>
 
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- FULL ENLARGED MAP VIEW OVERLAY DIALOG -->
+        <Grid IsVisible="{Binding IsEnlargedMapVisible}" BackgroundColor="#CC0F172A" Padding="14,24">
+            <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 24" Padding="0">
+                <Border.Shadow>
+                    <Shadow Brush="#0F172A" Offset="0,12" Radius="24" Opacity="0.25" />
+                </Border.Shadow>
+
+                <Grid RowDefinitions="Auto,*,Auto">
+                    <!-- Top Header Bar -->
+                    <Border Grid.Row="0" BackgroundColor="#FFFFFF" StrokeThickness="0" Padding="16,14">
+                        <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                            <VerticalStackLayout Grid.Column="0" Spacing="3">
+                                <Label Text="{Binding SelectedCenter.Name}" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" LineBreakMode="TailTruncation" MaxLines="1" />
+                                <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                    <Ellipse WidthRequest="7" HeightRequest="7" Fill="#0284C7" VerticalOptions="Center" />
+                                    <Label Text="Your Location" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                    <Label Text="•" TextColor="#94A3B8" FontSize="10" VerticalOptions="Center" />
+                                    <Ellipse WidthRequest="7" HeightRequest="7" Fill="#0A8491" VerticalOptions="Center" />
+                                    <Label Text="Evacuation Center" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedCenter.DetailedDistanceString, StringFormat='• {0}'}" TextColor="#64748B" FontSize="11" />
+                                </HorizontalStackLayout>
+                            </VerticalStackLayout>
+
+                            <!-- Close / Minimize Button -->
+                            <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="34" HeightRequest="34" HorizontalOptions="End" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding CloseEnlargedMapCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="✕" TextColor="#475569" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Map Control Container (Expands to take full available height) -->
+                    <Grid Grid.Row="1">
+                        <mapsui:MapControl x:Name="EnlargedMapControl" HorizontalOptions="Fill" VerticalOptions="Fill" />
+                        
+                        <!-- Floating Map Controls (Zoom In, Zoom Out, Recenter) -->
+                        <VerticalStackLayout HorizontalOptions="End" VerticalOptions="End" Margin="14" Spacing="8">
+                            <!-- Recenter Button -->
+                            <Border BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" WidthRequest="38" HeightRequest="38" Padding="0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnRecenterEnlargedMapTapped" />
+                                </Border.GestureRecognizers>
+                                <Border.Shadow>
+                                    <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.12" />
+                                </Border.Shadow>
+                                <Path Data="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M3.05,13H1V11H3.05C3.5,6.83 6.83,3.5 11,3.05V1H13V3.05C17.17,3.5 20.5,6.83 20.95,11H23V13H20.95C20.5,17.17 17.17,20.5 13,20.95V23H11V20.95C6.83,20.5 3.5,17.17 3.05,13M12,5A7,7 0 0,0 5,12A7,7 0 0,0 12,19A7,7 0 0,0 19,12A7,7 0 0,0 12,5Z"
+                                      Fill="#0A8491" WidthRequest="18" HeightRequest="18" Aspect="Uniform" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <!-- Zoom In -->
+                            <Border BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" WidthRequest="38" HeightRequest="38" Padding="0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnZoomInEnlargedMapTapped" />
+                                </Border.GestureRecognizers>
+                                <Border.Shadow>
+                                    <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.12" />
+                                </Border.Shadow>
+                                <Label Text="+" TextColor="#0F172A" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <!-- Zoom Out -->
+                            <Border BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 10" StrokeThickness="1" Stroke="#E2E8F0" WidthRequest="38" HeightRequest="38" Padding="0">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnZoomOutEnlargedMapTapped" />
+                                </Border.GestureRecognizers>
+                                <Border.Shadow>
+                                    <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.12" />
+                                </Border.Shadow>
+                                <Label Text="−" TextColor="#0F172A" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Bottom Floating Action Bar -->
+                    <Border Grid.Row="2" BackgroundColor="#FFFFFF" StrokeThickness="0" Padding="16,12">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <Button Grid.Column="0"
+                                    Text="Start AR Evacuation Guidance" 
+                                    TextColor="#FFFFFF" 
+                                    BackgroundColor="#0A8491" 
+                                    CornerRadius="12" 
+                                    HeightRequest="44" 
+                                    FontSize="14" 
+                                    FontAttributes="Bold" 
+                                    Command="{Binding StartARNavigationCommand}" />
+
+                            <Button Grid.Column="1"
+                                    Text="Minimize View" 
+                                    TextColor="#475569" 
+                                    BackgroundColor="#F1F5F9" 
+                                    CornerRadius="12" 
+                                    HeightRequest="44" 
+                                    FontSize="13" 
+                                    FontAttributes="Bold" 
+                                    Padding="16,0"
+                                    Command="{Binding CloseEnlargedMapCommand}" />
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>
