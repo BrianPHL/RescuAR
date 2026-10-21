@@ -2899,82 +2899,127 @@ namespace RescuAR.App.Views.Camera
 
                 GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
 
-                if (mapFromLocationLabel != null)
-                {
-                    if (latestGpsCoordinateForRouting.HasValue)
-                    {
-                        mapFromLocationLabel.Text = $"Your Location ({origin.Latitude:F4}, {origin.Longitude:F4})";
-                    }
-                    else
-                    {
-                        mapFromLocationLabel.Text = "Your Current Location (Auto-detected)";
-                    }
-                }
-
                 // Sort nearest shelters on top
                 _availableEvacuationCenters = shelters
                     .OrderBy(s => origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude)))
                     .ToList();
 
-                ApplyEvacuationCenterFilter(mapCenterSearchEntry?.Text);
+                if (_selectedShelterFor2DMap != null && mapDestinationSelectedLabel != null)
+                {
+                    double distM = origin.DistanceTo(new GeoCoordinate(_selectedShelterFor2DMap.Latitude, _selectedShelterFor2DMap.Longitude));
+                    string distText = distM < 1000 ? $"{distM:F0} m" : $"{distM / 1000.0:F1} km";
+                    mapDestinationSelectedLabel.Text = $"{_selectedShelterFor2DMap.Name} ({distText})";
+                    mapDestinationSelectedLabel.TextColor = Color.FromArgb("#0F172A");
+                }
             }
             catch { }
         }
 
-        private void ApplyEvacuationCenterFilter(string? searchText)
+        private void OnOpenCenterSearchOverlayClicked(object? sender, EventArgs e)
         {
-            if (mapDestinationPicker == null) return;
-
-            GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
-
-            var query = _availableEvacuationCenters.AsEnumerable();
-            if (!string.IsNullOrWhiteSpace(searchText))
+            if (mapCenterSearchOverlay != null)
             {
-                query = query.Where(s => s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
-            }
-
-            _filteredEvacuationCenters = query.ToList();
-
-            var displayList = _filteredEvacuationCenters.Select(s =>
-            {
-                double distM = origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude));
-                string distText = distM < 1000 ? $"{distM:F0} m" : $"{distM / 1000.0:F1} km";
-                return $"{s.Name} ({distText})";
-            }).ToList();
-
-            mapDestinationPicker.ItemsSource = displayList;
-
-            if (_selectedShelterFor2DMap != null)
-            {
-                int idx = _filteredEvacuationCenters.FindIndex(s => s.Name == _selectedShelterFor2DMap.Name);
-                if (idx >= 0) mapDestinationPicker.SelectedIndex = idx;
+                mapCenterSearchOverlay.IsVisible = true;
+                if (centerModalSearchEntry != null)
+                {
+                    centerModalSearchEntry.Text = string.Empty;
+                    centerModalSearchEntry.Focus();
+                }
+                PopulateCenterSearchResults(string.Empty);
             }
         }
 
-        private void OnMapCenterSearchTextChanged(object? sender, TextChangedEventArgs e)
+        private void OnCloseCenterSearchOverlayClicked(object? sender, EventArgs e)
         {
-            ApplyEvacuationCenterFilter(e.NewTextValue);
+            if (mapCenterSearchOverlay != null)
+            {
+                mapCenterSearchOverlay.IsVisible = false;
+            }
         }
 
-        private void OnMapDestinationPickerSelectedIndexChanged(object? sender, EventArgs e)
+        private void OnClearCenterSearchClicked(object? sender, EventArgs e)
         {
-            if (mapDestinationPicker == null) return;
-            int idx = mapDestinationPicker.SelectedIndex;
-            if (idx >= 0 && idx < _filteredEvacuationCenters.Count)
+            if (centerModalSearchEntry != null)
             {
-                _selectedShelterFor2DMap = _filteredEvacuationCenters[idx];
+                centerModalSearchEntry.Text = string.Empty;
             }
-            else
-            {
-                _selectedShelterFor2DMap = null;
-            }
+            PopulateCenterSearchResults(string.Empty);
+        }
 
-            RefreshCameraModuleDynamicUi();
+        private void OnCenterModalSearchTextChanged(object? sender, TextChangedEventArgs e)
+        {
+            PopulateCenterSearchResults(e.NewTextValue);
+        }
+
+        private void PopulateCenterSearchResults(string? filter)
+        {
+            try
+            {
+                var shelters = EvacuationCenterRepository.GetEvacuationCenters();
+                if (shelters == null || shelters.Count == 0) return;
+
+                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+
+                var query = shelters.AsEnumerable();
+                if (!string.IsNullOrWhiteSpace(filter))
+                {
+                    query = query.Where(s => s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
+                }
+
+                var results = query
+                    .Select(s =>
+                    {
+                        double distM = origin.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude));
+                        string distText = distM < 1000 ? $"{distM:F0} m" : $"{distM / 1000.0:F1} km";
+                        return new ShelterSearchDisplayItem
+                        {
+                            Center = s,
+                            DetailsText = "Designated Evacuation Shelter • Safe Zone",
+                            DistanceText = distText
+                        };
+                    })
+                    .OrderBy(i => origin.DistanceTo(new GeoCoordinate(i.Center.Latitude, i.Center.Longitude)))
+                    .ToList();
+
+                if (centerSearchResultsView != null)
+                {
+                    centerSearchResultsView.ItemsSource = results;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"PopulateCenterSearchResults error: {ex.Message}");
+            }
+        }
+
+        private void OnShelterSearchResultSelected(object? sender, TappedEventArgs e)
+        {
+            if (e.Parameter is ShelterSearchDisplayItem item && item.Center != null)
+            {
+                _selectedShelterFor2DMap = item.Center;
+                if (mapDestinationSelectedLabel != null)
+                {
+                    mapDestinationSelectedLabel.Text = $"{item.Center.Name} ({item.DistanceText})";
+                    mapDestinationSelectedLabel.TextColor = Color.FromArgb("#0F172A");
+                }
+
+                if (mapCenterSearchOverlay != null)
+                {
+                    mapCenterSearchOverlay.IsVisible = false;
+                }
+
+                RefreshCameraModuleDynamicUi();
+            }
         }
 
         private async void OnStartRoutingClicked(object? sender, EventArgs e)
         {
-            if (_selectedShelterFor2DMap == null) return;
+            if (_selectedShelterFor2DMap == null)
+            {
+                OnOpenCenterSearchOverlayClicked(sender, e);
+                return;
+            }
+
             await StartGuidanceToEvacuationCenterAsync(_selectedShelterFor2DMap);
         }
 
@@ -2982,6 +3027,26 @@ namespace RescuAR.App.Views.Camera
         {
             try
             {
+                // Show route calculating loading overlay immediately
+                if (routeCalculatingOverlay != null)
+                {
+                    routeCalculatingOverlay.IsVisible = true;
+                }
+
+                // Minimize search card and display compact Google Maps floating route overview bar
+                if (mapRouteSearchCard != null)
+                {
+                    mapRouteSearchCard.IsVisible = false;
+                }
+                if (mapRouteSummaryPanel != null)
+                {
+                    mapRouteSummaryPanel.IsVisible = true;
+                    if (mapRouteDestinationNameLabel != null)
+                        mapRouteDestinationNameLabel.Text = $"To: {center.Name}";
+                    if (mapRouteStatsLabel != null)
+                        mapRouteStatsLabel.Text = "Calculating safe route...";
+                }
+
                 arrivalRoadGraph ??= await NavigationDataBootstrap.GetRoadGraphAsync(CancellationToken.None);
 
                 GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
@@ -2991,7 +3056,10 @@ namespace RescuAR.App.Views.Camera
                 activeDestinationName = center.Name;
                 activeDestinationSafeZoneRadiusMeters = SafeZoneConfirmationService.ArrivalRadiusMeters;
 
-                // 1. Calculate route using GeoJSON pedestrian road graph
+                // Set destination bridge first so system, AR, and navigation services align
+                NavigationDestinationBridge.Set(center.Name, dest);
+
+                // 1. Calculate route using GeoJSON pedestrian road graph with A* and MLD
                 RouteResult? route = null;
                 try
                 {
@@ -3010,25 +3078,34 @@ namespace RescuAR.App.Views.Camera
 
                 if (route == null || route.Points == null || route.Points.Count < 2)
                 {
+                    if (routeCalculatingOverlay != null) routeCalculatingOverlay.IsVisible = false;
+                    if (mapRouteSearchCard != null) mapRouteSearchCard.IsVisible = true;
+                    if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
                     await DisplayAlert("Route Guidance", $"Unable to find pedestrian route to {center.Name}.", "OK");
                     return;
                 }
 
                 activeRoute = route;
 
-                // Set destination bridge so app system state is consistent
-                NavigationDestinationBridge.Set(center.Name, dest);
+                // Sync with AR: store pending route so AR routing reuses this exact geometry
+                pendingInitialRoute = route;
+                pendingInitialOrigin = origin;
+                pendingInitialDestination = dest;
+                pendingInitialRouteAt = DateTimeOffset.UtcNow;
 
-                // 2. Switch to 2D Map Guidance mode
-                OnMapGuidanceOptionClicked(this, EventArgs.Empty);
+                // Stop loading indicator
+                if (routeCalculatingOverlay != null)
+                {
+                    routeCalculatingOverlay.IsVisible = false;
+                }
 
-                // 3. Render 2D map with single route line, OSM tiles, and evacuation markers
+                // 2. Render 2D map with single route line, OSM tiles, and evacuation markers
                 InitializeOrRefresh2DCameraMap();
 
-                // 4. Populate and display turn-by-turn directions sheet
+                // 3. Populate and display route directions sheet
                 OpenRouteDirectionsSheet();
 
-                // 5. Update top direction banner
+                // 4. Update top direction banner & TTS
                 if (turnGuidancePanel != null)
                 {
                     turnGuidancePanel.IsVisible = true;
@@ -3091,9 +3168,14 @@ namespace RescuAR.App.Views.Camera
             }
             catch (Exception ex)
             {
+                if (routeCalculatingOverlay != null) routeCalculatingOverlay.IsVisible = false;
 #if ANDROID
                 Log.Warn("RescuAR-CameraUI", $"StartGuidanceToEvacuationCenter failed: {DiagnosticPrivacyPolicy.FormatException(ex)}");
 #endif
+            }
+            finally
+            {
+                if (routeCalculatingOverlay != null) routeCalculatingOverlay.IsVisible = false;
             }
         }
 
@@ -3184,12 +3266,22 @@ namespace RescuAR.App.Views.Camera
             activeDestinationCoordinate = null;
             activeDestinationName = string.Empty;
             _selectedShelterFor2DMap = null;
-            if (mapDestinationPicker != null) mapDestinationPicker.SelectedIndex = -1;
+
+            if (mapDestinationSelectedLabel != null)
+            {
+                mapDestinationSelectedLabel.Text = "Select Evacuation Center...";
+                mapDestinationSelectedLabel.TextColor = Color.FromArgb("#94A3B8");
+            }
 
             if (turnGuidancePanel != null) turnGuidancePanel.IsVisible = false;
             if (mapRouteSummaryPanel != null) mapRouteSummaryPanel.IsVisible = false;
             if (routeDirectionsSheet != null) routeDirectionsSheet.IsVisible = false;
             if (endNavigationButton != null) endNavigationButton.IsVisible = false;
+            if (mapRouteSearchCard != null && currentCameraModuleView == CameraModuleViewMode.Map2D)
+            {
+                mapRouteSearchCard.IsVisible = true;
+            }
+
             try { _ttsCancellation?.Cancel(); } catch { }
 
             if (currentCameraModuleView == CameraModuleViewMode.Map2D)
@@ -4242,6 +4334,26 @@ namespace RescuAR.App.Views.Camera
                 StartRouteProgress();
                 Log.Info(RoutingLogTag, "Geographic route accepted; GPS progress continues while AR heading recovers.");
 
+                Dispatcher.Dispatch(() =>
+                {
+                    if (routeCalculatingOverlay != null) routeCalculatingOverlay.IsVisible = false;
+                    InitializeOrRefresh2DCameraMap();
+                    PopulateRouteDirectionsSheet();
+                    if (mapRouteSummaryPanel != null)
+                    {
+                        mapRouteSummaryPanel.IsVisible = true;
+                        if (mapRouteDestinationNameLabel != null)
+                            mapRouteDestinationNameLabel.Text = $"To: {destination.Name}";
+                        if (mapRouteStatsLabel != null)
+                        {
+                            int walkMins = (int)Math.Max(1, Math.Round(route.TotalDistanceMeters / 80.0));
+                            mapRouteStatsLabel.Text = $"{route.TotalDistanceMeters:F0} m • ~{walkMins} mins walk";
+                        }
+                    }
+                    if (mapRouteSearchCard != null) mapRouteSearchCard.IsVisible = false;
+                    if (endNavigationButton != null) endNavigationButton.IsVisible = true;
+                });
+
                 ArHeadingAlignmentService.HeadingAlignmentResult?
                     headingAlignment = await headingWork;
                 if (!ReferenceEquals(activeRoute, route) ||
@@ -4337,6 +4449,10 @@ namespace RescuAR.App.Views.Camera
             {
                 routeRequestInProgress =
                     false;
+                Dispatcher.Dispatch(() =>
+                {
+                    if (routeCalculatingOverlay != null) routeCalculatingOverlay.IsVisible = false;
+                });
                 if (pageIsVisible && !safeZoneConfirmed &&
                     NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
                     nextDestination.Version != destination.Version)
@@ -11933,43 +12049,78 @@ namespace RescuAR.App.Views.Camera
                     }
 
                     var lineString = new NetTopologySuite.Geometries.LineString(coordinates.ToArray());
+
+                    // Outer dark blue casing line for clear Google Maps contrast
+                    var casingFeature = new Mapsui.Nts.GeometryFeature(lineString);
+                    casingFeature.Styles.Add(new Mapsui.Styles.VectorStyle
+                    {
+                        Line = new Mapsui.Styles.Pen
+                        {
+                            Color = new Mapsui.Styles.Color(21, 87, 176, 255), // Dark blue casing #1557B0
+                            Width = 9
+                        }
+                    });
+                    routeFeatures.Add(casingFeature);
+
+                    // Inner vibrant Google blue route line
                     var routeFeature = new Mapsui.Nts.GeometryFeature(lineString);
                     routeFeature.Styles.Add(new Mapsui.Styles.VectorStyle
                     {
                         Line = new Mapsui.Styles.Pen
                         {
-                            Color = new Mapsui.Styles.Color(10, 132, 145, 245), // Vibrant Brand Cyan #0A8491
-                            Width = 7
+                            Color = new Mapsui.Styles.Color(26, 115, 232, 255), // Google Maps Blue #1A73E8
+                            Width = 6
                         }
                     });
                     routeFeatures.Add(routeFeature);
 
-                    // Origin Pin (User Start Location)
+                    // Origin Pin (Google Maps user location: blue dot with white border)
                     var startCoord = coordinates.First();
-                    var startFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(startCoord));
-                    startFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
+                    var startHaloFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(startCoord));
+                    startHaloFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
                     {
                         SymbolType = Mapsui.Styles.SymbolType.Ellipse,
-                        SymbolScale = 1.0,
-                        Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(10, 132, 145)),
-                        Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2)
+                        SymbolScale = 1.3,
+                        Fill = new Mapsui.Styles.Brush(Mapsui.Styles.Color.White),
+                        Outline = new Mapsui.Styles.Pen(new Mapsui.Styles.Color(26, 115, 232), 2)
                     });
-                    markerFeatures.Add(startFeature);
+                    markerFeatures.Add(startHaloFeature);
 
-                    // Destination Pin (Target Evacuation Center)
+                    var startDotFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(startCoord));
+                    startDotFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
+                    {
+                        SymbolType = Mapsui.Styles.SymbolType.Ellipse,
+                        SymbolScale = 0.9,
+                        Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(26, 115, 232))
+                    });
+                    markerFeatures.Add(startDotFeature);
+
+                    // Destination Pin (Target Evacuation Center: vibrant Google Red marker with white border)
                     var endCoord = coordinates.Last();
                     var destFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(endCoord));
                     destFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
                     {
-                        SymbolType = Mapsui.Styles.SymbolType.Triangle,
-                        SymbolScale = 1.3,
-                        Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(220, 38, 38)), // Red Destination Pin
-                        Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2)
+                        SymbolType = Mapsui.Styles.SymbolType.Ellipse,
+                        SymbolScale = 1.4,
+                        Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(234, 67, 53)), // Google Red #EA4335
+                        Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2.5)
                     });
                     markerFeatures.Add(destFeature);
 
-                    centerLon = activeRoute.Points[0].Coordinate.Longitude;
-                    centerLat = activeRoute.Points[0].Coordinate.Latitude;
+                    // Auto-frame route bounding box so the complete journey is visible on screen
+                    double minX = coordinates.Min(c => c.X);
+                    double maxX = coordinates.Max(c => c.X);
+                    double minY = coordinates.Min(c => c.Y);
+                    double maxY = coordinates.Max(c => c.Y);
+
+                    double midX = (minX + maxX) / 2.0;
+                    double midY = (minY + maxY) / 2.0;
+                    double spanX = Math.Abs(maxX - minX);
+                    double spanY = Math.Abs(maxY - minY);
+                    double span = Math.Max(spanX, spanY);
+
+                    double resolution = Math.Clamp(span / 180.0, 1.2, 50.0);
+                    currentMap.Navigator.CenterOnAndZoomTo(new MPoint(midX, midY), resolution);
                 }
                 else if (latestGpsCoordinateForRouting.HasValue)
                 {
@@ -11987,25 +12138,8 @@ namespace RescuAR.App.Views.Camera
                     });
                     markerFeatures.Add(userFeature);
 
-                    // Auto-calculate Hybrid A* route if destination is known or standby
-                    if (activeDestinationCoordinate.HasValue)
-                    {
-                        var origin = latestGpsCoordinateForRouting.Value;
-                        var dest = activeDestinationCoordinate.Value;
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                var route = await _hybridRoutingService.FindOfflineRouteAsync(origin, dest);
-                                if (route != null && route.Points.Count >= 2)
-                                {
-                                    activeRoute = route;
-                                    MainThread.BeginInvokeOnMainThread(InitializeOrRefresh2DCameraMap);
-                                }
-                            }
-                            catch { }
-                        });
-                    }
+                    var (cx, cy) = Mapsui.Projections.SphericalMercator.FromLonLat(centerLon, centerLat);
+                    currentMap.Navigator.CenterOnAndZoomTo(new MPoint(cx, cy), 12);
                 }
 
                 if (routeFeatures.Count > 0)
@@ -12028,8 +12162,11 @@ namespace RescuAR.App.Views.Camera
                     currentMap.Layers.Add(markersLayer);
                 }
 
-                var (cx, cy) = Mapsui.Projections.SphericalMercator.FromLonLat(centerLon, centerLat);
-                currentMap.Navigator.CenterOnAndZoomTo(new MPoint(cx, cy), 34);
+                if (activeRoute == null && !latestGpsCoordinateForRouting.HasValue)
+                {
+                    var (cx, cy) = Mapsui.Projections.SphericalMercator.FromLonLat(centerLon, centerLat);
+                    currentMap.Navigator.CenterOnAndZoomTo(new MPoint(cx, cy), 14);
+                }
                 currentMap.Refresh();
                 CameraMapControl.Refresh();
             }
@@ -12442,5 +12579,14 @@ namespace RescuAR.App.Views.Camera
         public string IconSource { get; set; } = "lucide_arrow_up_teal.png";
         public Color BackgroundColor { get; set; } = Color.FromArgb("#E6F4F2");
     }
+
+    public class ShelterSearchDisplayItem
+    {
+        public RescuAR.App.Models.EvacuationCenter Center { get; set; } = null!;
+        public string Name => Center?.Name ?? string.Empty;
+        public string DetailsText { get; set; } = string.Empty;
+        public string DistanceText { get; set; } = string.Empty;
+    }
 }
+
 

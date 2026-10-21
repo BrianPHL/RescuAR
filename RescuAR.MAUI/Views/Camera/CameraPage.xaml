@@ -227,6 +227,7 @@
             </Grid>
 
             <!-- 2D Map Google Maps Style Route Search Card -->
+            <!-- 2D Map Google Maps Style Route Search Card -->
             <Border
                 x:Name="mapRouteSearchCard"
                 IsVisible="False"
@@ -263,94 +264,229 @@
                                   Fill="#DC2626" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="End" Margin="0,0,0,8" />
                         </Grid>
 
-                        <!-- FROM: Current Location -->
-                        <Border Grid.Row="0" Grid.Column="1" Padding="10,6" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                        <!-- FROM: Current Location (auto-detected) -->
+                        <Border Grid.Row="0" Grid.Column="1" Padding="10,7" BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
                             <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                                 <VerticalStackLayout Spacing="1" VerticalOptions="Center">
                                     <Label Text="FROM" TextColor="#64748B" FontSize="9" FontAttributes="Bold" />
-                                    <Label x:Name="mapFromLocationLabel" Text="Your Current Location" TextColor="#0F172A" FontSize="12.5" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                    <Label x:Name="mapFromLocationLabel" FontSize="12.5" LineBreakMode="TailTruncation">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="Current Location " TextColor="#0F172A" FontAttributes="Bold" />
+                                                <Span Text="(auto-detected)" TextColor="#94A3B8" FontSize="11" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
                                 </VerticalStackLayout>
                                 <Image Grid.Column="1" Source="lucide_navigation_teal.png" WidthRequest="15" HeightRequest="15" VerticalOptions="Center" />
                             </Grid>
                         </Border>
 
-                        <!-- TO: Search and Pick Evacuation Centers (Nearest on top) -->
-                        <Border Grid.Row="1" Grid.Column="1" Padding="10,4" BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8">
-                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                                <VerticalStackLayout Spacing="0" VerticalOptions="Center">
+                        <!-- TO: Stylized Destination Place Picker + Search Icon Button -->
+                        <Border Grid.Row="1" Grid.Column="1" Padding="10,6" BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" StrokeShape="RoundRectangle 8">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnOpenCenterSearchOverlayClicked" />
+                            </Border.GestureRecognizers>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" VerticalOptions="Center">
+                                <VerticalStackLayout Spacing="1" VerticalOptions="Center">
                                     <Label Text="TO (DESTINATION SHELTER)" TextColor="#64748B" FontSize="9" FontAttributes="Bold" />
-                                    <Picker x:Name="mapDestinationPicker"
-                                            Title="Select Evacuation Center..."
-                                            TitleColor="#94A3B8"
-                                            TextColor="#0F172A"
-                                            FontSize="12"
-                                            FontAttributes="Bold"
-                                            SelectedIndexChanged="OnMapDestinationPickerSelectedIndexChanged"
-                                            HeightRequest="36"
-                                            Margin="0,-2,0,0" />
+                                    <Label x:Name="mapDestinationSelectedLabel"
+                                           Text="Select Evacuation Center..."
+                                           TextColor="#94A3B8"
+                                           FontSize="12"
+                                           FontAttributes="Bold"
+                                           LineBreakMode="TailTruncation" />
                                 </VerticalStackLayout>
-                                <Image Grid.Column="1" Source="lucide_chevron_down_black.png" WidthRequest="15" HeightRequest="15" VerticalOptions="Center" InputTransparent="True" />
+
+                                <!-- Dedicated Search Icon Button -->
+                                <Border Grid.Column="1" WidthRequest="32" HeightRequest="32" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 16" VerticalOptions="Center">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnOpenCenterSearchOverlayClicked" />
+                                    </Border.GestureRecognizers>
+                                    <Path Data="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                          Fill="#0A8491" WidthRequest="15" HeightRequest="15" HorizontalOptions="Center" VerticalOptions="Center" />
+                                </Border>
+
+                                <Image Grid.Column="2" Source="lucide_chevron_down_black.png" WidthRequest="14" HeightRequest="14" VerticalOptions="Center" InputTransparent="True" />
                             </Grid>
                         </Border>
                     </Grid>
 
-                    <!-- Quick search filter -->
-                    <Border Grid.Row="2" Padding="8,2" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 8">
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" VerticalOptions="Center">
-                            <Image Source="lucide_search_gray.png" WidthRequest="14" HeightRequest="14" VerticalOptions="Center" />
-                            <Entry x:Name="mapCenterSearchEntry"
-                                   Placeholder="Type to filter evacuation centers..."
-                                   PlaceholderColor="#94A3B8"
-                                   TextColor="#0F172A"
-                                   FontSize="11.5"
-                                   TextChanged="OnMapCenterSearchTextChanged"
-                                   ClearButtonVisibility="WhileEditing"
-                                   HeightRequest="32"
-                                   VerticalOptions="Center" />
-                        </Grid>
-                    </Border>
+                    <!-- Start Routing Action Button inside card -->
+                    <Button
+                        Grid.Row="2"
+                        x:Name="mapCardStartRoutingButton"
+                        Text="Start Routing"
+                        ImageSource="lucide_navigation_white.png"
+                        ContentLayout="Left,8"
+                        TextColor="#FFFFFF"
+                        BackgroundColor="#0A8491"
+                        FontAttributes="Bold"
+                        FontSize="13.5"
+                        HeightRequest="42"
+                        CornerRadius="10"
+                        Clicked="OnStartRoutingClicked" />
                 </Grid>
             </Border>
 
-            <!-- 2D Map Route Overview Bar (Google Maps Style) -->
+            <!-- 2D Map Minimized Route Overview Bar (Google Maps Style) -->
             <Border
                 x:Name="mapRouteSummaryPanel"
                 IsVisible="False"
                 ZIndex="25"
                 Margin="12,12,12,0"
-                Padding="12,10"
+                Padding="12,8"
                 VerticalOptions="Start"
                 BackgroundColor="#FFFFFF"
                 Stroke="#CBD5E1"
                 StrokeThickness="1"
-                StrokeShape="RoundRectangle 12">
+                StrokeShape="RoundRectangle 14">
                 <Border.Shadow>
-                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.12" />
+                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.14" />
                 </Border.Shadow>
-                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-                    <!-- From: My Location -->
-                    <Grid ColumnDefinitions="20,*" ColumnSpacing="8" VerticalOptions="Center">
-                        <Ellipse WidthRequest="10" HeightRequest="10" Fill="#0A8491" VerticalOptions="Center" HorizontalOptions="Center" />
-                        <Label Grid.Column="1" Text="From: Your Location" TextColor="#475569" FontSize="11" FontAttributes="Bold" />
-                    </Grid>
-                    <!-- To: Destination Evacuation Center -->
-                    <Grid Grid.Row="1" ColumnDefinitions="20,*" ColumnSpacing="8" VerticalOptions="Center">
-                        <Path Data="M12,2A8,8 0 0,0 4,10C4,15.25 12,22 12,22C12,22 20,15.25 20,10A8,8 0 0,0 12,2M12,6A4,4 0 0,1 16,10A4,4 0 0,1 12,14A4,4 0 0,1 8,10A4,4 0 0,1 12,6Z"
-                              Fill="#DC2626" WidthRequest="14" HeightRequest="14" Aspect="Uniform" VerticalOptions="Center" HorizontalOptions="Center" />
-                        <Label x:Name="mapRouteDestinationNameLabel" Grid.Column="1" Text="To: Malanday Elementary School" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                    </Grid>
-                    <!-- Actions: Journey Buttons -->
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0" VerticalOptions="Center">
-                        <Label x:Name="mapRouteStatsLabel" Grid.Column="0" Text="877 m • ~11 mins walk" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
-                        
-                        <Button Grid.Column="1" Text="Directions" TextColor="#0A8491" BackgroundColor="#E0F2FE" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="10,0"
-                                Clicked="OnRouteDirectionsButtonClicked" />
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                    <!-- Route icon -->
+                    <Border WidthRequest="32" HeightRequest="32" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" VerticalOptions="Center">
+                        <Image Source="lucide_navigation_teal.png" WidthRequest="16" HeightRequest="16" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
 
-                        <Button Grid.Column="2" Text="Start Journey" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="12,0"
-                                Clicked="OnStartJourneyClicked" />
-                    </Grid>
+                    <!-- Destination & Distance/Time Stats -->
+                    <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                        <Label x:Name="mapRouteDestinationNameLabel" Text="To: Evacuation Center" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                        <Label x:Name="mapRouteStatsLabel" Text="Calculating route..." TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
+                    </VerticalStackLayout>
+
+                    <!-- Action buttons: Steps & Stop Guidance -->
+                    <HorizontalStackLayout Grid.Column="2" Spacing="6" VerticalOptions="Center">
+                        <Button Text="Steps" TextColor="#0A8491" BackgroundColor="#F0FDFA" BorderColor="#CCFBF1" BorderWidth="1" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="8,0"
+                                Clicked="OnRouteDirectionsButtonClicked" />
+                        <Button Text="Stop" TextColor="#FFFFFF" BackgroundColor="#DC2626" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="10,0"
+                                Clicked="OnEndNavigationClicked" />
+                    </HorizontalStackLayout>
                 </Grid>
             </Border>
+
+            <!-- 2D Map Google Maps-Style Evacuation Center Search Sheet / Modal -->
+            <Grid
+                x:Name="mapCenterSearchOverlay"
+                IsVisible="False"
+                ZIndex="75"
+                BackgroundColor="#80000000"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill">
+                <Border
+                    Margin="0,40,0,0"
+                    Padding="16,14"
+                    BackgroundColor="#FFFFFF"
+                    Stroke="#CBD5E1"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 20 20 0 0"
+                    VerticalOptions="FillAndExpand">
+                    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+                        <!-- Header bar with back button & Search Entry -->
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <Border WidthRequest="36" HeightRequest="36" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 18">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCloseCenterSearchOverlayClicked" />
+                                </Border.GestureRecognizers>
+                                <Image Source="lucide_chevron_left_black.png" WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+
+                            <!-- Google Maps style Search Bar -->
+                            <Border Grid.Column="1" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 22" Padding="12,0" HeightRequest="44">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                    <Path Data="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                          Fill="#64748B" WidthRequest="18" HeightRequest="18" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           x:Name="centerModalSearchEntry"
+                                           Placeholder="Search safe zones, schools, gyms..."
+                                           PlaceholderColor="#94A3B8"
+                                           TextColor="#0F172A"
+                                           FontSize="13.5"
+                                           TextChanged="OnCenterModalSearchTextChanged"
+                                           VerticalOptions="Center" />
+                                    <Border Grid.Column="2" WidthRequest="24" HeightRequest="24" BackgroundColor="Transparent" StrokeThickness="0">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnClearCenterSearchClicked" />
+                                        </Border.GestureRecognizers>
+                                        <Image Source="lucide_x_gray.png" WidthRequest="14" HeightRequest="14" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <Button Grid.Column="2" Text="Cancel" TextColor="#0A8491" FontSize="13" FontAttributes="Bold" BackgroundColor="Transparent" Padding="4,0"
+                                    Clicked="OnCloseCenterSearchOverlayClicked" />
+                        </Grid>
+
+                        <!-- Section Title -->
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
+                            <Label Text="Nearby Safe Havens &amp; Shelters" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
+                            <Label Grid.Column="1" Text="Sorted by proximity" TextColor="#94A3B8" FontSize="10.5" />
+                        </Grid>
+
+                        <!-- Search Results CollectionView -->
+                        <CollectionView
+                            Grid.Row="2"
+                            x:Name="centerSearchResultsView"
+                            SelectionMode="None">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="camera:ShelterSearchDisplayItem">
+                                    <Border Margin="0,4" Padding="12,10" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Tapped="OnShelterSearchResultSelected" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <Grid ColumnDefinitions="38,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                                            <!-- Safe Haven Icon -->
+                                            <Border WidthRequest="36" HeightRequest="36" BackgroundColor="#E6F4F2" StrokeThickness="0" StrokeShape="RoundRectangle 10" VerticalOptions="Center">
+                                                <Image Source="lucide_shield_check_white.png" WidthRequest="18" HeightRequest="18" HorizontalOptions="Center" VerticalOptions="Center" />
+                                            </Border>
+
+                                            <!-- Name & Info -->
+                                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="13.5" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                                <Label Text="{Binding DetailsText}" TextColor="#64748B" FontSize="11" LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
+
+                                            <!-- Distance & Badge -->
+                                            <Border Grid.Column="2" Padding="8,4" BackgroundColor="#F0FDFA" Stroke="#CCFBF1" StrokeThickness="1" StrokeShape="RoundRectangle 8" VerticalOptions="Center">
+                                                <Label Text="{Binding DistanceText}" TextColor="#0A8491" FontSize="11.5" FontAttributes="Bold" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- Route Calculation Loading Screen Overlay -->
+            <Grid
+                x:Name="routeCalculatingOverlay"
+                IsVisible="False"
+                ZIndex="90"
+                BackgroundColor="#66000000"
+                HorizontalOptions="Fill"
+                VerticalOptions="Fill">
+                <Border
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    Padding="24,20"
+                    BackgroundColor="#FFFFFF"
+                    Stroke="#CBD5E1"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 16"
+                    MaximumWidthRequest="320">
+                    <Border.Shadow>
+                        <Shadow Brush="#000000" Offset="0,6" Radius="16" Opacity="0.25" />
+                    </Border.Shadow>
+                    <VerticalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
+                        <ActivityIndicator IsRunning="True" Color="#0A8491" WidthRequest="42" HeightRequest="42" HorizontalOptions="Center" />
+                        <Label Text="Calculating Safe Route..." TextColor="#0F172A" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Label Text="Analyzing hazard-free roads &amp; pedestrian network" TextColor="#64748B" FontSize="11.5" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </Border>
+            </Grid>
 
             <!-- ========================================================= -->
             <!-- AR CAMERA STATUS + TURN GUIDANCE                          -->
@@ -1081,18 +1217,12 @@
 
                         <!-- Header -->
                         <Grid Grid.Row="1" ColumnDefinitions="*,30">
-                            <VerticalStackLayout Spacing="2">
+                            <VerticalStackLayout Spacing="2" VerticalOptions="Center">
                                 <Label
                                     x:Name="routeDirectionsTitleLabel"
-                                    Text="Turn-by-Turn Route Guidance"
+                                    Text="Route Guidance"
                                     TextColor="#111827"
                                     FontSize="15"
-                                    FontAttributes="Bold" />
-                                <Label
-                                    x:Name="routeDirectionsSubtitleLabel"
-                                    Text="Offline Fallback Directions"
-                                    TextColor="#0A8491"
-                                    FontSize="11"
                                     FontAttributes="Bold" />
                             </VerticalStackLayout>
                             <Border
