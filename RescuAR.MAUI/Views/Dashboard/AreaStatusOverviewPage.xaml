@@ -12,6 +12,10 @@
             Padding="20"
             Margin="0,0,0,4">
         
+        <Border.Shadow>
+            <Shadow Brush="#0F172A" Offset="0,6" Radius="12" Opacity="0.10" />
+        </Border.Shadow>
+
         <Border.GestureRecognizers>
             <TapGestureRecognizer NumberOfTapsRequired="2" Command="{Binding CycleRiskLevelCommand}" />
         </Border.GestureRecognizers>

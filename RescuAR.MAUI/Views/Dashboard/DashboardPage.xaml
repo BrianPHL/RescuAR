@@ -20,7 +20,10 @@
             <VerticalStackLayout Spacing="18" Padding="16">
                
                 <!-- 1. Hero User Greeting Banner Card -->
-                <Border BackgroundColor="#0A8491" StrokeThickness="0" StrokeShape="RoundRectangle 24" Padding="20">
+                <Border BackgroundColor="#0A8491" Stroke="#14B8A6" StrokeThickness="1" StrokeShape="RoundRectangle 24" Padding="20">
+                    <Border.Shadow>
+                        <Shadow Brush="#0A8491" Offset="0,10" Radius="20" Opacity="0.32" />
+                    </Border.Shadow>
                     <VerticalStackLayout Spacing="16">
                         <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                             <VerticalStackLayout Grid.Column="0" Spacing="2">
@@ -30,6 +33,9 @@
                            
                             <!-- Top Right USER Avatar Circle -->
                             <Border Grid.Column="1" StrokeShape="RoundRectangle 24" StrokeThickness="2" Stroke="#FFFFFF" WidthRequest="48" HeightRequest="48" BackgroundColor="#0A8491" VerticalOptions="Center">
+                                <Border.Shadow>
+                                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.2" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenProfileCommand}" />
                                 </Border.GestureRecognizers>
@@ -39,6 +45,9 @@
 
                         <!-- Emergency Status Banner Inside Hero -->
                         <Border BackgroundColor="#065F69" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                            <Border.Shadow>
+                                <Shadow Brush="#000000" Offset="0,2" Radius="4" Opacity="0.18" />
+                            </Border.Shadow>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Command="{Binding OpenAdvisoriesCommand}" />
                             </Border.GestureRecognizers>
@@ -63,6 +72,9 @@
                                             HeightRequest="180"
                                             HorizontalOptions="Fill"
                                             VerticalOptions="Fill">
+                                        <Border.Shadow>
+                                            <Shadow Brush="#0F172A" Offset="0,8" Radius="16" Opacity="0.22" />
+                                        </Border.Shadow>
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
                                                                  CommandParameter="{Binding .}" />
@@ -108,6 +120,9 @@
                                                         StrokeShape="RoundRectangle 12"
                                                         Padding="14,6"
                                                         HorizontalOptions="Start">
+                                                    <Border.Shadow>
+                                                        <Shadow Brush="#000000" Offset="0,3" Radius="6" Opacity="0.25" />
+                                                    </Border.Shadow>
                                                     <Border.GestureRecognizers>
                                                         <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
                                                                              CommandParameter="{Binding .}" />
@@ -141,6 +156,9 @@
                     <Label Text="Weather Forecast" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" Margin="2,0,0,0" />
                    
                     <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 14" Padding="12,8">
+                        <Border.Shadow>
+                            <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.06" />
+                        </Border.Shadow>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
                            
                             <!-- Essential Weather Data Text Info -->
@@ -164,6 +182,9 @@
 
                             <!-- Dynamic Weather Condition Vector Icon Badge -->
                             <Border Grid.Column="1" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 12" WidthRequest="44" HeightRequest="44" VerticalOptions="Center" HorizontalOptions="Center">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0284C7" Offset="0,2" Radius="6" Opacity="0.15" />
+                                </Border.Shadow>
                                 <Path Data="{Binding WeatherIconGeometry}"
                                       Fill="#0A8491"
                                       WidthRequest="22"
@@ -187,6 +208,9 @@
                         <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center">
                             <!-- Minimize / Expand Toggle Icon Button -->
                             <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="8,6" VerticalOptions="Center">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0F172A" Offset="0,1" Radius="3" Opacity="0.05" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding ToggleQuickActionsMinimizeCommand}" />
                                 </Border.GestureRecognizers>
@@ -198,6 +222,9 @@
 
                             <!-- Customize Button -->
                             <Border BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,6" VerticalOptions="Center">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0284C7" Offset="0,1" Radius="3" Opacity="0.1" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenCustomizeQuickActionsCommand}" />
                                 </Border.GestureRecognizers>
@@ -217,6 +244,9 @@
                             StrokeThickness="1"
                             StrokeShape="RoundRectangle 16"
                             Padding="6,10">
+                        <Border.Shadow>
+                            <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.06" />
+                        </Border.Shadow>
                         <VerticalStackLayout Spacing="6">
                             
                             <!-- 3x3 Grid CarouselView (Swipe horizontally to see remaining turned-on actions) -->
@@ -258,6 +288,9 @@
                                                                     HeightRequest="46"
                                                                     HorizontalOptions="Center"
                                                                     VerticalOptions="Center">
+                                                                <Border.Shadow>
+                                                                    <Shadow Brush="#0F172A" Offset="0,2" Radius="4" Opacity="0.06" />
+                                                                </Border.Shadow>
                                                                 <Image Source="{Binding IconImage}"
                                                                        WidthRequest="22"
                                                                        HeightRequest="22"
@@ -316,6 +349,9 @@
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                             <!-- 1. Flood Advisory Card (Warm Gold) -->
                             <Border Grid.Column="0" BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#92400E" Offset="0,4" Radius="10" Opacity="0.12" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenAdvisoriesCommand}" />
                                 </Border.GestureRecognizers>
@@ -338,6 +374,9 @@
                             </Border>
                             <!-- 2. Active Advisories Card (Warm Gold) -->
                             <Border Grid.Column="1" BackgroundColor="#FEF3C7" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="12" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#92400E" Offset="0,4" Radius="10" Opacity="0.12" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenAdvisoriesCommand}" />
                                 </Border.GestureRecognizers>
@@ -373,6 +412,9 @@
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                             <!-- 3. Preparation Progress Card (Soft Mint Green) -->
                             <Border Grid.Column="0" BackgroundColor="#DCFCE7" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="10,8" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#166534" Offset="0,4" Radius="10" Opacity="0.12" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenChecklistCommand}" />
                                 </Border.GestureRecognizers>
@@ -449,6 +491,9 @@
 
                             <!-- 4. Nearest Evacuation Center Card (Clean White Card) -->
                             <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="12" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.06" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenEvacuationCommand}" />
                                 </Border.GestureRecognizers>
@@ -484,6 +529,9 @@
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                             <!-- 5. Safety Circle Card (Clean White Card) -->
                             <Border Grid.Column="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="12" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.06" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenSafetyCircleCommand}" />
                                 </Border.GestureRecognizers>
@@ -520,6 +568,9 @@
 
                             <!-- 6. Recent Reports Nearby Card (Clean White Card) -->
                             <Border Grid.Column="1" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 16" Padding="12" HeightRequest="120">
+                                <Border.Shadow>
+                                    <Shadow Brush="#0F172A" Offset="0,4" Radius="10" Opacity="0.06" />
+                                </Border.Shadow>
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenReportsCommand}" />
                                 </Border.GestureRecognizers>
@@ -559,6 +610,9 @@
         <!-- Real-time Alert Pop-Up Modal Overlay -->
         <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
             <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,12" Radius="24" Opacity="0.30" />
+                </Border.Shadow>
                 <VerticalStackLayout Spacing="0">
                    
                     <!-- Pop-up Header Banner -->
@@ -606,6 +660,9 @@
         <!-- Customize Quick Actions Modal Overlay Sheet -->
         <Grid IsVisible="{Binding IsCustomizeQuickActionsVisible}" BackgroundColor="#90000000" Padding="16" HorizontalOptions="Fill" VerticalOptions="Fill">
             <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="420" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,12" Radius="24" Opacity="0.30" />
+                </Border.Shadow>
                 <VerticalStackLayout Spacing="0">
                     
                     <!-- Modal Header -->
