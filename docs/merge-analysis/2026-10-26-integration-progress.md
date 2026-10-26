@@ -3,8 +3,10 @@
 ## Active baseline
 
 - Integration branch: `codex/integrate-athena-modules`.
-- Dev baseline: `1b3db7e0512f95d554f91ccce36f7c8ad705ec6e` (includes the previously uncommitted MLD guidance/recovery work).
+- Initial dev baseline: `1b3db7e0512f95d554f91ccce36f7c8ad705ec6e` (includes the previously uncommitted MLD guidance/recovery work).
 - Athena source: `fa777da153a492268ace76162a80389e0d904534`.
+- Preserved dev source after approved refreshes: `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9`.
+- Source preparation and the final preservation audit are complete. See [the integration review](2026-10-26-integration-review.md) for the final keep/adapt/exclude matrix and outstanding manual checks.
 - The earlier analysis report/CSV/JSON retain their historical `982146b` comparison. This log and the integration-baseline manifest record the implementation baseline.
 - Completed batches are committed at the user's explicit request. No branch merge has been performed. Source branches and the original checkout are preserved.
 - User instruction: commit every finished change after its relevant checks pass. Continue asking before each overlapping behavior change.
@@ -493,6 +495,30 @@ Use a later requested device build and report actual results before behavior-dep
 4. With voice Off, enable/disable Vibration Feedback around a controlled nearby turn. Expect one short qualified turn pulse when supported, no pulses for uncertain guidance, and existing advisory vibration controlled by the same preference. Check manual/automatic siren and emergency-warning behavior remains as previously selected.
 5. Test unavailable speech/vibration support and a voice Off/On retry. Expect a clear written-directions fallback, no repeated provider-failure loop and no effect on route calculation, AR placement or arrival state.
 
-## Current next gate
+## Dev Admin preservation completed
 
-Ask about the later dev Admin RBAC/provisioning overlaps against Athena's Admin/audit/database/data changes, then complete the per-module preservation audit. Preserve approved dev `004ed20` behavior with the accepted Camera hooks and every accepted Athena module. **APK packaging is deferred by the user.** Commit every finished batch; no branch merge or push is authorized yet.
+- Code/source commit: `ebc6eaf feat(admin): retain dev role management and provisioning`.
+- The user selected dev access/navigation with newer administrator provisioning/first-login password setup; dev audit/session/database sources; and dev flood/scraper/data workflows. Athena's conflicting Admin/audit/database rewrite and experiment/data deletions stay aside.
+- Copied the exact **19-file** newer-dev delta. The complete `RescuAR.Admin` tracked tree equals dev `004ed20` (`036fd835eb4077192b04b4d9a48d39da3ba58cf4`). Existing role/view rules, report moderation/audit, SMS, flood workflows, R snapshots, georeferenced data and other Admin files remain dev's source.
+- **19/19 targeted local Node checks passed**. These are source assertions and mocked access responses, not deployed security or database tests. Lint completed with **0 errors and 85 retained dev warnings**. The Admin bundle build passed with its existing large-chunk warning; no unrelated cleanup or dependency upgrade was introduced.
+- The worktree has no installed Admin dependency directory and its npm shim could not resolve npm-cli. Checks reused already-installed original-checkout tools/dependencies. Manifest, lockfile and Vite config matched, and direct installed versions matched the lockfile. A temporary resolver built the **integration worktree's source**, with cache/output under ignored worktree artifacts. No packages were installed and no running browser/server was opened.
+- SQL, hosted function, patch and deployment scripts were copied as source only. None was executed. Actual deployed provisioning, password setup, role policies and audit/data behavior remain unverified.
+
+## Final archive and platform decisions completed
+
+- The final tree comparison found the root Admin archive reference differed: dev updates it, Athena deletes it, and the integration still had the older reference. The user explicitly selected **Remove the archive; retain the Admin application source**. Commit `1168758 chore(admin): remove tracked archive reference` removes only `RescuAR.Admin.zip` from this branch. This is the only approved dev-file deletion; Admin application source remains exact dev. No remote LFS object or Git history was deleted.
+- Final platform review added the speech-engine visibility intent in `22836e1 fix(android): declare navigation speech engine visibility`. Android 11+ target setup requires this entry according to [Microsoft's MAUI speech documentation](https://learn.microsoft.com/en-us/dotnet/maui/platform-integration/device-media/text-to-speech?view=net-maui-9.0). It adds only `queries/intent/action android.intent.action.TTS_SERVICE`; prior manifest text, AR requirements, permissions and Google Custom Tabs query are retained. XML and ARCore static checks passed. No APK packaging was run for this manifest-only addition.
+
+## Final preservation audit completed
+
+- Audited code checkpoint `22836e154ec0ecde8b165ebc5819324f52b29d0a` against dev `004ed20` and Athena `fa777da`; both source refs remain unchanged. The integration branch remains `codex/integrate-athena-modules` in its separate worktree.
+- All **861 dev tracked paths** are accounted for: **784 exact matches**, **76 approved adapted paths**, and **one explicit archive deletion**. The code checkpoint has **87 added paths**, including prior analysis records. There are **no unapproved changes, additions or deletions**. The new final review document adds one documentation path; it does not change application source.
+- The complete Admin tree matches dev. Shared AR, navigation/routing datasets, desktop/editor/content, workflows and build scripts retain dev source. The only shared routing implementation deviation is the approved missing-provenance guard. Native dependency/library checks restore exactly after reversing the approved splash and map-resource attributes.
+- All **32 non-Camera pinned AR/navigation/check/history paths** remain exact. Camera's original dev body restores exactly after reversing its **five** approved display/feedback/lifecycle hook sites. The regression runner restores to dev after reversing only the four parser fixes and the two added Camera/feedback entries; every original check remains.
+- Native manifest semantics match dev after removing only the approved contact/vibration permissions and speech-engine visibility entry. ARCore, Vulkan, camera/native requirements and Custom Tabs remain preserved. Prior APK byte sizes/modification times are unchanged after the user's deferral.
+- Current relevant local evidence: **415 policy checks**, **41 Camera presentation checks**, **32 navigation-feedback checks**, **19 Admin checks**, successful C#/XAML compile-only verification and successful Admin bundle build. Admin lint retains **85 warnings, 0 errors**. Earlier 864 AR checks are earlier unchanged-core evidence, not a fresh physical/device test. Counts are separate and overlapping historical runs are not added.
+- All finished code/source batches are committed. This final documentation commit records the decisions and limits. **No branch merge, push, deployment, database/function operation, running-app/browser/device check or final-branch APK was performed.** Earlier APK artifacts represent earlier checkpoints and do not contain this final source state.
+
+## Remaining user-controlled validation
+
+Source preparation is complete. Use the [integration review](2026-10-26-integration-review.md) and the per-batch manual cases above when a later build/backend check is requested. Report actual device/provider results before behavior-dependent fixes. **APK packaging remains deferred.** Any merge, push or deployment is a separate later user instruction.
