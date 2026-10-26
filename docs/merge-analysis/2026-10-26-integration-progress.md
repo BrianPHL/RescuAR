@@ -291,6 +291,35 @@ Use the preserved settings APK and report actual results before behavior-depende
 3. Check optional vibration on supported hardware, then disable it and repeat the controlled test. Device audio/notification permissions remain independent. Return from OS settings and expect current permission text rather than fabricated Granted values.
 4. Cache size currently may be 0 KB with clearing disabled. Once the map module is connected, verify that clearing removes only its replaceable copies, retains account/media/messages/pending/routing data, and reports any files that remain in use.
 
+## Earlier Circle membership gate (completed below)
+
+The user explicitly approved confirmed membership controls, account/server-scoped cached lists, and separate member Leave versus creator Rename/Delete.
+
+
+## Circle membership and management completed
+
+- Commit: `1550d13` — `feat(circle): add confirmed account-scoped membership`.
+- Adopted Athena's header, selected-Circle/invite card and Create/Join cards. The adapted list has Select, creator-only Rename/Delete and member-only Leave controls. Delete explicitly confirms removal for everyone; Leave describes removing only the current membership. Offline cards carry a persistent cached/unverified label even after copying an invite or selecting a saved Circle.
+- Replaced the settings page's mock/shared Profile view model with a dedicated management consumer. Its service captures the verified signed-in user, full normalized backend URL and session revision; checks again around waits/remote results, and ignores page/account changes. Delayed rename prompts and clipboard results cannot update a reopened view. Draft names/codes are cleared on page exit/account change.
+- Create and Join require actual cloud membership confirmation before appearing successful. No device/email-derived identity, global selected/joined-circle preference, fake local membership or legacy archive restoration was imported. An interrupted creator-membership insert is recovered by a later online Refresh; an unknown mutation result disables further changes until Refresh rather than retrying creation automatically.
+- Rename rechecks current creator status, uses a creator-filtered field update and reads back the matching name. Member Leave deletes only that account's membership and checks its absence. Creator Delete deletes only the creator-filtered Circle row and checks absence; it never loops through other members/messages with client-side deletes. Existing backend row permissions and foreign-key rules remain authoritative and unverified.
+- Membership metadata and selected ID use a separate atomic JSON store under `AppDataDirectory/circle-memberships-v1`, keyed by the full backend URL plus account ID and validated against its owner envelope. Previously confirmed lists may be viewed/selected offline with a label. Online refresh removes revoked entries and stale selection. Auth/access failures remain failures; network loss may display the saved list. Corrupt files are reported and preserved.
+- A confirmed cloud change with failed local storage is reported separately, without claiming offline persistence. The cache contains no messages, photos or pending uploads, and membership removal never deletes those files. This does not validate access controls on the existing legacy chat cache, which remains for its later consumer gate.
+- **227/227 targeted local checks passed**, including all prior 154 checks and 73 new membership/role/revocation/failure/account-race/cache cases. Filesystem fixtures are isolated under ignored worktree artifacts. Fake remote responses exercise policy; they are not live Supabase/RLS/cascade evidence.
+- Android build passed on the first attempt with **0 warnings, 0 errors**. ARCore declarations, XML/binding compilation, exact nine-file source boundary and `git diff --check` passed. All 14 accepted newer-dev AR source hashes and the shared regression runner remain unchanged; no redundant AR unit run was performed for those unchanged paths.
+- Accepted auth/profile/contact/settings behavior, the legacy Cloud Circle service, Circle map/chat consumers, models, DI, shell entries, native declarations and Admin source were not changed in this batch. The selected ID saved here is **not yet consumed by the legacy Circle map/chat**; that connection remains an explicit next stage. Group photos and member rosters have not been imported into this management screen yet.
+- Preserved APK: `artifacts/athena-integration/09-circle-membership/RescuAR-Batch09-CircleMembership.apk` (103,332,084 bytes; SHA-256 `91ecdd140e1dba0f506000b0cff786f4fe572777bf1eafbbce52288e0391f37f`).
+- No running app/browser/device, backend write, database/schema change, integration/E2E test, dependency installation, deployment, branch merge or push was performed. Live create/join/rename/leave/delete, RLS/foreign-key behavior and device lifecycle remain unverified.
+
+## Required manual Circle membership checks
+
+Use the preserved batch-9 APK and report actual results before behavior-dependent fixes:
+
+1. With two test accounts, create a Circle and join by code. Expect the exact confirmed Circle on each account's management screen. Test a rejected code and interrupted connection; neither should report local membership success. After an uncertain create, Refresh before retrying.
+2. Confirm creator Rename/Delete and member Leave controls. Expect the member to have no creator controls, Leave to preserve the other account's Circle, and Delete to warn that it affects everyone. If existing backend references/permissions reject an operation, expect a visible failure and retained last-confirmed list rather than a false local removal.
+3. Select a confirmed Circle, restart offline and reopen management. Expect that account/server's labelled saved list. Reconnect after membership revocation and Refresh; expect the revoked Circle/selection to disappear. Another account must start with its own confirmed or empty list; legacy archives must remain aside.
+4. Exit during a slow request or rename prompt, then change account and reopen. Expect old results/drafts to be ignored. Treat map/chat selection consistency, member positions and photos as pending until their consumer stages are completed.
+
 ## Current next gate
 
-Ask before reconciling Circle membership/create/join/selection and management behavior. Circle map/chat, shared offline display, deferred map/voice controls, Camera 2D and later Admin preservation remain separate stages. Keep the accepted dev AR source when reconciling Camera changes. Commit every finished batch; no branch merge or push is authorized yet.
+Ask before reconciling Circle map navigation, people/pins and location-sharing behavior. Then reconcile roster/group-photo/chat consumers, shared offline display, deferred map/voice controls, Camera 2D and later Admin preservation. Keep accepted dev AR source when reconciling Camera changes. Commit every finished batch; no branch merge or push is authorized yet.
