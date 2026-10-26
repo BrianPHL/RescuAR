@@ -14,6 +14,7 @@ public partial class AppSettingsViewModel : ObservableObject
     [ObservableProperty] private bool emergencySirenEnabled;
     [ObservableProperty] private bool hapticFeedbackEnabled;
     [ObservableProperty] private bool detailedOfflineMapEnabled = true;
+    [ObservableProperty] private bool navigationVoiceEnabled;
     [ObservableProperty] private bool canClearCache;
     [ObservableProperty] private string cacheSizeText = "Unavailable";
     [ObservableProperty] private string statusMessage = string.Empty;
@@ -27,6 +28,7 @@ public partial class AppSettingsViewModel : ObservableObject
             EmergencySirenEnabled = settings.Get(AppSetting.EmergencySiren);
             HapticFeedbackEnabled = settings.Get(AppSetting.HapticFeedback);
             DetailedOfflineMapEnabled = settings.Get(AppSetting.DetailedOfflineMap);
+            NavigationVoiceEnabled = settings.Get(AppSetting.NavigationVoice);
             StatusMessage = string.Empty;
         }
         catch { StatusMessage = "Saved settings could not be loaded. Changes may not be available until device storage is working."; }
@@ -38,6 +40,7 @@ public partial class AppSettingsViewModel : ObservableObject
     partial void OnEmergencySirenEnabledChanged(bool value) => Save(AppSetting.EmergencySiren, value);
     partial void OnHapticFeedbackEnabledChanged(bool value) => Save(AppSetting.HapticFeedback, value);
     partial void OnDetailedOfflineMapEnabledChanged(bool value) => Save(AppSetting.DetailedOfflineMap, value);
+    partial void OnNavigationVoiceEnabledChanged(bool value) => Save(AppSetting.NavigationVoice, value);
     private void Save(AppSetting setting, bool value)
     {
         if (initializing) return;
@@ -50,6 +53,7 @@ public partial class AppSettingsViewModel : ObservableObject
             else if (setting == AppSetting.EmergencySiren) EmergencySirenEnabled = previous;
             else if (setting == AppSetting.HapticFeedback) HapticFeedbackEnabled = previous;
             else if (setting == AppSetting.DetailedOfflineMap) DetailedOfflineMapEnabled = previous;
+            else if (setting == AppSetting.NavigationVoice) NavigationVoiceEnabled = previous;
             initializing = false;
             StatusMessage = "The setting was not saved. Please retry.";
         }

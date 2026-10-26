@@ -36,6 +36,17 @@ internal static class SettingsChecks
             "the detailed map switch persists independently of sound and haptic settings");
         check(!preferences.Values.ContainsKey("NavigationVoiceEnabled"), "the map setting leaves the later navigation-voice choice untouched");
 
+        check(!settings.Get(AppSetting.NavigationVoice), "spoken directions default Off while the shared preference is absent");
+        settings.Set(AppSetting.NavigationVoice, true);
+        check(new AppSettingsStore(preferences).Get(AppSetting.NavigationVoice) && !settings.Get(AppSetting.DetailedOfflineMap) && !settings.Get(AppSetting.HapticFeedback),
+            "the saved voice choice is shared across consumers without changing map or haptic choices");
+        preferences.FailWrites = true; int voiceChanges = changes.Count;
+        bool voiceFailed = false;
+        try { settings.Set(AppSetting.NavigationVoice, false); } catch (IOException) { voiceFailed = true; }
+        check(voiceFailed && settings.Get(AppSetting.NavigationVoice) && changes.Count == voiceChanges,
+            "a failed voice write retains the prior preference and cannot announce a successful mute");
+        preferences.FailWrites = false;
+
         int starts = 0, stops = 0; bool playable = true;
         var completions = new List<Action>();
         var alarm = new AlarmPlaybackController(completed => { starts++; completions.Add(completed); return playable; }, () => stops++);

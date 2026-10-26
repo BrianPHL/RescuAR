@@ -67,24 +67,27 @@ public partial class CameraPage
         map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 9.5546); // Browsing center only; never a user pin or route origin.
         CameraMapControl.Map = map;
         cameraMapDetails = new(message => { cameraMapCoverage = message; UpdateCameraMapCoverage(); });
+        InitializeNavigationFeedback();
     }
 
     private void ObserveCameraMapWindow()
     {
-        if (cameraMapWindow == Window) return;
+        if (cameraMapWindow == Window) { ObserveNavigationFeedbackSettings(); return; }
         UnobserveCameraMapWindow(); cameraMapWindow = Window; cameraMapWindowStopped = false;
+        ObserveNavigationFeedbackSettings();
         if (cameraMapWindow is null) return;
         cameraMapWindow.Stopped += CameraMapWindowStopped;
         cameraMapWindow.Resumed += CameraMapWindowResumed;
     }
     private void UnobserveCameraMapWindow()
     {
+        StopNavigationFeedback(unsubscribe: true);
         if (cameraMapWindow is null) return;
         cameraMapWindow.Stopped -= CameraMapWindowStopped;
         cameraMapWindow.Resumed -= CameraMapWindowResumed;
         cameraMapWindow = null;
     }
-    private void CameraMapWindowStopped(object? sender, EventArgs args) { cameraMapWindowStopped = true; StopCameraMapDisplay(); }
+    private void CameraMapWindowStopped(object? sender, EventArgs args) { cameraMapWindowStopped = true; StopCameraMapDisplay(); StopNavigationFeedback(unsubscribe: false); }
     private void CameraMapWindowResumed(object? sender, EventArgs args) { cameraMapWindowStopped = false; RefreshCameraMapPresentation(); }
 
     private void StopCameraMapDisplay()
@@ -133,6 +136,7 @@ public partial class CameraPage
     {
         if (cameraMapDetails is null) return;
         if (Dispatcher.IsDispatchRequired) { Dispatcher.Dispatch(RefreshCameraMapPresentation); return; }
+        RefreshNavigationFeedback();
         bool mapMode = currentCameraModuleView == CameraModuleViewMode.Map2D;
         SetCameraSubTab(subTabArButton, subTabArLabel, currentCameraModuleView == CameraModuleViewMode.ArCamera);
         SetCameraSubTab(subTabMapButton, subTabMapLabel, mapMode);

@@ -47,7 +47,7 @@
                 <VerticalStackLayout Spacing="4">
                     <Label Text="Profile/" FontSize="14" TextColor="#64748B" />
                     <Label Text="App Settings" FontSize="30" FontAttributes="Bold" TextColor="#0F172A" />
-                    <Label Text="Choose optional advisory feedback and review removable map-cache copies and device permissions." FontSize="13" TextColor="#64748B" />
+                    <Label Text="Choose navigation and advisory feedback, offline map detail and device permissions." FontSize="13" TextColor="#64748B" />
                 </VerticalStackLayout>
 
                 <!-- Section: Alerts & Notifications -->
@@ -80,12 +80,25 @@
                             <!-- Advisory vibration -->
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                 <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
-                                    <Label Text="Advisory vibration" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
-                                    <Label Text="Optional vibration for new advisories when supported by the device." FontSize="12" TextColor="#64748B" />
+                                    <Label Text="Vibration feedback" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <Label Text="Optional vibration for new advisories and qualified nearby turns when supported by the device." FontSize="12" TextColor="#64748B" />
                                 </VerticalStackLayout>
                                 <Switch Grid.Column="1" IsToggled="{Binding HapticFeedbackEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
                             </Grid>
                         </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Navigation" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" Margin="4,0" />
+                    <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                <Label Text="Spoken directions" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                <Label Text="Speak current qualified guidance in AR and 2D. Starts Off; the Camera speaker button uses the same saved choice." FontSize="12" TextColor="#64748B" />
+                            </VerticalStackLayout>
+                            <Switch Grid.Column="1" IsToggled="{Binding NavigationVoiceEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
+                        </Grid>
                     </Border>
                 </VerticalStackLayout>
 

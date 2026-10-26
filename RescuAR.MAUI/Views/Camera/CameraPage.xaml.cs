@@ -7420,6 +7420,7 @@ namespace RescuAR.App.Views.Camera
 
             turnDistanceLabel.Text =
                 $"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m to selected destination";
+            ObserveNavigationFeedbackGuidance(guidance);
         }
 
         private static bool IsDirectionalTurnInstruction(

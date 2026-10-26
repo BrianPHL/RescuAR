@@ -114,6 +114,7 @@
         <Grid
             Grid.Row="1"
             ZIndex="201"
+            RowDefinitions="Auto,Auto"
             BackgroundColor="#FFFFFF"
             Padding="12,4,12,6">
             <Border
@@ -122,7 +123,7 @@
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 10"
                 Padding="3">
-                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                <Grid ColumnDefinitions="*,*,*,Auto" ColumnSpacing="4">
                     <!-- Tab 1: AR Evacuation Guidance -->
                     <Border
                         x:Name="subTabArButton"
@@ -185,8 +186,18 @@
                             HorizontalOptions="Center"
                             VerticalOptions="Center" />
                     </Border>
+                    <Border x:Name="cameraVoiceGuidanceButton" Grid.Column="3" WidthRequest="38" HeightRequest="38"
+                            HorizontalOptions="Center" VerticalOptions="Center"
+                            BackgroundColor="#ECFFFFFF" Stroke="#F4FFFFFF" StrokeThickness="1" StrokeShape="RoundRectangle 7" IsVisible="False">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnVoiceGuidanceToggleClicked" />
+                        </Border.GestureRecognizers>
+                        <Image x:Name="cameraVoiceGuidanceIcon" Source="lucide_volume_x_black.png" InputTransparent="True"
+                               WidthRequest="23" HeightRequest="23" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
                 </Grid>
             </Border>
+            <Label x:Name="navigationFeedbackStatusLabel" Grid.Row="1" IsVisible="False" FontSize="11" TextColor="#B45309" Margin="4,4,4,0" />
         </Grid>
 
         <!-- ============================================================= -->
@@ -910,6 +921,8 @@
 
 
             </VerticalStackLayout>
+
+
 
             <Button
                 x:Name="exploreSafeZonesButton"
