@@ -5184,7 +5184,15 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.Map2D.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml",
     "tests/RescuAR.RegressionChecks/CameraMapChecks.cs",
-    "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj"
+    "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj",
+    "RescuAR.MAUI/Resources/Images/lucide_volume_2_black.svg",
+    "RescuAR.MAUI/Resources/Images/lucide_volume_x_black.svg",
+    "RescuAR.MAUI/Services/Navigation/MauiNavigationSpeech.cs",
+    "RescuAR.MAUI/Services/Navigation/NavigationFeedbackController.cs",
+    "RescuAR.MAUI/Services/Navigation/NavigationHapticGuidanceService.cs",
+    "RescuAR.MAUI/Services/Navigation/NavigationVoiceGuidanceService.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.NavigationFeedback.cs",
+    "tests/RescuAR.RegressionChecks/NavigationFeedbackChecks.cs"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
   "batch_0_1_validation": {
@@ -5288,6 +5296,12 @@
       "subject": "feat(camera): add Athena 2D map with shared navigation",
       "source": "fa777da153a492268ace76162a80389e0d904534",
       "adapted": true
+    },
+    {
+      "commit": "cffe91729b8d8e9fb50b45cd49736d7725b734fa",
+      "subject": "feat(navigation): add shared voice and turn feedback",
+      "source": "fa777da153a492268ace76162a80389e0d904534",
+      "adapted": true
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5305,7 +5319,6 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "navigation voice/turn feedback consumer choices at its module gate",
     "later dev Admin RBAC/provisioning preservation review",
     "final per-module preservation review; no branch merge or push authorized; APK packaging deferred"
   ],
@@ -5464,9 +5477,9 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs": {
       "oid": "436a5df8d5fb4858e323efdc540ed2c99271bfee",
       "source": "004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9",
-      "policy": "preserve approved dev 004ed20 body; only four user-approved Camera 2D display/lifecycle hook sites differ, exactly reversible to the original source oid",
-      "integrated_oid": "37d2c58a8553fd816bd382af4626c3152c48875e",
-      "approved_adaptation_commit": "505db02d07a38130006bba302df079c92ad33af1",
+      "policy": "preserve approved dev 004ed20 body; only five user-approved Camera display/feedback/lifecycle hook sites differ, exactly reversible to the original source oid",
+      "integrated_oid": "fb0fa01a508cadf231cd62d3d3913c0b23c94c1b",
+      "approved_adaptation_commit": "cffe91729b8d8e9fb50b45cd49736d7725b734fa",
       "source_restoration_hunks": [
         {
           "source": "            AttachNavigationUiDiagnostics();",
@@ -5483,6 +5496,10 @@
         {
           "source": "            pageIsVisible =\n                false;",
           "integrated": "            pageIsVisible =\n                false;\n            StopCameraMapDisplay();\n            UnobserveCameraMapWindow();"
+        },
+        {
+          "source": "            turnDistanceLabel.Text =\n                $\"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m to selected destination\";",
+          "integrated": "            turnDistanceLabel.Text =\n                $\"{Math.Max(0.0, guidance.RemainingRouteMeters):F0} m to selected destination\";\n            ObserveNavigationFeedbackGuidance(guidance);"
         }
       ]
     },
@@ -5862,9 +5879,34 @@
     "source_review_corrections": "two missing Athena icon names reused existing navigation arrows; final display refinement encoding change was restored and protected control comparison passed",
     "manual_validation": "deferred until a user-requested device build; no application/browser/device, integration/E2E test or new dependency installation",
     "pending": [
-      "navigation voice/turn vibration choices",
       "later Admin RBAC/provisioning review",
       "final preservation audit"
+    ]
+  },
+  "navigation_feedback_validation": {
+    "commit": "cffe91729b8d8e9fb50b45cd49736d7725b734fa",
+    "approved_decisions": [
+      "shared saved voice preference default Off across Camera/App Settings",
+      "qualified dev guidance with cancellation and dev-confirmed arrival only",
+      "shared existing haptic preference for advisory and qualified near-turn pulses"
+    ],
+    "feedback_checks_passed": 32,
+    "local_policy_checks_passed": 415,
+    "new_shared_preference_checks": 3,
+    "unit_scope": "fake speech/vibration providers, coordinator cancellation/serialization/deduplication and local saved-preference policies; no physical speech/vibration/app/device tests",
+    "android_compile": "final Compile target passed; 0 warnings; 0 errors",
+    "apk_packaging": "not performed; previous APK bytes/modification times unchanged",
+    "source_boundary": "16 approved code/icon/test paths; all 105 prior Camera named controls/subtrees preserved",
+    "dev_source_preservation": "32 reference files exact; original Camera body exactly restored by removing five approved display/feedback/lifecycle hook sites",
+    "settings_and_advisory_preservation": "existing map/settings bodies restored exactly after new consumer hooks/voice fields; global preference store, advisory handlers, sounds and manual siren unchanged",
+    "runner_preservation": "all existing checks, Camera entry and four parser fixes retained; new --navigation-feedback/default entry only",
+    "device_adapters": "MAUI text-to-speech with cancellation token; one 180ms pulse near a qualified turn; supported device/provider behavior requires later manual validation",
+    "scope": "AR speaks observed dev presentation; 2D uses dev geographic turn classifier and accepted progress; held/uncertain/off-route/replacing/emergency/Flood/hidden/stopped contexts cancel/suppress ordinary cues",
+    "arrival": "only dev safeZoneConfirmed publishes Arrival confirmed; a Destination ahead step is not confirmation; hiding the old turn card does not cancel the confirmed-arrival cue",
+    "manual_validation": "pending later user-requested device build",
+    "pending": [
+      "later Admin RBAC/provisioning overlap gate",
+      "final per-module preservation audit"
     ]
   }
 }
