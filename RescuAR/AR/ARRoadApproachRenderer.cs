@@ -17,6 +17,8 @@ public static class ARRoadApproachRenderer
     private static Transform3D[] parts = [];
     private static long graphicsGeneration;
     private static bool visible;
+    private static string? lastVisibilityReason;
+    public static bool IsVisible => visible;
     private static System.Numerics.Vector2 lastDirection;
 
     public static Entity Create(Material source)
@@ -80,10 +82,16 @@ public static class ARRoadApproachRenderer
                 }
             }
         }
-        if (visible != show)
+        string reason = show ? "qualified cue" : !floorPlausible ? "camera/floor height unqualified" :
+            diagnosticsActive ? "road diagnostic active" : !ARRenderGenerationBridge.IsCurrentGraphics(graphicsGeneration)
+                ? "graphics generation changed" : ARRoadApproachBridge.LastRenderReason;
+        if (visible != show || lastVisibilityReason != reason)
         {
             visible = show;
-            AndroidLog.Info("RescuAR-ARRoute", $"AR ROAD APPROACH ARROW: visible={show}, session={frame.Generation.SessionGeneration}.");
+            lastVisibilityReason = reason;
+            AndroidLog.Info("RescuAR-ARRoute", $"AR ROAD APPROACH ARROW: visible={show}, " +
+                $"reason='{reason}', session={frame.Generation.SessionGeneration}, epoch={frame.TrackingEpoch}, " +
+                $"world={frame.WorldFrame}, ground={frame.Anchor.ReferenceGeneration}.");
         }
         return show;
     }
@@ -97,6 +105,7 @@ public static class ARRoadApproachRenderer
         parts = [];
         graphicsGeneration = 0;
         visible = false;
+        lastVisibilityReason = null;
         ARRoadApproachBridge.Clear();
     }
 }

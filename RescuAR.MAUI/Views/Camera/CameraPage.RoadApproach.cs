@@ -273,26 +273,30 @@ public partial class CameraPage
             return false;
         }
         Vector2? registeredDirection = null;
-        if (cue.Owner.Role == "MAPPED_TARGET" && activeRoute is { } mappedRoute && GetTrackedRouteMotion() is { } motion)
+        Vector2? worldTarget = null;
+        if (cue.Owner.Role == "MAPPED_TARGET")
         {
-            if (!_routeDisplayProgressPolicy.TryGetRegisteredReference(mappedRoute, cue.Target,
+            if (activeRoute is not { } mappedRoute || GetTrackedRouteMotion() is not { } motion ||
+                !_routeDisplayProgressPolicy.TryGetRegisteredReference(mappedRoute, cue.Target,
                 DateTimeOffset.UtcNow, motion, out var targetReference))
             {
-                ARRoadApproachBridge.Clear();
+                ARRoadApproachBridge.Clear("mapped target registration unavailable");
                 return false;
             }
             var direction = new Vector2(targetReference.WorldX - frame.Pose.PositionX,
                 targetReference.WorldZ - frame.Pose.PositionZ);
             if (direction.LengthSquared() < 1) { ARRoadApproachBridge.Clear(); return false; }
             registeredDirection = direction;
+            worldTarget = new Vector2(targetReference.WorldX, targetReference.WorldZ);
             // The panel and the floor arrow use the same mapped target.
             var localDirection = Vector3.Transform(new Vector3(direction.X, 0, direction.Y),
                 Quaternion.Inverse(Quaternion.Normalize(rotation)));
             angle = Math.Atan2(localDirection.X, -localDirection.Z) * 180 / Math.PI;
         }
         ARRoadApproachBridge.SetOwnership(cue.Owner);
-        ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
-            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session, cue.Owner, registeredDirection);
+        if (!ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
+            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session, cue.Owner, registeredDirection, worldTarget))
+            return false;
         routeLocatorIcon.IsVisible = true;
         routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
         routeLocatorIcon.Rotation = angle;
