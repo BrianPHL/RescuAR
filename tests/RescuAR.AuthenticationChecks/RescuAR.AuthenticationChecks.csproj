@@ -10,5 +10,8 @@
     <Compile Include="../../RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs" Link="SecureSessionPersistence.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationIdentity.cs" Link="AuthenticationIdentity.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationFlowCoordinator.cs" Link="AuthenticationFlowCoordinator.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/ResidentProfileDraft.cs" Link="ResidentProfileDraft.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationFormPolicy.cs" Link="AuthenticationFormPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/PasswordRecoveryFlow.cs" Link="PasswordRecoveryFlow.cs" />
   </ItemGroup>
 </Project>

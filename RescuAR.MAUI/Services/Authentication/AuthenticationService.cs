@@ -12,7 +12,7 @@ namespace RescuAR.App.Services.Authentication
             await SupabaseService.Instance.GetClientAsync()
                 ?? throw new InvalidOperationException("Supabase is not configured.");
 
-        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber)
+        public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber, RescuAR.App.Models.ResidentProfileDraft? draft = null)
         {
             var client = await GetClientAsync();
 
@@ -37,6 +37,15 @@ namespace RescuAR.App.Services.Authentication
                 options.Data.Add("contact_number", contactNumber);
             }
 
+            if (draft is not null)
+            {
+                if (!string.Equals(draft.Email, email.Trim(), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Registration details do not match the email address.");
+                if (AuthenticationFormPolicy.ResidentError(draft, DateTime.Today) is { } error)
+                    throw new InvalidOperationException(error);
+                options.Data["address"] = draft.Address;
+                options.Data["birthday"] = draft.Birthday.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            }
             var session = await client.Auth.SignUp(email, password, options);
             return session
                 ?? throw new InvalidOperationException("Supabase sign-up completed without returning an authentication session.");
@@ -54,7 +63,7 @@ namespace RescuAR.App.Services.Authentication
         {
             var client = await GetClientAsync();
 
-            // Set up OAuth sign-in options. 
+            // Set up OAuth sign-in options.
             // In modern OAuth, PKCE flow is highly recommended for mobile clients.
             var options = new SignInOptions
             {

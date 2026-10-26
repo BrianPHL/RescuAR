@@ -67,6 +67,9 @@ namespace RescuAR.App.ViewModels.Authentication
         }
 
         [RelayCommand]
+        private void ToggleRememberMe() => IsRememberMe = !IsRememberMe;
+
+        [RelayCommand]
         private void TogglePasswordVisibility()
         {
             IsPasswordVisible = !IsPasswordVisible;
@@ -170,12 +173,6 @@ namespace RescuAR.App.ViewModels.Authentication
         }
 
         [RelayCommand]
-        private async Task ResetPassword()
-        {
-            if (AuthenticationNavigation.RootPage != null)
-            {
-                await AuthenticationNavigation.RootPage!.DisplayAlert("Reset Password", "Password reset instructions have been sent to your email.", "OK");
-            }
-        }
+        private void ResetPassword() => OpenResetPasswordModal();
     }
 }

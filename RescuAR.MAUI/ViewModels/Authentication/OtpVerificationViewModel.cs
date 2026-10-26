@@ -14,6 +14,7 @@ namespace RescuAR.App.ViewModels.Authentication
         private readonly IServiceProvider _serviceProvider;
         private readonly AuthenticationService _authService;
         private string? verifiedUserId;
+        public RescuAR.App.Models.ResidentProfileDraft? Draft { get; set; }
 
         [ObservableProperty]
         private string _email = string.Empty;
@@ -83,6 +84,8 @@ namespace RescuAR.App.ViewModels.Authentication
                         : await client.Auth.VerifyOTP(Email, OtpCode, Supabase.Gotrue.Constants.EmailOtpType.Signup);
                     if (session?.User != null && !string.IsNullOrWhiteSpace(session.AccessToken))
                     {
+                        if (Draft is not null && !string.Equals(session.User.Email, Draft.Email, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("The verified email does not match this registration.");
                         verifiedUserId = session.User.Id;
                         // Show Custom Styled Popup
                         IsSuccessPopupVisible = true;
