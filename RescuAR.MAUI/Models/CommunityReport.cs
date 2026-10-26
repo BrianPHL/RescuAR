@@ -150,6 +150,24 @@ public class CommunityReport : BaseModel
         _ => "M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 12,22A10,10 0 0,0 12,2Z"
     };
 
+    [JsonIgnore]
+    public string StatusBadgeColor => Status switch
+    {
+        "Approved" => "#DCFCE7",
+        "Resolved" => "#E0F2FE",
+        "Rejected" => "#FEE2E2",
+        _ => "#FEF3C7" // Pending
+    };
+
+    [JsonIgnore]
+    public string StatusTextColor => Status switch
+    {
+        "Approved" => "#15803D",
+        "Resolved" => "#0369A1",
+        "Rejected" => "#DC2626",
+        _ => "#B45309" // Pending
+    };
+
     public void NotifyCommentsChanged()
     {
     }
