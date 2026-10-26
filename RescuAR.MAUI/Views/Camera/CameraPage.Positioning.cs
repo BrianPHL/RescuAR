@@ -12,7 +12,11 @@ public partial class CameraPage
     // Physical display references are separate from monotonic trip progress.
     // They never become routing origins, device locations or arrival evidence.
     private VerifiedPosition? verifiedPosition;
+    private AcceptedGpsPosition? acceptedGpsPosition;
+    private sealed record AcceptedGpsPosition(RouteResult Route, LocationReading Reading,
+        RouteProgressTracker.RouteProgressUpdate Update);
     private readonly RoutePositionObservationPolicy positionObservationPolicy = new();
+    private readonly RouteProgressMotionPolicy progressMotionPolicy = new();
     private volatile bool positionObservationHeld;
     private readonly NavigationStabilityPolicy navigationStability;
     private RegisteredPublication? lastRegisteredPublication;
@@ -20,7 +24,7 @@ public partial class CameraPage
     private long lastRegistrationRejectionAt;
     private long routeWindowPublishedCount, routeWindowReusedCount;
     private sealed record RegisteredPublication(RouteResult Route, long BridgeVersion, long Ground,
-        long Epoch, long World, long Calibration, string Source, double Progress, double Window,
+        long Epoch, long World, long Calibration, string AlignmentSource, double Progress, double Window,
         GeoCoordinate Coordinate, float X, float Z);
 
     private void ResetGeographicPositionEvidence()
@@ -29,7 +33,10 @@ public partial class CameraPage
         {
             navigationStability.Reset();
             positionObservationPolicy.Reset();
+            progressMotionPolicy.Reset();
             verifiedPosition = null;
+            acceptedGpsPosition = null;
+            ResetVisualRoadAlignmentState();
             lastRegisteredPublication = null;
             lastRegistrationRejection = null;
             Interlocked.Exchange(ref routeWindowPublishedCount, 0);
@@ -124,11 +131,16 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             if (!ReferenceEquals(route, activeRoute) ||
-                (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
-                 reading.Timestamp <= previous.At) ||
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
-            // MLD may collect a coarse bootstrap reference before physical
-            // alignment. It cannot publish that GPS-only reference as a path.
+            // Geographic acceptance precedes AR readiness. Retain that exact
+            // accepted observation so heading completion can bind it once.
+            if (acceptedGpsPosition is null || !ReferenceEquals(acceptedGpsPosition.Route, route) ||
+                reading.Timestamp > acceptedGpsPosition.Reading.Timestamp)
+                acceptedGpsPosition = new(route, reading, update);
+            if (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
+                reading.Timestamp <= previous.At) return;
+            // A coarse MLD bootstrap reference still passes the shared heading,
+            // tracking and placement gates before publication.
             if (GetAcquisitionMotion(reading, requireTrustedHeading: !IsMldRoute(route)) is not { } motion) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
             var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.Timestamp,
@@ -168,14 +180,16 @@ public partial class CameraPage
                     DateTimeOffset.UtcNow, current, out var reference,
                     boundedRecovery ? navigationStability.Options.RecoveryLifetime : null))
                 return RejectRegisteredWindow("registration unsupported or context changed", source);
-            if (IsMldRoute(route) && reference.Source != "VISUAL_ROAD_CORRIDOR")
-                return RejectRegisteredWindow("physical road alignment pending", source);
             double window = GetCurrentArRouteVisualWindowMeters();
             if (reference.Source == "VISUAL_ROAD_CORRIDOR")
             {
                 window = _routeDisplayProgressPolicy.ConstrainVisualWindow(route, position.ProgressMeters, window);
                 if (window < .5) return RejectRegisteredWindow("visible corridor does not establish the upcoming turn", source);
             }
+            else if (IsMldRoute(route))
+                // Approximate GPS/compass placement must not extrapolate the
+                // full 40 m corridor. The nearby ribbon advances with AR motion.
+                window = Math.Min(window, RescuAR.Navigation.Projection.LocalArNavigationPolicy.ApproachWindowMeters);
             if (routeHazardBlocksGuidance)
             {
                 if (!ReferenceEquals(hazardPrefixRoute, route) || !double.IsFinite(hazardSafePrefixEnd))
@@ -187,7 +201,7 @@ public partial class CameraPage
                 cached.BridgeVersion == ARRouteBridge.Current.Version &&
                 cached.Ground == frame.Anchor.ReferenceGeneration && cached.Epoch == frame.TrackingEpoch &&
                 cached.World == frame.WorldFrame && cached.Calibration == _headingAlignmentService.CalibrationRevision &&
-                cached.Source == source && cached.Window == window &&
+                cached.AlignmentSource == reference.Source && cached.Window == window &&
                 Math.Abs(cached.Progress - position.ProgressMeters) < 3)
             {
                 var delta = RescuAR.Navigation.Projection.MapToArCoordinates.Rotate(
@@ -206,12 +220,14 @@ public partial class CameraPage
                 position.RoadCoordinate, activeMapToArYawDegrees,
                 frame.Pose.PositionX - frame.Anchor.PositionX, frame.Pose.PositionZ - frame.Anchor.PositionZ,
                 arWindowMeters: window, clearRouteOnFailure: false,
-                sourceSegmentIndex: position.SegmentIndex, userCoordinate: position.AlignmentCoordinate,
+                // The registered reference owns geometry. Keep observation
+                // diagnostics paired to the real fix, not the AR-derived estimate.
+                sourceSegmentIndex: position.SegmentIndex, userCoordinate: verified.Coordinate,
                 placement: CaptureRoutePlacement(frame, source, true, verified.At), registeredReference: reference,
                 maximumRegistrationAge: boundedRecovery ? navigationStability.Options.RecoveryLifetime : null);
             if (published) lastRegisteredPublication = new(route, ARRouteBridge.Current.Version,
                 frame.Anchor.ReferenceGeneration, frame.TrackingEpoch, frame.WorldFrame,
-                _headingAlignmentService.CalibrationRevision, source, position.ProgressMeters, window,
+                _headingAlignmentService.CalibrationRevision, reference.Source, position.ProgressMeters, window,
                 position.RoadCoordinate, reference.WorldX, reference.WorldZ);
             if (published)
             {
@@ -270,11 +286,29 @@ public partial class CameraPage
     {
         lock (routeProgressFusionSync)
         {
-            if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion &&
-                _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position))
-                return true;
+            position = default;
+            if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion)
+                return _routeDisplayProgressPolicy.TryGetNavigationDisplayPosition(route, DateTimeOffset.UtcNow,
+                    motion, lastGpsFusionAction, out position);
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
         }
+    }
+
+    private bool CanRetainMldMappedPreview(RouteResult route)
+    {
+        if (!IsMldRoute(route) || !ReferenceEquals(activeRoute, route) || !approachRoutePreviewPublished ||
+            safeZoneConfirmed || dynamicRerouteInProgress || positionObservationHeld ||
+            _gpsPdrFusionPolicy.IsRouteIdentitySuspended || routeHazardBlocksGuidance ||
+            verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route)) return false;
+        var preview = ARRouteBridge.Current;
+        var owner = MldGuidanceBridge.Current;
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        if (!preview.IsAvailable || preview.NavigationState.VisualKind != RouteVisualKind.RouteWindow ||
+            !owner.Active || owner.Trip != activeDestinationVersion || owner.Geometry != route.GeometryFingerprint ||
+            owner.Window != preview.Version || !preview.Placement.IsFor(frame)) return false;
+        var now = DateTimeOffset.UtcNow;
+        return RescuAR.Navigation.Projection.MappedRoutePreviewPolicy.CanRetain(verified.At, now,
+            HasSupportedRouteRegistration(route, preview.NavigationState.WindowStartProgressMeters, now));
     }
 
     private bool TryGetBoundedDisplayPosition(RouteResult route, double committedProgress,
@@ -298,7 +332,9 @@ public partial class CameraPage
 
             double dx = to.X - from.X, dz = to.Z - from.Z;
             if (dx * dx + dz * dz > MaximumPdrRouteWindowAdvanceMeters * MaximumPdrRouteWindowAdvanceMeters ||
-                !_routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position))
+                !(IsMldRoute(route) && HasVisualRoadRegistration()
+                    ? _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, now, to, out position)
+                    : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
                 return false;
             accuracy = previous.Accuracy;
             return true;
@@ -343,32 +379,34 @@ public partial class CameraPage
         RouteProgressTracker.ProgressSnapshot progress)
     {
         PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance;
-        DateTimeOffset observedAt;
         long trip = activeDestinationVersion;
+        string positionStatus;
         lock (routeProgressFusionSync)
         {
             if (route is null || !ReferenceEquals(route, activeRoute) ||
-                verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route) ||
-                DateTimeOffset.UtcNow - verified.At > TimeSpan.FromSeconds(5) ||
-                lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
-                _gpsPdrFusionPolicy.IsRouteIdentitySuspended || positionObservationHeld || lastOffRouteCandidate ||
-                !progress.HasProgress || progress.IsOffRoute ||
-                !_routeDisplayProgressPolicy.TryResolvePdr(route, progress.CommittedProgressMeters,
-                    DateTimeOffset.UtcNow, out var position)) return false;
-            observedAt = verified.At;
+                !progress.HasRoute || !progress.HasProgress ||
+                !RouteDisplayProgressPolicy.TryAtDistance(route, progress.CommittedProgressMeters,
+                    out var position)) return false;
             guidance = _turnGuidanceService.Evaluate(route, position.ProgressMeters, position.SegmentIndex)
                 with { RemainingRouteMeters = progress.RemainingMeters };
+            bool currentPosition = !progress.IsOffRoute && !lastOffRouteCandidate &&
+                !positionObservationHeld && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
+                lastGpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+                latestGpsTimestampForRouting is { } gpsAt && DateTimeOffset.UtcNow >= gpsAt &&
+                DateTimeOffset.UtcNow - gpsAt <= TimeSpan.FromSeconds(5);
+            positionStatus = currentPosition ? "Distance is approximate" : "Position uncertain · distance held";
         }
         if (!guidance.IsAvailable) return false;
         Dispatcher.Dispatch(() =>
         {
             if (!pageIsVisible || !ReferenceEquals(activeRoute, route) || activeDestinationVersion != trip ||
-                DateTimeOffset.UtcNow - observedAt > TimeSpan.FromSeconds(5) ||
-                positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 currentCameraModuleView != CameraModuleViewMode.ArCamera ||
+                dynamicRerouteInProgress || routeHazardBlocksGuidance ||
                 emergencyAdvisoryVisible || safeZoneConfirmed || lastSafeZoneDecision.IsCandidate) return;
             ApplyPrototypeTurnGuidance(guidance);
-            turnDistanceLabel.Text = $"{guidance.RemainingRouteMeters:F0} m remaining · AR placement recovering";
+            if (positionStatus.StartsWith("Position uncertain", StringComparison.Ordinal))
+                turnInstructionLabel.Text = "Confirming your route position — check the map";
+            turnDistanceLabel.Text = $"{guidance.RemainingRouteMeters:F0} m remaining · {positionStatus}";
             SetTurnGuidanceVisible(true);
         });
         return true;

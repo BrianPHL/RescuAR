@@ -257,6 +257,19 @@ public partial class CameraPage
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}/{lastSafeZoneDecision.RequiredConfirmationCount}; " +
             $"arrivalReason='{lastSafeZoneDecision.Reason}'.");
         var placed = route.Placement;
+        if (activeRoute is { } mldRoute && IsMldRoute(mldRoute))
+        {
+            var motion = GetTrackedRouteMotion(requireTrustedHeading: false);
+            AndroidLog.Info(RouteLogTag, $"NAV_ALIGNMENT trip={activeDestinationVersion}; route={route.Version}; " +
+                $"registration='{placed.AlignmentSource}'; visual={HasVisualRoadRegistration()}; " +
+                $"contradicted={(motion.HasValue && _routeDisplayProgressPolicy.HasContradictedVisualReference(mldRoute, motion.Value))}; " +
+                $"style=SOLID_RIBBON; width={ARRouteVisualPolicy.GetRouteWidthMeters(0):F2}m; " +
+                $"displaySource={(HasVisualRoadRegistration() ? "VISUAL_AR" : "ACCEPTED_GPS_PDR")}; rawGpsProgress={progress.RawProgressMeters:F2}; " +
+                $"gpsMovementAction={lastGpsFusionAction}; " +
+                $"acceptedProgress={progress.CommittedProgressMeters:F2}; displayProgress={route.NavigationState.WindowStartProgressMeters:F2}; " +
+                $"window={(route.Points.Count > 0 ? route.Points[^1].DistanceFromWindowStartMeters : 0):F2}; " +
+                $"session={frame.Generation.SessionGeneration}; epoch={frame.TrackingEpoch}; world={frame.WorldFrame}.");
+        }
         if (placed.IsAvailable && route.Points.Count >= 2)
         {
             var first = route.Points[0];

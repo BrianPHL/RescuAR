@@ -14,6 +14,15 @@ public partial class CameraPage
     private byte classifiedSurfaceLabel;
     private (long Session, long Epoch, long World) visualBootstrapFrame;
 
+    private void ResetVisualRoadAlignmentState()
+    {
+        visualBootstrapFrame = default;
+        classifiedSurfaceRoute = null;
+        classifiedSurfaceSegment = -1;
+        classifiedSurfaceLabel = 0;
+        ARRoadSurfaceBridge.SetRequest(null);
+    }
+
     private bool HasVisualRoadRegistration()
     {
         lock (routeProgressFusionSync)

@@ -13,11 +13,23 @@ public partial class CameraPage
     {
         if (activeRoute is not { } route || !IsMldRoute(route)) return confidence;
         bool visual = HasVisualRoadRegistration();
-        if (!visual)
+        bool contradicted = GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion &&
+            _routeDisplayProgressPolicy.HasContradictedVisualReference(route, motion);
+        // Road classification refines an already qualified GPS/AR placement.
+        // Its availability must not veto the shared navigation confidence decision.
+        if (contradicted)
             confidence = confidence with { AllowsRouteGeometry = false,
                 State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
-                DisplayMessage = ARRoadSurfaceBridge.Status };
-        else if (!routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
+                DisplayMessage = "Checking road alignment — follow text guidance" };
+        else if (!visual && positionObservationHeld)
+            confidence = confidence with { AllowsRouteGeometry = false,
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                DisplayMessage = "Position uncertain — follow text guidance" };
+        else if (!visual && confidence.AllowsRouteGeometry)
+            confidence = confidence with {
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
+                DisplayMessage = "Approximate route placement — GPS accuracy applies" };
+        else if (visual && !routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
             !_gpsPdrFusionPolicy.IsRouteIdentitySuspended && HasCurrentRouteHeading() &&
             frame.IsFresh && frame.IsTracking && frame.Anchor.IsVerified && window.Placement.IsFor(frame) &&
             window.Placement.AlignmentSource == "VISUAL_ROAD_CORRIDOR" &&
@@ -57,7 +69,6 @@ public partial class CameraPage
         if (MldPathIsCurrent()) return false;
         routeLocatorIcon.IsVisible = false;
         routeLocatorPanel.IsVisible = false;
-        SetTurnGuidanceVisible(false);
         return true;
     }
 
@@ -67,23 +78,39 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             bool visual = HasVisualRoadRegistration();
+            var accepted = acceptedGpsPosition;
             if (!ReferenceEquals(activeRoute, route) || safeZoneConfirmed || dynamicRerouteInProgress ||
                 positionObservationHeld && !visual || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
-                !visual && latestGpsTimestampForRouting != reading.Timestamp ||
+                !visual && (accepted is null || !ReferenceEquals(accepted.Route, route) ||
+                    accepted.Reading.Timestamp != reading.Timestamp || latestGpsTimestampForRouting != reading.Timestamp) ||
                 !visual &&
                     (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35))
                 return;
+            if (!visual && accepted is not null)
+            {
+                if (verifiedPosition?.Motion is { } old && GetTrackedRouteMotion() is { } current &&
+                    (!old.IsContinuousWith(current) ||
+                     Math.Abs(Math.IEEERemainder(old.YawDegrees - current.YawDegrees, 360)) >= .001))
+                {
+                    _routeDisplayProgressPolicy.Reset();
+                    verifiedPosition = null;
+                    lastRegisteredPublication = null;
+                }
+                ObserveVerifiedGpsPosition(route, accepted.Update, accepted.Reading);
+                if (verifiedPosition is not { } verified || verified.At != accepted.Reading.Timestamp) return;
+            }
             // Observe-only matching cannot add a second progress/arrival/entry
             // sample. Existing acquisition pairing, age, precision, registration,
             // access, tracking and hazard gates still own publication eligibility.
             var match = _routeProgressTracker.Update(reading.Coordinate, reading.AccuracyMeters,
                 reading.CourseDegrees, reading.SpeedMetersPerSecond, observeOnly: true);
-            if (!visual) ObserveVerifiedGpsPosition(route, match, reading);
+            long previousWindow = ARRouteBridge.Current.Version;
             bool published = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong
                 ? TryPublishMovingRouteWindow(route, match, reason)
                 : TryPublishApproachToRouteVisual(route, match, reason);
-            LogDetailedDebug(ProgressLogTag, $"NAV_MLD_READY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+            if (previousWindow != ARRouteBridge.Current.Version)
+                LogDetailedDebug(ProgressLogTag, $"NAV_MLD_READY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
                 $"trip={activeDestinationVersion}; published={published}; source='{reason}'.");
         }
     }

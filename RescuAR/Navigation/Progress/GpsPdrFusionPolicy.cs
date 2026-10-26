@@ -860,7 +860,8 @@ public sealed class GpsPdrFusionPolicy
         LimitForwardJump,
         KeepPdrLead,
         WaitForBackwardConfirmation,
-        CorrectBackward
+        CorrectBackward,
+        HoldStationary
     }
 
     public enum PdrConfidence

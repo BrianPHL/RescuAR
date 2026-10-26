@@ -39,6 +39,7 @@ internal static class ARHeadingRecoveryChecks
         {
             await CheckConvergence(check, generation);
             await CheckLateMagneticCapture(check, generation);
+            await CheckMagneticTripRecovery(check, generation);
             CheckObservationPairing(check, generation);
             await CheckProvenance(check);
             CheckTrace(check);
@@ -151,6 +152,71 @@ internal static class ARHeadingRecoveryChecks
         check(heading.TryGetIndependentObservation(C(0), null, out var observed) &&
             Math.Abs(observed.MapToArYawDegrees) < .1 && heading.LastResult?.MapToArYawDegrees == 160,
             "independent orientation measurement reports the conflict without rotating the route");
+    }
+
+    private static async Task CheckMagneticTripRecovery(Action<bool, string> check, ARRenderGenerationToken generation)
+    {
+        ARTrackingStateBridge.Clear(); ARCameraPoseBridge.Clear();
+        using var heading = new ArHeadingAlignmentService();
+        heading.ResetSessionCalibration("captured stop/change-destination fixture");
+        long timestamp = 500;
+        var pitch = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2);
+        void Sample(double yaw)
+        {
+            Pose(generation, ++timestamp);
+            OrientationSensor.Default.Emit(Quaternion.Concatenate(pitch,
+                Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)(-yaw * Math.PI / 180))));
+        }
+        async Task<ArHeadingAlignmentService.HeadingAlignmentResult?> Capture(double yaw)
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            Pose(generation, ++timestamp);
+            var pending = heading.CaptureAsync(C(0), null, cancellation.Token);
+            for (int i = 0; i < 12 && !pending.IsCompleted; i++)
+            { Sample(yaw); await Task.Delay(110); }
+            return await pending;
+        }
+        var first = await Capture(0);
+        check(first is { Source: "MAGNETIC", IsStable: true },
+            "restart: initial magnetic calibration is acquired from fresh stationary frames");
+        heading.PrepareForNavigationTrip();
+        check(heading.LastResult == first,
+            "restart: changing destinations preserves a healthy same-frame calibration");
+
+        ARTrackingStateBridge.PublishLifecycleTransition(generation.SessionGeneration, "Paused", "captured frame transition", false);
+        ARTrackingStateBridge.PublishLifecycleTransition(generation.SessionGeneration, "Running", "fixture resume", false);
+        Sample(39);
+        check(heading.LastResult is { IsStable: false, RequiresMovementValidation: true } && heading.CanCaptureAutomatically,
+            "restart: the captured 39-degree/new-epoch transition schedules fresh calibration rather than permanent walking recovery");
+        var recovered = await Capture(39);
+        check(recovered is { Source: "MAGNETIC", IsStable: true, RequiresMovementValidation: false } &&
+            Math.Abs(recovered.Value.MapToArYawDegrees - 39) < .1 &&
+            recovered.Value.TrackingEpoch == ARCameraPoseBridge.CurrentFrame.TrackingEpoch,
+            "restart: fresh stationary samples replace the old magnetic frame without reusing its yaw");
+
+        bool withheld = false;
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(0);
+            withheld |= heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2) await Task.Delay(1050);
+        }
+        check(withheld && heading.LastResult is { IsStable: false, RequiresMovementValidation: true } &&
+            !heading.CanCaptureAutomatically,
+            "restart: a same-frame magnetic contradiction still withholds guidance instead of rotating a live route");
+        heading.PrepareForNavigationTrip();
+        check(heading.LastResult is null && heading.CanCaptureAutomatically,
+            "restart: a new trip discards an already invalid magnetic cache");
+        var nextTrip = await Capture(0);
+        check(nextTrip is { IsStable: true, Source: "MAGNETIC" },
+            "restart: the new trip can acquire alignment without restarting the app or requiring movement");
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        check(heading.TryApplyMovementValidatedYaw(90, 3, 35, DateTimeOffset.UtcNow,
+            generation.SessionGeneration, frame.TrackingEpoch, frame.WorldFrame, out var partial),
+            "restart: stronger movement-recovery evidence can be retained");
+        heading.PrepareForNavigationTrip();
+        check(heading.LastResult == partial && !heading.CanCaptureAutomatically,
+            "restart: a destination change cannot override partial movement calibration with the compass");
     }
 
     private static void CheckObservationPairing(Action<bool, string> check, ARRenderGenerationToken generation)

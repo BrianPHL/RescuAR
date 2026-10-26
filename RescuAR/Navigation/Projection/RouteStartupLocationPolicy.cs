@@ -8,6 +8,7 @@ public static class RouteStartupLocationPolicy
 {
     public const double MaximumPlanningAccuracyMeters = 30.0;
     public const double MaximumPlacementAccuracyMeters = 20.0;
+    public static readonly TimeSpan MaximumCurrentFixAge = TimeSpan.FromSeconds(5);
 
     public static bool CanPlan(GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset timestamp, DateTimeOffset now, bool cached)
@@ -17,7 +18,7 @@ public static class RouteStartupLocationPolicy
             return false;
         TimeSpan age = now - timestamp;
         return age >= TimeSpan.FromSeconds(-2) &&
-            age <= TimeSpan.FromSeconds(cached ? 8 : 5);
+            age <= (cached ? TimeSpan.FromSeconds(8) : MaximumCurrentFixAge);
     }
 
     public static bool CanPlace(GeoCoordinate coordinate, double? accuracy,

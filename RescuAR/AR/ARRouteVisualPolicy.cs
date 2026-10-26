@@ -18,7 +18,9 @@ public static class ARRouteVisualPolicy
     public const float NearCameraOcclusionExemptionMeters =
         1.5f;
 
-    private const float RouteWidthMeters = 0.55f;
+    private const float RouteWidthMeters = 0.25f;
+
+    public static bool ShouldRenderForwardArrow(RouteVisualKind kind) => kind == RouteVisualKind.ApproachConnector;
 
     private const float OcclusionClearanceMeters =
         0.30f;

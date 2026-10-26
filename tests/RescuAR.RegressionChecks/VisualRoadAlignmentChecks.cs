@@ -135,8 +135,15 @@ internal static class VisualRoadAlignmentChecks
             var wrongCorridor = proof with { Line = road with { Center = road.Center + new Vector2(0, 2) } };
             check(!policy.RenewVisualSupport(route, wrongCorridor, frame3, C(0), Vector2.UnitX, at, motion) &&
                 !policy.TryGetVisualReference(route, C(0), at, motion, out _) &&
-                policy.RenewVisualSupport(route, proof, frame3, C(0), Vector2.UnitX, at, motion),
-                "local road: contradictory visible geometry withholds the retained reference without dragging it to another corridor");
+                policy.HasContradictedVisualReference(route, motion) &&
+                !policy.TryGetRegisteredReference(route, C(0), at, motion, out _) &&
+                !policy.TryGetRegisteredDisplayPosition(route, at, motion, out _),
+                "local road: contradictory physical geometry cannot silently fall back to approximate GPS placement");
+            check(policy.RenewVisualSupport(route, proof, frame3, C(0), Vector2.UnitX, at, motion) &&
+                !policy.HasContradictedVisualReference(route, motion) &&
+                policy.TryGetRegisteredReference(route, C(0), at, motion, out var restored) &&
+                restored.Source == "VISUAL_ROAD_CORRIDOR",
+                "local road: consistent physical evidence restores the same reference without moving it");
             ARRoadSurfaceBridge.SetRequest(owner with { Trip = 2 });
             ARRoadSurfaceBridge.Observe(owner, road, Frame(4, Quaternion.Identity), nowMono);
             check(ARRoadSurfaceBridge.Current is null,
