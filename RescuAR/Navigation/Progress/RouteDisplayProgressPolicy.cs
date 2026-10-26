@@ -13,6 +13,7 @@ public sealed class RouteDisplayProgressPolicy
 {
     public const int MaximumPdrGpsAgeSeconds = 8;
     public const double MaximumPdrAdvanceMeters = 8;
+    private readonly TimeSpan frameRequalificationLifetime;
     private RouteResult? currentRoute;
     private DateTimeOffset? observedAt;
     private DisplayPosition gpsPosition;
@@ -31,6 +32,17 @@ public sealed class RouteDisplayProgressPolicy
     public readonly record struct RegisteredReference(GeoCoordinate Coordinate, float WorldX, float WorldZ,
         long Session, long TrackingEpoch, long WorldFrame, double YawDegrees, DateTimeOffset RegisteredAt,
         DateTimeOffset SupportedAt);
+
+    public RouteDisplayProgressPolicy(NavigationStabilityOptions? options = null)
+    {
+        var configured = options ?? new NavigationStabilityOptions();
+        configured.Validate();
+        frameRequalificationLifetime = configured.RecoveryLifetime;
+    }
+
+    public DateTimeOffset? RegistrationSupportedAt => registrationSupportedAt;
+    public DateTimeOffset? PendingRegistrationAt => pendingRegistration?.At;
+    public double? RegistrationAccuracyMeters => registration?.Accuracy;
 
     public void Reset()
     {
@@ -111,16 +123,21 @@ public sealed class RouteDisplayProgressPolicy
         {
             // New frame/calibration ownership needs separate, spaced evidence.
             if (pendingRegistration is not { } seed || !SameFrame(seed.Motion, motion) ||
-                at - seed.At > TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) ||
+                // Three fresh fixes at the observed five-second cadence span
+                // ten seconds. The eight-second PDR display budget must not
+                // repeatedly erase this separate frame-recovery evidence.
+                at - seed.At > frameRequalificationLifetime ||
                 RegistrationResidual(seed, next) > seed.Accuracy + next.Accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
             {
                 pendingRegistration = next;
                 registrationConfirmations = 1;
-                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false);
+                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false,
+                    EvidenceCount: registrationConfirmations);
             }
             registrationConfirmations++;
             if (at - seed.At < TimeSpan.FromSeconds(3) || registrationConfirmations < 3)
-                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false);
+                return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false,
+                    EvidenceCount: registrationConfirmations);
             registration = next;
             pendingRegistration = null;
             registrationConfirmations = 0;
@@ -173,7 +190,8 @@ public sealed class RouteDisplayProgressPolicy
         // but cannot independently establish a different physical placement.
         if (innovation <= registration.Value.Accuracy + next.Accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
             registrationSupportedAt = at;
-        return LastRegistrationDecision = new("CORRECTION_AWAITING_EVIDENCE", innovation, false);
+        return LastRegistrationDecision = new("CORRECTION_AWAITING_EVIDENCE", innovation, false,
+            EvidenceCount: registrationConfirmations);
     }
 
     public bool TryGetRegisteredReference(RouteResult route, GeoCoordinate coordinate, DateTimeOffset now,

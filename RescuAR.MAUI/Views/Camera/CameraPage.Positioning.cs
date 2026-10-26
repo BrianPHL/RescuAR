@@ -135,7 +135,12 @@ public partial class CameraPage
                 $"NAV_REGISTRATION_DECISION sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
                 $"trip={activeDestinationVersion}; state={registration.State}; innovation={registration.InnovationMeters:F3}m; " +
                 $"correctionAR=({registration.CorrectionX:F3},{registration.CorrectionZ:F3}); evidence={registration.EvidenceCount}; " +
-                $"changed={registration.Changed}; session={motion.Session}; epoch={motion.TrackingEpoch}; world={motion.WorldFrame}.");
+                $"changed={registration.Changed}; " +
+                $"supportAgeMs={(DateTimeOffset.UtcNow - _routeDisplayProgressPolicy.RegistrationSupportedAt)?.TotalMilliseconds:F0}; " +
+                $"candidateAgeMs={(reading.Timestamp - _routeDisplayProgressPolicy.PendingRegistrationAt)?.TotalMilliseconds:F0}; " +
+                $"seedAccuracy={_routeDisplayProgressPolicy.RegistrationAccuracyMeters:F2}m; " +
+                $"requalificationLifetimeSec={navigationStability.Options.RecoveryLifetime.TotalSeconds:F1}; " +
+                $"session={motion.Session}; epoch={motion.TrackingEpoch}; world={motion.WorldFrame}.");
             positionObservationPolicy.Seed(route, reading.Coordinate, reading.AccuracyMeters,
                 reading.Timestamp, DateTimeOffset.UtcNow, motion);
             LogPositionInnovation(verifiedPosition, route, reading, motion);

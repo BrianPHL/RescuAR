@@ -192,6 +192,9 @@ public partial class CameraPage
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         var rendered = ARRouteRenderer.Visibility;
+        AndroidLog.Info(RouteLogTag, $"NAV_CUE trip={activeDestinationVersion}; " +
+            $"floorArrowEnabled={ARRoadApproachRenderer.IsVisible}; reason='{ARRoadApproachBridge.LastRenderReason}'; " +
+            $"cameraFrameNs={frame.FrameTimestamp}; epoch={frame.TrackingEpoch}; world={frame.WorldFrame}.");
         var calibration = _headingAlignmentService.LastResult;
         AndroidLog.Info(RouteLogTag, $"NAV_WORKLOAD trip={activeDestinationVersion}; " +
             $"publishedWindows={Interlocked.Read(ref routeWindowPublishedCount)}; reusedWindows={Interlocked.Read(ref routeWindowReusedCount)}; " +

@@ -94,7 +94,7 @@ namespace RescuAR.App.Views.Camera
         private readonly PdrHeadingSmoother _pdrHeadingSmoother;
         private readonly OffRouteReroutePolicy _offRouteReroutePolicy;
         private readonly RouteBacktrackingPolicy _routeBacktrackingPolicy = new();
-        private readonly RouteDisplayProgressPolicy _routeDisplayProgressPolicy = new();
+        private readonly RouteDisplayProgressPolicy _routeDisplayProgressPolicy;
         private RouteBacktrackingPolicy.BacktrackingDecision lastBacktrackingDecision;
         private readonly DestinationProximityReroutePolicy _destinationProximityReroutePolicy = new();
         private readonly RouteReplacementPolicy _routeReplacementPolicy;
@@ -582,6 +582,7 @@ namespace RescuAR.App.Views.Camera
         {
             InitializeComponent();
             navigationStability = new(stabilityOptions);
+            _routeDisplayProgressPolicy = new(navigationStability.Options);
             ConfigureCompactArLayout();
             ConfigureFloodSimulationSheet();
 
@@ -4815,12 +4816,15 @@ namespace RescuAR.App.Views.Camera
                             ObserveHeadingContinuity(reading);
                             // This observer must remain reachable even when the
                             // retained yaw rejects GPS-to-AR vector innovations.
-                            if (_headingAlignmentService.LastResult is { RequiresMovementValidation: true })
+                            bool headingObservedForRecovery =
+                                _headingAlignmentService.LastResult is { RequiresMovementValidation: true };
+                            bool headingPublishedForRecovery = false;
+                            if (headingObservedForRecovery)
                             {
                                 var recoveryMatch = _routeProgressTracker.Update(reading.Coordinate,
                                     reading.AccuracyMeters, reading.CourseDegrees, reading.SpeedMetersPerSecond,
                                     observeOnly: true);
-                                TryApplyHeadingRevalidation(route, reading, recoveryMatch);
+                                headingPublishedForRecovery = TryApplyHeadingRevalidation(route, reading, recoveryMatch);
                             }
                             RouteProgressTracker.ProgressSnapshot beforeGps =
                                 _routeProgressTracker.Current;
@@ -5048,7 +5052,7 @@ namespace RescuAR.App.Views.Camera
                                 !positionObservationHeld && UpdateRoadFollowingVisualModeFromAcceptedGps(
                                     fusedGps);
 
-                            publishedRealProgress =
+                            publishedRealProgress = headingObservedForRecovery ? headingPublishedForRecovery :
                                 !positionObservationHeld && TryApplyHeadingRevalidation(
                                     route,
                                     reading,

@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--multi-device-recovery"))
+{
+    ARMultiDeviceRecoveryChecks.Run(Check);
+    Console.WriteLine($"{passed} multi-device recovery regression checks passed.");
+    return;
+}
 if (args.Contains("--startup-scene"))
 {
     StartupSceneChecks.Run(Check);
@@ -34,6 +40,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance"))
     {
         ARRegistrationChecks.Run(Check);
+        ARMultiDeviceRecoveryChecks.Run(Check);
         NavigationStabilityChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
@@ -53,6 +60,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     return;
 }
 ARRegistrationChecks.Run(Check);
+ARMultiDeviceRecoveryChecks.Run(Check);
 NavigationStabilityChecks.Run(Check);
 await ARHeadingRecoveryChecks.RunAsync(Check);
 await ARRecoveryContinuityChecks.RunAsync(Check);
