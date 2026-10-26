@@ -245,4 +245,10 @@ public class DisasterAdvisory : BaseModel, INotifyPropertyChanged
         "warning" or "level 2" or "alarm" or "medium" or "moderate" => "M12,2L1,21H23L12,2M12,6L19.8,20H4.2L12,6M11,10V14H13V10H11M11,16V18H13V16H11Z",
         _ => "M12,3.25C12,3.25 6,10 6,14A6,6 0 0,0 12,20A6,6 0 0,0 18,14C18,10 12,3.25 12,3.25Z"
     };
+
+    [JsonIgnore]
+    public string AlertBadgeBackground => AlertBadgeBg;
+
+    [JsonIgnore]
+    public string AlertIconData => CategoryIconData;
 }
