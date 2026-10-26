@@ -21,7 +21,7 @@ public partial class CameraPage
     private long lastRegistrationRejectionAt;
     private long routeWindowPublishedCount, routeWindowReusedCount;
     private sealed record RegisteredPublication(RouteResult Route, long BridgeVersion, long Ground,
-        long Epoch, long World, long Calibration, string Source, double Progress, double Window,
+        long Epoch, long World, long Calibration, string AlignmentSource, double Progress, double Window,
         GeoCoordinate Coordinate, float X, float Z);
 
     private void ResetGeographicPositionEvidence()
@@ -176,6 +176,10 @@ public partial class CameraPage
                 window = _routeDisplayProgressPolicy.ConstrainVisualWindow(route, position.ProgressMeters, window);
                 if (window < .5) return RejectRegisteredWindow("visible corridor does not establish the upcoming turn", source);
             }
+            else if (IsMldRoute(route))
+                // Approximate GPS/compass placement must not extrapolate the
+                // full 40 m corridor. The nearby ribbon advances with AR motion.
+                window = Math.Min(window, RescuAR.Navigation.Projection.LocalArNavigationPolicy.ApproachWindowMeters);
             if (routeHazardBlocksGuidance)
             {
                 if (!ReferenceEquals(hazardPrefixRoute, route) || !double.IsFinite(hazardSafePrefixEnd))
@@ -187,7 +191,7 @@ public partial class CameraPage
                 cached.BridgeVersion == ARRouteBridge.Current.Version &&
                 cached.Ground == frame.Anchor.ReferenceGeneration && cached.Epoch == frame.TrackingEpoch &&
                 cached.World == frame.WorldFrame && cached.Calibration == _headingAlignmentService.CalibrationRevision &&
-                cached.Source == source && cached.Window == window &&
+                cached.AlignmentSource == reference.Source && cached.Window == window &&
                 Math.Abs(cached.Progress - position.ProgressMeters) < 3)
             {
                 var delta = RescuAR.Navigation.Projection.MapToArCoordinates.Rotate(
@@ -206,12 +210,14 @@ public partial class CameraPage
                 position.RoadCoordinate, activeMapToArYawDegrees,
                 frame.Pose.PositionX - frame.Anchor.PositionX, frame.Pose.PositionZ - frame.Anchor.PositionZ,
                 arWindowMeters: window, clearRouteOnFailure: false,
-                sourceSegmentIndex: position.SegmentIndex, userCoordinate: position.AlignmentCoordinate,
+                // The registered reference owns geometry. Keep observation
+                // diagnostics paired to the real fix, not the AR-derived estimate.
+                sourceSegmentIndex: position.SegmentIndex, userCoordinate: verified.Coordinate,
                 placement: CaptureRoutePlacement(frame, source, true, verified.At), registeredReference: reference,
                 maximumRegistrationAge: boundedRecovery ? navigationStability.Options.RecoveryLifetime : null);
             if (published) lastRegisteredPublication = new(route, ARRouteBridge.Current.Version,
                 frame.Anchor.ReferenceGeneration, frame.TrackingEpoch, frame.WorldFrame,
-                _headingAlignmentService.CalibrationRevision, source, position.ProgressMeters, window,
+                _headingAlignmentService.CalibrationRevision, reference.Source, position.ProgressMeters, window,
                 position.RoadCoordinate, reference.WorldX, reference.WorldZ);
             if (published)
             {
@@ -270,9 +276,10 @@ public partial class CameraPage
     {
         lock (routeProgressFusionSync)
         {
-            if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion &&
-                _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position))
-                return true;
+            position = default;
+            if (IsMldRoute(route))
+                return GetTrackedRouteMotion() is { } motion &&
+                    _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position);
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
         }
     }
@@ -298,7 +305,9 @@ public partial class CameraPage
 
             double dx = to.X - from.X, dz = to.Z - from.Z;
             if (dx * dx + dz * dz > MaximumPdrRouteWindowAdvanceMeters * MaximumPdrRouteWindowAdvanceMeters ||
-                !_routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position))
+                !(IsMldRoute(route)
+                    ? _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, now, to, out position)
+                    : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
                 return false;
             accuracy = previous.Accuracy;
             return true;

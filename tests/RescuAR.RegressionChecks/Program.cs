@@ -29,6 +29,13 @@ if (args.Contains("--navigation-pipeline"))
     Console.WriteLine($"{passed} navigation pipeline regression checks passed.");
     return;
 }
+if (args.Contains("--mld-ribbon"))
+{
+    MldRibbonRegistrationChecks.Run(Check);
+    VisualRoadAlignmentChecks.Run(Check);
+    Console.WriteLine($"{passed} MLD ribbon/registration regression checks passed.");
+    return;
+}
 if (args.Contains("--mld-guidance"))
 {
     await MldGuidanceOwnershipChecks.RunAsync(Check);
@@ -63,6 +70,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
         ARMultiDeviceRecoveryChecks.Run(Check);
         NavigationStabilityChecks.Run(Check);
         NavigationPipelineChecks.Run(Check);
+        MldRibbonRegistrationChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);

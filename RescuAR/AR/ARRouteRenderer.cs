@@ -31,7 +31,7 @@ public static class ARRouteRenderer
         "ARRouteRoot";
 
     private const float RouteWidthMeters =
-        0.55f;
+        0.25f;
 
     private const float RouteThicknessMeters =
         0.04f;
@@ -598,10 +598,11 @@ public static class ARRouteRenderer
             return false;
         }
 
-        bool arrowVisible =
-            ApplyForwardArrow(
-                arrows,
-                renderPoints);
+        bool arrowVisible = false;
+        if (ARRouteVisualPolicy.ShouldRenderForwardArrow(snapshot.NavigationState.VisualKind))
+            arrowVisible = ApplyForwardArrow(arrows, renderPoints);
+        else
+            DisableAll(arrows);
 
         activeSegmentCount =
             renderedSegmentCount;

@@ -28,7 +28,9 @@ public sealed class HeadingContinuityPolicy
         count++;
         if (count < 3 || at - firstAt < TimeSpan.FromSeconds(2)) return Verdict.Pending;
         double error = Error(retainedYaw, observedYaw);
-        return error <= 8 ? Verdict.SupportsRetained : error >= 45 ? Verdict.Contradicted : Verdict.Pending;
+        // Even 15 degrees projects about 2 m sideways over a 7.5 m local
+        // window. Repeated moderate disagreement must not remain trusted.
+        return error <= 8 ? Verdict.SupportsRetained : error >= 15 ? Verdict.Contradicted : Verdict.Pending;
     }
 
     private static double Error(double a, double b) => Math.Abs(Math.IEEERemainder(a - b, 360));

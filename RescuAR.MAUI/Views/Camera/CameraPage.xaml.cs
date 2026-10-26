@@ -1249,6 +1249,9 @@ namespace RescuAR.App.Views.Camera
                 _arCoreService.TrackingSnapshot;
 
             TryApplyVisualRoadAlignment();
+            if (pageIsVisible && currentCameraModuleView == CameraModuleViewMode.ArCamera &&
+                activeRoute is { } trackedRoute && IsMldRoute(trackedRoute))
+                TryPublishReadyMldWindow(trackedRoute, "MLD/REGISTERED-MOTION");
             bool headingTrusted = HasCurrentRouteHeading();
 
             ARCameraSpatialController.SetRouteHeadingTrust(

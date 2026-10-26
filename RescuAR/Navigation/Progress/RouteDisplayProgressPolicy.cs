@@ -207,6 +207,9 @@ public sealed class RouteDisplayProgressPolicy
     {
         reference = default;
         if (TryGetVisualReference(route, coordinate, now, current, out reference)) return true;
+        // Physical evidence contradicting this frame cannot be bypassed by
+        // falling back to the less precise GPS transform in that same frame.
+        if (HasContradictedVisualReference(route, current)) return false;
         if (!ReferenceEquals(currentRoute, route) || registration is not { } retained ||
             !coordinate.IsValid || !SameFrame(retained.Motion, current) || !registrationSupportedAt.HasValue ||
             now < registrationSupportedAt.Value ||
@@ -250,6 +253,10 @@ public sealed class RouteDisplayProgressPolicy
             visual.At, now, "VISUAL_ROAD_CORRIDOR");
         return float.IsFinite(reference.WorldX + reference.WorldZ);
     }
+
+    public bool HasContradictedVisualReference(RouteResult route, RouteBacktrackingPolicy.TrackedMotion motion) =>
+        ReferenceEquals(currentRoute, route) && visualRegistration is { Contradicted: true } visual &&
+        SameFrame(visual.Motion, motion);
 
     public bool RenewVisualSupport(RouteResult route, ARRoadSurfaceBridge.Observation proof,
         ARCameraPoseBridge.SpatialSnapshot frame, GeoCoordinate mapPoint, Vector2 mapDirection,
@@ -305,12 +312,32 @@ public sealed class RouteDisplayProgressPolicy
         position = default;
         if (visualRegistration is not { } visual ||
             !TryGetVisualReference(route, visual.Coordinate, now, motion, out _)) return false;
-        double dx = motion.X - visual.WorldPoint.X, dz = motion.Z - visual.WorldPoint.Y;
+        return TryProjectTrackedDisplayPosition(route, visual.Coordinate, visual.WorldPoint.X,
+            visual.WorldPoint.Y, motion, out position);
+    }
+
+    /// <summary>Slides the visible window using tracked displacement inside one
+    /// qualified transform. GPS may support registration, but cannot drag its geometry.</summary>
+    public bool TryGetRegisteredDisplayPosition(RouteResult route, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion motion, out DisplayPosition position)
+    {
+        position = default;
+        if (route.Points.Count < 2 || !TryGetRegisteredReference(route, route.Points[0].Coordinate,
+            now, motion, out var reference)) return false;
+        return TryProjectTrackedDisplayPosition(route, reference.Coordinate, reference.WorldX,
+            reference.WorldZ, motion, out position);
+    }
+
+    private static bool TryProjectTrackedDisplayPosition(RouteResult route, GeoCoordinate mapPoint,
+        float worldX, float worldZ, RouteBacktrackingPolicy.TrackedMotion motion, out DisplayPosition position)
+    {
+        position = default;
+        double dx = motion.X - worldX, dz = motion.Z - worldZ;
         double angle = motion.YawDegrees * Math.PI / 180;
         double east = dx * Math.Cos(angle) - dz * Math.Sin(angle);
         double north = -dx * Math.Sin(angle) - dz * Math.Cos(angle);
-        var estimated = new GeoCoordinate(visual.Coordinate.Latitude + north / 6371008.8 * 180 / Math.PI,
-            visual.Coordinate.Longitude + east / (6371008.8 * Math.Cos(visual.Coordinate.Latitude * Math.PI / 180)) * 180 / Math.PI);
+        var estimated = new GeoCoordinate(mapPoint.Latitude + north / 6371008.8 * 180 / Math.PI,
+            mapPoint.Longitude + east / (6371008.8 * Math.Cos(mapPoint.Latitude * Math.PI / 180)) * 180 / Math.PI);
         double best = double.PositiveInfinity, progress = 0;
         for (int i = 0; i < route.Points.Count - 1; i++)
         {
