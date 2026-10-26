@@ -9,24 +9,43 @@ export default function AuthWrapper() {
   const [loading, setLoading] = useState(true);
   const [accessAttempt, setAccessAttempt] = useState(0);
   const [accessState, setAccessState] = useState(null);
+  const [signOutError, setSignOutError] = useState('');
   const userId = session?.user?.id;
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    let active = true;
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.error('Unable to restore administrator session:', error);
+          setSession(null);
+        } else {
+          setSession(data?.session ?? null);
+        }
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('Unable to restore administrator session:', error);
+        setLoading(false);
+      });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
       setSession(session);
       if (!session) setAccessState(null);
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -49,6 +68,19 @@ export default function AuthWrapper() {
     return () => { cancelled = true; };
   }, [userId, accessAttempt]);
 
+  const handleSignOut = async () => {
+    setSignOutError('');
+    try {
+      // Sign out on this device only. A global token-revocation call can fail
+      // with 403 and should not be necessary for an ordinary UI sign-out.
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+    } catch (error) {
+      console.error('Unable to sign out:', error);
+      setSignOutError('Sign out failed. Please retry.');
+    }
+  };
+
   if (loading) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>;
   }
@@ -70,8 +102,9 @@ export default function AuthWrapper() {
         </p>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button type="button" className="banner-action-btn secondary" onClick={() => setAccessAttempt((attempt) => attempt + 1)}>Retry</button>
-          <button type="button" className="banner-action-btn secondary" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          <button type="button" className="banner-action-btn secondary" onClick={handleSignOut}>Sign out</button>
         </div>
+        {signOutError && <p role="alert">{signOutError}</p>}
       </section>
     );
   }

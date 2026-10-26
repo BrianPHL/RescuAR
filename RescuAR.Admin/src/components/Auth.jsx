@@ -29,20 +29,18 @@ export default function Auth({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+      // Authenticate identity here. AuthWrapper is the single RBAC authorization gate:
+      // it loads roles, handles temporary RPC errors, and denies admin pages until verified.
+      // Never automatically log out a valid session because a permission lookup is delayed.
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
         password,
       });
 
       if (error) throw error;
 
-      const { data: access, error: adminError } = await supabase.rpc('rbac_my_access');
-      if (adminError || !Array.isArray(access?.roles) || access.roles.length === 0) {
-        await supabase.auth.signOut();
-        throw new Error('Unauthorized. An active RBAC administrator role is required.');
-      }
-
       setFailedAttempts(0);
+      setPassword('');
       if (onLogin) onLogin();
     } catch (error) {
       const newAttempts = failedAttempts + 1;

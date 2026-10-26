@@ -1,11 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { LogOut, Menu, X } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 import { supabase } from '../supabaseClient';
 
 export default function Header({ session, access, onMenuToggle, isMenuOpen, menuButtonRef }) {
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutError('');
+    try {
+      // Revokes only the current session, not every active admin device.
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+    } catch (error) {
+      console.error('Administrator sign out failed:', error);
+      setSignOutError('Unable to sign out. Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const userEmail = session?.user?.email || 'operator.mcdrrmo@gmail.com';
@@ -29,7 +43,8 @@ export default function Header({ session, access, onMenuToggle, isMenuOpen, menu
         <BrandLogo variant="header" />
       </div>
 
-      <button type="button" className="user-profile-badge" onClick={handleLogout} title="Sign Out" aria-label={`Sign out ${userEmail}`}>
+      {signOutError && <span role="alert" style={{ fontSize: 12, color: "#b42318", marginRight: 8 }}>{signOutError}</span>}
+      <button type="button" className="user-profile-badge" onClick={handleLogout} disabled={signingOut} title="Sign Out" aria-label={`Sign out ${userEmail}`}>
         <div className="avatar-circle">{initials}</div>
         <div className="user-info">
           <span className="user-name">{access?.roles?.join(', ') || 'Admin'}</span>
