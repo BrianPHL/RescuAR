@@ -5165,7 +5165,20 @@
     "tests/RescuAR.RegressionChecks/MldWindowContinuityChecks.cs",
     "tests/RescuAR.RegressionChecks/NavigationPipelineChecks.cs",
     "tests/RescuAR.RegressionChecks/Program.cs",
-    "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
+    "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs",
+    "RescuAR.MAUI/Resources/Raw/BUILDINGS.geojson",
+    "RescuAR.MAUI/Resources/Raw/PARKS.geojson",
+    "RescuAR.MAUI/Resources/Raw/WATER.geojson",
+    "RescuAR.MAUI/Resources/Raw/offline-map-tiles.zip",
+    "RescuAR.MAUI/Services/Navigation/DetailedOfflineMapService.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineMapCache.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineMapInstaller.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineMapLayerController.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineMapRuntime.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs",
+    "RescuAR.MAUI/Services/Navigation/OfflineTileArchive.cs",
+    "RescuAR.MAUI/Views/Map/MapPage.xaml",
+    "tests/RescuAR.AuthenticationChecks/OfflineMapChecks.cs"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
   "batch_0_1_validation": {
@@ -5257,6 +5270,12 @@
       "subject": "fix(reports): confirm authenticated report submissions",
       "source": "004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9",
       "adapted": true
+    },
+    {
+      "commit": "691d44bd35bf2c02d2e67bc79f2b63b4c069cd31",
+      "subject": "feat(map): share detailed offline display layers",
+      "source": "fa777da153a492268ace76162a80389e0d904534",
+      "adapted": true
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5274,11 +5293,10 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "deferred detailed-offline-map switch and navigation voice/turn feedback consumer choices at their module gates",
-    "shared offline display extensions",
-    "camera 2D experience retaining dev AR/navigation",
+    "camera 2D experience retaining approved dev 004ed20 AR/navigation/GPS and shared display layers",
+    "navigation voice/turn feedback consumer choices at its module gate",
     "later dev Admin RBAC/provisioning preservation review",
-    "final per-module preservation review; no branch merge or push authorized"
+    "final per-module preservation review; no branch merge or push authorized; APK packaging deferred"
   ],
   "authentication_forms_validation": {
     "unit_checks_passed": 64,
@@ -5589,7 +5607,8 @@
     "device_validation": "not performed",
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\08-settings\\RescuAR-Batch08-Settings.apk",
     "apk_bytes": 103291124,
-    "apk_sha256": "856a490e1a8e30b7a8879f1ed2f5f78f3abed8b7e69bc55e36b7f9e660a40f50"
+    "apk_sha256": "856a490e1a8e30b7a8879f1ed2f5f78f3abed8b7e69bc55e36b7f9e660a40f50",
+    "offline_map_switch_completed_in": "691d44bd35bf2c02d2e67bc79f2b63b4c069cd31"
   },
   "circle_membership_validation": {
     "decisions": [
@@ -5725,5 +5744,66 @@
     "status": "deferred_by_user",
     "instruction": "No need to build the APK yet.",
     "workflow": "Continue source checks, targeted unit checks and focused commits. No further APK packaging or new checkpoint copy until requested; use compile-only verification if needed."
+  },
+  "offline_map_validation": {
+    "commit": "691d44bd35bf2c02d2e67bc79f2b63b4c069cd31",
+    "approved_decisions": [
+      "share Athena cartographic display and preserve dev overlays/data",
+      "Detailed Offline Map defaults On; Off keeps basic roads/points; scoped cache clearing",
+      "converted ZIP and context only; no conversion-input imports; preserve native/dependency checks"
+    ],
+    "connected_consumers": [
+      "General Map",
+      "Circle Map"
+    ],
+    "pending_consumer": "Camera 2D after its own overlap gate",
+    "asset_payload": {
+      "source": "fa777da153a492268ace76162a80389e0d904534",
+      "paths": [
+        "RescuAR.MAUI/Resources/Raw/offline-map-tiles.zip",
+        "RescuAR.MAUI/Resources/Raw/BUILDINGS.geojson",
+        "RescuAR.MAUI/Resources/Raw/PARKS.geojson",
+        "RescuAR.MAUI/Resources/Raw/WATER.geojson"
+      ],
+      "package_bytes": 93661024,
+      "package_sha256": "1168d7528af49cf0a6d3d6befdbbdfa1a8e3bc2f350ea6ce943928ed07e62b12",
+      "manifest": {
+        "Version": 1,
+        "Format": "png",
+        "Scheme": "xyz",
+        "MinZoom": 13,
+        "MaxZoom": 18,
+        "TileCount": 3555,
+        "Bounds": [
+          121.067945526206,
+          14.6085349357737,
+          121.135837600791,
+          14.6748035828093
+        ],
+        "Source": "Made with Maperitive"
+      },
+      "context_counts": {
+        "BUILDINGS.geojson": 1058,
+        "PARKS.geojson": 219,
+        "WATER.geojson": 465
+      }
+    },
+    "zip_storage": "existing Git LFS rule; index pointer matches the pinned ZIP payload hash and size",
+    "unit_checks_passed": 412,
+    "new_checks_passed": 44,
+    "actual_tiles_read": 3555,
+    "unit_scope": "actual local archive reader/hash plus fake layer owners, isolated cache fixtures and setting preferences; no network, application or device interaction",
+    "android_compile": "Compile target only, including XamlC; 0 warnings and 0 errors after one Mapsui/MAUI Map alias correction",
+    "apk_packaging": "deferred by user; existing two APK sizes and modification times unchanged; no new batch APK copy",
+    "source_boundary": "23 approved code/asset/test paths",
+    "dev_ar_reference_paths_preserved": 33,
+    "source_preservation": "General road/point loops and loader/advisory suffix unchanged; Circle sharing/membership/pin/action suffix unchanged; native/dependency project body unchanged except two conversion-input exclusions",
+    "arcore_declarations": "passed",
+    "xml_and_whitespace": "passed; two changed XAML lines had trailing whitespace removed",
+    "cache_scope": "FileSystem.CacheDirectory/rescuar-map-cache only; visible layer tokens invalidated and shared archive closed before scoped clearing; no automatic reload until next enabled activation",
+    "coverage": "center tile checked against actual XYZ tile index and manifest bounds; limited to part of Marikina at zoom 13-18; context is static cartography, not access/hazard/safety evidence",
+    "device_validation": "not performed",
+    "backend_validation": "not performed",
+    "merge_or_push": false
   }
 }
