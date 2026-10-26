@@ -30,6 +30,12 @@ internal static class SettingsChecks
         check(!preferences.Values.ContainsKey("DetailedOfflineMapEnabled") && !preferences.Values.ContainsKey("NavigationVoiceEnabled"),
             "editing approved controls does not change deferred map or voice preferences");
 
+        check(settings.Get(AppSetting.DetailedOfflineMap), "detailed offline display defaults On without changing stored preferences");
+        settings.Set(AppSetting.DetailedOfflineMap, false);
+        check(!new AppSettingsStore(preferences).Get(AppSetting.DetailedOfflineMap) && settings.Get(AppSetting.EmergencySiren) && !settings.Get(AppSetting.HapticFeedback),
+            "the detailed map switch persists independently of sound and haptic settings");
+        check(!preferences.Values.ContainsKey("NavigationVoiceEnabled"), "the map setting leaves the later navigation-voice choice untouched");
+
         int starts = 0, stops = 0; bool playable = true;
         var completions = new List<Action>();
         var alarm = new AlarmPlaybackController(completed => { starts++; completions.Add(completed); return playable; }, () => stops++);

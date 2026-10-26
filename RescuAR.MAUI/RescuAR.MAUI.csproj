@@ -118,8 +118,9 @@
 		<MauiFont Include="Resources\Fonts\*" />
 
 		<!-- Raw assets -->
-		<MauiAsset Include="Resources\Raw\**" Exclude="Resources\Raw\2D_MAP.mbtiles;Resources\Raw\*ROADS.geojson;Resources\Raw\*POINTS.geojson" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+		<MauiAsset Include="Resources\Raw\**" Exclude="Resources\Raw\2D_MAP.mbtiles;Resources\Raw\MAP_V2.mbtiles;Resources\Raw\*ROADS.geojson;Resources\Raw\*POINTS.geojson" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
 		<AndroidResource Remove="Resources\raw\2D_MAP.mbtiles" />
+		<AndroidResource Remove="Resources\raw\MAP_V2.mbtiles" />
 	</ItemGroup>
 
 	<!-- MAUI packages -->

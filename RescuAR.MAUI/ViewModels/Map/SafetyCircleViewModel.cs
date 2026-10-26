@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Mapsui;
 using Mapsui.UI.Maui;
 using RescuAR.App.Services.SafetyCircle;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Map;
 
@@ -46,6 +47,10 @@ public partial class SafetyCircleViewModel : ObservableObject
     private bool enablingSharing;
     private long sharingRequest;
     private bool centered;
+    private bool basicMapReady;
+    private string basicMapNotice = "";
+    private readonly OfflineMapLayerController offlineLayers;
+    [ObservableProperty] private string offlineMapStatus = "";
     private string selectedId = "";
     public ObservableCollection<CircleMembership> MyCircles { get; } = new();
     public ObservableCollection<CircleMember> CircleMembers { get; } = new();
@@ -59,6 +64,7 @@ public partial class SafetyCircleViewModel : ObservableObject
 
     public SafetyCircleViewModel()
     {
+        offlineLayers = new(message => OfflineMapStatus = basicMapNotice + message);
         coordinator = new(memberships, new SupabaseCirclePresenceRemote(CircleMembershipRuntime.Context), new MauiCircleDeviceReader(), () => DateTimeOffset.UtcNow);
         timer = Application.Current?.Dispatcher?.CreateTimer() ?? throw new InvalidOperationException("A page dispatcher is required.");
         timer.Interval = TimeSpan.FromSeconds(5);
@@ -84,14 +90,34 @@ public partial class SafetyCircleViewModel : ObservableObject
             }
             foreach (var layer in Map.Layers) layer.Enabled = true;
             control.Map = Map;
+            _ = PrepareDisplayAsync(request, page.Token);
             await PollAsync();
             if (request == version && page is not null) timer.Start();
         }
         catch (OperationCanceledException) { if (request == version) { Stop(); StatusMessage = "Your account changed. Reopen the Map tab."; } }
         catch { if (request == version) StatusMessage = "Circle data could not be loaded. Check your sign-in and connection, then Refresh."; }
     }
+    private async Task PrepareDisplayAsync(long request, CancellationToken token)
+    {
+        if (!basicMapReady)
+        {
+            IReadOnlyList<Mapsui.Layers.ILayer>? loaded = null;
+            try
+            {
+                loaded = await DetailedOfflineMapService.CreateBasicLayersAsync(token);
+                if (token.IsCancellationRequested || request != version) return;
+                Map.Layers.Insert(Math.Min(1, Map.Layers.Count), loaded); loaded = null; basicMapReady = true; basicMapNotice = "";
+            }
+            catch (OperationCanceledException) { return; }
+            catch { if (request == version) basicMapNotice = "Basic roads/points could not be loaded. "; }
+            finally { if (loaded is not null) foreach (var layer in loaded) layer.Dispose(); }
+        }
+        if (token.IsCancellationRequested || request != version) return;
+        await offlineLayers.ActivateAsync(Map);
+    }
     public void Stop()
     {
+        offlineLayers.Deactivate();
         Interlocked.Increment(ref version); timer.Stop(); coordinator.Stop();
         page?.Cancel(); page?.Dispose(); page = null; owner = null;
         settingSharing = true; IsSharingEnabled = false; settingSharing = false;

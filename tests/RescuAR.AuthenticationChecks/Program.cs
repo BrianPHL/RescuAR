@@ -97,7 +97,8 @@ await CircleMembershipChecks.RunAsync(Check);
 await CircleMapChecks.RunAsync(Check);
 await CircleChatChecks.RunAsync(Check);
 await ResidentReportChecks.RunAsync(Check);
-Console.WriteLine($"{passed} authentication, profile, settings and Circle checks passed.");
+await OfflineMapChecks.RunAsync(Check);
+Console.WriteLine($"{passed} authentication, profile, settings, Circle, report and offline-map checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore
 {

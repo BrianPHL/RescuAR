@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RescuAR.MAUI.Services.Settings;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Profile;
 
@@ -12,6 +13,7 @@ public partial class AppSettingsViewModel : ObservableObject
     [ObservableProperty] private bool pushNotificationsEnabled;
     [ObservableProperty] private bool emergencySirenEnabled;
     [ObservableProperty] private bool hapticFeedbackEnabled;
+    [ObservableProperty] private bool detailedOfflineMapEnabled = true;
     [ObservableProperty] private bool canClearCache;
     [ObservableProperty] private string cacheSizeText = "Unavailable";
     [ObservableProperty] private string statusMessage = string.Empty;
@@ -24,6 +26,7 @@ public partial class AppSettingsViewModel : ObservableObject
             PushNotificationsEnabled = settings.Get(AppSetting.ForegroundAdvisories);
             EmergencySirenEnabled = settings.Get(AppSetting.EmergencySiren);
             HapticFeedbackEnabled = settings.Get(AppSetting.HapticFeedback);
+            DetailedOfflineMapEnabled = settings.Get(AppSetting.DetailedOfflineMap);
             StatusMessage = string.Empty;
         }
         catch { StatusMessage = "Saved settings could not be loaded. Changes may not be available until device storage is working."; }
@@ -34,6 +37,7 @@ public partial class AppSettingsViewModel : ObservableObject
     partial void OnPushNotificationsEnabledChanged(bool value) => Save(AppSetting.ForegroundAdvisories, value);
     partial void OnEmergencySirenEnabledChanged(bool value) => Save(AppSetting.EmergencySiren, value);
     partial void OnHapticFeedbackEnabledChanged(bool value) => Save(AppSetting.HapticFeedback, value);
+    partial void OnDetailedOfflineMapEnabledChanged(bool value) => Save(AppSetting.DetailedOfflineMap, value);
     private void Save(AppSetting setting, bool value)
     {
         if (initializing) return;
@@ -45,6 +49,7 @@ public partial class AppSettingsViewModel : ObservableObject
             if (setting == AppSetting.ForegroundAdvisories) PushNotificationsEnabled = previous;
             else if (setting == AppSetting.EmergencySiren) EmergencySirenEnabled = previous;
             else if (setting == AppSetting.HapticFeedback) HapticFeedbackEnabled = previous;
+            else if (setting == AppSetting.DetailedOfflineMap) DetailedOfflineMapEnabled = previous;
             initializing = false;
             StatusMessage = "The setting was not saved. Please retry.";
         }
@@ -68,10 +73,10 @@ public partial class AppSettingsViewModel : ObservableObject
         if (!confirm) return;
         try
         {
-            var result = await Task.Run(maps.Clear);
+            var result = await OfflineMapRuntime.ClearAsync();
             RefreshCacheSize();
             StatusMessage = result.Remaining.Bytes == 0 && result.Remaining.UnavailableFiles == 0
-                ? $"Removed {Size(result.DeletedBytes)} of replaceable map cache."
+                ? $"Removed {Size(result.DeletedBytes)} of replaceable map cache. Copies return on the next enabled map use."
                 : $"Removed {Size(result.DeletedBytes)}. Some map-cache files remain or are unavailable; retry later.";
         }
         catch { RefreshCacheSize(); StatusMessage = "Map cache could not be cleared. Please retry."; }

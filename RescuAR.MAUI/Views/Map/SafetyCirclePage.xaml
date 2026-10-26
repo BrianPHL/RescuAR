@@ -57,6 +57,7 @@
                     <Switch IsToggled="{Binding IsSharingEnabled}" OnColor="#0A8491" />
                 </HorizontalStackLayout>
             </Grid>
+            <Label Text="{Binding OfflineMapStatus}" TextColor="#64748B" FontSize="11" />
             <Label Text="{Binding SharingStatus}" TextColor="#334155" FontSize="11" />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                 <Label Text="{Binding StatusMessage}" TextColor="#64748B" FontSize="11" MaxLines="3" />

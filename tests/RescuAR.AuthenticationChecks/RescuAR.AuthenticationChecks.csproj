@@ -34,5 +34,9 @@
     <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportSubmission.cs" Link="ResidentReportSubmission.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportWire.cs" Link="ResidentReportWire.cs" />
     <Compile Include="../../RescuAR.MAUI/Models/CommunityReport.cs" Link="CommunityReport.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapInstaller.cs" Link="OfflineMapInstaller.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineTileArchive.cs" Link="OfflineTileArchive.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapCache.cs" Link="OfflineMapCache.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs" Link="OfflineOverlaySession.cs" />
   </ItemGroup>
 </Project>
