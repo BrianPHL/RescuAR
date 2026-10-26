@@ -9,7 +9,7 @@ public class SupabaseService
     public static SupabaseService Instance => _instance ??= new SupabaseService();
 
     public const string PlaceholderUrl = "https://itxjqcnvxlgzeqkivhhc.supabase.co";
-    public const string PlaceholderKey = "sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F";
+    public const string PlaceholderKey = "sb_publishable_QQi7onBtfe-d8fV0ep_K9g_N94rlE0s";
 
     public string SupabaseUrl { get; private set; } = PlaceholderUrl;
     public string SupabaseKey { get; private set; } = PlaceholderKey;
