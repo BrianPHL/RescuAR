@@ -5178,7 +5178,13 @@
     "RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs",
     "RescuAR.MAUI/Services/Navigation/OfflineTileArchive.cs",
     "RescuAR.MAUI/Views/Map/MapPage.xaml",
-    "tests/RescuAR.AuthenticationChecks/OfflineMapChecks.cs"
+    "tests/RescuAR.AuthenticationChecks/OfflineMapChecks.cs",
+    "RescuAR.MAUI/Services/Navigation/CameraMapPresentationPolicy.cs",
+    "RescuAR.MAUI/Services/Navigation/RouteDirectionsService.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.Map2D.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.xaml",
+    "tests/RescuAR.RegressionChecks/CameraMapChecks.cs",
+    "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
   "batch_0_1_validation": {
@@ -5276,6 +5282,12 @@
       "subject": "feat(map): share detailed offline display layers",
       "source": "fa777da153a492268ace76162a80389e0d904534",
       "adapted": true
+    },
+    {
+      "commit": "505db02d07a38130006bba302df079c92ad33af1",
+      "subject": "feat(camera): add Athena 2D map with shared navigation",
+      "source": "fa777da153a492268ace76162a80389e0d904534",
+      "adapted": true
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5293,7 +5305,6 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "camera 2D experience retaining approved dev 004ed20 AR/navigation/GPS and shared display layers",
     "navigation voice/turn feedback consumer choices at its module gate",
     "later dev Admin RBAC/provisioning preservation review",
     "final per-module preservation review; no branch merge or push authorized; APK packaging deferred"
@@ -5453,7 +5464,27 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs": {
       "oid": "436a5df8d5fb4858e323efdc540ed2c99271bfee",
       "source": "004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9",
-      "policy": "preserve approved dev 004ed20 source; later Athena hunks require explicit overlap decisions"
+      "policy": "preserve approved dev 004ed20 body; only four user-approved Camera 2D display/lifecycle hook sites differ, exactly reversible to the original source oid",
+      "integrated_oid": "37d2c58a8553fd816bd382af4626c3152c48875e",
+      "approved_adaptation_commit": "505db02d07a38130006bba302df079c92ad33af1",
+      "source_restoration_hunks": [
+        {
+          "source": "            AttachNavigationUiDiagnostics();",
+          "integrated": "            AttachNavigationUiDiagnostics();\n            InitializeCameraMapPresentation();"
+        },
+        {
+          "source": "            mapModeStatusLabel.Text =\n                \"Placeholder\";",
+          "integrated": "            RefreshCameraMapPresentation();"
+        },
+        {
+          "source": "            pageIsVisible =\n                true;",
+          "integrated": "            pageIsVisible =\n                true;\n            ObserveCameraMapWindow();"
+        },
+        {
+          "source": "            pageIsVisible =\n                false;",
+          "integrated": "            pageIsVisible =\n                false;\n            StopCameraMapDisplay();\n            UnobserveCameraMapWindow();"
+        }
+      ]
     },
     "RescuAR/AR/ARRoadSurfaceBridge.cs": {
       "oid": "8b6a0331b1138cd1668fb5662e10703011e66e46",
@@ -5754,9 +5785,10 @@
     ],
     "connected_consumers": [
       "General Map",
-      "Circle Map"
+      "Circle Map",
+      "Camera 2D (505db02)"
     ],
-    "pending_consumer": "Camera 2D after its own overlap gate",
+    "pending_consumer": null,
     "asset_payload": {
       "source": "fa777da153a492268ace76162a80389e0d904534",
       "paths": [
@@ -5805,5 +5837,34 @@
     "device_validation": "not performed",
     "backend_validation": "not performed",
     "merge_or_push": false
+  },
+  "camera_map_validation": {
+    "commit": "505db02d07a38130006bba302df079c92ad33af1",
+    "approved_decisions": [
+      "Athena Camera interface/shared offline layers on dev behavior",
+      "one dev destination/hazard/route/progress flow for AR and 2D",
+      "current validated dev GPS only; no default/old user pin or nearby distance",
+      "frame each new route once; preserve pan/zoom; explicit Recenter/Overview",
+      "existing shelter directory/status; estimates and unknown live availability",
+      "dev turn classifier and arrival-confirmation rules in both views; voice/haptics separate gate"
+    ],
+    "unit_checks_passed": 41,
+    "unit_scope": "pure GPS quality/expiry, trip/route identity, geometry, viewport ownership, directory/distance estimates and directions cases; no provider/app/device interaction",
+    "android_compile": "Compile target only; final source passed with 0 warnings and 0 errors",
+    "apk_packaging": "not performed; previous APK bytes/modification times unchanged",
+    "camera_dev_body_restoration": "exact after reversing four display/lifecycle hook sites; no route, GPS/PDR, AR/MLD, flood, hazard, arrival or recovery body replaced",
+    "other_dev_reference_paths_unchanged": 32,
+    "existing_named_controls_preserved": 76,
+    "runner_preservation": "exact previous runner after removing the new --camera-map/default entry; all existing checks and four parser fixes retained",
+    "directions_source": "exact Athena RouteDirectionsService, which uses dev PedestrianTurnGuidanceService; overview only, no automatic arrival decision",
+    "raw_location_owner": "existing dev location stream during a trip; separately cancellable validated browsing samples when no destination; display never writes route/GPS/progress state",
+    "source_checks": "exact 8-path code/test boundary; named native/AR/flood/emergency/arrival controls unchanged; references resolve to existing icons; ARCore declarations and staged whitespace passed",
+    "source_review_corrections": "two missing Athena icon names reused existing navigation arrows; final display refinement encoding change was restored and protected control comparison passed",
+    "manual_validation": "deferred until a user-requested device build; no application/browser/device, integration/E2E test or new dependency installation",
+    "pending": [
+      "navigation voice/turn vibration choices",
+      "later Admin RBAC/provisioning review",
+      "final preservation audit"
+    ]
   }
 }
