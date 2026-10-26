@@ -75,7 +75,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
         </button>)}
 
         {/* Monitoring Section */}
-        <div>
+        {['monitoring-stations', 'monitoring-river-level', 'monitoring-hazard-exposure'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
             className={`menu-group-header ${activeView.startsWith('monitoring-') ? 'active' : ''}`}
@@ -120,10 +120,10 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
               </button>)}
             </div>
           </div>
-        </div>
+        </div>)}
 
         {/* Community Management Section */}
-        <div>
+        {['community-reports-moderation', 'community-user-management'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
             className={`menu-group-header ${activeView.startsWith('community-') ? 'active' : ''}`}
@@ -159,10 +159,10 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
               </button>)}
             </div>
           </div>
-        </div>
+        </div>)}
 
         {/* Content Management Section */}
-        <div>
+        {['content-advisories', 'content-evacuation', 'content-hotlines'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
             className={`menu-group-header ${activeView.startsWith('content-') ? 'active' : ''}`}
@@ -204,10 +204,10 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
               </button>)}
             </div>
           </div>
-        </div>
+        </div>)}
 
         {/* System Section */}
-        <div>
+        {['system-settings', 'system-logs'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
             className={`menu-group-header ${activeView.startsWith('system-') ? 'active' : ''}`}
@@ -243,10 +243,9 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
               </button>)}
             </div>
           </div>
-        </div>
+        </div>)}
       </div>
 
-      {canView(access,'rbac-research') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-research')}>PREP Research</button>}
       {canView(access,'rbac-admins') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-admins')}>Administrator Management</button>}
       {canView(access,'rbac-tests') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-tests')}>Testing & Simulation</button>}
       <div className="sidebar-footer">

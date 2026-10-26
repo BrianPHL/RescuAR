@@ -24,6 +24,9 @@ import EmergencyHotlines from './components/EmergencyHotlines';
 import SystemSettings from './components/SystemSettings';
 import SystemLogs from './components/SystemLogs';
 import Documentation from './components/Documentation';
+import RbacAdmins from './components/RbacAdmins';
+import RbacTesting from './components/RbacTesting';
+import { canView, preferredView } from './rbac/access';
 
 // Modals
 import {
@@ -31,8 +34,10 @@ import {
   NotifyModal
 } from './components/Modals';
 
-export default function App({ session }) {
-  const [activeView, setActiveView] = useState('monitoring-stations');
+export default function App({ session, access }) {
+  const [activeView, setActiveView] = useState(() =>
+    canView(access, 'monitoring-stations') ? 'monitoring-stations' : preferredView(access)
+  );
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [mobileViewport, setMobileViewport] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 991.98px)').matches
@@ -65,6 +70,7 @@ export default function App({ session }) {
   }, [mobileNavigationOpen, mobileViewport]);
 
   const navigateTo = (view) => {
+    if (!canView(access, view)) return;
     setActiveView(view);
     setMobileNavigationOpen(false);
   };
@@ -93,6 +99,10 @@ export default function App({ session }) {
 
   // View router combining both configurations
   const renderView = () => {
+    if (!canView(access, activeView)) {
+      return <div className="main-view" role="alert">You do not have access to this page.</div>;
+    }
+
     switch (activeView) {
       case 'dashboard':
         return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} />;
@@ -123,8 +133,12 @@ export default function App({ session }) {
         return <SystemLogs />;
       case 'documentation':
         return <Documentation />;
+      case 'rbac-admins':
+        return <RbacAdmins />;
+      case 'rbac-tests':
+        return <RbacTesting />;
       default:
-        return <MonitoringStations />;
+        return <div className="main-view" role="alert">This page is unavailable.</div>;
     }
   };
 
@@ -133,6 +147,7 @@ export default function App({ session }) {
       {/* Top Header */}
       <Header
         session={session}
+        access={access}
         onMenuToggle={() => setMobileNavigationOpen((open) => !open)}
         isMenuOpen={mobileNavigationOpen}
         menuButtonRef={menuButtonRef}
@@ -151,6 +166,7 @@ export default function App({ session }) {
         )}
         <Sidebar
           activeView={activeView}
+          access={access}
           onViewChange={navigateTo}
           isMobileViewport={mobileViewport}
           isMobileOpen={mobileNavigationOpen}

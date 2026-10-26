@@ -1,5 +1,3 @@
-import { supabase } from '../supabaseClient';
-
 export const VIEW_PERMISSION = {
   dashboard: 'dashboard.view',
   'monitoring-stations': 'monitoring.view',
@@ -14,7 +12,6 @@ export const VIEW_PERMISSION = {
   'system-logs': 'system.all',
   'rbac-admins': 'system.all',
   'rbac-tests': 'system.all',
-  'rbac-research': 'research.view',
   documentation: 'dashboard.view',
 };
 
@@ -26,8 +23,8 @@ export const canView = (access, view) => hasPermission(access, VIEW_PERMISSION[v
 export const preferredView = (access) =>
   Object.keys(VIEW_PERMISSION).find((view) => canView(access, view)) || null;
 
-export async function loadAccess() {
-  const {data,error} = await supabase.rpc('rbac_my_access');
+export async function loadAccess(client) {
+  const {data,error} = await client.rpc('rbac_my_access');
   if (error) throw error;
   return {
     roles: Array.isArray(data?.roles) ? data.roles : [],
