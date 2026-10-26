@@ -170,7 +170,7 @@ public partial class SafetyCircleViewModel : ObservableObject
         }
         finally { if (request == version) { polling = false; IsBusy = false; } }
     }
-    private static CircleMember Row(CirclePresence presence, string self, bool cached)
+    internal static CircleMember Row(CirclePresence presence, string self, bool cached)
     {
         string name = presence.Person.Name + (presence.Person.UserId == self ? " (You)" : "");
         string initials = string.Concat(presence.Person.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));

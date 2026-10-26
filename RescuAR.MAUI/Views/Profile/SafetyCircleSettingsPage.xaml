@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+    xmlns:mapvm="clr-namespace:RescuAR.App.ViewModels.Map"
     xmlns:views="clr-namespace:RescuAR.App.Views.Profile"
 
     x:Class="RescuAR.App.Views.Profile.SafetyCircleSettingsPage"
@@ -112,6 +113,31 @@
                                                         IsEnabled="{Binding ViewModel.CanChange, Source={x:Reference SafetyCircleSettingsRoot}, x:DataType=views:SafetyCircleSettingsPage}"
                                                         Command="{Binding ViewModel.RequestLeaveCircleCommand, Source={x:Reference SafetyCircleSettingsRoot}, x:DataType=views:SafetyCircleSettingsPage}" CommandParameter="{Binding .}" />
                                             </FlexLayout>
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border IsVisible="{Binding IsInCircle}" StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" BackgroundColor="White" Padding="16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Circle photo on this device" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" />
+                        <Label Text="Saved only for this account and Circle. Other members do not receive this photo change." FontSize="12" TextColor="#64748B" />
+                        <Image IsVisible="{Binding HasLocalGroupPhoto}" Source="{Binding LocalGroupPhotoPath}" Aspect="AspectFill" HeightRequest="100" WidthRequest="100" HorizontalOptions="Start" />
+                        <Button Text="Choose device photo" Command="{Binding PickLocalCirclePhotoCommand}" BackgroundColor="#E6F4F2" TextColor="#0A8491" FontSize="12" CornerRadius="8" />
+                        <Label Text="{Binding ExtrasStatus}" TextColor="#64748B" FontSize="12" />
+                        <Label Text="{Binding Members.Count, StringFormat='Confirmed roster: {0} members loaded'}" FontAttributes="Bold" TextColor="#0F172A" FontSize="14" />
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Members}" Spacing="8">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="mapvm:CircleMember">
+                                    <Border StrokeShape="RoundRectangle 10" StrokeThickness="0" BackgroundColor="#F8FAFC" Padding="10">
+                                        <VerticalStackLayout Spacing="3">
+                                            <Label Text="{Binding Name}" FontAttributes="Bold" TextColor="#0F172A" FontSize="13" />
+                                            <Label Text="{Binding LocationSubtitle}" TextColor="#64748B" FontSize="11" />
+                                            <Label Text="{Binding SinceTimeText}" TextColor="#64748B" FontSize="11" />
+                                            <Label Text="{Binding BatteryText, StringFormat='Battery: {0}'}" TextColor="{Binding BatteryColor}" FontSize="11" />
                                         </VerticalStackLayout>
                                     </Border>
                                 </DataTemplate>

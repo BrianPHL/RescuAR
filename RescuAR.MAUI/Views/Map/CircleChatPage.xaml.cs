@@ -1,43 +1,39 @@
-using Microsoft.Maui.Controls;
 using RescuAR.App.ViewModels.Map;
 
 namespace RescuAR.App.Views.Map;
 
 public partial class CircleChatPage : ContentPage
 {
+    public CircleChatViewModel ViewModel { get; }
+    private Window? observedWindow;
+    private bool pageShown;
+
     public CircleChatPage(CircleChatViewModel viewModel)
     {
+        ViewModel = viewModel;
         InitializeComponent();
-        BindingContext = viewModel;
-
-        viewModel.MessageAdded += (item) =>
-        {
-            try
-            {
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    MessagesCollectionView.ScrollTo(item, position: ScrollToPosition.End, animate: true);
-                });
-            }
-            catch { }
-        };
+        BindingContext = ViewModel;
+        ViewModel.MessageAdded += MessageAdded;
     }
-
+    private void MessageAdded(ChatMessageItem item) => MainThread.BeginInvokeOnMainThread(() =>
+    {
+        if (!pageShown || !ViewModel.Messages.Contains(item)) return;
+        try { MessagesCollectionView.ScrollTo(item, position: ScrollToPosition.End, animate: true); }
+        catch { }
+    });
     protected override async void OnAppearing()
     {
-        base.OnAppearing();
-        if (BindingContext is CircleChatViewModel vm)
-        {
-            await vm.LoadMessagesAsync();
-        }
+        base.OnAppearing(); pageShown = true;
+        observedWindow = Window;
+        if (observedWindow is not null) { observedWindow.Stopped += WindowStopped; observedWindow.Resumed += WindowResumed; }
+        await ViewModel.StartAsync();
     }
-
     protected override void OnDisappearing()
     {
-        base.OnDisappearing();
-        if (BindingContext is CircleChatViewModel vm)
-        {
-            vm.StopTimer();
-        }
+        pageShown = false;
+        if (observedWindow is not null) { observedWindow.Stopped -= WindowStopped; observedWindow.Resumed -= WindowResumed; observedWindow = null; }
+        ViewModel.Stop(); base.OnDisappearing();
     }
+    private void WindowStopped(object? sender, EventArgs args) => ViewModel.Suspend();
+    private async void WindowResumed(object? sender, EventArgs args) { if (pageShown) await ViewModel.ResumeAsync(); }
 }

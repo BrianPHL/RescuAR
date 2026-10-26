@@ -95,6 +95,7 @@ await ContactShortcutChecks.RunAsync(Check);
 SettingsChecks.Run(Check);
 await CircleMembershipChecks.RunAsync(Check);
 await CircleMapChecks.RunAsync(Check);
+await CircleChatChecks.RunAsync(Check);
 Console.WriteLine($"{passed} authentication, profile, settings and Circle checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore

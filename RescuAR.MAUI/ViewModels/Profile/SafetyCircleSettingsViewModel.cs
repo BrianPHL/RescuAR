@@ -23,6 +23,12 @@ public partial class SafetyCircleSettingsViewModel : ObservableObject
     private CircleMembershipScope? scope;
     private long viewVersion;
     private bool deletePending;
+    private string selectedCircleId = "";
+    private CancellationTokenSource extras = new();
+    public ObservableCollection<RescuAR.App.ViewModels.Map.CircleMember> Members { get; } = new();
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasLocalGroupPhoto))] private string localGroupPhotoPath = "";
+    [ObservableProperty] private string extrasStatus = "";
+    public bool HasLocalGroupPhoto => LocalGroupPhotoPath.Length > 0;
     public ObservableCollection<CircleMembershipItem> AllMyCircles { get; } = new();
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsNotInCircle))] private bool isInCircle;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsNotBusy), nameof(CanChange))] private bool isBusy;
@@ -59,6 +65,7 @@ public partial class SafetyCircleSettingsViewModel : ObservableObject
             circles.Require(scope.Value);
             Present(result);
             NeedsRefresh = false; IsReady = true;
+            await LoadExtrasAsync(scope.Value, result.IsCached, request);
         }
         catch (Exception error) { if (request == viewVersion) StatusMessage = Error(error); }
         finally { if (request == viewVersion) IsBusy = false; }
@@ -71,6 +78,7 @@ public partial class SafetyCircleSettingsViewModel : ObservableObject
         AllMyCircles.Clear();
         foreach (var circle in snapshot.Circles) AllMyCircles.Add(new(circle, owner.UserId, snapshot.IsCached, circle.Id == snapshot.SelectedId));
         var active = AllMyCircles.FirstOrDefault(circle => circle.Id == snapshot.SelectedId);
+        selectedCircleId = active?.Id ?? ""; Members.Clear(); LocalGroupPhotoPath = ExtrasStatus = "";
         ActiveCircleName = active?.Name ?? string.Empty; InviteCode = active?.InviteCode ?? string.Empty;
         IsInCircle = AllMyCircles.Count > 0; IsCached = snapshot.IsCached; StatusMessage = snapshot.Notice;
     }
@@ -85,6 +93,9 @@ public partial class SafetyCircleSettingsViewModel : ObservableObject
             var result = await operation(owner);
             if (request != viewVersion) return false;
             circles.Require(owner); Present(result); NeedsRefresh = false;
+            await LoadExtrasAsync(owner, result.IsCached, request);
+            if (request != viewVersion) return false;
+            circles.Require(owner);
             return true;
         }
         catch (Exception error)
@@ -165,9 +176,67 @@ public partial class SafetyCircleSettingsViewModel : ObservableObject
     private void Reset(bool clearDrafts)
     {
         Interlocked.Increment(ref viewVersion); scope = null;
+        extras.Cancel(); extras.Dispose(); extras = new();
+        selectedCircleId = ""; Members.Clear(); LocalGroupPhotoPath = ExtrasStatus = "";
         IsBusy = false; IsReady = false; IsInCircle = false; IsCached = false; NeedsRefresh = false;
         AllMyCircles.Clear(); ActiveCircleName = InviteCode = StatusMessage = string.Empty; CancelDelete();
         if (clearDrafts) NewCircleName = JoinInviteCode = string.Empty;
     }
+    private async Task LoadExtrasAsync(CircleMembershipScope owner, bool cached, long request)
+    {
+        string id = selectedCircleId;
+        if (id.Length == 0) return;
+        var token = extras.Token;
+        try
+        {
+            var local = await CircleChatRuntime.Current.LoadLocalAsync(new(owner, id), token);
+            if (request != viewVersion || selectedCircleId != id) return;
+            circles.Require(owner);
+            var photo = local.State.LocalPhoto;
+            LocalGroupPhotoPath = photo is not null && CircleChatRuntime.Files.Owns(new(owner, id), photo) && File.Exists(photo.Path) ? photo.Path : "";
+        }
+        catch (OperationCanceledException) { return; }
+        catch { if (request == viewVersion) ExtrasStatus = "The local Circle photo could not be read. Existing data was preserved."; }
+        if (cached)
+        {
+            if (request == viewVersion) ExtrasStatus += " Member details are unavailable offline. Connect and Refresh.";
+            return;
+        }
+        try
+        {
+            var roster = await new SupabaseCirclePresenceRemote(CircleMembershipRuntime.Context).ReadAsync(owner, id, token);
+            if (request != viewVersion || selectedCircleId != id) return;
+            circles.Require(owner); Members.Clear();
+            foreach (var person in roster.People)
+            {
+                var position = roster.Positions.FirstOrDefault(position => position.UserId == person.UserId);
+                Members.Add(RescuAR.App.ViewModels.Map.SafetyCircleViewModel.Row(CirclePresencePolicy.Project(person, position, DateTimeOffset.UtcNow), owner.UserId, false));
+            }
+            ExtrasStatus += " Positions and battery are last shared readings, not proof of safety or online status. " + roster.Notice;
+        }
+        catch (OperationCanceledException) { }
+        catch { if (request == viewVersion) { Members.Clear(); ExtrasStatus += " Current member details could not be confirmed. Refresh your Circles."; } }
+    }
+    [RelayCommand]
+    private async Task PickLocalCirclePhoto()
+    {
+        if (scope is not { } owner || selectedCircleId.Length == 0 || IsBusy || !IsReady) return;
+        string id = selectedCircleId; long request = viewVersion; var token = extras.Token;
+        IsBusy = true;
+        try
+        {
+            circles.Require(owner);
+            var file = await MediaPicker.Default.PickPhotoAsync();
+            if (request != viewVersion || selectedCircleId != id) return;
+            circles.Require(owner); if (file is null) return;
+            var photo = await CircleChatRuntime.ImportAsync(new(owner, id), file, "LocalPhoto", token);
+            var saved = await CircleChatRuntime.Current.SetLocalPhotoAsync(new(owner, id), photo, token);
+            if (request != viewVersion || selectedCircleId != id) return;
+            circles.Require(owner); LocalGroupPhotoPath = photo.Path; StatusMessage = saved.Notice;
+        }
+        catch (Exception error) { if (request == viewVersion) { if (error is OperationCanceledException) Stop(); StatusMessage = error is CircleChatInputException ? error.Message : "The device-only Circle photo could not be saved. No shared group photo was changed."; } }
+        finally { if (request == viewVersion) IsBusy = false; }
+    }
+
     [RelayCommand] private async Task Back() { if (!IsBusy && Shell.Current != null) await Shell.Current.GoToAsync(".."); }
 }
