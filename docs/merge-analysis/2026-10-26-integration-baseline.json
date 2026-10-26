@@ -5003,6 +5003,8 @@
     "AR_FIELD_VALIDATION_20261026.md",
     "RescuAR.MAUI/App.xaml",
     "RescuAR.MAUI/App.xaml.cs",
+    "RescuAR.MAUI/AppShell.xaml",
+    "RescuAR.MAUI/AppShell.xaml.cs",
     "RescuAR.MAUI/Converters/BooleanToStringConverter.cs",
     "RescuAR.MAUI/MauiProgram.cs",
     "RescuAR.MAUI/Models/InformationSection.cs",
@@ -5036,9 +5038,12 @@
     "RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs",
     "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
     "RescuAR.MAUI/Services/Reports/AdvisoryService.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/CircleMapCoordinator.cs",
     "RescuAR.MAUI/Services/SafetyCircle/CircleMembershipService.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/CirclePresencePolicy.cs",
     "RescuAR.MAUI/Services/SafetyCircle/FileCircleMembershipStore.cs",
     "RescuAR.MAUI/Services/SafetyCircle/MauiCircleMembership.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/MauiCirclePresence.cs",
     "RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs",
     "RescuAR.MAUI/Services/Settings/AppPreferences.cs",
     "RescuAR.MAUI/Services/Settings/AppSettingsStore.cs",
@@ -5053,6 +5058,7 @@
     "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
     "RescuAR.MAUI/ViewModels/Dashboard/DashboardViewModel.cs",
     "RescuAR.MAUI/ViewModels/Map/MapViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Map/SafetyCircleViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/AppSettingsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/EmergencyContactsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/HealthInformationViewModel.cs",
@@ -5080,6 +5086,9 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs",
+    "RescuAR.MAUI/Views/Map/MapPage.xaml.cs",
+    "RescuAR.MAUI/Views/Map/SafetyCirclePage.xaml",
+    "RescuAR.MAUI/Views/Map/SafetyCirclePage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/AppSettingsPage.xaml",
     "RescuAR.MAUI/Views/Profile/AppSettingsPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml",
@@ -5109,6 +5118,7 @@
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFormChecks.cs",
+    "tests/RescuAR.AuthenticationChecks/CircleMapChecks.cs",
     "tests/RescuAR.AuthenticationChecks/CircleMembershipChecks.cs",
     "tests/RescuAR.AuthenticationChecks/ContactShortcutChecks.cs",
     "tests/RescuAR.AuthenticationChecks/ProfileEditingChecks.cs",
@@ -5184,6 +5194,10 @@
     {
       "commit": "1550d1301b6b313d423f34e08cf353ca85800000",
       "subject": "feat(circle): add confirmed account-scoped membership"
+    },
+    {
+      "commit": "a6cd5d7118df81bd490923444052626fd130cf62",
+      "subject": "feat(circle): add Athena map and explicit location sharing"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5202,7 +5216,7 @@
   },
   "pending_scope": [
     "deferred detailed-offline-map switch and navigation voice/turn feedback consumer choices at their module gates",
-    "Circle map, roster, avatars/group photos, location sharing and chat consumers using the approved membership foundation",
+    "Management roster/group photo and Circle chat consumers using the approved membership foundation",
     "shared offline display extensions",
     "camera 2D experience retaining dev AR/navigation",
     "later dev Admin RBAC/provisioning preservation review",
@@ -5425,11 +5439,34 @@
     "cache_scope": "AppDataDirectory/circle-memberships-v1; SHA-256 key of normalized full backend URL plus verified user ID; envelope checked; atomic replacement; membership metadata/selection only; no chat/media/pending deletion",
     "cloud_confirmation": "create/join require actual membership readback; creator-only rename and delete, own-member-only leave; no fabricated identity or local-success fallback; interrupted creator membership is recovered on Refresh",
     "failure_behavior": "unknown mutation result blocks further mutations until Refresh; cloud success/local-storage failure is distinct; stale account/server/session responses cannot publish; auth/access failures do not become offline success; corrupt cache is reported and preserved",
-    "pending_consumers": "Circle map and chat still use their original dev connections; their selection, roster, photos, locations and message delivery require separate overlap decisions before end-to-end integration is complete",
+    "pending_consumers": "Circle map now uses the approved membership/selection foundation; chat still uses the legacy delivery/cache service, and management roster/group-photo consumers remain for their own decisions.",
     "backend_validation": "not performed; existing RLS/table access/FK cascade behavior unverified; no migrations or live writes performed",
     "device_validation": "not performed",
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\09-circle-membership\\RescuAR-Batch09-CircleMembership.apk",
     "apk_bytes": 103332084,
     "apk_sha256": "91ecdd140e1dba0f506000b0cff786f4fe572777bf1eafbbce52288e0391f37f"
+  },
+  "circle_map_validation": {
+    "decisions": [
+      "Athena Circle map on main Map tab with explicit dev General/Offline Map entry",
+      "Athena people/avatars/battery/phone controls with dated or unknown readings and no fabricated user pins",
+      "Explicit sharing switch default Off; uploads only while visible, with valid readings and confirmed membership"
+    ],
+    "unit_checks_passed": 273,
+    "new_circle_map_checks_passed": 46,
+    "unit_scope": "fake membership/presence/device services; permission/provider/network/device lifecycle behavior not exercised",
+    "android_build": "initial and final builds passed; final source review corrected unavailable-roster text, preserved the local-save warning and retained dated approximate street labels; final build 0 warnings, 0 errors",
+    "arcore_declarations": "passed",
+    "source_preservation": "13 approved paths only; 14 accepted dev AR hashes and shared runner preserved; General Map content/layers/advisory behavior unchanged except return navigation and visible shell back/title; auth/profile/contact/settings/chat/Admin unchanged",
+    "membership": "approved scoped membership/selection service now consumed by Circle map; selected-circle membership confirmed during reads and again before upload; full membership list refreshed on entry, selection, manual Refresh and every 30 seconds",
+    "display": "recorded coordinates and times only; 2-minute recent/last-known styling; unknown battery stays unknown; optional HTTPS avatars and approximate street lookups guarded by page/account scope; no fabricated safety/online/default-coordinate/fanned-out physical location",
+    "sharing": "Off on entry, circle/account switch, exit and app stop; explicit permission request on enable only; device fixes <=30 seconds old, <=100m known accuracy, finite supported coordinates, nonmock; actual acquisition timestamp stored; cancellable requests; no cached/default GPS upload or silent update/insert retry chain",
+    "backend_scope": "existing per-user user_locations row retained; backend-authorized Circles may read that last-known row, not a new per-circle sharing schema; disabling/exit does not delete prior cloud positions and cannot retract an already accepted in-flight request",
+    "offline": "labelled membership list plus page-memory people already fetched for the same scope/circle; cold offline roster not fabricated; Circle basemap remains online until shared offline-display stage, with dev General/Offline Map reachable",
+    "pending": "management roster/group photo and chat consumers; shared offline map layers; no chat delivery/cache changes in this batch",
+    "backend_device_validation": "not performed; no live writes/migrations, app/browser interaction or integration/E2E testing",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\10-circle-map\\RescuAR-Batch10-CircleMap.apk",
+    "apk_bytes": 103352564,
+    "apk_sha256": "3a271b8419fb064b30ae2c2bb23a63de90cda39fdf9148612bcd814d44a3853d"
   }
 }
