@@ -40,15 +40,15 @@ public sealed partial class ArCoreService
             using var image = frame.AcquireSemanticImage();
             using var confidenceImage = frame.AcquireSemanticConfidenceImage();
             int width = image.Width, height = image.Height;
-            double viewRatio = (double)spatial.DisplayGeometry.Width / spatial.DisplayGeometry.Height;
-            // The pinned API describes semantic output in portrait display
-            // aspect. Reject other geometry rather than guessing a rotation/crop.
+            string dimensions = $"semantic={width}x{height}; confidence={confidenceImage.Width}x{confidenceImage.Height}; " +
+                $"view={spatial.DisplayGeometry.Width}x{spatial.DisplayGeometry.Height}; " +
+                $"semanticNs={image.Timestamp}; confidenceNs={confidenceImage.Timestamp}";
+            // Acquiring both outputs from this Frame pairs them. Raw semantic
+            // textures are not viewport pixels; ARCore supplies their UV mapping.
             if (width <= 4 || height <= 4 || width > 1024 || height > 2048 ||
-                confidenceImage.Width != width || confidenceImage.Height != height ||
-                Math.Abs((double)width / height - viewRatio) > .02 ||
-                confidenceImage.Timestamp != image.Timestamp)
+                confidenceImage.Width != width || confidenceImage.Height != height)
             {
-                RoadSurfaceStatus("Waiting for a camera-matched road image", now);
+                RoadSurfaceStatus("Road image geometry unavailable", now, dimensions);
                 return;
             }
             var labelPlane = image.GetPlanes()?[0];
@@ -63,15 +63,25 @@ public sealed partial class ArCoreService
             confidence = ArrayPool<byte>.Shared.Rent(confidenceLength);
             labelBuffer.Get(labels, 0, labelLength);
             confidenceBuffer.Get(confidence, 0, confidenceLength);
-            var components = SemanticRoadBoundaries.Extract(labels, confidence, width, height,
-                labelPlane.RowStride, confidencePlane.RowStride, request.Label);
+            float[] uv = new float[8];
+            frame.TransformCoordinates2d(Coordinates2d.ViewNormalized,
+                new float[] { 0, 0, 1, 0, 0, 1, 1, 1 }, Coordinates2d.TextureNormalized, uv);
+            if (!SemanticImageCoordinates.TryReproject(labels, confidence, width, height,
+                labelPlane.RowStride, confidencePlane.RowStride,
+                checked((int)spatial.DisplayGeometry.Width), checked((int)spatial.DisplayGeometry.Height), uv, out var view))
+            {
+                RoadSurfaceStatus("Road image transform unavailable", now, dimensions);
+                return;
+            }
+            var components = SemanticRoadBoundaries.Extract(view.Labels, view.Confidence, view.Width, view.Height,
+                view.Width, view.Width, request.Label);
             RoadSurfaceAlignment.RoadLine line = default;
             int qualified = 0, boundaryCount = 0;
             foreach (var component in components)
             {
                 var boundaries = new List<RoadSurfaceAlignment.Boundary>();
                 foreach (var pixel in component)
-                    if (RoadSurfaceAlignment.TryGroundPoint((pixel.X + .5f) / width, (pixel.Y + .5f) / height,
+                    if (RoadSurfaceAlignment.TryGroundPoint((pixel.X + .5f) / view.Width, (pixel.Y + .5f) / view.Height,
                         spatial, cameraZoomRatio, out var point)) boundaries.Add(new(point, pixel.Cropped));
                 if (!RoadSurfaceAlignment.TryFit(boundaries, new Vector2(spatial.Pose.PositionX, spatial.Pose.PositionZ),
                     request.Direction, out var fitted, request.Label == 5 ? .8f : 2, request.Label == 5 ? 6 : 15)) continue;
@@ -79,7 +89,8 @@ public sealed partial class ArCoreService
             }
             if (qualified != 1)
             {
-                RoadSurfaceStatus(qualified > 1 ? "Visible road alignment is ambiguous" : "Looking for clear road edges", now);
+                RoadSurfaceStatus(qualified > 1 ? "Visible road alignment is ambiguous" : "Looking for clear road edges", now,
+                    dimensions + $"; viewMask={view.Width}x{view.Height}; components={components.Count}; qualified={qualified}");
                 return;
             }
             ARRoadSurfaceBridge.Observe(request, line, spatial);

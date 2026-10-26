@@ -13,11 +13,13 @@ public partial class CameraPage
     {
         if (activeRoute is not { } route || !IsMldRoute(route)) return confidence;
         bool visual = HasVisualRoadRegistration();
-        if (!visual)
-            confidence = confidence with { AllowsRouteGeometry = false,
-                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
-                DisplayMessage = ARRoadSurfaceBridge.Status };
-        else if (!routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
+        // Road classification refines an already qualified GPS/AR placement.
+        // Its availability must not veto the shared navigation confidence decision.
+        if (!visual && confidence.AllowsRouteGeometry)
+            confidence = confidence with {
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
+                DisplayMessage = "Approximate route placement — GPS accuracy applies" };
+        else if (visual && !routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
             !_gpsPdrFusionPolicy.IsRouteIdentitySuspended && HasCurrentRouteHeading() &&
             frame.IsFresh && frame.IsTracking && frame.Anchor.IsVerified && window.Placement.IsFor(frame) &&
             window.Placement.AlignmentSource == "VISUAL_ROAD_CORRIDOR" &&
@@ -57,7 +59,6 @@ public partial class CameraPage
         if (MldPathIsCurrent()) return false;
         routeLocatorIcon.IsVisible = false;
         routeLocatorPanel.IsVisible = false;
-        SetTurnGuidanceVisible(false);
         return true;
     }
 

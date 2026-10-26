@@ -13,6 +13,7 @@ public partial class CameraPage
     // They never become routing origins, device locations or arrival evidence.
     private VerifiedPosition? verifiedPosition;
     private readonly RoutePositionObservationPolicy positionObservationPolicy = new();
+    private readonly RouteProgressMotionPolicy progressMotionPolicy = new();
     private volatile bool positionObservationHeld;
     private readonly NavigationStabilityPolicy navigationStability;
     private RegisteredPublication? lastRegisteredPublication;
@@ -29,6 +30,7 @@ public partial class CameraPage
         {
             navigationStability.Reset();
             positionObservationPolicy.Reset();
+            progressMotionPolicy.Reset();
             verifiedPosition = null;
             lastRegisteredPublication = null;
             lastRegistrationRejection = null;
@@ -127,8 +129,8 @@ public partial class CameraPage
                 (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
                  reading.Timestamp <= previous.At) ||
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
-            // MLD may collect a coarse bootstrap reference before physical
-            // alignment. It cannot publish that GPS-only reference as a path.
+            // A coarse MLD bootstrap reference still passes the shared heading,
+            // tracking and placement gates before publication.
             if (GetAcquisitionMotion(reading, requireTrustedHeading: !IsMldRoute(route)) is not { } motion) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
             var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.Timestamp,
@@ -168,8 +170,6 @@ public partial class CameraPage
                     DateTimeOffset.UtcNow, current, out var reference,
                     boundedRecovery ? navigationStability.Options.RecoveryLifetime : null))
                 return RejectRegisteredWindow("registration unsupported or context changed", source);
-            if (IsMldRoute(route) && reference.Source != "VISUAL_ROAD_CORRIDOR")
-                return RejectRegisteredWindow("physical road alignment pending", source);
             double window = GetCurrentArRouteVisualWindowMeters();
             if (reference.Source == "VISUAL_ROAD_CORRIDOR")
             {
@@ -343,32 +343,34 @@ public partial class CameraPage
         RouteProgressTracker.ProgressSnapshot progress)
     {
         PedestrianTurnGuidanceService.TurnGuidanceSnapshot guidance;
-        DateTimeOffset observedAt;
         long trip = activeDestinationVersion;
+        string positionStatus;
         lock (routeProgressFusionSync)
         {
             if (route is null || !ReferenceEquals(route, activeRoute) ||
-                verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route) ||
-                DateTimeOffset.UtcNow - verified.At > TimeSpan.FromSeconds(5) ||
-                lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
-                _gpsPdrFusionPolicy.IsRouteIdentitySuspended || positionObservationHeld || lastOffRouteCandidate ||
-                !progress.HasProgress || progress.IsOffRoute ||
-                !_routeDisplayProgressPolicy.TryResolvePdr(route, progress.CommittedProgressMeters,
-                    DateTimeOffset.UtcNow, out var position)) return false;
-            observedAt = verified.At;
+                !progress.HasRoute || !progress.HasProgress ||
+                !RouteDisplayProgressPolicy.TryAtDistance(route, progress.CommittedProgressMeters,
+                    out var position)) return false;
             guidance = _turnGuidanceService.Evaluate(route, position.ProgressMeters, position.SegmentIndex)
                 with { RemainingRouteMeters = progress.RemainingMeters };
+            bool currentPosition = !progress.IsOffRoute && !lastOffRouteCandidate &&
+                !positionObservationHeld && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
+                lastGpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+                latestGpsTimestampForRouting is { } gpsAt && DateTimeOffset.UtcNow >= gpsAt &&
+                DateTimeOffset.UtcNow - gpsAt <= TimeSpan.FromSeconds(5);
+            positionStatus = currentPosition ? "Distance is approximate" : "Position uncertain · distance held";
         }
         if (!guidance.IsAvailable) return false;
         Dispatcher.Dispatch(() =>
         {
             if (!pageIsVisible || !ReferenceEquals(activeRoute, route) || activeDestinationVersion != trip ||
-                DateTimeOffset.UtcNow - observedAt > TimeSpan.FromSeconds(5) ||
-                positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 currentCameraModuleView != CameraModuleViewMode.ArCamera ||
+                dynamicRerouteInProgress || routeHazardBlocksGuidance ||
                 emergencyAdvisoryVisible || safeZoneConfirmed || lastSafeZoneDecision.IsCandidate) return;
             ApplyPrototypeTurnGuidance(guidance);
-            turnDistanceLabel.Text = $"{guidance.RemainingRouteMeters:F0} m remaining · AR placement recovering";
+            if (positionStatus.StartsWith("Position uncertain", StringComparison.Ordinal))
+                turnInstructionLabel.Text = "Confirming your route position — check the map";
+            turnDistanceLabel.Text = $"{guidance.RemainingRouteMeters:F0} m remaining · {positionStatus}";
             SetTurnGuidanceVisible(true);
         });
         return true;

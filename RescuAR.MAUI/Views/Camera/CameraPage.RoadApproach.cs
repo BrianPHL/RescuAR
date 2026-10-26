@@ -211,8 +211,6 @@ public partial class CameraPage
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
         bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
-        double distance = reading is null ? double.PositiveInfinity :
-            reading.Coordinate.DistanceTo(destination.Coordinate);
         if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
         bool uncertain = positionObservationHeld || decision.IsObservationHeld ||
@@ -227,7 +225,7 @@ public partial class CameraPage
                 ? "Check the mapped road crossing before entering."
                 : "Look for the entrance. If you are there, confirm your arrival below.";
         routeLocatorLabel.Text = (uncertain ? "Location suggests you're near " : "You're near ") +
-            $"{destination.Name} (~{distance:0} m).\n{detail}";
+            $"{destination.Name}.\n{detail}";
         routeLocatorPanel.IsVisible = true;
         SetTurnGuidanceVisible(false);
         LogNavigationUiState();

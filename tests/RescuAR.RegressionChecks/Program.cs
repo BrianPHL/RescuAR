@@ -23,6 +23,12 @@ if (args.Contains("--multi-device-recovery"))
     Console.WriteLine($"{passed} multi-device recovery regression checks passed.");
     return;
 }
+if (args.Contains("--navigation-pipeline"))
+{
+    NavigationPipelineChecks.Run(Check);
+    Console.WriteLine($"{passed} navigation pipeline regression checks passed.");
+    return;
+}
 if (args.Contains("--mld-guidance"))
 {
     await MldGuidanceOwnershipChecks.RunAsync(Check);
@@ -56,6 +62,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
         ARRegistrationChecks.Run(Check);
         ARMultiDeviceRecoveryChecks.Run(Check);
         NavigationStabilityChecks.Run(Check);
+        NavigationPipelineChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);
