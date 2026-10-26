@@ -193,24 +193,22 @@ namespace RescuAR.App.ViewModels.Authentication
                 // Register via Supabase
                 var session = await _authService.SignUpWithEmailAsync(Email.Trim(), Password, FirstName.Trim(), LastName.Trim(), string.IsNullOrWhiteSpace(MiddleName) ? null : MiddleName.Trim(), ContactNumber.Trim());
 
-                MainThread.BeginInvokeOnMainThread(async () =>
+                if (!string.IsNullOrWhiteSpace(session.AccessToken) && !string.IsNullOrWhiteSpace(session.User?.Id))
                 {
-                    // If email confirmation is disabled in Supabase, the user is logged in immediately
-                    if (session != null && !string.IsNullOrEmpty(session.AccessToken))
+                    await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider, session.User.Id);
+                }
+                else
+                {
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
-                        if (Application.Current != null)
+                        if (AuthenticationNavigation.RootPage is NavigationPage navPage)
                         {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
+                            var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
+                            ((OtpVerificationViewModel)otpPage.BindingContext).Email = Email.Trim();
+                            await navPage.PushAsync(otpPage);
                         }
-                    }
-                    else if (AuthenticationNavigation.RootPage is NavigationPage navPage)
-                    {
-                        var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
-                        var vm = (OtpVerificationViewModel)otpPage.BindingContext;
-                        vm.Email = Email.Trim();
-                        await navPage.PushAsync(otpPage);
-                    }
-                });
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -227,7 +225,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     }
                     catch { }
                 }
-                
+
                 string finalError = msg ?? "An error occurred during registration. Please try again.";
                 await ShowErrorAsync(finalError);
             }
@@ -241,7 +239,7 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             ErrorMessage = message;
             OnPropertyChanged(nameof(HasError));
-            
+
             if (AuthenticationNavigation.RootPage != null)
             {
                 await AuthenticationNavigation.RootPage!.DisplayAlert("Registration Error", message, "OK");

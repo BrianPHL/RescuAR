@@ -88,7 +88,8 @@ bool archiveFailed = false;
 try { AuthenticationIdentity.ClearActive(failingArchive, null); } catch (IOException) { archiveFailed = true; }
 Check(archiveFailed && !failingArchive.SignedIn && failingArchive.Values["UserPhone"] == "preserve-me",
     "failed archiving signs out without discarding the original saved details");
-Console.WriteLine($"{passed} authentication persistence/cleanup checks passed.");
+await AuthenticationFlowChecks.RunAsync(Check);
+Console.WriteLine($"{passed} authentication persistence, cleanup and routing checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore
 {

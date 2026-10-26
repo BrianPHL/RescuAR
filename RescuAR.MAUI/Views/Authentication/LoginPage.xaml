@@ -80,10 +80,10 @@
                                 </ContentView.GestureRecognizers>
                                 <Grid>
                                     <!-- Eye-Off Icon (Hidden Password) -->
-                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z" 
+                                    <Path Data="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.54 9,11.76 9,12A3,3 0 0,0 12,15C12.24,15 12.46,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17C8.13,17 4.79,14.65 3.32,11.5C4.38,9.45 6.09,7.9 8.15,7.03L7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,11.5C2.73,15.39 7,18.5 12,18.5C13.84,18.5 15.58,18.11 17.15,17.43L17.59,17.87L19.73,20L21,18.73L3.27,3L2,4.27M12,4.5C17,4.5 21.27,7.61 23,11.5C22.25,13 21.14,14.33 19.8,15.34L18.42,13.96C19.46,13.1 20.25,12 20.68,11.5C19.21,8.35 15.87,6 12,6C11.12,6 10.26,6.15 9.46,6.43L8.09,5.06C9.28,4.7 10.6,4.5 12,4.5Z"
                                           Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordHidden}" HorizontalOptions="Fill" VerticalOptions="Fill" />
                                     <!-- Eye Icon (Visible Password) -->
-                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z" 
+                                    <Path Data="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17C8.13,17 4.79,14.65 3.32,11.5C4.79,8.35 8.13,6 12,6C15.87,6 19.21,8.35 20.68,11.5C19.21,14.65 15.87,17 12,17M12,4.5C7,4.5 2.73,7.61 1,11.5C2.73,15.39 7,18.5 12,18.5C17,18.5 21.27,15.39 23,11.5C21.27,7.61 17,4.5 12,4.5Z"
                                           Fill="#757575" Aspect="Uniform" IsVisible="{Binding IsPasswordVisible}" HorizontalOptions="Fill" VerticalOptions="Fill" />
                                 </Grid>
                             </ContentView>
@@ -93,12 +93,12 @@
 
                 <!-- Remember me / Forgot Password -->
                 <Grid ColumnDefinitions="Auto, *" Margin="0, 0, 0, 10">
-                    <!-- Remember Me Placeholder -->
+                    <!-- Remember the verified login across app restarts. -->
                     <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
-                        <CheckBox Color="#00848E" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
+                        <CheckBox IsChecked="{Binding IsRememberMe}" Color="#00848E" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
                         <Label Text="Remember me" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" VerticalOptions="Center" />
                     </HorizontalStackLayout>
-                    
+
                     <Label Grid.Column="1" Text="Forget password?" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" HorizontalOptions="End" VerticalOptions="Center">
                         <Label.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding ResetPasswordCommand}" />

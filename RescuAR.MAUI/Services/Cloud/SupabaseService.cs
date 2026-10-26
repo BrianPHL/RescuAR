@@ -23,11 +23,32 @@ public class SupabaseService
     private SecureSessionPersistence? persistence;
     private Task previousPersistence = Task.CompletedTask;
 
-    public async Task SetSessionPersistenceAsync(bool enabled)
+    internal long SessionRevision => Volatile.Read(ref clientRevision);
+
+    internal async Task<Supabase.Gotrue.Session?> ReadSavedSessionAsync()
+    {
+        if (IsMockMode || !Preferences.Default.Get("RememberMe", false)) return null;
+        await initializationGate.WaitAsync();
+        try
+        {
+            try { await previousPersistence; } catch { }
+            if (persistence is { } active) { try { await active.FlushAsync(); } catch { } }
+            var saved = new SecureSessionPersistence(SupabaseUrl, new MauiSecureSessionStore());
+            long revision = SessionRevision;
+            await saved.ReadAsync();
+            if (revision != SessionRevision) throw new OperationCanceledException("Account settings changed during startup.");
+            return saved.LoadSession();
+        }
+        finally { initializationGate.Release(); }
+    }
+
+    public async Task SetSessionPersistenceAsync(bool enabled, string? expectedUserId = null)
     {
         await initializationGate.WaitAsync();
         try
         {
+            if (expectedUserId is not null && Client?.Auth.CurrentUser?.Id != expectedUserId)
+                throw new OperationCanceledException("Your account changed. Please retry.");
             if (persistence is null) return;
             persistence.Enabled = enabled;
             if (!enabled) persistence.DestroySession();
@@ -39,6 +60,7 @@ public class SupabaseService
 
     public async Task ClearSessionAsync()
     {
+        Interlocked.Increment(ref clientRevision);
         await initializationGate.WaitAsync();
         try
         {
@@ -116,7 +138,8 @@ public class SupabaseService
                 old.Enabled = false;
                 try { await old.FlushAsync(); } catch { }
             }
-            var saved = new SecureSessionPersistence(SupabaseUrl, new MauiSecureSessionStore());
+            var saved = new SecureSessionPersistence(SupabaseUrl, new MauiSecureSessionStore())
+            { Enabled = Preferences.Default.Get("RememberMe", false) };
             persistence = saved;
             await saved.ReadAsync();
             RequireCurrentClient(client, revision);

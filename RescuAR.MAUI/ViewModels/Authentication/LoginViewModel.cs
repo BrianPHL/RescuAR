@@ -27,6 +27,9 @@ namespace RescuAR.App.ViewModels.Authentication
         private bool _isPasswordVisible = false;
 
         [ObservableProperty]
+        private bool _isRememberMe;
+
+        [ObservableProperty]
         private bool _isLoading = false;
 
         public bool IsNotLoading => !IsLoading;
@@ -59,6 +62,8 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             _serviceProvider = serviceProvider;
             _authService = authService;
+            _isRememberMe = Preferences.Default.Get("RememberMe", false);
+            if (_isRememberMe) _email = Preferences.Default.Get("SavedLoginEmail", string.Empty);
         }
 
         [RelayCommand]
@@ -92,72 +97,10 @@ namespace RescuAR.App.ViewModels.Authentication
             IsLoading = true;
             try
             {
-                // Authenticate with email/password using Supabase
+                Preferences.Default.Set("RememberMe", IsRememberMe);
                 var session = await _authService.SignInWithEmailAsync(Email.Trim(), Password);
-
-                // Save session preference
-                Preferences.Default.Set("IsLoggedIn", true);
-                Preferences.Default.Set("UserEmail", Email.Trim());
-
-                // Ensure user profile row exists in users table with first_name and last_name
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var client = RescuAR.Services.SupabaseService.Instance.Client;
-                        var authUser = client?.Auth.CurrentUser;
-                        var authUserId = authUser?.Id;
-                        if (!string.IsNullOrWhiteSpace(authUserId))
-                        {
-                            Preferences.Default.Set("CurrentUserId", authUserId);
-                        }
-
-                        if (client != null && authUser != null && !string.IsNullOrWhiteSpace(authUserId))
-                        {
-                            string fn = "";
-                            string ln = "";
-                            if (authUser.UserMetadata != null)
-                            {
-                                if (authUser.UserMetadata.TryGetValue("first_name", out var f) && f != null) fn = f.ToString()?.Trim() ?? "";
-                                if (authUser.UserMetadata.TryGetValue("last_name", out var l) && l != null) ln = l.ToString()?.Trim() ?? "";
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(fn) || !string.IsNullOrWhiteSpace(ln))
-                            {
-                                Preferences.Default.Set("UserFirstName", fn);
-                                Preferences.Default.Set("UserLastName", ln);
-
-                                var userRecord = new Models.User
-                                {
-                                    Id = authUserId,
-                                    Email = authUser.Email ?? Email.Trim(),
-                                    FirstName = fn,
-                                    LastName = ln
-                                };
-                                await client.From<Models.User>().Upsert(userRecord);
-                            }
-                        }
-                    }
-                    catch { }
-                });
-
-                // Navigate to Permissions or Dashboard
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    if (Application.Current != null)
-                    {
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                });
+                await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider,
+                    session.User?.Id ?? throw new InvalidOperationException("The signed-in account is unavailable."));
             }
             catch (Exception ex)
             {
@@ -167,15 +110,15 @@ namespace RescuAR.App.ViewModels.Authentication
                 {
                     ErrorMessage = "Please confirm your email address via the link sent to your inbox before logging in.";
                 }
-                else if (msg.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase) || 
+                else if (msg.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase) ||
                          msg.Contains("Invalid login credentials", StringComparison.OrdinalIgnoreCase))
                 {
                     ErrorMessage = "Invalid email or password. Please check your credentials and try again.";
                 }
                 else
                 {
-                    ErrorMessage = string.IsNullOrWhiteSpace(msg) 
-                        ? "Failed to log in. Please check your internet connection or credentials." 
+                    ErrorMessage = string.IsNullOrWhiteSpace(msg)
+                        ? "Failed to log in. Please check your internet connection or credentials."
                         : msg;
                 }
 
@@ -190,6 +133,7 @@ namespace RescuAR.App.ViewModels.Authentication
         [RelayCommand]
         private void GoogleSignIn()
         {
+            Preferences.Default.Set("RememberMe", IsRememberMe);
             var googleAuthPage = _serviceProvider.GetRequiredService<GoogleAuthPage>();
             MainThread.BeginInvokeOnMainThread(() =>
             {

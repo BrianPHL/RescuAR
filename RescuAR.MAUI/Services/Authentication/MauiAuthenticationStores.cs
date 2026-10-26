@@ -28,5 +28,9 @@ internal sealed class MauiIdentityPreferences : IIdentityPreferences
     public string Get(string key) => Preferences.Default.Get(key, string.Empty);
     public void Set(string key, string value) => Preferences.Default.Set(key, value);
     public void Remove(string key) => Preferences.Default.Remove(key);
-    public void MarkSignedOut() => Preferences.Default.Set("IsLoggedIn", false);
+    public void MarkSignedOut()
+    {
+        Preferences.Default.Set("IsLoggedIn", false);
+        Preferences.Default.Set("AuthenticationOffline", false);
+    }
 }

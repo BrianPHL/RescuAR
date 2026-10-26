@@ -10,10 +10,10 @@
     NavigationPage.HasNavigationBar="False"
     BackgroundColor="#0B132B">
 
-    <Grid HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand">
+    <Grid RowDefinitions="*,Auto" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand">
 
         <!-- Deep Ambient Background -->
-        <BoxView BackgroundColor="#0B132B" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
+        <BoxView Grid.RowSpan="2" BackgroundColor="#0B132B" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
 
         <!-- Center Stage Stack -->
         <VerticalStackLayout HorizontalOptions="Center"
@@ -49,6 +49,10 @@
             </Border>
         </VerticalStackLayout>
 
+        <VerticalStackLayout Grid.Row="1" Margin="24,0,24,32" Spacing="12" IsVisible="{Binding HasStartupError}">
+            <Label Text="{Binding StatusText}" TextColor="White" HorizontalTextAlignment="Center" />
+            <Button Text="Retry" Command="{Binding RetryStartupCommand}" BackgroundColor="#0A8491" TextColor="White" />
+        </VerticalStackLayout>
     </Grid>
 
 </ContentPage>

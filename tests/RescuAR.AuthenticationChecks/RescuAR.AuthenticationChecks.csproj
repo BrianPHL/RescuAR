@@ -9,5 +9,6 @@
     <PackageReference Include="Supabase" Version="1.1.1" />
     <Compile Include="../../RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs" Link="SecureSessionPersistence.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationIdentity.cs" Link="AuthenticationIdentity.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationFlowCoordinator.cs" Link="AuthenticationFlowCoordinator.cs" />
   </ItemGroup>
 </Project>

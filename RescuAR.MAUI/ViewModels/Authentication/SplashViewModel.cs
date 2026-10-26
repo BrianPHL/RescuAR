@@ -1,72 +1,52 @@
-using System;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Controls;
-using Microsoft.Maui.Storage;
-using RescuAR.App.Views.Authentication;
-
 using RescuAR.App.Services.Authentication;
 
-using RescuAR.MAUI;
+namespace RescuAR.App.ViewModels.Authentication;
 
-namespace RescuAR.App.ViewModels.Authentication
+public partial class SplashViewModel(IServiceProvider serviceProvider) : ObservableObject
 {
-    public partial class SplashViewModel : ObservableObject
+    [ObservableProperty] private string statusText = "Restoring your account...";
+    [ObservableProperty] private string versionText = "v0.0.1a";
+    [ObservableProperty] private bool isStarting;
+    [ObservableProperty] private bool hasStartupError;
+
+    public async Task InitializeAsync()
     {
-        private readonly IServiceProvider _serviceProvider;
-
-        [ObservableProperty]
-        private string _statusText = "Loading safety resources...";
-
-        [ObservableProperty]
-        private string _versionText = "v0.0.1a";
-
-        public SplashViewModel(IServiceProvider serviceProvider)
+        if (IsStarting) return;
+        IsStarting = true;
+        HasStartupError = false;
+        StatusText = "Restoring your account...";
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        try
         {
-            _serviceProvider = serviceProvider;
-        }
-
-        public async Task InitializeAsync()
-        {
-            await Task.Delay(2000);
-
-            bool isLoggedIn = Preferences.Default.Get("IsLoggedIn", false);
-            bool hasSignedUp = Preferences.Default.Get("HasSignedUp", false);
-
-            MainThread.BeginInvokeOnMainThread(() =>
+            // Keep dev's minimum splash interval while account restoration runs.
+            var flow = serviceProvider.GetRequiredService<AuthenticationFlowCoordinator>();
+            var startup = flow.StartAsync(timeout.Token);
+            await Task.Delay(2000, timeout.Token);
+            var decision = await startup;
+            if (decision.Route == AuthenticationRoute.Retry)
             {
-                if (Application.Current != null)
-                {
-                    if (isLoggedIn)
-                    {
-                        bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                        if (hasPermissions)
-                        {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
-                        }
-                        else
-                        {
-                            var permissionsPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            AuthenticationNavigation.TrySetRootPage(permissionsPage);
-                        }
-                    }
-                    else if (hasSignedUp)
-                    {
-                        var loginPage = _serviceProvider.GetRequiredService<LoginPage>();
-                        AuthenticationNavigation.TrySetRootPage(new NavigationPage(loginPage));
-                    }
-                    else
-                    {
-                        var onboardingPage = _serviceProvider.GetRequiredService<OnboardingPage>();
-                        AuthenticationNavigation.TrySetRootPage(new NavigationPage(onboardingPage));
-                    }
-                }
-            });
+                StatusText = decision.Message;
+                HasStartupError = true;
+                return;
+            }
+            await AuthenticationNavigation.ApplyDecisionAsync(serviceProvider, decision);
         }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Sign-in could not finish. Check your connection and retry.";
+            HasStartupError = true;
+        }
+        catch (Exception)
+        {
+            StatusText = "Your account could not be restored. Please retry.";
+            HasStartupError = true;
+        }
+        finally { IsStarting = false; }
     }
+
+    [RelayCommand]
+    private Task RetryStartupAsync() => InitializeAsync();
 }
-
-
-

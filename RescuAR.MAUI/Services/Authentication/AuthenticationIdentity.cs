@@ -16,7 +16,7 @@ internal static class AuthenticationIdentity
     // Legacy aliases remain relevant while the individual Athena screens are ported.
     private static readonly string[] activeKeys =
     [
-        "CurrentUserId", "current_user_id", "UserId", "UserEmail", "UserName",
+        "CurrentUserId", "current_user_id", "UserId", "CurrentAuthProject", "UserEmail", "UserName",
         "UserFirstName", "UserMiddleName", "UserLastName", "UserPhone", "UserPhoneNumber",
         "UserContactNumber", "UserAddress", "UserHouseNumber", "UserHouseLot", "UserStreet",
         "UserStreetName", "UserBarangay", "UserCity", "UserBirthday", "UserAvatarUrl",
