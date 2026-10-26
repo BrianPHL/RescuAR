@@ -1,6 +1,6 @@
 # Multi-device navigation investigation — 26 October 2026
 
-Two locally reproduced recovery/arrow defects were corrected. The new Android candidate builds and the targeted checks pass. **The recurring physical alignment and visibility problems are not accepted as resolved.** No video, screenshots, surveyed references, or post-change device results were supplied.
+Two locally reproduced recovery/arrow defects were corrected in the earlier candidate. The tester subsequently reported inaccurate arrows and an absent cyan path on **A54 / Android 14 / MLD** with that candidate. Capture was not started. The MLD follow-up below addresses a separately reproduced presentation-ownership defect. **The recurring physical alignment and visibility problems are not accepted as resolved.** No video, screenshots or surveyed references were supplied.
 
 ## Evidence and identities
 
@@ -127,7 +127,7 @@ Commands were run from the repository root. Raw logs are under `artifacts/field-
 
 The isolated replay compiles current changed policies against the existing product model assembly; the Android build and subsequent 655-check runner provide the corresponding application/shared-library compilation. Reconstructed MLD responses cannot validate a deployed server's dataset. No full unrelated suite, interactive application/browser check, installation, integration/E2E suite, or physical device test was performed. Static native hash inspection is not runtime acceptance.
 
-## Delivered candidate
+## Earlier candidate (subsequent MLD field failure reported)
 
 [RescuAR-20261026-Recovery.apk](artifacts/field-test-20261026-recovery/RescuAR-20261026-Recovery.apk)
 
@@ -147,3 +147,62 @@ The isolated replay compiles current changed policies against the existing produ
 6. Compare matched 15-minute runs with the same brightness, initial charge/temperature, route, and surroundings. Record battery start/end, temperature, FPS, tracking losses, and cue gaps. There is no accepted power or thermal improvement until those measurements exist.
 
 Return actual outcomes before further behavior-dependent changes. Remaining material uncertainties are absolute road/entrance registration, heading source accuracy, exact physical visibility, deployed MLD identity, and measured post-change recovery/thermal behavior.
+
+## MLD follow-up: one route owns the visible guidance
+
+### New evidence and baseline
+
+The tester reports that `RescuAR-20261026-Recovery.apk` still showed wandering/inaccurate arrows and no cyan line on **Samsung A54, Android 14, MLD**. Capture was not started; this is not evidence of a logging failure. The phone is unavailable and the existing ADB server lists no devices, so the latest run's exact withholding condition and absolute placement cannot be reconstructed. The Android 14 capture in the original ZIP used A*, not this later MLD run.
+
+The supplied website response is retained verbatim as `tests/RescuAR.RegressionChecks/Fixtures/MldCBenitezResponse.json`. It contains six ordered coordinates on C. Benitez Street, a rounded server distance of 251 m, and two reported endpoint snap distances of 0.221290199 m. The production `MLDRoutingService` HTTP/parser path preserves all six coordinates; geometry length is 250.660843 m. Seven registered AR windows at 0/40/80/120/160/200/240 m restore to the source polyline with a maximum cross-track round-trip error of **0.000010 m**. This numerical result does not establish real-world heading, GPS accuracy, surveyed road position, or the deployed server's dataset identity.
+
+The pre-edit local replay passed nine assertions but failed the tenth: an otherwise valid nearest-road floor cue remained drawable while the computed MLD route was recovering and its pathway was disabled. See `artifacts/mld-focus-20261026/exact-response-baseline-local-frames.log`. This is a confirmed disagreement between presentation contracts, not proof of the exact trigger in the uncaptured A54 run.
+
+The owning code explains the disagreement:
+
+1. `CameraPage.RoadApproach.cs` separately produced a floor cue toward the nearest snapped road point. Its screen fallback could point directly toward the destination. Neither necessarily follows the forward segment of the downloaded route.
+2. `CameraPage.xaml.cs::RefreshArTrackingStatusBanner` withheld the mapped path using combined heading, position, registration, geometry, tracking and hazard evidence. `ARRoadApproachBridge.CanRender` used a separate cue/floor/freshness contract and did not consume that decision.
+3. Startup accepted the route and started GPS progress before waiting for heading. When heading became ready, it cleared the old bridge and waited for another GPS update even if an existing observation was still fresh and could be paired to its acquisition-time pose.
+
+The earlier recovery fix corrected an impossible evidence cadence, and the earlier arrow fix kept a mapped target fixed in the world. They did not give the computed MLD route ownership of every directional presentation, or publish an eligible window at heading readiness. Successful source/build checks for those narrower fixes could not establish physical acceptance.
+
+### Ordered implementation plan and changes
+
+The plan was presented before the MLD application edits: establish one route-owned display state; remove competing computed-MLD nearest-road/destination cues; publish from an already eligible observation when heading becomes ready; then replay the exact response and state transitions and build the Android package.
+
+- `MldGuidanceBridge` owns preparing/following/recovering/safe-prefix/blocked/arrived presentation for the selected MLD route object and destination version. Only a bound window from that route's registered publisher can receive permission. The snapshot carries route fingerprint, heading calibration, window, session, floor, tracking epoch, world frame, explanation and cause. `NAV_MLD_STATE` records changes without absolute coordinates.
+- The draw thread consumes that decision for MLD. A hide request suppresses the same owner immediately; a show request cannot independently authorize a route. Frame coherence, live tracking, floor locality/height, geometry preparation and depth rejection remain enforced at draw time.
+- Once a computed MLD route exists, the floor arrow and cyan path come from the same mapped route renderer. The independent nearest-road floor arrow and destination-pointing fallback are withheld. The screen locator and turn card consume the same current-path permission; recovery retains the specific status explanation.
+- A normal qualified registered window advances the owner's version immediately, without waiting for the UI timer. A validated retained-world floor handoff can retain permission; a changed heading calibration, session, tracking epoch or world frame cannot inherit it. Publishing geometry alone cannot promote recovery or a hazard block. Arrival is terminal until a new route is selected, and stale callbacks cannot promote a replacement with identical geometry.
+- Heading readiness/recovery tries publication from the latest already accepted, still acquisition-paired GPS observation. Matching is observe-only, so this does not add duplicate road-entry, arrival or trip-progress evidence. The existing freshness, accuracy, registration, access, hazard and heading gates still apply.
+
+No GPS/heading threshold, evidence lifetime, hazard radius, map dataset, routing profile, native binary or dependency pin was changed. Local coordinate preservation does not eliminate absolute sensor/registration error.
+
+### Follow-up verification
+
+The original isolated replay was repeated after the first MLD changes: **10 passed, zero failed**, with the same 0.000010 m round-trip error. Log: `artifacts/mld-focus-20261026/exact-response-after.log`. It source-links the changed cue/ownership bridge against the existing shared product assembly; the final application build and normal regression runner provide complete compilation checks.
+
+| Check | Exact command | Observed result |
+| --- | --- | --- |
+| Exact response replay | `dotnet run --project artifacts/mld-focus-20261026/replay/replay.csproj --no-restore` | Baseline 9 passed / 1 failed; after the first MLD changes 10 passed / 0 failed. The failing baseline is the separate floor-arrow contract. |
+| Android Release | `dotnet build RescuAR.MAUI/RescuAR.MAUI.csproj -c Release --no-restore -p:RescuArDiagnosticBuild=true -p:AndroidPackageFormats=apk` | Passed first attempt: **zero warnings/errors, 85.38 seconds**. Log: `artifacts/mld-focus-20261026/android-release-build.log`. |
+| Targeted regressions | `dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -c Release --no-restore -p:GenerateEvergineContent=False -p:BuildProjectReferences=False -- --alignment-recovery` | **690 passed**, including 35 new MLD ownership/exact-response checks and the existing 655 checks. Uses the newly compiled shared library; no project-reference rebuild. Log: `artifacts/mld-focus-20261026/alignment-recovery.log`. |
+| Readiness | `./build/Verify-ARCoreReleaseReadiness.ps1` | Passed; manifest/compatibility declarations internally consistent. Log: `artifacts/mld-focus-20261026/readiness.log`. |
+| Patch hygiene | `git diff --check -- RescuAR RescuAR.MAUI tests/RescuAR.RegressionChecks AR_FIELD_VALIDATION_20261026.md` | Passed. Git reports the configured future LF-to-CRLF normalization for this report; no whitespace errors. |
+
+The focused new fixtures can also be selected with `--mld-guidance`. No dependencies/frameworks were installed. No full unrelated suite, integration/E2E test, interactive application/browser test, device installation, live-report change or physical test was performed. A successful compile/replay does not prove visible pixels, absolute alignment or field recovery.
+
+### New MLD candidate
+
+[RescuAR-20261026-MLD-Guidance.apk](artifacts/field-test-20261026-mld-guidance/RescuAR-20261026-MLD-Guidance.apk)
+
+- Size: **60,822,071 bytes**.
+- SHA-256: `329414077b6b925d772326f6b5f04e717ea3780cb1bb334b920721f5e177afd2`.
+- Packaged profile: Release, diagnostics true, visibility override false; base `982146b600d3bf19006e5d4044bcbe8cf383de8c` plus seven listed uncommitted product-source changes.
+- The checkout advanced through the user's RBAC merge during this work. Comparison from `d08e3c2` to the packaged base found no shared/MAUI/test/report changes; the unrelated work was preserved.
+- `source-manifest.json` and `build-profile.txt` beside the APK record source hashes and build identity. Packaged `lib/arm64-v8a/libnative_bridge.so` retains SHA-256 `c744905f5916525c0fe10f7c55b6d7c8b27347d0796c18988d62b8c37073b3b5`.
+- The earlier recovery APK is preserved separately. This new MLD candidate has **no physical acceptance evidence**. No commit or push was created.
+
+### Required focused MLD retest
+
+When the A54 is available, install the new MLD candidate and start capture before opening a fresh MLD trip on the same street. While qualified, expect the cyan path and its forward arrow to follow the same C. Benitez route shape. Rotate the phone, walk straight, stop, then briefly pause/resume AR. Ordinary registered progress updates must not introduce timer-length blanks; recovery must show one explicit reason without a competing nearest-road or destination arrow. A hazard may show only an authorized safe prefix. Report the actual visibility and phone-local event times; footage is helpful but not required.

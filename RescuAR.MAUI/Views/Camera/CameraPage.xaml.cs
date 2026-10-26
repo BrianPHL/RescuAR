@@ -1608,6 +1608,7 @@ namespace RescuAR.App.Views.Camera
                     State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
                     DisplayMessage = routeHazardNotice ?? "Hazard on route — check the map" };
 
+            confidence = ResolveMldPresentation(confidence, route, placementFrame);
             bool confidenceChanged =
                 confidence.State !=
                     lastArGuidanceConfidence.State ||
@@ -1885,6 +1886,7 @@ namespace RescuAR.App.Views.Camera
 #endif
             if (TryShowArrivalStatus()) return;
             if (TryShowRouteHazardStatus()) return;
+            if (TryShowMldRecoveryState()) return;
             if (TryShowRoadApproachCue()) return;
             if (TryShowNavigationFallback()) return;
             routeLocatorIcon.IsVisible = true;
@@ -2273,6 +2275,11 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshTurnGuidancePanelForCurrentState()
         {
+            if (activeRoute is { } mldRoute && IsMldRoute(mldRoute) && !MldPathIsCurrent())
+            {
+                SetTurnGuidanceVisible(false);
+                return;
+            }
 #if RESCUAR_DIAGNOSTICS
             if (ARRouteRenderer.CurrentRoadDiagnosticPlacement.Active)
             {
@@ -3786,6 +3793,7 @@ namespace RescuAR.App.Views.Camera
                 pendingInitialRoute = null;
                 activeRoute =
                     route;
+                MldGuidanceBridge.SetRouteOwner(route, destination.Version);
 
                 navigationSessionStartedAt ??=
                     DateTimeOffset.UtcNow;
@@ -3893,8 +3901,8 @@ namespace RescuAR.App.Views.Camera
                     $"Stable route heading: mapToArYaw={mapToArYawDegrees:F2} deg.");
 
                 // Keep physical road-entry confirmation separate from a short
-                // preview of the actual mapped geometry. The next fresh GPS
-                // update can publish that preview using the placement checks.
+                // preview of the actual mapped geometry. MLD can publish from
+                // an already fresh, acquisition-paired GPS observation below.
                 ARRouteBridge.Clear();
                 Log.Info(RoutingLogTag,
                     $"ROUTE STARTUP READY: elapsed={startupClock.ElapsedMilliseconds}ms, " +
@@ -3912,6 +3920,7 @@ namespace RescuAR.App.Views.Camera
                     ResetArRouteVisualMode("heading ready; confirm road entry with fresh GPS");
                     initialRoadApproachPending = true;
                     roadEntryConfirmation.Reset();
+                    TryPublishReadyMldWindow(route, "MLD/HEADING-READY");
                 }
 
                 var routeSnapshot = ARRouteBridge.Current;
@@ -4140,6 +4149,7 @@ namespace RescuAR.App.Views.Camera
                     ResetArRouteVisualMode("AR heading recovered; require fresh road-entry observations");
                     initialRoadApproachPending = true;
                     roadEntryConfirmation.Reset();
+                    TryPublishReadyMldWindow(route, "MLD/HEADING-RECOVERED");
                 }
                 AndroidLog.Info(HeadingLogTag, "AR heading recovered without recalculating the geographic route.");
             }
@@ -4353,6 +4363,7 @@ namespace RescuAR.App.Views.Camera
 
             activeRoute =
                 null;
+            MldGuidanceBridge.SetRouteOwner(null, 0);
 
             navigationSessionStartedAt =
                 null;
@@ -6228,6 +6239,7 @@ namespace RescuAR.App.Views.Camera
                         initialRoadApproachPending = true;
                         activeRoute =
                             replacementRoute;
+                        MldGuidanceBridge.SetRouteOwner(replacementRoute, destinationVersion);
 
                         _routeProgressTracker.SetRoute(
                             replacementRoute);
@@ -7691,6 +7703,7 @@ namespace RescuAR.App.Views.Camera
 
             safeZoneConfirmed =
                 true;
+            MldGuidanceBridge.MarkArrived(activeDestinationVersion);
             arrivalWasUserReported = userReported;
 
             CancelRouteRequest("arrival confirmed");

@@ -3,6 +3,7 @@ using Evergine.Framework.Graphics;
 using Evergine.Mathematics;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Projection;
+using RescuAR.Navigation.State;
 using System;
 
 namespace RescuAR.AR;
@@ -554,6 +555,7 @@ public static class ARCameraSpatialController
         bool enabled,
         string reason)
     {
+        if (!enabled) MldGuidanceBridge.Suppress(reason);
         bool changed;
 
         lock (sync)
@@ -769,6 +771,10 @@ public static class ARCameraSpatialController
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
         ARRoutePlacement placement = ARRouteRenderer.AppliedPlacement;
+        var mappedWindow = ARRouteBridge.Current;
+        if (MldGuidanceBridge.AppliesTo(mappedWindow))
+            routeRenderingAllowed = mappedWindow.Version == rendererRouteVersion &&
+                MldGuidanceBridge.CanRenderPath(mappedWindow, frame, NavigationDestinationBridge.Current.Version);
 
         if (anchor.IsAvailable &&
             anchor.ReferenceGeneration != appliedGroundReferenceGeneration)

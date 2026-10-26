@@ -171,6 +171,7 @@ public partial class CameraPage
     private bool TrySetRouteRoadApproachCue(RouteProgressTracker.RouteProgressUpdate update,
         bool returningToRoute)
     {
+        if (activeRoute is { } computed && IsMldRoute(computed)) return false;
         var frame = ARCameraPoseBridge.CurrentFrame;
         var destination = NavigationDestinationBridge.Current;
         LocationReading reading;
@@ -235,6 +236,7 @@ public partial class CameraPage
 
     private bool TryShowRoadApproachCue()
     {
+        if (activeRoute is { } computed && IsMldRoute(computed)) return false;
         RoadApproachCue? cue;
         lock (routeProgressFusionSync) cue = roadApproachCue;
         var destination = NavigationDestinationBridge.Current;
@@ -313,6 +315,7 @@ public partial class CameraPage
 
     private bool TryShowNavigationFallback()
     {
+        if (activeRoute is { } computed && IsMldRoute(computed)) return false;
         var destination = NavigationDestinationBridge.Current;
         if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible || routeHazardBlocksGuidance ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||

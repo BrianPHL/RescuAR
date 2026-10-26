@@ -206,6 +206,7 @@ public partial class CameraPage
                 position.RoadCoordinate, reference.WorldX, reference.WorldZ);
             if (published)
             {
+                BindMldPublishedWindow(route, frame);
                 Interlocked.Increment(ref routeWindowPublishedCount);
                 lastRegistrationRejection = null;
             }
@@ -306,6 +307,7 @@ public partial class CameraPage
             ARRouteBridge.Publish(points, window.Algorithm, window.TotalDistanceMeters,
                 window.NavigationState.VisualKind, window.NavigationState.WindowStartProgressMeters,
                 window.NavigationState.SourceSegmentIndex, placement);
+            BindMldPublishedWindow(route, frame);
             AndroidLog.Info("RescuAR-AnchorRecovery",
                 $"GROUND_HANDOFF_RETAINED oldReference={window.Placement.GroundReference}; " +
                 $"newReference={placement.GroundReference}; worldPositionsPreserved=True; " +

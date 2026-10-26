@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Fixtures/MldCBenitezResponse.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../RescuAR/Navigation/Data/profiles/evacuation-policy-cases.json" Link="evacuation-policy-cases.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../RescuAR/RescuAR.csproj" AdditionalProperties="GenerateEvergineContent=False;GenerateEvergineScenesCode=True" />
     <Compile Include="../../RescuAR.MAUI/Services/ArCoreRunIntent.cs" Link="ArCoreRunIntent.cs" />
