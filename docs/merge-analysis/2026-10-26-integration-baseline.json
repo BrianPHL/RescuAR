@@ -5005,6 +5005,7 @@
     "RescuAR.MAUI/App.xaml.cs",
     "RescuAR.MAUI/Converters/BooleanToStringConverter.cs",
     "RescuAR.MAUI/MauiProgram.cs",
+    "RescuAR.MAUI/Models/InformationSection.cs",
     "RescuAR.MAUI/Models/ResidentProfileDraft.cs",
     "RescuAR.MAUI/Platforms/Android/AndroidManifest.xml",
     "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs",
@@ -5024,6 +5025,7 @@
     "RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs",
     "RescuAR.MAUI/Services/Cloud/SupabaseService.cs",
     "RescuAR.MAUI/Services/Navigation/ArHeadingAlignmentService.cs",
+    "RescuAR.MAUI/Services/Profile/AppInformationContent.cs",
     "RescuAR.MAUI/Services/Profile/AvatarUpdateFlow.cs",
     "RescuAR.MAUI/Services/Profile/ContactSaveFlow.cs",
     "RescuAR.MAUI/Services/Profile/ContactShortcutPolicy.cs",
@@ -5044,16 +5046,23 @@
     "RescuAR.MAUI/ViewModels/Dashboard/DashboardViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/EmergencyContactsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/HealthInformationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/HelpCenterViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/PersonalInformationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/PrivacyPolicyViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/ProfileViewModel.Avatar.cs",
     "RescuAR.MAUI/ViewModels/Profile/ProfileViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/SystemInformationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/TermsConditionsViewModel.cs",
     "RescuAR.MAUI/Views/Authentication/AuthenticationFormControls.cs",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml.cs",
+    "RescuAR.MAUI/Views/Authentication/PrivacyPolicyPage.xaml",
+    "RescuAR.MAUI/Views/Authentication/PrivacyPolicyPage.xaml.cs",
     "RescuAR.MAUI/Views/Authentication/RegistrationPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml.cs",
+    "RescuAR.MAUI/Views/Authentication/TermsAndConditionsPage.xaml",
+    "RescuAR.MAUI/Views/Authentication/TermsAndConditionsPage.xaml.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.MldGuidance.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
@@ -5062,12 +5071,19 @@
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml",
     "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/HelpCenterPage.xaml",
+    "RescuAR.MAUI/Views/Profile/HelpCenterPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/LegalInformationContent.cs",
     "RescuAR.MAUI/Views/Profile/PersonalInformationPage.xaml",
     "RescuAR.MAUI/Views/Profile/PersonalInformationPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/PrivacyPolicyPage.xaml",
+    "RescuAR.MAUI/Views/Profile/PrivacyPolicyPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/ProfilePage.xaml",
     "RescuAR.MAUI/Views/Profile/ProfilePage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/SystemInformationPage.xaml",
     "RescuAR.MAUI/Views/Profile/SystemInformationPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/TermsConditionsPage.xaml",
+    "RescuAR.MAUI/Views/Profile/TermsConditionsPage.xaml.cs",
     "RescuAR/AR/ARRoadSurfaceBridge.cs",
     "RescuAR/AR/RoadSurfaceAlignment.cs",
     "RescuAR/AR/SemanticRoadBoundaries.cs",
@@ -5137,14 +5153,15 @@
       "commit": "9ac4450dfd912923853893f81fc9f0b8e06fc8e5",
       "subject": "fix(ar): preserve newer dev road alignment",
       "source": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda"
+    },
+    {
+      "commit": "56fa572d96ac894c92b95afefdfa052fc726ab9a",
+      "subject": "feat(profile): adopt help and shared policy screens"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
   "observed_later_dev": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
-  "next_approved_decisions": [
-    "Adopt Athena Help Center FAQ/layout with answers matching implemented features; route to dev's existing Hotlines directory; omit unconfirmed support email action",
-    "Adopt Athena Terms/Privacy layouts with shared wording matching implemented features across registration and profile"
-  ],
+  "next_approved_decisions": [],
   "authentication_flow_validation": {
     "unit_checks_passed": 38,
     "android_build": "passed; 0 warnings; 0 errors; one immediate build correction/retest",
@@ -5157,7 +5174,6 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "Help Center and consistent registration/profile Terms/Privacy presentation and wording",
     "settings UI and consumers",
     "circle membership, map and chat",
     "shared offline display extensions",
@@ -5338,5 +5354,18 @@
       "oid": "d593361efe2e52ed00ab78cb7c602b3622a7db90",
       "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
     }
+  },
+  "help_policy_validation": {
+    "android_build": "passed; 0 warnings; 0 errors",
+    "xml_bindings_source_review": "passed",
+    "shared_content_source": "RescuAR.MAUI/Services/Profile/AppInformationContent.cs",
+    "protected_dev_ar": "unchanged from accepted 9ac4450 checkpoint",
+    "authentication_back_navigation": "preserved",
+    "hotlines_route": "uses existing registered Prepare/HotlineDirectory route",
+    "additional_unit_tests": "not added; static UI/content change; Android XamlC build and source checks used",
+    "device_backend_or_legal_acceptance_validation": "not performed",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\07-help-terms\\RescuAR-Batch07-HelpTerms.apk",
+    "apk_bytes": 103274740,
+    "apk_sha256": "c9aff52cb660bc8b48d28a86d690075a8d397cc506f7aa7143f9449254584a18"
   }
 }

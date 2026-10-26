@@ -38,6 +38,8 @@
 | P3-06 | System Information | Athena layout with real app and permission information | Actual installed version/build and Android package update date; current camera/location/notification permission state and motion-sensor availability; unavailable values are labelled honestly. |
 | D0-01 | Newer dev AR/MLD changes at 53d7cab | Carry over now in a separate reviewed commit | Fourteen non-overlapping files match the newer dev source; no Admin files or branch merge included. |
 | D0-02 | Shared regression runner | Add all new dev checks; retain current checks and parser fixes | Runner matches newer dev plus the four previously accepted parser argument fixes. |
+| P3-07 | Help Center layout/FAQ/contact actions | Adopt Athena FAQ/layout with the existing Hotlines directory | Search/accordion retained; feature-accurate answers; existing registered directory route; no unconfirmed support email or automatic rescue call. |
+| P3-08 | Registration/profile Terms and Privacy | Adopt Athena layouts with shared text matching implemented features | One section model/content catalog supplies both entry points; contradictory retention claims and unsupported guarantees removed. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -230,6 +232,32 @@ Use the preserved AR APK and the existing dev field-validation procedure. Report
 2. Rotate the phone and change presentation zoom without walking. Expect one retained road/display reference rather than a path dragged by camera rotation. Looking away should retain a qualified reference only while its live session/frame remains valid.
 3. Interrupt tracking, replace the route, exit/re-enter the page and resume the app. Expect stale road proofs to be rejected. On unsupported hardware expect an explicit unavailable/pending state, rather than a false road alignment.
 
+## Earlier Help/Terms gate (completed below)
+
+Both Help Center/Hotlines and shared Terms/Privacy choices had already been explicitly approved and have now been implemented.
+
+
+## Help Center and shared Terms/Privacy completed
+
+- Commit: `56fa572` — `feat(profile): adopt help and shared policy screens`.
+- Adopted Athena Help Center presentation with searchable, expandable topics. Answers describe current AR/alignment limits, available offline data, remembered sessions, report submission, contact saves, local photo status and the difference between cached messages/locations and remote delivery. No immediate-response, guaranteed-safe-route or guaranteed-live/offline-circle claim was imported.
+- The assistance action opens dev's existing registered `Prepare/HotlineDirectory` route. No support email address or automatic rescue-call action was imported, matching the user's choice. A navigation failure or empty search has a visible message.
+- Adopted Athena Terms/Privacy page layouts. Both registration and profile read the same `AppInformationContent` sections through one `InformationSection` model. The registration pages keep their existing authentication back-navigation handlers; the profile pages retain their Shell navigation.
+- Shared text describes submitted resident/profile/health/contact data, secure saved-session tokens, separate local profile/message/media caches, account-scoped contact relationships, import-then-Save behavior, cloud location/message storage, retained local data after sign-out and legacy archives kept aside. It adds no fixed retention period, automatic deletion or guaranteed delivery promise.
+- FAQ and numbered cards use a bindable vertical list within the page's existing scroll container rather than a nested virtualized scrolling list. This retains Athena's card appearance while keeping all content in one scroll area.
+- Android build passed with **0 warnings, 0 errors** on the first attempt. Source/XML checks confirm the shared catalog, registered Hotlines route, preserved back handlers, approved file boundaries and unchanged accepted dev AR source. `git diff --check` passed.
+- No new unit tests were added for static content/layout changes. The preceding AR checkpoint's 718-case subset remains its recorded unit evidence; it was not rerun for unrelated text changes. No app/browser/device, backend/provider, integration/E2E or policy-acceptance validation was performed.
+- Preserved APK: `artifacts/athena-integration/07-help-terms/RescuAR-Batch07-HelpTerms.apk` (103,274,740 bytes; SHA-256 `c9aff52cb660bc8b48d28a86d690075a8d397cc506f7aa7143f9449254584a18`). This includes the accepted newer dev AR checkpoint as well as previous authentication/profile/contact changes.
+- The content reflects the inspected implementation, not a live-backend audit. Reconcile the shared catalog when later accepted Circle, settings or offline-map changes alter those descriptions.
+
+## Required manual Help/Terms checks
+
+Use the preserved batch-7 APK and report actual results before behavior-dependent fixes:
+
+1. Search Help for an offline/account/navigation topic, expand/collapse answers and clear the search. Expect the matching topics and an honest empty-search result. Open Hotlines; expect the existing directory, with no automatic call or email action.
+2. Open Terms and Privacy from registration and from Profile. Expect the same six sections and bullets in each corresponding document, with readable scrolling and the appropriate Back action returning to where it was opened.
+3. Review the revised wording against your intended published app behavior. Stored last-known positions and retained local caches must not be described as never stored or automatically deleted by sign-out.
+
 ## Current next gate
 
-Help Center/FAQ/Hotlines and shared Terms/Privacy presentation are already approved and may proceed. Further settings, circle, offline-display and Camera 2D overlaps still require the user's individual choices. Preserve the newly carried dev AR source when reaching Camera work, and retain newer Admin changes for the final Admin review. Commit every finished batch; no branch merge or push is authorized yet.
+Ask about settings notification/popup/haptic behavior, automatic advisory sound versus the manual dashboard siren, and scoped map-cache clearing/offline-control timing. Navigation voice remains dev behavior until its own consumer decision. Circle membership/map/chat, offline display, Camera 2D and later Admin preservation gates remain. Commit every finished batch; no branch merge or push is authorized yet.
