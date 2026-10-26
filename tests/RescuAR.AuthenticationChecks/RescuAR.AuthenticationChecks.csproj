@@ -16,5 +16,9 @@
     <Compile Include="../../RescuAR.MAUI/Models/User.cs" Link="User.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Profile/ProfileEditingPolicy.cs" Link="ProfileEditingPolicy.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Profile/AvatarUpdateFlow.cs" Link="AvatarUpdateFlow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactSaveFlow.cs" Link="ContactSaveFlow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutPolicy.cs" Link="ContactShortcutPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutStore.cs" Link="ContactShortcutStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs" Link="SystemInformationPresentation.cs" />
   </ItemGroup>
 </Project>

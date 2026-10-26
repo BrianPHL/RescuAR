@@ -1,3 +1,4 @@
+using RescuAR.App.Services.Profile;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -249,7 +250,6 @@ public partial class DashboardViewModel : ObservableObject
             ActionType = "Camera"
         });
 
-        LoadQuickActions();
         RefreshDashboard();
 
         // Listen for real-time admin advisory pushes
@@ -268,55 +268,60 @@ public partial class DashboardViewModel : ObservableObject
 
     public async void RefreshDashboard()
     {
+        LoadQuickActions();
         LoadUserData();
         await LoadWeatherDataAsync();
         await LoadRealtimeBentoBoxDataAsync();
     }
 
+    private ProfileAccountScope? quickActionsOwner;
+    private bool loadingQuickActions;
+    private bool quickActionsReadable;
+
     private void LoadQuickActions()
     {
+        var profiles = UserProfileService.Instance;
+        loadingQuickActions = true;
+        quickActionsReadable = false;
+        var previous = quickActionsOwner;
+        quickActionsOwner = null;
+        foreach (var item in AllAvailableQuickActions) item.PropertyChanged -= OnQuickActionItemPropertyChanged;
+        AllAvailableQuickActions.Clear();
         try
         {
             IsQuickActionsExpanded = Preferences.Default.Get("IsQuickActionsExpanded", true);
-            AllAvailableQuickActions.Clear();
-
-            string json = Preferences.Default.Get("CustomQuickActionsList_v18", string.Empty);
-            List<QuickActionItem>? saved = null;
-            if (!string.IsNullOrWhiteSpace(json))
-            {
-                saved = JsonConvert.DeserializeObject<List<QuickActionItem>>(json);
-            }
-
-            if (saved != null && saved.Count > 0)
+            var owner = profiles.CaptureOwner();
+            quickActionsOwner = owner;
+            if (previous != owner) { NewContactName = string.Empty; NewContactPhone = string.Empty; }
+            string json = profiles.GetLocal(owner, "QuickActions");
+            var saved = string.IsNullOrWhiteSpace(json) ? null : JsonConvert.DeserializeObject<List<QuickActionItem>>(json);
+            if (saved is { Count: > 0 })
             {
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var item in saved.Where(x => x.Id != "sos_beacon" && x.ActionType != "SOSBeacon"))
-                {
-                    if (seen.Add(item.Title))
-                    {
-                        EnsureSolidVectorIcons(item);
-                        AllAvailableQuickActions.Add(item);
-                    }
-                }
+                    if (ContactShortcutPolicy.IsOwned(item.Id) || seen.Add(item.Title)) AllAvailableQuickActions.Add(item);
             }
-            else
+            if (AllAvailableQuickActions.Count == 0) PopulateDefaultSolidQuickActions();
+            string current = JsonConvert.SerializeObject(AllAvailableQuickActions.ToList());
+            string updated = new ContactShortcutStore(new MauiContactShortcutStorage()).Apply(owner, current);
+            if (updated != current)
             {
-                PopulateDefaultSolidQuickActions();
+                AllAvailableQuickActions.Clear();
+                foreach (var item in JsonConvert.DeserializeObject<List<QuickActionItem>>(updated)!) AllAvailableQuickActions.Add(item);
             }
-
-            if (AllAvailableQuickActions.Count == 0)
-            {
-                PopulateDefaultSolidQuickActions();
-            }
-
+            foreach (var item in AllAvailableQuickActions) EnsureSolidVectorIcons(item);
+            profiles.RequireOwner(owner);
+            quickActionsReadable = true;
             SyncEnabledQuickActions();
         }
-        catch (Exception ex)
+        catch (Exception error)
         {
-            System.Diagnostics.Debug.WriteLine($"LoadQuickActions error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Quick Actions could not be loaded: {error.Message}");
             PopulateDefaultSolidQuickActions();
             SyncEnabledQuickActions();
         }
+        finally { loadingQuickActions = false; }
+        if (quickActionsReadable) SaveQuickActions();
     }
 
     private void PopulateDefaultSolidQuickActions()
@@ -499,7 +504,7 @@ public partial class DashboardViewModel : ObservableObject
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in AllAvailableQuickActions.Where(x => x.IsEnabled))
         {
-            if (seen.Add(item.Title))
+            if (ContactShortcutPolicy.IsOwned(item.Id) || seen.Add(item.Title))
             {
                 EnsureSolidVectorIcons(item);
                 QuickActions.Add(item);
@@ -526,15 +531,13 @@ public partial class DashboardViewModel : ObservableObject
 
     private void SaveQuickActions()
     {
+        if (loadingQuickActions || !quickActionsReadable || quickActionsOwner is not { } owner || !UserProfileService.Instance.IsCurrentOwner(owner)) return;
         try
         {
             string json = JsonConvert.SerializeObject(AllAvailableQuickActions.ToList());
-            Preferences.Default.Set("CustomQuickActionsList_v18", json);
+            UserProfileService.Instance.SetLocal(owner, "QuickActions", json);
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"SaveQuickActions error: {ex.Message}");
-        }
+        catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Quick Actions could not be saved: {error.Message}"); }
     }
 
     [RelayCommand]
@@ -610,6 +613,12 @@ public partial class DashboardViewModel : ObservableObject
     private async Task ExecuteQuickActionAsync(QuickActionItem item)
     {
         if (item == null || Shell.Current == null) return;
+        if (item.ActionType == "CustomContact" && (quickActionsOwner is not { } owner || !UserProfileService.Instance.IsCurrentOwner(owner)))
+        {
+            await Shell.Current.DisplayAlert("Account changed", "Reopen the dashboard before using a saved contact.", "OK");
+            return;
+        }
+
 
         try
         {

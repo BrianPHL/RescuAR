@@ -38,13 +38,13 @@ public sealed class UserProfileService
     public string GetLocal(ProfileAccountScope owner, string name)
     {
         RequireOwner(owner);
-        return Preferences.Default.Get(Root(owner.UserId) + name, string.Empty);
+        return Preferences.Default.Get($"Profile:{owner.Project}:{owner.UserId}:" + name, string.Empty);
     }
 
     public void SetLocal(ProfileAccountScope owner, string name, string value)
     {
         RequireOwner(owner);
-        Preferences.Default.Set(Root(owner.UserId) + name, value);
+        Preferences.Default.Set($"Profile:{owner.Project}:{owner.UserId}:" + name, value);
     }
 
     internal sealed record ProfileDisplay(ProfileUser User, bool Cached);
