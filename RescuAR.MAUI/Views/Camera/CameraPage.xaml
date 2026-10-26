@@ -133,7 +133,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnArSubTabClicked" />
+                            <TapGestureRecognizer Tapped="OnArCameraModeClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabArLabel"
@@ -154,7 +154,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnMapSubTabClicked" />
+                            <TapGestureRecognizer Tapped="OnMapModeClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabMapLabel"
@@ -175,7 +175,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnFloodSubTabClicked" />
+                            <TapGestureRecognizer Tapped="OnFloodDepthModeClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabFloodLabel"
