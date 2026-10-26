@@ -103,6 +103,22 @@ public sealed class RouteDisplayProgressPolicy
             now - observedAt.Value <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds);
     }
 
+    /// <summary>A GPS match whose movement was held cannot move the visible
+    /// window independently. Its fresh registration may still support tracked
+    /// movement on the same mapped polyline; this never changes GPS or trip progress.</summary>
+    public bool TryGetNavigationDisplayPosition(RouteResult route, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion motion, GpsPdrFusionPolicy.GpsFusionAction action,
+        out DisplayPosition position)
+    {
+        if (HasContradictedVisualReference(route, motion)) { position = default; return false; }
+        if (TryGetVisualDisplayPosition(route, now, motion, out position)) return true;
+        if (action is GpsPdrFusionPolicy.GpsFusionAction.HoldStationary or
+            GpsPdrFusionPolicy.GpsFusionAction.KeepPdrLead or
+            GpsPdrFusionPolicy.GpsFusionAction.WaitForBackwardConfirmation)
+            return TryGetRegisteredDisplayPosition(route, now, motion, out position);
+        return TryGetObservedPosition(route, now, out position);
+    }
+
     /// <summary>GPS eligibility and permission to move the world registration are separate decisions.</summary>
     public RegistrationDecision ObserveRegistration(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
         DateTimeOffset at, DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion? acquisitionMotion)

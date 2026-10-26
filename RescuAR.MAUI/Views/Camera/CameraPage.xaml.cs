@@ -10176,6 +10176,7 @@ namespace RescuAR.App.Views.Camera
                 // anchor is temporarily unavailable. Retain valid mapped
                 // geometry so the independent visibility gates can hide it
                 // during the outage and restore it when tracking recovers.
+                if (CanRetainMldMappedPreview(route)) return false;
                 var preview = ARRouteBridge.Current;
                 if (approachRoutePreviewPublished && preview.IsAvailable &&
                     preview.NavigationState.VisualKind == RouteVisualKind.RouteWindow &&
@@ -10235,6 +10236,9 @@ namespace RescuAR.App.Views.Camera
             if (!HasCurrentRouteHeading() ||
                 (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong && !approachPreview))
             {
+                // Do not clear before the outer publisher can retain a valid
+                // same-frame preview while the next location poll completes.
+                if (allowApproachPreview && CanRetainMldMappedPreview(route)) return false;
                 approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;

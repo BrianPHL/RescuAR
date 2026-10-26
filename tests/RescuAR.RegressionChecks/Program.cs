@@ -36,6 +36,12 @@ if (args.Contains("--mld-ribbon"))
     Console.WriteLine($"{passed} MLD ribbon/registration regression checks passed.");
     return;
 }
+if (args.Contains("--mld-continuity"))
+{
+    MldWindowContinuityChecks.Run(Check);
+    Console.WriteLine($"{passed} MLD window-continuity regression checks passed.");
+    return;
+}
 if (args.Contains("--mld-guidance"))
 {
     await MldGuidanceOwnershipChecks.RunAsync(Check);
@@ -77,6 +83,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
         NavigationStabilityChecks.Run(Check);
         NavigationPipelineChecks.Run(Check);
         MldRibbonRegistrationChecks.Run(Check);
+        MldWindowContinuityChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);

@@ -288,13 +288,27 @@ public partial class CameraPage
         {
             position = default;
             if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion)
-            {
-                if (_routeDisplayProgressPolicy.HasContradictedVisualReference(route, motion)) return false;
-                if (_routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position))
-                    return true;
-            }
+                return _routeDisplayProgressPolicy.TryGetNavigationDisplayPosition(route, DateTimeOffset.UtcNow,
+                    motion, lastGpsFusionAction, out position);
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
         }
+    }
+
+    private bool CanRetainMldMappedPreview(RouteResult route)
+    {
+        if (!IsMldRoute(route) || !ReferenceEquals(activeRoute, route) || !approachRoutePreviewPublished ||
+            safeZoneConfirmed || dynamicRerouteInProgress || positionObservationHeld ||
+            _gpsPdrFusionPolicy.IsRouteIdentitySuspended || routeHazardBlocksGuidance ||
+            verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route)) return false;
+        var preview = ARRouteBridge.Current;
+        var owner = MldGuidanceBridge.Current;
+        var frame = ARCameraPoseBridge.CurrentFrame;
+        if (!preview.IsAvailable || preview.NavigationState.VisualKind != RouteVisualKind.RouteWindow ||
+            !owner.Active || owner.Trip != activeDestinationVersion || owner.Geometry != route.GeometryFingerprint ||
+            owner.Window != preview.Version || !preview.Placement.IsFor(frame)) return false;
+        var now = DateTimeOffset.UtcNow;
+        return RescuAR.Navigation.Projection.MappedRoutePreviewPolicy.CanRetain(verified.At, now,
+            HasSupportedRouteRegistration(route, preview.NavigationState.WindowStartProgressMeters, now));
     }
 
     private bool TryGetBoundedDisplayPosition(RouteResult route, double committedProgress,
