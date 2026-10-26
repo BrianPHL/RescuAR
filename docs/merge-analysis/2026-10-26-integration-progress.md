@@ -36,6 +36,8 @@
 | P3-04 | Emergency-contact layout/import/save | Adopt Athena layout/import; save only when confirmed | Import fills the form. Save patches only changed contact fields. Relationship labels remain scoped to this account/device; late results are rejected. |
 | P3-05 | Dashboard contact shortcuts | Synchronize after Save; preserve dev dashboard and unrelated shortcuts/order/toggles | Account-scoped shortcut storage, stable contact IDs, matching-contact reuse, queued first-dashboard sync and explicit local-failure/retry status. Legacy archives stay aside. |
 | P3-06 | System Information | Athena layout with real app and permission information | Actual installed version/build and Android package update date; current camera/location/notification permission state and motion-sensor availability; unavailable values are labelled honestly. |
+| D0-01 | Newer dev AR/MLD changes at 53d7cab | Carry over now in a separate reviewed commit | Fourteen non-overlapping files match the newer dev source; no Admin files or branch merge included. |
+| D0-02 | Shared regression runner | Add all new dev checks; retain current checks and parser fixes | Runner matches newer dev plus the four previously accepted parser argument fixes. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -203,6 +205,31 @@ Use a test account and the preserved batch-5 APK. Report actual results before b
 
 Dev advanced to `53d7cab` (`fix(mld): align guidance with locally observed road surfaces`). Its new road-surface bridge, native AR surface logic, visual road alignment, MLD/progress changes and regression checks are not yet imported into this integration branch. They overlap the later Camera/map work and require a preservation decision before that stage. The prior Admin RBAC/provisioning changes remain reserved for the Admin/final review. The pinned implementation baseline remains `1b3db7e`; no branch update was performed silently.
 
+## Earlier gate (decisions received)
+
+The user approved carrying over newer dev AR fixes now, adopting Athena Help Center with the existing Hotlines directory, and shared feature-accurate Terms/Privacy layouts. The separate runner overlap was also explicitly approved.
+
+
+## Newer dev AR carry-over completed
+
+- Commit: `9ac4450` — `fix(ar): preserve newer dev road alignment`; source: `53d7cab`. This was a selective source transfer with one parent commit, not a branch merge. Newer Admin changes remain for their later gate.
+- Carried the road-surface bridge, semantic road-boundary extraction, local road fitting, native observation publication, heading calibration, shared display reference and MLD guidance safeguards. Fourteen files match the approved dev source; the only runner differences are the four accepted Athena parser fixes. Keep this dev reference when reconciling later Camera/2D map hunks.
+- The user separately approved adding the `--road-surface` entry and all new checks while retaining every existing test. No accepted Athena splash/auth/profile/contact change was replaced.
+- **28/28 road-surface checks passed.** **718/718 AR alignment/recovery checks passed**, including those same 28 cases and the existing relevant MLD/registration/recovery/sensor cases. These counts overlap and must not be added together.
+- Android build passed with **0 warnings, 0 errors**. ARCore declaration consistency, approved source boundaries and `git diff --check` passed. Dependency pins, native-library guards, dashboard/layouts, profile/auth and Admin sources were not changed in this batch.
+- An overly strict verification-script assumption expected `Invoke` on each changed parser-argument line; two calls span multiple lines. Correcting that comparison to the exact approved argument insertion completed the source check without changing application code.
+- Preserved APK: `artifacts/athena-integration/06-dev-ar/RescuAR-Batch06-DevAR.apk` (103,262,452 bytes; SHA-256 `a17d3c26a0ac81078760d43cdd47041f3b9af6b99dd3b6a9b1991039149933e3`).
+- The imported `AR_FIELD_VALIDATION_20261026.md` is source history from dev, not evidence of a new device test in this worktree. Native semantic capability, physical curb/road alignment, tracking/lifecycle behavior and field accuracy remain unverified here.
+- The newer dev implementation withholds MLD route geometry until physical-road alignment qualifies. Devices without the required semantic capability expose an unavailable/pending state. This is imported dev behavior, not an independently validated compatibility guarantee.
+
+## Required manual dev AR checks
+
+Use the preserved AR APK and the existing dev field-validation procedure. Report actual results before behavior-dependent fixes:
+
+1. On a supported device, start MLD guidance and observe a suitable road corridor while stationary. Expect guidance to remain pending until the physical reference qualifies; uncertain, cropped or ambiguous evidence must not create a path.
+2. Rotate the phone and change presentation zoom without walking. Expect one retained road/display reference rather than a path dragged by camera rotation. Looking away should retain a qualified reference only while its live session/frame remains valid.
+3. Interrupt tracking, replace the route, exit/re-enter the page and resume the app. Expect stale road proofs to be rejected. On unsupported hardware expect an explicit unavailable/pending state, rather than a false road alignment.
+
 ## Current next gate
 
-Ask about carrying over the newer dev AR fixes in a separate reviewed step, Athena Help Center/FAQ/contact actions, and consistent registration/profile Terms/Privacy wording. Then continue settings, circle, offline display and Camera 2D decisions. Keep committing every finished batch; no branch merge or push is authorized yet.
+Help Center/FAQ/Hotlines and shared Terms/Privacy presentation are already approved and may proceed. Further settings, circle, offline-display and Camera 2D overlaps still require the user's individual choices. Preserve the newly carried dev AR source when reaching Camera work, and retain newer Admin changes for the final Admin review. Commit every finished batch; no branch merge or push is authorized yet.

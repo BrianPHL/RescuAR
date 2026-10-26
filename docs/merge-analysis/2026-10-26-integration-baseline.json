@@ -5000,12 +5000,15 @@
     }
   },
   "approved_changed_paths": [
+    "AR_FIELD_VALIDATION_20261026.md",
     "RescuAR.MAUI/App.xaml",
     "RescuAR.MAUI/App.xaml.cs",
     "RescuAR.MAUI/Converters/BooleanToStringConverter.cs",
     "RescuAR.MAUI/MauiProgram.cs",
     "RescuAR.MAUI/Models/ResidentProfileDraft.cs",
     "RescuAR.MAUI/Platforms/Android/AndroidManifest.xml",
+    "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs",
+    "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.cs",
     "RescuAR.MAUI/RescuAR.MAUI.csproj",
     "RescuAR.MAUI/Resources/Images/rescuar_logo_banner.png",
     "RescuAR.MAUI/Resources/Splash/splash.svg",
@@ -5020,6 +5023,7 @@
     "RescuAR.MAUI/Services/Authentication/PasswordRecoveryFlow.cs",
     "RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs",
     "RescuAR.MAUI/Services/Cloud/SupabaseService.cs",
+    "RescuAR.MAUI/Services/Navigation/ArHeadingAlignmentService.cs",
     "RescuAR.MAUI/Services/Profile/AvatarUpdateFlow.cs",
     "RescuAR.MAUI/Services/Profile/ContactSaveFlow.cs",
     "RescuAR.MAUI/Services/Profile/ContactShortcutPolicy.cs",
@@ -5050,6 +5054,10 @@
     "RescuAR.MAUI/Views/Authentication/RegistrationPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.MldGuidance.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml",
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml",
@@ -5060,6 +5068,11 @@
     "RescuAR.MAUI/Views/Profile/ProfilePage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/SystemInformationPage.xaml",
     "RescuAR.MAUI/Views/Profile/SystemInformationPage.xaml.cs",
+    "RescuAR/AR/ARRoadSurfaceBridge.cs",
+    "RescuAR/AR/RoadSurfaceAlignment.cs",
+    "RescuAR/AR/SemanticRoadBoundaries.cs",
+    "RescuAR/Navigation/Progress/RouteDisplayProgressPolicy.cs",
+    "RescuAR/Navigation/Routing/MLDARIntegrationService.cs",
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFormChecks.cs",
@@ -5067,7 +5080,8 @@
     "tests/RescuAR.AuthenticationChecks/ProfileEditingChecks.cs",
     "tests/RescuAR.AuthenticationChecks/Program.cs",
     "tests/RescuAR.AuthenticationChecks/RescuAR.AuthenticationChecks.csproj",
-    "tests/RescuAR.RegressionChecks/Program.cs"
+    "tests/RescuAR.RegressionChecks/Program.cs",
+    "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
   "batch_0_1_validation": {
@@ -5118,11 +5132,19 @@
     {
       "commit": "e9e5fd88c0e344d6848e60807651aaee1ff4f5a4",
       "subject": "feat(profile): add confirmed contacts and system details"
+    },
+    {
+      "commit": "9ac4450dfd912923853893f81fc9f0b8e06fc8e5",
+      "subject": "fix(ar): preserve newer dev road alignment",
+      "source": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
   "observed_later_dev": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
-  "next_approved_decisions": [],
+  "next_approved_decisions": [
+    "Adopt Athena Help Center FAQ/layout with answers matching implemented features; route to dev's existing Hotlines directory; omit unconfirmed support email action",
+    "Adopt Athena Terms/Privacy layouts with shared wording matching implemented features across registration and profile"
+  ],
   "authentication_flow_validation": {
     "unit_checks_passed": 38,
     "android_build": "passed; 0 warnings; 0 errors; one immediate build correction/retest",
@@ -5135,7 +5157,6 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "newer dev road-surface/visual-alignment/MLD guidance source preservation decision",
     "Help Center and consistent registration/profile Terms/Privacy presentation and wording",
     "settings UI and consumers",
     "circle membership, map and chat",
@@ -5208,7 +5229,8 @@
   },
   "newer_dev_ar_gate": {
     "revision": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
-    "status": "pending explicit user decision; source changes not imported",
+    "status": "completed; exact selective carry-over plus approved runner reconciliation",
+    "integration_commit": "9ac4450dfd912923853893f81fc9f0b8e06fc8e5",
     "paths": [
       "AR_FIELD_VALIDATION_20261026.md",
       "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs",
@@ -5227,5 +5249,94 @@
       "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
     ]
   },
-  "observed_later_admin": "444cd183e5e7df766c36064b6f6d3fa9f6a75287"
+  "observed_later_admin": "444cd183e5e7df766c36064b6f6d3fa9f6a75287",
+  "dev_ar_validation": {
+    "source": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
+    "paths": [
+      "AR_FIELD_VALIDATION_20261026.md",
+      "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs",
+      "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.cs",
+      "RescuAR.MAUI/Services/Navigation/ArHeadingAlignmentService.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.MldGuidance.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs",
+      "RescuAR/AR/ARRoadSurfaceBridge.cs",
+      "RescuAR/AR/RoadSurfaceAlignment.cs",
+      "RescuAR/AR/SemanticRoadBoundaries.cs",
+      "RescuAR/Navigation/Progress/RouteDisplayProgressPolicy.cs",
+      "RescuAR/Navigation/Routing/MLDARIntegrationService.cs",
+      "tests/RescuAR.RegressionChecks/Program.cs",
+      "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
+    ],
+    "runner_overlap": "approved; add all new dev checks while retaining every current check and four parser argument fixes",
+    "road_surface_checks_passed": 28,
+    "alignment_recovery_checks_passed": 718,
+    "check_count_note": "The 718-case AR subset includes the 28 road-surface cases.",
+    "android_build": "passed; 0 warnings; 0 errors",
+    "arcore_declarations": "passed",
+    "source_preservation": "passed; 14 files match dev source, runner matches dev plus four approved parser fixes",
+    "device_validation": "not performed; source field-validation document imported as historical source, not new device evidence",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\06-dev-ar\\RescuAR-Batch06-DevAR.apk",
+    "apk_bytes": 103262452,
+    "apk_sha256": "a17d3c26a0ac81078760d43cdd47041f3b9af6b99dd3b6a9b1991039149933e3"
+  },
+  "dev_ar_source_files": {
+    "AR_FIELD_VALIDATION_20261026.md": {
+      "oid": "9bd24d25ace55eca6b12ddd2d3697d2f9c9ed9bd",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs": {
+      "oid": "16edceea10046dc6eb45a604e7ea82f881724b77",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.cs": {
+      "oid": "edc973524869fb85a5d200efe3f036adc947814c",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Services/Navigation/ArHeadingAlignmentService.cs": {
+      "oid": "6b88e2176cdb2a6d3583b5950a8d16f547e58d25",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Views/Camera/CameraPage.MldGuidance.cs": {
+      "oid": "9f37fefcca330dfb8fbc3a4f0c8277376460e0fb",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs": {
+      "oid": "4c0053f438eacbba0f92e770122d56852014a716",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs": {
+      "oid": "c3dd321421295b9bf3381226869508b1120bc5ee",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs": {
+      "oid": "1806d0f61a5a0efec0f5ca309132ef3ef784c871",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR/AR/ARRoadSurfaceBridge.cs": {
+      "oid": "8b6a0331b1138cd1668fb5662e10703011e66e46",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR/AR/RoadSurfaceAlignment.cs": {
+      "oid": "711c29f5486ef6ff3dd990cebf9c7eab06390655",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR/AR/SemanticRoadBoundaries.cs": {
+      "oid": "a0ac6d58221ff25cbfd88102355af95d28c3c660",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR/Navigation/Progress/RouteDisplayProgressPolicy.cs": {
+      "oid": "55605cb801be3bfaa663e7aef8d1d5e657d064ec",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "RescuAR/Navigation/Routing/MLDARIntegrationService.cs": {
+      "oid": "7f40c0f393d8c0fa50c8cf4be32a53503ef94ee1",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    },
+    "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs": {
+      "oid": "d593361efe2e52ed00ab78cb7c602b3622a7db90",
+      "policy": "preserve newer dev source; later Athena changes require individual overlap decisions"
+    }
+  }
 }
