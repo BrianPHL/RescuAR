@@ -5000,17 +5000,32 @@
     }
   },
   "approved_changed_paths": [
+    "RescuAR.MAUI/App.xaml.cs",
+    "RescuAR.MAUI/MauiProgram.cs",
     "RescuAR.MAUI/RescuAR.MAUI.csproj",
     "RescuAR.MAUI/Resources/Images/rescuar_logo_banner.png",
     "RescuAR.MAUI/Resources/Splash/splash.svg",
+    "RescuAR.MAUI/Services/Authentication/AuthenticationFlowCoordinator.cs",
     "RescuAR.MAUI/Services/Authentication/AuthenticationIdentity.cs",
+    "RescuAR.MAUI/Services/Authentication/AuthenticationNavigation.cs",
     "RescuAR.MAUI/Services/Authentication/AuthenticationService.cs",
+    "RescuAR.MAUI/Services/Authentication/MauiAuthenticationFlowSource.cs",
     "RescuAR.MAUI/Services/Authentication/MauiAuthenticationStores.cs",
     "RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs",
     "RescuAR.MAUI/Services/Cloud/SupabaseService.cs",
+    "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/AddressInputViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/GoogleAuthViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/LoginViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/OtpVerificationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/PermissionsViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/RegistrationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
+    "RescuAR.MAUI/Views/Authentication/LoginPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml.cs",
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
+    "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
     "tests/RescuAR.AuthenticationChecks/Program.cs",
     "tests/RescuAR.AuthenticationChecks/RescuAR.AuthenticationChecks.csproj",
     "tests/RescuAR.RegressionChecks/Program.cs"
@@ -5048,13 +5063,31 @@
     {
       "commit": "5744060312befdc51b763b1b74b97551c6e02cfc",
       "subject": "feat(auth): persist sessions and preserve identity on sign-out"
+    },
+    {
+      "commit": "28e302ca60045a0534130e7efa61c7d2fc1b620d",
+      "subject": "feat(auth): unify verified sign-in and offline startup"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
   "observed_later_dev": "822ded0885b877586f7171344bb5a04722209589",
-  "next_approved_decisions": [
-    "shared verified sign-in completion",
-    "restored-identity startup with offline/error handling",
-    "real Google authentication for every account selection"
+  "next_approved_decisions": [],
+  "authentication_flow_validation": {
+    "unit_checks_passed": 38,
+    "android_build": "passed; 0 warnings; 0 errors; one immediate build correction/retest",
+    "arcore_declarations": "passed",
+    "protected_source_review": "passed",
+    "provider_database_device_validation": "not performed",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\02-authentication\\RescuAR-Batch02-Authentication.apk",
+    "apk_bytes": 103168244,
+    "apk_sha256": "e1d6b59e817d071f0a8593eb080d2ea370b35c39b9a159da3806375cffa6a11d",
+    "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
+  },
+  "pending_scope": [
+    "Athena authentication screen layouts/reset UI",
+    "registration fields/layout",
+    "profile UI",
+    "legacy cache ownership/migration",
+    "later dev Admin RBAC UI reconciliation"
   ]
 }
