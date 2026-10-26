@@ -18,6 +18,11 @@ public static class CirclePresencePolicy
         && now - reading.RecordedAt <= TimeSpan.FromSeconds(30)
         && reading.Accuracy is > 0 and <= 100;
 
+    // A local marker is separate from consent to upload. Reject stale/coarse fixes as current.
+    public static bool CanDisplayLocal(CircleDeviceReading? reading, DateTimeOffset now) => CanShare(reading, now)
+        && reading!.RecordedAt <= now.AddSeconds(5) && now - reading.RecordedAt <= TimeSpan.FromSeconds(15)
+        && reading.Accuracy <= 50;
+
     public static CirclePresence Project(CirclePerson person, CirclePosition? position, DateTimeOffset now)
     {
         if (position is not null && (position.UserId != person.UserId || !Coordinates(position.Latitude, position.Longitude) || !Dated(position.RecordedAt, now)))

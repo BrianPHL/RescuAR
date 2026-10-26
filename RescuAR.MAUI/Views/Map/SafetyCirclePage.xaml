@@ -49,21 +49,14 @@
             </Grid>
         </Border>
 
-        <VerticalStackLayout Grid.Row="1" BackgroundColor="White" Padding="12,4" Spacing="3">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <Button Text="General / Offline Map" Command="{Binding OpenGeneralMapCommand}" BackgroundColor="#E6F4F2" TextColor="#0A8491" CornerRadius="8" FontSize="12" Padding="10,0" />
-                <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
-                    <Label Text="Share location" FontSize="12" TextColor="#334155" VerticalOptions="Center" />
-                    <Switch IsToggled="{Binding IsSharingEnabled}" OnColor="#0A8491" />
-                </HorizontalStackLayout>
-            </Grid>
-            <Label Text="{Binding OfflineMapStatus}" TextColor="#64748B" FontSize="11" />
-            <Label Text="{Binding SharingStatus}" TextColor="#334155" FontSize="11" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <Label Text="{Binding StatusMessage}" TextColor="#64748B" FontSize="11" MaxLines="3" />
-                <Button Grid.Column="1" Text="Refresh" Command="{Binding RefreshCommand}" BackgroundColor="Transparent" TextColor="#0A8491" FontSize="11" Padding="4,0" />
-            </Grid>
-        </VerticalStackLayout>
+        <Grid Grid.Row="1" BackgroundColor="White" Padding="12,2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+            <Button Text="General / Offline Map" Command="{Binding OpenGeneralMapCommand}" BackgroundColor="#E6F4F2" TextColor="#0A8491" CornerRadius="8" FontSize="11" Padding="8,0" />
+            <HorizontalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                <Label Text="Sharing" FontSize="12" TextColor="#334155" VerticalOptions="Center" />
+                <Switch IsToggled="{Binding IsSharingEnabled}" OnColor="#0A8491" />
+            </HorizontalStackLayout>
+            <Button Grid.Column="2" Text="Info" Command="{Binding ToggleMapDetailsCommand}" BackgroundColor="Transparent" TextColor="#0A8491" FontSize="11" Padding="6,0" />
+        </Grid>
 
         <!-- Main Map Area -->
         <Grid Grid.Row="2">
@@ -101,6 +94,21 @@
                 </HorizontalStackLayout>
             </Border>
 
+            <Border IsVisible="{Binding IsMapDetailsOpen}" ZIndex="30" BackgroundColor="White" Stroke="#E2E8F0"
+                    StrokeShape="RoundRectangle 16" Padding="14" Margin="16,64,16,0" VerticalOptions="Start">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="{Binding LocalLocationStatus}" TextColor="#0D5C68" FontSize="12" />
+                    <Label Text="{Binding SharingStatus}" TextColor="#334155" FontSize="12" />
+                    <Label Text="{Binding OfflineMapStatus}" TextColor="#64748B" FontSize="11" />
+                    <Label Text="{Binding StatusMessage}" TextColor="#64748B" FontSize="11" />
+                    <Label Text="Other members' pins show dated, last-shared positions. Your device pin stays local unless Sharing is On." TextColor="#64748B" FontSize="11" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button Text="Refresh" Command="{Binding RefreshCommand}" BackgroundColor="#E6F4F2" TextColor="#0A8491" FontSize="12" />
+                        <Button Grid.Column="1" Text="Close" Command="{Binding ToggleMapDetailsCommand}" BackgroundColor="Transparent" TextColor="#64748B" FontSize="12" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
             <!-- The selector shares the approved account/server membership foundation. -->
             <ContentView IsVisible="{Binding IsCircleDropdownOpen}" BackgroundColor="#50000000" ZIndex="50">
                 <Border BackgroundColor="White" StrokeThickness="0" StrokeShape="RoundRectangle 16" HorizontalOptions="Center" VerticalOptions="Start" Margin="16,64,16,0" Padding="16" MaximumWidthRequest="360">
@@ -128,11 +136,16 @@
                     StrokeThickness="0"
                     HorizontalOptions="Start"
                     VerticalOptions="End"
-                    Margin="16,0,0,232"
+                    Margin="16,0,0,76"
                     Padding="0"
                     WidthRequest="44"
                     ZIndex="25"
                     Shadow="{Shadow Brush=Black, Offset='0,4', Radius=8, Opacity=0.1}">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding IsPeopleSheetOpen}" Value="True">
+                        <Setter Property="Margin" Value="16,0,0,232" />
+                    </DataTrigger>
+                </Border.Triggers>
                 <Border.StrokeShape>
                     <RoundRectangle CornerRadius="22" />
                 </Border.StrokeShape>
@@ -153,9 +166,9 @@
                     <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" Margin="6,0" />
                     <Border BackgroundColor="Transparent" StrokeThickness="0" HeightRequest="40">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding ZoomResetCommand}" />
+                            <TapGestureRecognizer Command="{Binding CenterOnMeCommand}" />
                         </Border.GestureRecognizers>
-                        <Label Text="1x" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Label Text="◎" TextColor="#0F172A" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
                     </Border>
                 </VerticalStackLayout>
             </Border>
@@ -165,11 +178,16 @@
                     StrokeThickness="0"
                     WidthRequest="54"
                     HeightRequest="54"
-                    Margin="16,0,16,232"
+                    Margin="16,0,16,76"
                     HorizontalOptions="End"
                     VerticalOptions="End"
                     ZIndex="25"
                     Shadow="{Shadow Brush=Black, Offset='0,6', Radius=10, Opacity=0.25}">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding IsPeopleSheetOpen}" Value="True">
+                        <Setter Property="Margin" Value="16,0,16,232" />
+                    </DataTrigger>
+                </Border.Triggers>
                 <Border.StrokeShape>
                     <RoundRectangle CornerRadius="18" />
                 </Border.StrokeShape>
@@ -185,6 +203,13 @@
                       VerticalOptions="Center" />
             </Border>
 
+            <Label Text="© OpenStreetMap contributors · Maperitive" FontSize="9" TextColor="#334155"
+                   BackgroundColor="#EFFFFFFF" HorizontalOptions="End" VerticalOptions="End" Margin="4,0,6,68" ZIndex="21" InputTransparent="True">
+                <Label.Triggers>
+                    <DataTrigger TargetType="Label" Binding="{Binding IsPeopleSheetOpen}" Value="True"><Setter Property="Margin" Value="4,0,6,224" /></DataTrigger>
+                </Label.Triggers>
+            </Label>
+
             <!-- ========================================================== -->
             <!-- PEOPLE BOTTOM PANEL (Matching Safety Circles.png)         -->
             <!-- ========================================================== -->
@@ -192,16 +217,20 @@
                     StrokeThickness="0"
                     HorizontalOptions="Fill"
                     VerticalOptions="End"
-                    HeightRequest="220"
+                    HeightRequest="64"
                     Padding="18,14,18,6"
                     ZIndex="20"
                     Shadow="{Shadow Brush=Black, Offset='0,-4', Radius=16, Opacity=0.1}">
+                <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding IsPeopleSheetOpen}" Value="True"><Setter Property="HeightRequest" Value="220" /></DataTrigger>
+                </Border.Triggers>
                 <Border.StrokeShape>
                     <RoundRectangle CornerRadius="24,24,0,0" />
                 </Border.StrokeShape>
                 <Grid RowDefinitions="Auto, *">
                     <!-- Section Title -->
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="4,0,4,8">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="4,0,4,8">
+                        <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding TogglePeopleSheetCommand}" /></Grid.GestureRecognizers>
                         <Label Text="People"
                                TextColor="#0D5C68"
                                FontSize="20"
@@ -212,10 +241,14 @@
                                TextColor="#64748B"
                                FontSize="12"
                                VerticalOptions="Center" />
+                        <Label Grid.Column="2" Text="⌃" FontSize="20" TextColor="#0A8491" VerticalOptions="Center">
+                            <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsPeopleSheetOpen}" Value="True"><Setter Property="Text" Value="⌄" /></DataTrigger></Label.Triggers>
+                        </Label>
                     </Grid>
 
                     <!-- People List -->
                     <CollectionView Grid.Row="1"
+                                    IsVisible="{Binding IsPeopleSheetOpen}"
                                     ItemsSource="{Binding CircleMembers}"
                                     SelectionMode="None">
                         <CollectionView.EmptyView>

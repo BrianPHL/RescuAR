@@ -66,7 +66,7 @@ public partial class SafetyCircleViewModel : ObservableObject
         coordinator = new(memberships, new SupabaseCirclePresenceRemote(CircleMembershipRuntime.Context), new MauiCircleDeviceReader(), () => DateTimeOffset.UtcNow);
         timer = Application.Current?.Dispatcher?.CreateTimer() ?? throw new InvalidOperationException("A page dispatcher is required.");
         timer.Interval = TimeSpan.FromSeconds(5);
-        timer.Tick += async (_, _) => await PollAsync();
+        timer.Tick += async (_, _) => await Task.WhenAll(PollAsync(), RefreshLocalLocationAsync());
     }
     private void Require(CircleMembershipScope scope, long request)
     {
@@ -89,6 +89,7 @@ public partial class SafetyCircleViewModel : ObservableObject
             foreach (var layer in Map.Layers) layer.Enabled = true;
             control.Map = Map;
             _ = PrepareDisplayAsync(request, page.Token);
+            _ = RefreshLocalLocationAsync();
             await PollAsync();
             if (request == version && page is not null) timer.Start();
         }
@@ -108,11 +109,13 @@ public partial class SafetyCircleViewModel : ObservableObject
         settingSharing = true; IsSharingEnabled = false; settingSharing = false;
         sharingRequest++; enablingSharing = false;
         IsBusy = false; polling = false; selectedId = ""; centered = false; IsCircleDropdownOpen = false;
+        localReading = null; locating = localPermissionChecked = localPermissionGranted = false;
+        IsPeopleSheetOpen = IsMapDetailsOpen = false; LocalLocationStatus = "Your device position is unavailable.";
         SelectedCircleName = "Select a Circle"; StatusMessage = ""; SharingStatus = "Sharing Off. No new positions are uploaded.";
         MyCircles.Clear(); CircleMembers.Clear(); avatarBytes.Clear(); placeNames.Clear();
         foreach (var layer in Map.Layers) layer.Enabled = false;
         var oldPins = Map.Layers.FirstOrDefault(layer => layer.Name == "MapPins");
-        if (oldPins is not null) Map.Layers.Remove(oldPins);
+        if (oldPins is not null) { Map.Layers.Remove(oldPins); oldPins.Dispose(); }
     }
     partial void OnIsSharingEnabledChanged(bool value)
     {
@@ -161,11 +164,6 @@ public partial class SafetyCircleViewModel : ObservableObject
             var rows = snapshot.People.Select(person => Row(person, scope.UserId, snapshot.PeopleCached)).ToList();
             CircleMembers.Clear(); foreach (var row in rows) CircleMembers.Add(row);
             UpdateMapMarkers();
-            if (!centered)
-            {
-                var self = rows.FirstOrDefault(row => row.UserId == scope.UserId && row.Presence.IsRecent && row.HasPosition);
-                if (self is not null) { CenterOnMember(self); centered = true; }
-            }
             await Task.WhenAll(rows.SelectMany(row => new[] { LoadAvatarAsync(row, scope, request, token), LoadPlaceAsync(row, scope, request, token) }));
             Require(scope, request); UpdateMapMarkers();
         }
@@ -248,7 +246,8 @@ public partial class SafetyCircleViewModel : ObservableObject
     private void UpdateMapMarkers()
     {
         var features = new List<Mapsui.Nts.GeometryFeature>();
-        foreach (var member in CircleMembers.Where(member => member.HasPosition))
+        foreach (var member in CircleMembers.Where(member => member.HasPosition &&
+            (member.UserId != owner?.UserId || CurrentLocalReading is null)))
         {
             var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
             var feature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
@@ -256,8 +255,9 @@ public partial class SafetyCircleViewModel : ObservableObject
             feature.Styles.Add(new Mapsui.Styles.ImageStyle { Image = picture, SymbolScale = 0.5, Offset = new Mapsui.Styles.Offset(0, 35) });
             features.Add(feature);
         }
+        AddLocalPosition(features);
         var old = Map.Layers.FirstOrDefault(layer => layer.Name == "MapPins");
-        if (old is not null) Map.Layers.Remove(old);
+        if (old is not null) { Map.Layers.Remove(old); old.Dispose(); }
         Map.Layers.Add(new Mapsui.Layers.MemoryLayer { Name = "MapPins", Features = features }); Map.Refresh();
     }
 
@@ -271,7 +271,9 @@ public partial class SafetyCircleViewModel : ObservableObject
     }
     [RelayCommand] private void CenterOnMember(CircleMember member)
     {
-        if (member is null || !member.HasPosition || !CircleMembers.Contains(member)) return;
+        if (member is null || !CircleMembers.Contains(member)) return;
+        if (member.UserId == owner?.UserId && CurrentLocalReading is { } local) { CenterOnLocal(local); return; }
+        if (!member.HasPosition) return;
         var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
         Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 22);
     }
