@@ -1,6 +1,6 @@
 # Dev / Athena integration review — 26 October 2026
 
-Source preparation is complete on `codex/integrate-athena-modules` in the separate integration worktree. Every finished batch is committed. **The branches have not been merged, and no final APK has been built.**
+At the original review checkpoint, source preparation was complete on `codex/integrate-athena-modules` and all finished batches were committed without a merge or final APK. The integration was subsequently merged into `migration/athena-modules-pt2` (`51ede19`). The post-review Release correction below is now applied to both checkouts.
 
 The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Athena `fa777da153a492268ace76162a80389e0d904534`. The final code checkpoint is `22836e154ec0ecde8b165ebc5819324f52b29d0a`; the later documentation commit contains this review and the final records. See [the progress log](2026-10-26-integration-progress.md) for the full decisions, commits and per-batch evidence, and [the baseline manifest](2026-10-26-integration-baseline.json) for source hashes and reversible Camera adaptations.
 
@@ -39,7 +39,7 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 | Camera presentation/directions | 41 passed; GPS quality/expiry, trip ownership, geometry, viewport and shared-classifier cases. |
 | Navigation feedback | 32 passed; fake speech/vibration, cancellation, deduplication, serialization and fallback. |
 | Admin role/access/provisioning | 19 passed; source contracts and mocked access responses, no deployed calls. |
-| Android C#/XAML | Compile-only passed, 0 warnings/errors; final manifest-only speech addition separately passed XML/native static checks. |
+| Android C#/XAML | Post-review Release compilation with `DesignTimeBuild=false`, diagnostics disabled and actual XamlC passed: 0 warnings/errors. Earlier design-time checks had skipped XamlC. No APK packaging. |
 | Admin bundle | Passed using existing matching dependencies without installation; large-chunk warning retained. |
 | Admin lint | 0 errors, 85 retained dev warnings; no unrelated cleanup. |
 | Final source/native/whitespace audit | Passed; no unapproved changes. |
@@ -49,6 +49,12 @@ The earlier 864 AR checks are historical unchanged-core evidence, not a new devi
 Detailed offline tiles cover **part of Marikina at zoom 13–18**, not the full city/world. The status checks the map center's actual tile. Buildings/parks/water and shelter-directory entries are static context, not current safety, access or availability evidence.
 
 Android speech visibility follows [Microsoft's MAUI platform setup](https://learn.microsoft.com/en-us/dotnet/maui/platform-integration/device-media/text-to-speech?view=net-maui-9.0); actual engine support, voice quality and cancellation latency remain device checks. Newer dev Admin provisioning also expects its corresponding deployed database/function setup; that deployment was not inspected or changed.
+
+## Post-review Release correction
+
+XC0002 exposed three nonexistent sub-tab handler references. The fix binds AR/2D/Flood to the existing dev mode handlers, without adding duplicate switching logic. Commits: `c628e01` on the integration branch and `f2589f4` on the built branch.
+
+Earlier compile-only C#/XAML claims were too broad: Android's Compile target enables design-time mode by default and skips XamlC. Production verification explicitly set `DesignTimeBuild=false`, `RescuArDiagnosticBuild=false` and `MauiXamlCValidateOnly=false`; the log confirms actual XAML compilation. Release passed with **0 warnings/errors**, without creating an APK. Actual device behavior remains unverified.
 
 ## Before a later merge/release
 

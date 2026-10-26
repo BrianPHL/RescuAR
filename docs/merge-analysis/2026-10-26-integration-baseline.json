@@ -5335,6 +5335,11 @@
     {
       "commit": "22836e154ec0ecde8b165ebc5819324f52b29d0a",
       "subject": "fix(android): declare navigation speech engine visibility"
+    },
+    {
+      "commit": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
+      "subject": "fix(camera): bind sub-tabs to existing mode handlers",
+      "built_checkout_commit": "f2589f45c1c0c2ced7f6ee3009bb79848ab87933"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5875,7 +5880,7 @@
     "new_checks_passed": 44,
     "actual_tiles_read": 3555,
     "unit_scope": "actual local archive reader/hash plus fake layer owners, isolated cache fixtures and setting preferences; no network, application or device interaction",
-    "android_compile": "Compile target only, including XamlC; 0 warnings and 0 errors after one Mapsui/MAUI Map alias correction",
+    "android_compile": "Earlier check was design-time C# only; actual Release XamlC subsequently passed with DesignTimeBuild=false, diagnostics disabled, 0 warnings/errors. See post_review_release_validation.",
     "apk_packaging": "deferred by user; existing two APK sizes and modification times unchanged; no new batch APK copy",
     "source_boundary": "23 approved code/asset/test paths",
     "dev_ar_reference_paths_preserved": 33,
@@ -5886,7 +5891,8 @@
     "coverage": "center tile checked against actual XYZ tile index and manifest bounds; limited to part of Marikina at zoom 13-18; context is static cartography, not access/hazard/safety evidence",
     "device_validation": "not performed",
     "backend_validation": "not performed",
-    "merge_or_push": false
+    "merge_or_push": false,
+    "earlier_android_compile_report": "Compile target only, including XamlC; 0 warnings and 0 errors after one Mapsui/MAUI Map alias correction"
   },
   "camera_map_validation": {
     "commit": "505db02d07a38130006bba302df079c92ad33af1",
@@ -5900,7 +5906,7 @@
     ],
     "unit_checks_passed": 41,
     "unit_scope": "pure GPS quality/expiry, trip/route identity, geometry, viewport ownership, directory/distance estimates and directions cases; no provider/app/device interaction",
-    "android_compile": "Compile target only; final source passed with 0 warnings and 0 errors",
+    "android_compile": "Earlier check was design-time C# only; actual Release XamlC subsequently passed with DesignTimeBuild=false, diagnostics disabled, 0 warnings/errors. See post_review_release_validation.",
     "apk_packaging": "not performed; previous APK bytes/modification times unchanged",
     "camera_dev_body_restoration": "exact after reversing four display/lifecycle hook sites; no route, GPS/PDR, AR/MLD, flood, hazard, arrival or recovery body replaced",
     "other_dev_reference_paths_unchanged": 32,
@@ -5914,7 +5920,8 @@
     "pending": [
       "later Admin RBAC/provisioning review",
       "final preservation audit"
-    ]
+    ],
+    "earlier_android_compile_report": "Compile target only; final source passed with 0 warnings and 0 errors"
   },
   "navigation_feedback_validation": {
     "commit": "cffe91729b8d8e9fb50b45cd49736d7725b734fa",
@@ -5927,7 +5934,7 @@
     "local_policy_checks_passed": 415,
     "new_shared_preference_checks": 3,
     "unit_scope": "fake speech/vibration providers, coordinator cancellation/serialization/deduplication and local saved-preference policies; no physical speech/vibration/app/device tests",
-    "android_compile": "final Compile target passed; 0 warnings; 0 errors",
+    "android_compile": "Earlier check was design-time C# only; actual Release XamlC subsequently passed with DesignTimeBuild=false, diagnostics disabled, 0 warnings/errors. See post_review_release_validation.",
     "apk_packaging": "not performed; previous APK bytes/modification times unchanged",
     "source_boundary": "16 approved code/icon/test paths; all 105 prior Camera named controls/subtrees preserved",
     "dev_source_preservation": "32 reference files exact; original Camera body exactly restored by removing five approved display/feedback/lifecycle hook sites",
@@ -5948,7 +5955,8 @@
       "all_prior_manifest_text_preserved": true,
       "source_xml_valid": true,
       "apk_packaging": false
-    }
+    },
+    "earlier_android_compile_report": "final Compile target passed; 0 warnings; 0 errors"
   },
   "admin_validation": {
     "commit": "ebc6eaffd0055b5757226f7f882aeb9d77237cc0",
@@ -6219,6 +6227,29 @@
       "Admin deployed RBAC/provisioning/audit/data workflows"
     ],
     "branch_merge_push_deployment": "not performed or authorized",
-    "apk_packaging": "deferred by user; no final-branch APK produced"
+    "apk_packaging": "deferred by user; no final-branch APK produced",
+    "post_review_source_checkpoint": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
+    "validation_correction": "Android Compile defaults DesignTimeBuild=true; earlier compile-only checks passed C# but skipped XamlC. Earlier C#/XAML pass wording overstated those checks."
+  },
+  "post_review_release_validation": {
+    "integration_commit": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
+    "built_checkout_commit": "f2589f45c1c0c2ced7f6ee3009bb79848ab87933",
+    "built_branch": "migration/athena-modules-pt2",
+    "reported_error": "XC0002 OnArSubTabClicked not found",
+    "fix": {
+      "OnArSubTabClicked": "OnArCameraModeClicked",
+      "OnMapSubTabClicked": "OnMapModeClicked",
+      "OnFloodSubTabClicked": "OnFloodDepthModeClicked"
+    },
+    "scope": "three XAML event names only; existing dev mode-switch handlers unchanged",
+    "command": "dotnet msbuild RescuAR.MAUI/RescuAR.MAUI.csproj -t:Compile -p:Configuration=Release -p:DesignTimeBuild=false -p:RescuArDiagnosticBuild=false -p:MauiXamlCValidateOnly=false -p:BuildProjectReferences=false",
+    "release_core_dependency": "already built by the reported Release attempt",
+    "xamlc_executed": true,
+    "evidence": "Compiling Xaml log and newly created Release XamlC.stamp",
+    "warnings": 0,
+    "errors": 0,
+    "apk_packaging": false,
+    "earlier_validation_correction": "Android Compile defaults DesignTimeBuild=true; earlier compile-only checks passed C# but skipped XamlC. Earlier C#/XAML pass wording overstated those checks.",
+    "observed_user_checkout_history": "51ede19 merged integration into migration/athena-modules-pt2 before this report; this fix created ordinary commits only"
   }
 }
