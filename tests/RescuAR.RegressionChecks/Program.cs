@@ -367,19 +367,19 @@ Check(endpointUrl.Contains("radiuses=20;50") && bypassUrl.Contains("radiuses=20;
 var parseRoutes = typeof(MLDRoutingService).GetMethod("ParseRoutes",
     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 bool endpointUnmatched = false;
-try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" }); }
+try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD",RouteProvenance.Unreported }); }
 catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is RoutingEndpointUnmatchedException)
 { endpointUnmatched = true; }
 Check(endpointUnmatched, "MLD NoSegment is distinguished from a disconnected NoRoute result");
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD" })!).Count == 0,
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD",RouteProvenance.Unreported })!).Count == 0,
     "MLD NoRoute remains an authoritative disconnected result");
 var geometryRoute = ((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD" })!)[0];
+    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD",RouteProvenance.Unreported })!)[0];
 Check(Math.Abs(geometryRoute.TotalDistanceMeters - geometryRoute.Points[^1].DistanceFromStartMeters) < 0.01,
     "MLD progress and total distance use the same physical geometry");
 bool invalidGeometryRejected = false;
 try { parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" }); }
+    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD",RouteProvenance.Unreported }); }
 catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is InvalidDataException)
 { invalidGeometryRejected = true; }
 Check(invalidGeometryRejected, "MLD invalid interior geometry is an invalid response, not a disconnected route");

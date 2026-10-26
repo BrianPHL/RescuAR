@@ -717,7 +717,7 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                     pair[0].ValueKind == JsonValueKind.Number && pair[1].ValueKind == JsonValueKind.Number &&
                     pair[0].TryGetDouble(out double lon) && pair[1].TryGetDouble(out double lat) &&
                     new GeoCoordinate(lat, lon) is { IsValid: true } coordinate) snapped.Add(coordinate);
-        provenance = provenance with { SnappedWaypoints = snapped.ToArray(),
+        provenance = (provenance ?? RouteProvenance.Unreported) with { SnappedWaypoints = snapped.ToArray(),
             DataVersion = root.TryGetProperty("data_version", out var dataVersion) && dataVersion.ValueKind == JsonValueKind.String
                 ? DiagnosticToken(dataVersion.GetString()) : "unreported" };
 
