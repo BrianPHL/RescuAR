@@ -127,7 +127,9 @@ public partial class CameraPage
                 (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
                  reading.Timestamp <= previous.At) ||
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
-            if (GetAcquisitionMotion(reading) is not { } motion) return;
+            // MLD may collect a coarse bootstrap reference before physical
+            // alignment. It cannot publish that GPS-only reference as a path.
+            if (GetAcquisitionMotion(reading, requireTrustedHeading: !IsMldRoute(route)) is not { } motion) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
             var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.Timestamp,
                 DateTimeOffset.UtcNow, motion);
@@ -166,7 +168,14 @@ public partial class CameraPage
                     DateTimeOffset.UtcNow, current, out var reference,
                     boundedRecovery ? navigationStability.Options.RecoveryLifetime : null))
                 return RejectRegisteredWindow("registration unsupported or context changed", source);
+            if (IsMldRoute(route) && reference.Source != "VISUAL_ROAD_CORRIDOR")
+                return RejectRegisteredWindow("physical road alignment pending", source);
             double window = GetCurrentArRouteVisualWindowMeters();
+            if (reference.Source == "VISUAL_ROAD_CORRIDOR")
+            {
+                window = _routeDisplayProgressPolicy.ConstrainVisualWindow(route, position.ProgressMeters, window);
+                if (window < .5) return RejectRegisteredWindow("visible corridor does not establish the upcoming turn", source);
+            }
             if (routeHazardBlocksGuidance)
             {
                 if (!ReferenceEquals(hazardPrefixRoute, route) || !double.IsFinite(hazardSafePrefixEnd))
@@ -260,7 +269,12 @@ public partial class CameraPage
     private bool TryGetObservedDisplayPosition(RouteResult route, out RouteDisplayProgressPolicy.DisplayPosition position)
     {
         lock (routeProgressFusionSync)
+        {
+            if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion &&
+                _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position))
+                return true;
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
+        }
     }
 
     private bool TryGetBoundedDisplayPosition(RouteResult route, double committedProgress,

@@ -1248,6 +1248,7 @@ namespace RescuAR.App.Views.Camera
             ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
                 _arCoreService.TrackingSnapshot;
 
+            TryApplyVisualRoadAlignment();
             bool headingTrusted = HasCurrentRouteHeading();
 
             ARCameraSpatialController.SetRouteHeadingTrust(
@@ -9427,6 +9428,7 @@ namespace RescuAR.App.Views.Camera
             LocationReading reading,
             RouteProgressTracker.RouteProgressUpdate update)
         {
+            if (IsMldRoute(route) && HasVisualRoadRegistration()) return false;
             if (!HasCurrentHeadingCandidate()) return false;
 
 #if ANDROID
@@ -10210,16 +10212,20 @@ namespace RescuAR.App.Views.Camera
             bool allowApproachPreview = false)
         {
             bool pdrStep = update.RejectionReason == "PDR_STEP";
+            bool visualRoad = IsMldRoute(route) && HasVisualRoadRegistration();
+            if (_gpsPdrFusionPolicy.IsRouteIdentitySuspended) return false;
             bool syntheticStep = IsIndoorRouteTestModeEnabled &&
                 update.RejectionReason == "INDOOR_TEST_SYNTHETIC";
             // New GPS placements still need the existing fusion/identity
             // gates. Weak fixes may retain verified geometry, never replace it.
-            if (!pdrStep && !syntheticStep &&
+            if (!pdrStep && !syntheticStep && !visualRoad &&
                 (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium ||
                  lastGpsReliabilityWeight < 0.35 ||
                  _gpsPdrFusionPolicy.IsRouteIdentitySuspended)) return false;
             RouteDisplayProgressPolicy.DisplayPosition displayPosition;
-            bool positionReady = pdrStep
+            bool positionReady = visualRoad
+                ? TryGetObservedDisplayPosition(route, out displayPosition)
+                : pdrStep
                 ? TryGetBoundedDisplayPosition(route, update.CommittedProgressMeters,
                     DateTimeOffset.UtcNow, out displayPosition, out _)
                 : syntheticStep
@@ -10227,7 +10233,11 @@ namespace RescuAR.App.Views.Camera
                     : TryGetObservedDisplayPosition(route, out displayPosition);
             if (!positionReady) return false;
             bool approachPreview = allowApproachPreview &&
-                CanPublishMappedRoutePreview(route, update, displayPosition);
+                (visualRoad
+                    ? ReferenceEquals(route, activeRoute) && (initialRoadApproachPending || recoveryConnectorVerified) &&
+                        arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
+                            displayPosition.AlignmentCoordinate, displayPosition.RoadCoordinate)
+                    : CanPublishMappedRoutePreview(route, update, displayPosition));
             if (!HasCurrentRouteHeading() ||
                 (arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong && !approachPreview))
             {
@@ -10285,7 +10295,7 @@ namespace RescuAR.App.Views.Camera
                 spatial.Pose.PositionZ -
                 spatial.Anchor.PositionZ;
 
-            if (!pdrStep && !syntheticStep &&
+            if (!pdrStep && !syntheticStep && !visualRoad &&
                 (update.AccuracyMeters is not double sampleAccuracy ||
                  !double.IsFinite(sampleAccuracy) || sampleAccuracy > 20.0 ||
                  !update.GpsCoordinate.IsValid))

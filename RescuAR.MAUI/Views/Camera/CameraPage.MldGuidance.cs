@@ -12,6 +12,21 @@ public partial class CameraPage
         ARCameraPoseBridge.SpatialSnapshot frame)
     {
         if (activeRoute is not { } route || !IsMldRoute(route)) return confidence;
+        bool visual = HasVisualRoadRegistration();
+        if (!visual)
+            confidence = confidence with { AllowsRouteGeometry = false,
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                DisplayMessage = ARRoadSurfaceBridge.Status };
+        else if (!routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
+            !_gpsPdrFusionPolicy.IsRouteIdentitySuspended && HasCurrentRouteHeading() &&
+            frame.IsFresh && frame.IsTracking && frame.Anchor.IsVerified && window.Placement.IsFor(frame) &&
+            window.Placement.AlignmentSource == "VISUAL_ROAD_CORRIDOR" &&
+            ARCameraSpatialController.CurrentSpatialContinuity.State == ARCameraSpatialController.SpatialContinuityState.Live &&
+            ARRouteBridge.GeometryQuality.IsCurrentFor(window) &&
+            ARRouteBridge.GeometryQuality.State is not (RouteGeometryQualityState.Pending or RouteGeometryQualityState.Rejected))
+            confidence = confidence with { AllowsRouteGeometry = true,
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
+                DisplayMessage = "Following the mapped road — distance is approximate" };
         var decision = MldGuidanceBridge.Publish(route, activeDestinationVersion,
             _headingAlignmentService.CalibrationRevision, window, frame, confidence.AllowsRouteGeometry &&
                 pageIsVisible && currentCameraModuleView == CameraModuleViewMode.ArCamera,
@@ -51,18 +66,20 @@ public partial class CameraPage
         if (!IsMldRoute(route)) return;
         lock (routeProgressFusionSync)
         {
+            bool visual = HasVisualRoadRegistration();
             if (!ReferenceEquals(activeRoute, route) || safeZoneConfirmed || dynamicRerouteInProgress ||
-                positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
+                positionObservationHeld && !visual || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
-                latestGpsTimestampForRouting != reading.Timestamp ||
-                lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35)
+                !visual && latestGpsTimestampForRouting != reading.Timestamp ||
+                !visual &&
+                    (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35))
                 return;
             // Observe-only matching cannot add a second progress/arrival/entry
             // sample. Existing acquisition pairing, age, precision, registration,
             // access, tracking and hazard gates still own publication eligibility.
             var match = _routeProgressTracker.Update(reading.Coordinate, reading.AccuracyMeters,
                 reading.CourseDegrees, reading.SpeedMetersPerSecond, observeOnly: true);
-            ObserveVerifiedGpsPosition(route, match, reading);
+            if (!visual) ObserveVerifiedGpsPosition(route, match, reading);
             bool published = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong
                 ? TryPublishMovingRouteWindow(route, match, reason)
                 : TryPublishApproachToRouteVisual(route, match, reason);

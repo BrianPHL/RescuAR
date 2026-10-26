@@ -240,7 +240,7 @@ public sealed class MLDARIntegrationService
                 !float.IsFinite(retained.WorldX) || !float.IsFinite(retained.WorldZ)) return false;
             arOriginOffsetX = retained.WorldX - placement.AnchorX;
             arOriginOffsetZ = retained.WorldZ - placement.AnchorZ;
-            placement = placement with { AlignmentSource = "QUALIFIED_ACQUISITION",
+            placement = placement with { AlignmentSource = retained.Source,
                 RegistrationSample = retained.RegisteredAt.ToUnixTimeMilliseconds(),
                 RegisteredWorldX = retained.WorldX, RegisteredWorldZ = retained.WorldZ };
         }
