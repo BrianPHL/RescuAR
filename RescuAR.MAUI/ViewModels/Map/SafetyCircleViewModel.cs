@@ -109,25 +109,28 @@ public partial class SafetyCircleViewModel : ObservableObject
         try
         {
             var circles = await _safetyCircleService.GetMyCirclesAsync();
-            MyCircles.Clear();
-            foreach (var circle in circles)
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                MyCircles.Add(circle);
-            }
+                MyCircles.Clear();
+                foreach (var circle in circles)
+                {
+                    MyCircles.Add(circle);
+                }
 
-            if (MyCircles.Any())
-            {
-                var savedSelectedId = Preferences.Default.Get("SelectedCircleId", string.Empty);
-                var target = MyCircles.FirstOrDefault(c => c.Id == savedSelectedId) 
-                    ?? (!string.IsNullOrEmpty(_currentCircleId) ? MyCircles.FirstOrDefault(c => c.Id == _currentCircleId) : null)
-                    ?? MyCircles.First();
-                
-                SelectCircle(target);
-            }
-            else
-            {
-                SelectedCircleName = "No Circles Joined";
-            }
+                if (MyCircles.Any())
+                {
+                    var savedSelectedId = Preferences.Default.Get("SelectedCircleId", string.Empty);
+                    var target = MyCircles.FirstOrDefault(c => c.Id == savedSelectedId) 
+                        ?? (!string.IsNullOrEmpty(_currentCircleId) ? MyCircles.FirstOrDefault(c => c.Id == _currentCircleId) : null)
+                        ?? MyCircles.First();
+                    
+                    SelectCircle(target);
+                }
+                else
+                {
+                    SelectedCircleName = "No Circles Joined";
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -831,8 +834,16 @@ public partial class SafetyCircleViewModel : ObservableObject
                 IsCopiedSuccess = false;
                 IsCreatedCirclePopupOpen = true;
 
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (!MyCircles.Any(c => c.Id == circle.Id))
+                    {
+                        MyCircles.Insert(0, circle);
+                    }
+                    SelectCircle(circle);
+                });
+
                 await LoadMyCirclesAsync();
-                SelectCircle(circle);
             }
             catch (Exception ex)
             {
@@ -873,8 +884,17 @@ public partial class SafetyCircleViewModel : ObservableObject
             {
                 var circle = await _safetyCircleService.JoinCircleWithCodeAsync(result);
                 await Shell.Current.DisplayAlert("Success", $"You've joined {circle.Name}!", "OK");
+
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (!MyCircles.Any(c => c.Id == circle.Id))
+                    {
+                        MyCircles.Insert(0, circle);
+                    }
+                    SelectCircle(circle);
+                });
+
                 await LoadMyCirclesAsync();
-                SelectCircle(circle);
             }
             catch (Exception ex)
             {

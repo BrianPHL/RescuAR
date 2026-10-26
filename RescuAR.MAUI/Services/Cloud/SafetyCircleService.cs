@@ -31,7 +31,7 @@ namespace RescuAR.App.Services.Cloud
                     ?? client?.Auth.CurrentSession?.User?.Id 
                     ?? Preferences.Default.Get("current_user_id", string.Empty);
 
-                if (!string.IsNullOrWhiteSpace(userId))
+                if (!string.IsNullOrWhiteSpace(userId) && Guid.TryParse(userId, out _))
                 {
                     Preferences.Default.Set("current_user_id", userId);
                     return userId;
@@ -42,13 +42,15 @@ namespace RescuAR.App.Services.Cloud
             var email = Preferences.Default.Get("UserEmail", string.Empty);
             if (!string.IsNullOrWhiteSpace(email))
             {
-                var fallbackId = $"usr_{Math.Abs(email.GetHashCode()):X8}";
-                Preferences.Default.Set("current_user_id", fallbackId);
-                return fallbackId;
+                using var md5 = System.Security.Cryptography.MD5.Create();
+                var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(email.Trim().ToLowerInvariant()));
+                var deterministicGuid = new Guid(hash).ToString();
+                Preferences.Default.Set("current_user_id", deterministicGuid);
+                return deterministicGuid;
             }
 
             var localId = Preferences.Default.Get("local_device_user_id", string.Empty);
-            if (string.IsNullOrWhiteSpace(localId))
+            if (string.IsNullOrWhiteSpace(localId) || !Guid.TryParse(localId, out _))
             {
                 localId = Guid.NewGuid().ToString();
                 Preferences.Default.Set("local_device_user_id", localId);
@@ -58,6 +60,15 @@ namespace RescuAR.App.Services.Cloud
         }
 
         // --- Circle Management ---
+
+        public class LocalCircleDto
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public string InviteCode { get; set; } = string.Empty;
+            public DateTime CreatedAt { get; set; }
+            public string? CreatedBy { get; set; }
+        }
 
         public async Task<SupabaseSafetyCircle> CreateCircleAsync(string name)
         {
@@ -69,7 +80,7 @@ namespace RescuAR.App.Services.Cloud
                 Id = Guid.NewGuid().ToString(),
                 Name = name.Trim(),
                 InviteCode = inviteCode,
-                CreatedBy = (!string.IsNullOrWhiteSpace(userId) && Guid.TryParse(userId, out _)) ? userId : null,
+                CreatedBy = userId,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -83,7 +94,7 @@ namespace RescuAR.App.Services.Cloud
                 var response = await client.From<SupabaseSafetyCircle>().Insert(newCircle);
                 var circle = response.Models.FirstOrDefault() ?? newCircle;
 
-                if (!string.IsNullOrWhiteSpace(userId) && Guid.TryParse(userId, out _))
+                if (!string.IsNullOrWhiteSpace(userId))
                 {
                     await JoinCircleInternalAsync(circle.Id, userId);
                 }
@@ -106,7 +117,7 @@ namespace RescuAR.App.Services.Cloud
             try
             {
                 var json = Preferences.Default.Get("LocalSafetyCircles", "[]");
-                var list = System.Text.Json.JsonSerializer.Deserialize<List<SupabaseSafetyCircle>>(json) ?? new();
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<LocalCircleDto>>(json) ?? new();
                 var existing = list.FirstOrDefault(c => (!string.IsNullOrEmpty(c.Id) && c.Id == circle.Id) || (!string.IsNullOrEmpty(c.InviteCode) && c.InviteCode.Equals(circle.InviteCode, StringComparison.OrdinalIgnoreCase)));
                 if (existing != null)
                 {
@@ -116,7 +127,14 @@ namespace RescuAR.App.Services.Cloud
                 }
                 else
                 {
-                    list.Add(circle);
+                    list.Add(new LocalCircleDto
+                    {
+                        Id = circle.Id,
+                        Name = circle.Name,
+                        InviteCode = circle.InviteCode,
+                        CreatedAt = circle.CreatedAt,
+                        CreatedBy = circle.CreatedBy
+                    });
                 }
                 Preferences.Default.Set("LocalSafetyCircles", System.Text.Json.JsonSerializer.Serialize(list));
 
@@ -129,7 +147,10 @@ namespace RescuAR.App.Services.Cloud
                     Preferences.Default.Set("UserJoinedCircleIds", System.Text.Json.JsonSerializer.Serialize(joinedIds));
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SaveLocalCircle error: {ex.Message}");
+            }
         }
 
         public async Task<SupabaseSafetyCircle> JoinCircleWithCodeAsync(string inviteCode)
@@ -181,7 +202,7 @@ namespace RescuAR.App.Services.Cloud
 
             try
             {
-                if (!string.IsNullOrWhiteSpace(userId) && Guid.TryParse(userId, out _))
+                if (!string.IsNullOrWhiteSpace(userId))
                 {
                     await JoinCircleInternalAsync(circle.Id, userId);
                 }
@@ -238,13 +259,22 @@ namespace RescuAR.App.Services.Cloud
             try
             {
                 var json = Preferences.Default.Get("LocalSafetyCircles", "[]");
-                var localList = System.Text.Json.JsonSerializer.Deserialize<List<SupabaseSafetyCircle>>(json) ?? new();
+                var localList = System.Text.Json.JsonSerializer.Deserialize<List<LocalCircleDto>>(json) ?? new();
                 foreach (var c in localList)
                 {
-                    if (!string.IsNullOrWhiteSpace(c.Id) && !deletedIds.Contains(c.Id))
-                        result[c.Id] = c;
-                    else if (!string.IsNullOrWhiteSpace(c.InviteCode) && !deletedIds.Contains(c.InviteCode))
-                        result[c.InviteCode] = c;
+                    if (string.IsNullOrWhiteSpace(c.Id) || deletedIds.Contains(c.Id))
+                        continue;
+
+                    var model = new SupabaseSafetyCircle
+                    {
+                        Id = c.Id,
+                        Name = c.Name,
+                        InviteCode = c.InviteCode,
+                        CreatedAt = c.CreatedAt,
+                        CreatedBy = c.CreatedBy
+                    };
+
+                    result[c.Id] = model;
                 }
             }
             catch { }
@@ -337,7 +367,7 @@ namespace RescuAR.App.Services.Cloud
             try
             {
                 var json = Preferences.Default.Get("LocalSafetyCircles", "[]");
-                var list = System.Text.Json.JsonSerializer.Deserialize<List<SupabaseSafetyCircle>>(json) ?? new();
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<LocalCircleDto>>(json) ?? new();
                 list.RemoveAll(c => string.Equals(c.Id, circleId, StringComparison.OrdinalIgnoreCase));
                 Preferences.Default.Set("LocalSafetyCircles", System.Text.Json.JsonSerializer.Serialize(list));
 

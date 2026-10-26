@@ -865,6 +865,7 @@ namespace RescuAR.App.Views.Camera
 
                     if (mapMode)
                     {
+                        _ = Refresh2DMapLocationAsync();
                         Populate2DMapDestinationCenters();
                         InitializeOrRefresh2DCameraMap();
                     }
@@ -2890,6 +2891,93 @@ namespace RescuAR.App.Views.Camera
         private List<RescuAR.App.Models.EvacuationCenter> _filteredEvacuationCenters = new();
         private RescuAR.App.Models.EvacuationCenter? _selectedShelterFor2DMap;
 
+        private async Task<GeoCoordinate> GetBestUserLocationAsync(CancellationToken cancellationToken = default)
+        {
+            lock (routeProgressFusionSync)
+            {
+                if (latestGpsCoordinateForRouting.HasValue &&
+                    latestGpsTimestampForRouting.HasValue &&
+                    DateTimeOffset.UtcNow - latestGpsTimestampForRouting.Value < TimeSpan.FromSeconds(30))
+                {
+                    return latestGpsCoordinateForRouting.Value;
+                }
+            }
+
+            try
+            {
+                var cached = await _locationService.GetLastKnownLocationAsync(cancellationToken);
+                if (cached != null)
+                {
+                    lock (routeProgressFusionSync)
+                    {
+                        latestGpsCoordinateForRouting = cached.Coordinate;
+                        latestGpsAccuracyForRouting = cached.AccuracyMeters;
+                        latestGpsTimestampForRouting = cached.Timestamp;
+                    }
+                    return cached.Coordinate;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var fresh = await TryGetRouteLocationAsync(cancellationToken);
+                if (fresh != null)
+                {
+                    lock (routeProgressFusionSync)
+                    {
+                        latestGpsCoordinateForRouting = fresh.Coordinate;
+                        latestGpsAccuracyForRouting = fresh.AccuracyMeters;
+                        latestGpsTimestampForRouting = fresh.Timestamp;
+                    }
+                    return fresh.Coordinate;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var mauiLoc = await Geolocation.Default.GetLocationAsync(
+                    new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(3)), cancellationToken);
+                if (mauiLoc == null)
+                {
+                    mauiLoc = await Geolocation.Default.GetLastKnownLocationAsync();
+                }
+
+                if (mauiLoc != null)
+                {
+                    var coord = new GeoCoordinate(mauiLoc.Latitude, mauiLoc.Longitude);
+                    lock (routeProgressFusionSync)
+                    {
+                        latestGpsCoordinateForRouting = coord;
+                        latestGpsAccuracyForRouting = mauiLoc.Accuracy;
+                        latestGpsTimestampForRouting = mauiLoc.Timestamp;
+                    }
+                    return coord;
+                }
+            }
+            catch { }
+
+            lock (routeProgressFusionSync)
+            {
+                return latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+            }
+        }
+
+        private async Task Refresh2DMapLocationAsync()
+        {
+            try
+            {
+                var origin = await GetBestUserLocationAsync();
+                Dispatcher.Dispatch(() =>
+                {
+                    UpdateCamera2DUserLocation(origin);
+                    Populate2DMapDestinationCenters();
+                });
+            }
+            catch { }
+        }
+
         private void Populate2DMapDestinationCenters()
         {
             try
@@ -2926,7 +3014,21 @@ namespace RescuAR.App.Views.Camera
                     centerModalSearchEntry.Focus();
                 }
                 PopulateCenterSearchResults(string.Empty);
+                _ = RefreshSearchCentersWithBestLocationAsync();
             }
+        }
+
+        private async Task RefreshSearchCentersWithBestLocationAsync()
+        {
+            try
+            {
+                await GetBestUserLocationAsync();
+                Dispatcher.Dispatch(() =>
+                {
+                    PopulateCenterSearchResults(centerModalSearchEntry?.Text);
+                });
+            }
+            catch { }
         }
 
         private void OnCloseCenterSearchOverlayClicked(object? sender, EventArgs e)
@@ -3049,15 +3151,13 @@ namespace RescuAR.App.Views.Camera
 
                 arrivalRoadGraph ??= await NavigationDataBootstrap.GetRoadGraphAsync(CancellationToken.None);
 
-                GeoCoordinate origin = latestGpsCoordinateForRouting ?? new GeoCoordinate(14.6507, 121.1029);
+                // Acquire user's current GPS location
+                GeoCoordinate origin = await GetBestUserLocationAsync();
                 GeoCoordinate dest = new GeoCoordinate(center.Latitude, center.Longitude);
 
                 activeDestinationCoordinate = dest;
                 activeDestinationName = center.Name;
                 activeDestinationSafeZoneRadiusMeters = SafeZoneConfirmationService.ArrivalRadiusMeters;
-
-                // Set destination bridge first so system, AR, and navigation services align
-                NavigationDestinationBridge.Set(center.Name, dest);
 
                 // 1. Calculate route using GeoJSON pedestrian road graph with A* and MLD
                 RouteResult? route = null;
@@ -3092,6 +3192,9 @@ namespace RescuAR.App.Views.Camera
                 pendingInitialOrigin = origin;
                 pendingInitialDestination = dest;
                 pendingInitialRouteAt = DateTimeOffset.UtcNow;
+
+                // Set destination bridge so system, AR, and navigation services align and start AR routing
+                NavigationDestinationBridge.Set(center.Name, dest);
 
                 // Stop loading indicator
                 if (routeCalculatingOverlay != null)
@@ -4171,9 +4274,9 @@ namespace RescuAR.App.Views.Camera
                 bool reuseComputedRoute =
                     pendingInitialRoute is { Points.Count: >= 2 } &&
                     pendingInitialDestination == destination.Coordinate &&
-                    origin.DistanceTo(pendingInitialOrigin) <= 12.0 &&
+                    origin.DistanceTo(pendingInitialOrigin) <= 40.0 &&
                     DateTimeOffset.UtcNow - pendingInitialRouteAt <
-                        TimeSpan.FromMinutes(1);
+                        TimeSpan.FromMinutes(2);
                 Task<RouteResult?> routeWork = reuseComputedRoute
                     ? Task.FromResult(pendingInitialRoute)
                     : _mldArIntegrationService.RequestRouteWithDeferredRoadApproachAsync(
@@ -4850,18 +4953,15 @@ namespace RescuAR.App.Views.Camera
             CancelRouteRequest(
                 "Navigation destination changed.");
 
-            pendingInitialRoute = null;
-
-            activeRoute =
-                null;
+            if (pendingInitialDestination != destination.Coordinate)
+            {
+                pendingInitialRoute = null;
+                activeRoute = null;
+                activeDestinationName = string.Empty;
+                activeDestinationCoordinate = null;
+            }
 
             navigationSessionStartedAt =
-                null;
-
-            activeDestinationName =
-                string.Empty;
-
-            activeDestinationCoordinate =
                 null;
             activeDestinationVersion = 0;
 
@@ -6826,6 +6926,23 @@ namespace RescuAR.App.Views.Camera
                 }
 
                 UpdateTurnGuidance();
+
+                Dispatcher.Dispatch(() =>
+                {
+                    InitializeOrRefresh2DCameraMap();
+                    PopulateRouteDirectionsSheet();
+                    if (mapRouteSummaryPanel != null && activeDestinationCoordinate.HasValue)
+                    {
+                        mapRouteSummaryPanel.IsVisible = true;
+                        if (mapRouteDestinationNameLabel != null)
+                            mapRouteDestinationNameLabel.Text = $"To: {activeDestinationName}";
+                        if (mapRouteStatsLabel != null)
+                        {
+                            int walkMins = (int)Math.Max(1, Math.Round(replacementRoute.TotalDistanceMeters / 80.0));
+                            mapRouteStatsLabel.Text = $"{replacementRoute.TotalDistanceMeters:F0} m • ~{walkMins} mins walk";
+                        }
+                    }
+                });
 
                 lastRerouteResult =
                     hazardAware
