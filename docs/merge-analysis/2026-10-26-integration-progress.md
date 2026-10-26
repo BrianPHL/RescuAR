@@ -522,3 +522,10 @@ Use a later requested device build and report actual results before behavior-dep
 ## Remaining user-controlled validation
 
 Source preparation is complete. Use the [integration review](2026-10-26-integration-review.md) and the per-batch manual cases above when a later build/backend check is requested. Report actual device/provider results before behavior-dependent fixes. **APK packaging remains deferred.** Any merge, push or deployment is a separate later user instruction.
+
+## Post-review Release XAML fix
+
+- After the integration was merged into `migration/athena-modules-pt2` (`51ede19`), a Release build reported XC0002 for `OnArSubTabClicked`. Three Athena sub-tab XAML references had no matching method. They now use dev's existing `OnArCameraModeClicked`, `OnMapModeClicked` and `OnFloodDepthModeClicked` with their existing `TappedEventArgs` signatures and mode-switch flow. No C# navigation/AR/flood behavior changed.
+- Fix commits: integration `c628e01`; built checkout `f2589f4`. Both received the same three-binding correction. No branch merge was performed for this fix.
+- **Correction to earlier verification claims:** Android's `Compile` target defaults `DesignTimeBuild=true`, which skips XamlC. Earlier compile-only runs validated C#; the earlier C#/XAML pass wording for the offline/Camera/feedback stages overstated their scope.
+- Actual production-mode verification used `dotnet msbuild RescuAR.MAUI/RescuAR.MAUI.csproj -t:Compile -p:Configuration=Release -p:DesignTimeBuild=false -p:RescuArDiagnosticBuild=false -p:MauiXamlCValidateOnly=false -p:BuildProjectReferences=false` in `D:/Projects/RescuAR`. Its Release core-library output already existed from the reported build. The log explicitly reports **Compiling Xaml** and creates the Release `XamlC.stamp`; it passed with **0 warnings, 0 errors**. No Release APK was created. No app/device interaction was performed.
