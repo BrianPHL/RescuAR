@@ -9,6 +9,12 @@ internal static class CircleMapChecks
 
     public static async Task RunAsync(Action<bool, string> check)
     {
+        check(CirclePresencePolicy.CanDisplayLocal(Reading, Now), "a fresh local device fix may be displayed independently of cloud sharing");
+        check(!CirclePresencePolicy.CanDisplayLocal(null, Now), "missing local GPS never becomes a placeholder self pin");
+        check(!CirclePresencePolicy.CanDisplayLocal(Reading with { RecordedAt = Now.AddSeconds(-16) }, Now), "an expired device fix is removed from the current local marker");
+        check(!CirclePresencePolicy.CanDisplayLocal(Reading with { Accuracy = 51 }, Now), "coarse local readings cannot appear as a precise current self pin");
+        check(!CirclePresencePolicy.CanDisplayLocal(Reading with { RecordedAt = Now.AddSeconds(6) }, Now), "future local fixes cannot qualify as current");
+        check(!CirclePresencePolicy.CanDisplayLocal(Reading with { IsMock = true }, Now), "mock locations cannot become current local self pins");
         check(CirclePresencePolicy.CanShare(Reading, Now), "a recent accurate Circle position may be shared after explicit consent");
         check(!CirclePresencePolicy.CanShare(null, Now), "missing GPS cannot be replaced with a default Circle position");
         check(!CirclePresencePolicy.CanShare(Reading with { RecordedAt = Now.AddSeconds(-31) }, Now), "an old device fix is never uploaded as a new Circle position");
@@ -36,13 +42,13 @@ internal static class CircleMapChecks
 
         var rig = new Rig(); rig.Map.Start();
         var result = (await rig.Map.PollAsync())!;
-        check(!rig.Map.SharingEnabled && rig.Device.Reads == 0 && rig.Presence.Uploads == 0, "opening the Circle map defaults to Off and never requests a GPS fix or upload");
+        check(!rig.Map.SharingEnabled && rig.Device.Reads == 0 && rig.Presence.Uploads == 0, "the upload coordinator defaults to Off and requests neither a sharing GPS fix nor an upload");
         check(result.People.Single().Position == Position && !result.PeopleCached, "member positions can be viewed independently of sharing this device");
         rig.Map.SetSharing(true); result = (await rig.Map.PollAsync())!;
         check(rig.Presence.Uploads == 1 && rig.Device.Reads == 1 && result.SharingNotice.Contains("confirmed"), "explicit sharing reaches the remote only after membership and valid GPS are available");
         check(rig.Presence.LastScope == rig.Context.Current && rig.Presence.LastCircle == "circle-a" && rig.Presence.LastReading == Reading, "sharing retains the verified account, selected Circle and original acquisition timestamp");
         rig.Map.SetSharing(false); await rig.Map.PollAsync();
-        check(rig.Presence.Uploads == 1 && rig.Device.Reads == 1, "switching sharing Off stops subsequent GPS requests and uploads");
+        check(rig.Presence.Uploads == 1 && rig.Device.Reads == 1, "switching sharing Off stops subsequent sharing GPS requests and uploads");
         rig.Map.SetSharing(true); rig.Device.Value = Reading with { Accuracy = 200 };
         result = (await rig.Map.PollAsync())!;
         check(rig.Presence.Uploads == 1 && result.SharingNotice.Contains("No substitute"), "a poor fix pauses sharing without sending a replacement coordinate");

@@ -238,12 +238,13 @@
                 <Border VerticalOptions="End" Margin="8,8,8,12" Padding="8" StrokeShape="RoundRectangle 10" BackgroundColor="#F2FFFFFF" Stroke="#CBD5E1">
                     <VerticalStackLayout Spacing="4">
                         <Label x:Name="mapModeStatusLabel" FontSize="10" TextColor="#334155" />
-                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="4">
+                        <Grid ColumnDefinitions="*,*,*,Auto" ColumnSpacing="4">
                             <Button Text="Recenter" Clicked="OnCameraMapRecenterClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
                             <Button Grid.Column="1" Text="Overview" Clicked="OnCameraMapOverviewClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                            <Button Grid.Row="1" Text="Change" Clicked="OnOpenCenterSearchOverlayClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                            <Button Grid.Row="1" Grid.Column="1" x:Name="mapReturnToRouteButton" Text="Active route" Clicked="OnCameraMapReturnToRouteClicked" IsVisible="False" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
+                            <Button Grid.Column="2" Text="Search" Clicked="OnOpenCenterSearchOverlayClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
+                            <Button Grid.Column="3" x:Name="mapReturnToRouteButton" Text="Active route" Clicked="OnCameraMapReturnToRouteClicked" IsVisible="False" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
                         </Grid>
+                        <Label Text="© OpenStreetMap contributors · Maperitive" FontSize="9" TextColor="#64748B" HorizontalOptions="End" />
                     </VerticalStackLayout>
                 </Border>
             </Grid>
