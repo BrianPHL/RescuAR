@@ -19,9 +19,16 @@ namespace RescuAR.App.Views.Reports
         {
         }
 
+        protected override void OnDisappearing()
+        {
+            ViewModel.PauseReportWork();
+            base.OnDisappearing();
+        }
+
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            ViewModel.ResumeReportWork();
             if (BindingContext is ReportsViewModel vm)
             {
                 _ = vm.LoadReportsAsync();

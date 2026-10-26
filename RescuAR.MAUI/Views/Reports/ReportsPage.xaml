@@ -22,7 +22,7 @@
     <Grid>
         <!-- Main Page Layout -->
         <Grid RowDefinitions="Auto, *">
-            
+
             <!-- Top App Bar (Dark Navy Header) -->
             <Border Grid.Row="0"
                     BackgroundColor="#132238"
@@ -43,7 +43,7 @@
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
                         </Grid.GestureRecognizers>
-                        
+
                         <!-- Bell Icon -->
                         <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
                               Fill="#FFFFFF"
@@ -53,7 +53,7 @@
                               HorizontalOptions="Center"
                               VerticalOptions="Center"
                               InputTransparent="True" />
-                              
+
                         <!-- Badge Red Circle (Visible if Count > 0) -->
                         <Border BackgroundColor="#EF4444"
                                 StrokeThickness="0"
@@ -86,7 +86,7 @@
                          Command="{Binding LoadReportsCommand}">
                 <ScrollView VerticalScrollBarVisibility="Never">
                     <VerticalStackLayout Spacing="16" Padding="16,16,16,80">
-                        
+
                         <!-- Header Titles & Breadcrumbs -->
                         <VerticalStackLayout Spacing="4">
                             <Label Text="Home / Community" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
@@ -277,7 +277,7 @@
                                         </Border.Shadow>
 
                                         <VerticalStackLayout Spacing="12">
-                                            
+
                                             <!-- Author Header & Category Badge -->
                                             <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
                                                 <!-- Author Initials Avatar Circle -->
@@ -477,7 +477,7 @@
               IsVisible="{Binding IsCreateModalVisible}"
               VerticalOptions="FillAndExpand"
               HorizontalOptions="FillAndExpand">
-            
+
             <Border BackgroundColor="#FFFFFF"
                     Margin="16,24,16,16"
                     Padding="20"
@@ -490,7 +490,7 @@
                 </Border.Shadow>
 
                 <Grid RowDefinitions="Auto, *, Auto" RowSpacing="14">
-                    
+
                     <!-- Modal Header -->
                     <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
                         <Label Grid.Column="0"
@@ -513,9 +513,11 @@
                     </Grid>
 
                     <!-- Form Body -->
-                    <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+                    <ScrollView IsEnabled="{Binding CanEditReport}" Grid.Row="1" VerticalScrollBarVisibility="Never">
                         <VerticalStackLayout Spacing="14">
-                            
+
+                            <Label Text="{Binding ReportSubmissionStatus}" TextColor="#9A3412" FontSize="12" LineBreakMode="WordWrap" />
+
                             <!-- Category Selection Dropdown -->
                             <VerticalStackLayout Spacing="6">
                                 <Label Text="Category" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
@@ -602,10 +604,13 @@
                                 </Border>
                             </VerticalStackLayout>
 
+                            <Label Text="{Binding ReportLocationStatus}" TextColor="#475569" FontSize="12" LineBreakMode="WordWrap" />
+                            <Button Text="Use GPS incident point" Command="{Binding FetchUserLocationCommand}" TextColor="#008080" BackgroundColor="#E6F2F2" FontSize="12" />
+
                             <!-- Picture / Media Section -->
                             <VerticalStackLayout Spacing="6">
                                 <Label Text="Picture / Media Attachment" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
-                                
+
                                 <Border BackgroundColor="#F8FAFC"
                                         Stroke="#CBD5E1"
                                         StrokeThickness="1.5"
@@ -618,7 +623,7 @@
                                             <x:Double>4</x:Double>
                                         </x:Array>
                                     </Border.StrokeDashArray>
-                                    
+
                                     <Grid>
                                         <!-- No Media Upload State -->
                                         <VerticalStackLayout Spacing="6"
@@ -636,7 +641,7 @@
                                                    FontSize="13"
                                                    HorizontalOptions="Center" />
                                         </VerticalStackLayout>
-                                        
+
                                         <!-- Uploaded Media Preview State -->
                                         <Grid IsVisible="{Binding NewReportHasMedia}" ColumnDefinitions="*, Auto">
                                             <Image Grid.Column="0" Source="{Binding NewReportMediaUrl}" Aspect="AspectFill" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
@@ -661,14 +666,14 @@
 
                     <!-- Modal Submit Button -->
                     <Button Grid.Row="2"
-                            Text="✓  Publish Community Report"
+                            Text="Submit report for review"
                             TextColor="#FFFFFF"
                             BackgroundColor="#008080"
                             FontSize="15"
                             FontAttributes="Bold"
                             CornerRadius="12"
                             HeightRequest="48"
-                            Command="{Binding SubmitReportCommand}" />
+                            Command="{Binding SubmitReportCommand}" IsEnabled="{Binding CanEditReport}" />
                 </Grid>
             </Border>
         </Grid>
@@ -680,7 +685,7 @@
               IsVisible="{Binding IsSuccessModalVisible}"
               VerticalOptions="FillAndExpand"
               HorizontalOptions="FillAndExpand">
-            
+
             <Border BackgroundColor="#FFFFFF"
                     Margin="32"
                     Padding="32"
@@ -710,11 +715,12 @@
                               VerticalOptions="Center" />
                     </Border>
 
-                    <Label Text="Report Published!"
+                    <Label Text="Report submitted"
                            TextColor="#15803D"
                            FontSize="22"
                            FontAttributes="Bold"
                            HorizontalOptions="Center" />
+                    <Label Text="Accepted for review. Administrator approval is required for public visibility." TextColor="#475569" FontSize="12" HorizontalTextAlignment="Center" />
                 </VerticalStackLayout>
             </Border>
         </Grid>
@@ -761,7 +767,7 @@
                     <!-- Locations Search Results List -->
                     <ScrollView Grid.Row="2" VerticalScrollBarVisibility="Never">
                         <VerticalStackLayout Spacing="10">
-                            
+
                             <!-- OSM Live Search Results Section -->
                             <VerticalStackLayout Spacing="6" IsVisible="{Binding OsmSearchResults.Count, Converter={StaticResource InverseBoolConverter}, ConverterParameter='Inverse'}">
                                 <Label Text="OpenStreetMap Search Results" TextColor="#008080" FontSize="12" FontAttributes="Bold" />
@@ -811,7 +817,10 @@
                     </ScrollView>
 
                     <!-- Confirm Custom Button -->
-                    <Button Grid.Row="3" Text="Use Typed Custom Address" TextColor="#FFFFFF" BackgroundColor="#008080" FontSize="14" FontAttributes="Bold" CornerRadius="10" HeightRequest="44" Command="{Binding ConfirmCustomMapLocationCommand}" />
+                    <VerticalStackLayout Grid.Row="3" Spacing="4">
+                        <Label Text="{Binding ReportLocationStatus}" TextColor="#475569" FontSize="11" LineBreakMode="WordWrap" />
+                        <Button Text="Search for this incident location" TextColor="#FFFFFF" BackgroundColor="#008080" FontSize="14" FontAttributes="Bold" CornerRadius="10" HeightRequest="44" Command="{Binding ConfirmCustomMapLocationCommand}" />
+                    </VerticalStackLayout>
                 </Grid>
             </Border>
         </Grid>

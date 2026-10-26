@@ -31,5 +31,8 @@
     <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleChatService.cs" Link="CircleChatService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/FileCircleChatStore.cs" Link="FileCircleChatStore.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleChatWriteRow.cs" Link="CircleChatWriteRow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportSubmission.cs" Link="ResidentReportSubmission.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportWire.cs" Link="ResidentReportWire.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/CommunityReport.cs" Link="CommunityReport.cs" />
   </ItemGroup>
 </Project>

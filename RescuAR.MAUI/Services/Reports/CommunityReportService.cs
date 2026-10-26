@@ -38,7 +38,9 @@ public class CommunityReportService
                 .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Get();
 
-            return response.Models?.ToList() ??
+            return response.Models?.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Status) &&
+                r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList() ??
                 new List<CommunityReport>();
         }
         catch (Exception ex)
@@ -62,17 +64,17 @@ public class CommunityReportService
         {
             try
             {
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(4));
                 var response = await client.From<CommunityReport>()
                     .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Get();
+                    .Get(cts.Token);
 
                 if (response.Models != null && response.Models.Count > 0)
                 {
-                    // Only display Approved or Resolved reports on public community feed
-                    IEnumerable<CommunityReport> list = response.Models.Where(r => 
-                        !string.IsNullOrWhiteSpace(r.Status) && 
-                        (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
-                         r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase)));
+                    // Only approved reports are displayed on the public community feed
+                    IEnumerable<CommunityReport> list = response.Models.Where(r =>
+                        !string.IsNullOrWhiteSpace(r.Status) &&
+                        r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase));
 
                     // Calculate vicinity distance if user location is available
                     foreach (var report in list)
@@ -111,15 +113,34 @@ public class CommunityReportService
                     var likedReportIds = Microsoft.Maui.Storage.Preferences.Default.Get("LikedReportIds", "");
                     var likedSet = new HashSet<string>(likedReportIds.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
-                    Reports.Clear();
                     foreach (var item in fetchedList)
                     {
                         item.IsLikedByCurrentUser = likedSet.Contains(item.Id);
-                        Reports.Add(item);
                     }
 
-                    // Enrich usernames for loaded comments
-                    _ = EnrichCommentsUsernamesAsync(fetchedList.SelectMany(r => r.Comments));
+                    if (MainThread.IsMainThread)
+                    {
+                        Reports.Clear();
+                        foreach (var item in fetchedList) Reports.Add(item);
+                    }
+                    else
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            Reports.Clear();
+                            foreach (var item in fetchedList) Reports.Add(item);
+                        });
+                    }
+
+                    // Enrich usernames for loaded comments in background safely
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await EnrichCommentsUsernamesAsync(fetchedList.SelectMany(r => r.Comments));
+                        }
+                        catch { }
+                    });
 
                     return fetchedList;
                 }
@@ -130,10 +151,10 @@ public class CommunityReportService
             }
         }
 
-        var fallbackList = GetFallbackReports().Where(r => 
-            !string.IsNullOrWhiteSpace(r.Status) && 
-            (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
-             r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase))).ToList();
+        // Only approved reports are displayed on the fallback community feed
+        var fallbackList = GetFallbackReports().Where(r =>
+            !string.IsNullOrWhiteSpace(r.Status) &&
+            r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList();
 
         foreach (var report in fallbackList)
         {
@@ -156,12 +177,23 @@ public class CommunityReportService
 
         var fallbackLikedReportIds = Microsoft.Maui.Storage.Preferences.Default.Get("LikedReportIds", "");
         var fallbackLikedSet = new HashSet<string>(fallbackLikedReportIds.Split(',', StringSplitOptions.RemoveEmptyEntries));
-
-        Reports.Clear();
         foreach (var item in fallbackList)
         {
             item.IsLikedByCurrentUser = fallbackLikedSet.Contains(item.Id);
-            Reports.Add(item);
+        }
+
+        if (MainThread.IsMainThread)
+        {
+            Reports.Clear();
+            foreach (var item in fallbackList) Reports.Add(item);
+        }
+        else
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Reports.Clear();
+                foreach (var item in fallbackList) Reports.Add(item);
+            });
         }
 
         return fallbackList;
@@ -207,45 +239,15 @@ public class CommunityReportService
         }
     }
 
-    public async Task AddReportAsync(CommunityReport report)
+    public Task<ResidentReportReceipt> AddReportAsync(CommunityReport report, ResidentReportScope owner,
+        IncidentPoint point, System.Threading.CancellationToken token = default)
     {
-        if (string.IsNullOrWhiteSpace(report.Id))
-        {
-            report.Id = Guid.NewGuid().ToString();
-        }
-
-        // Force Pending status requiring Admin moderation approval before appearing on feed
-        report.Status = "Pending";
-
-        var client = await GetClientAsync();
-        if (client != null)
-        {
-            try
-            {
-                await client.From<CommunityReport>().Insert(report);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Supabase AddReportAsync Error: {ex.Message}");
-                MainThread.BeginInvokeOnMainThread(async () =>
-                {
-                    if (Shell.Current != null)
-                    {
-                        await Shell.Current.DisplayAlert("Supabase Error", $"Could not send report to web: {ex.Message}", "OK");
-                    }
-                });
-            }
-        }
-        else
-        {
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                if (Shell.Current != null)
-                {
-                    await Shell.Current.DisplayAlert("Supabase Error", "Supabase Client could not be initialized.", "OK");
-                }
-            });
-        }
+        if (report.Latitude != point.Latitude || report.Longitude != point.Longitude)
+            throw new ResidentReportInputException("Review the selected incident point before submitting.");
+        var created = report.CreatedAt.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(report.CreatedAt, DateTimeKind.Utc) : report.CreatedAt.ToUniversalTime();
+        var payload = new ResidentReportPayload(report.Id, report.Title, report.Description, report.Category, report.Address,
+            point, report.PostedBy, report.Severity, report.MediaUrl ?? "", new DateTimeOffset(created));
+        return ResidentReportRuntime.Submission.SubmitAsync(owner, payload, token);
     }
 
     public async Task AddCommentAsync(string reportId, string content, string authorName, string userId = "")
@@ -336,7 +338,7 @@ public class CommunityReportService
         // Apply fallback if author name is missing, placeholder "User", or unresolved GUID
         foreach (var c in commentList)
         {
-            if (string.IsNullOrWhiteSpace(c.AuthorName) 
+            if (string.IsNullOrWhiteSpace(c.AuthorName)
                 || string.Equals(c.AuthorName.Trim(), "User", StringComparison.OrdinalIgnoreCase)
                 || Guid.TryParse(c.AuthorName.Trim(), out _))
             {
