@@ -5019,6 +5019,9 @@
     "RescuAR.MAUI/Services/Authentication/PasswordRecoveryFlow.cs",
     "RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs",
     "RescuAR.MAUI/Services/Cloud/SupabaseService.cs",
+    "RescuAR.MAUI/Services/Profile/AvatarUpdateFlow.cs",
+    "RescuAR.MAUI/Services/Profile/MauiAvatarUpdateSource.cs",
+    "RescuAR.MAUI/Services/Profile/ProfileEditingPolicy.cs",
     "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
     "RescuAR.MAUI/ViewModels/Authentication/AddressInputViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/GoogleAuthViewModel.cs",
@@ -5028,15 +5031,26 @@
     "RescuAR.MAUI/ViewModels/Authentication/PermissionsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/RegistrationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/HealthInformationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/PersonalInformationViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/ProfileViewModel.Avatar.cs",
+    "RescuAR.MAUI/ViewModels/Profile/ProfileViewModel.cs",
     "RescuAR.MAUI/Views/Authentication/AuthenticationFormControls.cs",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml.cs",
     "RescuAR.MAUI/Views/Authentication/RegistrationPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml",
+    "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/PersonalInformationPage.xaml",
+    "RescuAR.MAUI/Views/Profile/PersonalInformationPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/ProfilePage.xaml",
+    "RescuAR.MAUI/Views/Profile/ProfilePage.xaml.cs",
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFormChecks.cs",
+    "tests/RescuAR.AuthenticationChecks/ProfileEditingChecks.cs",
     "tests/RescuAR.AuthenticationChecks/Program.cs",
     "tests/RescuAR.AuthenticationChecks/RescuAR.AuthenticationChecks.csproj",
     "tests/RescuAR.RegressionChecks/Program.cs"
@@ -5082,10 +5096,14 @@
     {
       "commit": "bf851f8ec8a74905c1f5e39b6b4a1de3f35855c1",
       "subject": "feat(auth): adopt Athena login and two-step registration"
+    },
+    {
+      "commit": "f2b0c03cb8afefdeba71e1acb712325c5cbd7dbe",
+      "subject": "feat(profile): adopt Athena screens with scoped field saves"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
-  "observed_later_dev": "444cd183e5e7df766c36064b6f6d3fa9f6a75287",
+  "observed_later_dev": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
   "next_approved_decisions": [],
   "authentication_flow_validation": {
     "unit_checks_passed": 38,
@@ -5099,7 +5117,7 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "profile, contacts and support UI; field-specific saves",
+    "emergency contacts, dashboard Quick Action synchronization and support screens",
     "settings UI and consumers",
     "circle membership, map and chat",
     "shared offline display extensions",
@@ -5123,5 +5141,19 @@
     "apk_sha256": "b438a21f61bcea966695f92c1d3b52505dd9013d90c1b76c0c44e352f89b7d7a",
     "observed_later_dev": "444cd183e5e7df766c36064b6f6d3fa9f6a75287"
   },
-  "legacy_local_data_policy": "User chose to preserve all archives aside and start fresh active local preferences. No automatic archive restoration. Verified cloud profiles and new account-scoped caches remain usable."
+  "legacy_local_data_policy": "User chose to preserve all archives aside and start fresh active local preferences. No automatic archive restoration. Verified cloud profiles and new account-scoped caches remain usable.",
+  "profile_validation": {
+    "unit_checks_passed": 93,
+    "new_profile_checks_passed": 29,
+    "android_build": "passed; 0 warnings; 0 errors",
+    "arcore_declarations": "passed",
+    "protected_source_review": "passed; all source deltas remain approved; profile advisory overlay and unrelated legacy contact/circle/advisory methods preserved",
+    "diff_whitespace": "passed",
+    "provider_database_storage_device_validation": "not performed",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\04-profile\\RescuAR-Batch04-Profile.apk",
+    "apk_bytes": 103217396,
+    "apk_sha256": "6d3884005be4eb820c63cf0a3b54c2fec308b91d9f06fbc4ca4a96562903c3df",
+    "observed_later_dev": "53d7cab1b11e4b5b92affeb673d8dfaa3b216cda",
+    "remaining_legacy_save": "The existing contacts screen still uses dev's broad SaveProfile command until its next explicit overlap decision. Personal, health and avatar paths use scoped partial updates."
+  }
 }

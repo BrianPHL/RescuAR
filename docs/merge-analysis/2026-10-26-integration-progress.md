@@ -30,6 +30,9 @@
 | A2-10 | Login screen and password-reset dialog | Adopt Athena's layout and dialog; preserve completed verified sign-in/Remember Me behavior | Athena presentation with correctly separated recovery panels, the dev password policy, a temporary non-persistent recovery client, and cancellation/ownership checks. |
 | A2-11 | Registration fields and two-step layout | Use Athena's two steps; keep optional middle name; defer the age restriction | Resident details then account credentials, dev 10-character password rules, the complete dev barangay catalog and the existing verified account flow. No minimum-age rule. |
 | A2-12 | Legacy local-data restoration | Keep all legacy archives aside; start fresh local preferences | No automatic archive read/restore; archived files/preferences are preserved. Verified cloud profiles and new account-scoped caches remain usable. |
+| P3-01 | Profile overview and avatar | Adopt Athena layout and account-scoped photo handling | Preserve dev advisory overlay/actions; isolate new local photos by project/account; expose local-only versus confirmed cloud status and retry. |
+| P3-02 | Personal information | Athena layout; retain username/middle name; verified email read-only; field-only saves | New editor keeps the dev fields, patches only changed values and preserves raw/unfamiliar addresses until edited. |
+| P3-03 | Health information | Athena layout/guide; retain all dev health fields; save only health fields | Separate editor retains the seven health fields and existing guide-completion key; changed-field patches preserve identity, contacts, avatar and circle fields. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -131,6 +134,36 @@ Use a test account and the preserved forms APK. Report the actual results before
 3. Close recovery while waiting, reopen it, and return from registration. Expect no old result or secret values in a new dialog and no recovery-based main-app login. Verify Remember Me and Google cancellation still follow the earlier batch's expectations.
 4. Sign out and change accounts. Expect no archived local profile/contact/shortcut/circle customization to be restored automatically. Existing server profile fields should remain intact.
 
+## Earlier profile gate (completed below)
+
+All three profile decisions were explicitly approved. Their applied scope and validation follow.
+
+
+## Profile, personal and health screens completed
+
+- Commit: `f2b0c03` — `feat(profile): adopt Athena screens with scoped field saves`.
+- Adopted Athena's profile overview and personal/health layouts. The profile advisory overlay and unrelated dev contact/circle/advisory methods remain unchanged. Personal and health pages now use their own editors rather than the shared whole-profile save command.
+- Personal saves retain username and optional middle name, show only the verified email as read-only, and patch only changed fields. Changing a name cannot reformat a stored address. Existing three-, five- and six-part addresses are supported; edits preserve city/region/postal suffixes. The dev 16-barangay catalog remains authoritative for new selections.
+- Health saves retain health-card number, blood type, allergies, maintenance medication, average blood pressure, disability/special needs and organ-donor status. The tutorial and its existing device completion flag remain. Only changed health fields are patched. Unfamiliar saved selector values remain available so an unrelated edit cannot erase them.
+- Each screen captures the account, backend project and session revision. Loads and saves reject late results after an account/session change. Obsolete form values clear before a new account loads, and acknowledged saves refresh the displayed values and edit baseline together.
+- New photo files and state use a project/account-specific cache. Existing global photo paths and legacy archives are not automatically restored. Photos remain locally available after restart for their owning account. This batch does not download every remote avatar for offline use.
+- A photo becomes cloud-confirmed only after both storage upload and the avatar-only profile update succeed. Local-only photos expose retry. Acknowledged upload URLs are reused when only the profile patch failed; uncertain uploads receive a fresh object name on retry. Dev's existing `avatars` bucket and user-ID filename prefix are retained. No storage-policy or schema change was made.
+- Photo failure/cancellation does not write a local filesystem path into the public profile. Old-account callbacks cannot confirm a newer account's photo. Existing archives/media are preserved; abandoned remote uploads are not deleted automatically.
+- **93/93 targeted local checks passed**, including all 64 prior authentication/form cases and 29 new field-isolation/address/photo-failure cases. They use fakes, not a running app or live provider.
+- Final Android build: **0 warnings, 0 errors**. ARCore declarations, source-path preservation and `git diff --check` passed. Additional builds followed concrete source-review corrections for saved-value alignment, photo retry and unfamiliar selector preservation. A staging-script typo applied no source changes and was corrected before the final successful adjustment/build.
+- Preserved APK: `artifacts/athena-integration/04-profile/RescuAR-Batch04-Profile.apk` (103,217,396 bytes; SHA-256 `6d3884005be4eb820c63cf0a3b54c2fec308b91d9f06fbc4ca4a96562903c3df`).
+- Device appearance/lifecycle, deployed profile permissions/RLS and avatar bucket upload access remain unverified. No app/browser interaction, integration/E2E tests, backend writes, deployment, branch merge or push was performed.
+- **Remaining contacts limitation:** dev's existing contact screen still uses the broad `SaveProfile` command until its next explicit overlap decision. The newly approved personal, health and avatar paths use scoped partial updates; this is not a claim that every profile-related path has been migrated yet.
+
+## Required manual profile checks
+
+Use a test account and the preserved profile APK. Report actual results before behavior-dependent fixes:
+
+1. Edit username/middle name and save/reopen personal information. Expect the verified email to remain read-only and health/contact/circle/avatar fields to stay intact. Change a health field and reopen both screens; expect only the selected health change. Existing unfamiliar selector values must remain when another field changes.
+2. Select a photo using gallery and camera, including denying camera access. Expect no broad storage permission request for the system gallery picker and no false success after denial. A confirmed photo should remain available offline after restart for the same account.
+3. Change a photo offline or with upload/profile access denied. Expect a visible local-only status and retry. Reconnect/retry; expect cloud confirmation only after the account profile actually updates. A successful upload followed by a failed profile patch must be retryable.
+4. Switch accounts while a load/upload/save is waiting. Expect no old-account details or photo to appear as the new account's active data. Return to the original account; its newly scoped photo may reappear, while legacy archives stay aside.
+
 ## Current next gate
 
-Ask separately about profile overview/avatar behavior, personal-information fields/saves and health-information presentation/saves before modifying them. Contacts, support/settings, circle, offline-map and Camera 2D decisions remain later steps. Preserve dev's newer Admin changes at the final reconciliation gate. Commit every finished batch; no branch merge or push is authorized yet.
+Ask before importing emergency-contact UI/import/save behavior, synchronizing confirmed contacts with dev dashboard Quick Actions, and replacing System Information with real installed-app/permission metadata. Help/legal presentation and settings remain separate later decisions, followed by circle/offline/Camera 2D work. Dev's latest observed Admin revision `53d7cab` remains deferred to the final preservation review. Commit every finished batch; no branch merge or push is authorized yet.
