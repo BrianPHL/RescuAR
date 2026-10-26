@@ -93,7 +93,8 @@ await AuthenticationFormChecks.RunAsync(Check);
 await ProfileEditingChecks.RunAsync(Check);
 await ContactShortcutChecks.RunAsync(Check);
 SettingsChecks.Run(Check);
-Console.WriteLine($"{passed} authentication, profile and settings checks passed.");
+await CircleMembershipChecks.RunAsync(Check);
+Console.WriteLine($"{passed} authentication, profile, settings and Circle checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore
 {

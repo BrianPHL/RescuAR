@@ -23,5 +23,7 @@
     <Compile Include="../../RescuAR.MAUI/Services/Settings/AppSettingsStore.cs" Link="AppSettingsStore.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs" Link="AlarmPlaybackController.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Settings/DerivedMapCache.cs" Link="DerivedMapCache.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleMembershipService.cs" Link="CircleMembershipService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/FileCircleMembershipStore.cs" Link="FileCircleMembershipStore.cs" />
   </ItemGroup>
 </Project>
