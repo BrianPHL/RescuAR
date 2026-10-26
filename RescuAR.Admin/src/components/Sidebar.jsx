@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import {canView} from '../rbac/access';
 import { 
   LayoutDashboard, 
   Activity, 
@@ -14,7 +15,7 @@ import {
   Gavel
 } from 'lucide-react';
 
-export default function Sidebar({ activeView, onViewChange, isMobileViewport = false, isMobileOpen = false }) {
+export default function Sidebar({ activeView, onViewChange, isMobileViewport = false, isMobileOpen = false, access }) {
   // Determine initial active group from activeView
   const getInitialGroup = () => {
     if (activeView.startsWith('monitoring-')) return 'monitoring';
@@ -65,13 +66,13 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
     >
       <div className="sidebar-menu-list">
         {/* Dashboard Link */}
-        <button type="button"
+        {canView(access,'dashboard') && (<button type="button"
           className={`sidebar-link ${activeView === 'dashboard' ? 'active' : ''}`}
           onClick={() => onViewChange('dashboard')}
         >
           <LayoutDashboard size={18} />
           <span>Dashboard</span>
-        </button>
+        </button>)}
 
         {/* Monitoring Section */}
         <div>
@@ -88,7 +89,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             </div>
             <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.monitoring ? 'expanded' : ''}`} />
           </button>
-          
+
           <div
             id="sidebar-monitoring-links"
             className={`sidebar-accordion ${expandedGroups.monitoring ? 'expanded' : ''}`}
@@ -96,27 +97,27 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             inert={!expandedGroups.monitoring}
           >
             <div className="menu-group-sublist">
-              <button type="button"
+              {canView(access,'monitoring-stations') && (<button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-stations' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-stations')}
               >
                 <Radio size={16} />
                 <span>Monitoring Stations</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'monitoring-river-level') && (<button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-river-level' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-river-level')}
               >
                 <Waves size={16} />
                 <span>Marikina River Level</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'monitoring-hazard-exposure') && (<button type="button"
                 className={`sidebar-link ${activeView === 'monitoring-hazard-exposure' ? 'active' : ''}`}
                 onClick={() => onViewChange('monitoring-hazard-exposure')}
               >
                 <AlertTriangle size={16} />
                 <span>Flood Hazard Exposure</span>
-              </button>
+              </button>)}
             </div>
           </div>
         </div>
@@ -136,7 +137,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             </div>
             <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.community ? 'expanded' : ''}`} />
           </button>
-          
+
           <div
             id="sidebar-community-links"
             className={`sidebar-accordion ${expandedGroups.community ? 'expanded' : ''}`}
@@ -144,18 +145,18 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             inert={!expandedGroups.community}
           >
             <div className="menu-group-sublist">
-              <button type="button"
+              {canView(access,'community-reports-moderation') && (<button type="button"
                 className={`sidebar-link ${activeView === 'community-reports-moderation' ? 'active' : ''}`}
                 onClick={() => onViewChange('community-reports-moderation')}
               >
                 <span>Reports Moderation</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'community-user-management') && (<button type="button"
                 className={`sidebar-link ${activeView === 'community-user-management' ? 'active' : ''}`}
                 onClick={() => onViewChange('community-user-management')}
               >
                 <span>User Management</span>
-              </button>
+              </button>)}
             </div>
           </div>
         </div>
@@ -175,7 +176,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             </div>
             <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.content ? 'expanded' : ''}`} />
           </button>
-          
+
           <div
             id="sidebar-content-links"
             className={`sidebar-accordion ${expandedGroups.content ? 'expanded' : ''}`}
@@ -183,24 +184,24 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             inert={!expandedGroups.content}
           >
             <div className="menu-group-sublist">
-              <button type="button"
+              {canView(access,'content-advisories') && (<button type="button"
                 className={`sidebar-link ${activeView === 'content-advisories' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-advisories')}
               >
                 <span>Advisories</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'content-evacuation') && (<button type="button"
                 className={`sidebar-link ${activeView === 'content-evacuation' || activeView === 'content-news' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-evacuation')}
               >
                 <span>Evacuation Centers</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'content-hotlines') && (<button type="button"
                 className={`sidebar-link ${activeView === 'content-hotlines' ? 'active' : ''}`}
                 onClick={() => onViewChange('content-hotlines')}
               >
                 <span>Emergency Hotlines</span>
-              </button>
+              </button>)}
             </div>
           </div>
         </div>
@@ -220,7 +221,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             </div>
             <ChevronDown size={14} className={`sidebar-chevron ${expandedGroups.system ? 'expanded' : ''}`} />
           </button>
-          
+
           <div
             id="sidebar-system-links"
             className={`sidebar-accordion ${expandedGroups.system ? 'expanded' : ''}`}
@@ -228,27 +229,30 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
             inert={!expandedGroups.system}
           >
             <div className="menu-group-sublist">
-              <button type="button"
+              {canView(access,'system-settings') && (<button type="button"
                 className={`sidebar-link ${activeView === 'system-settings' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-settings')}
               >
                 <span>Settings</span>
-              </button>
-              <button type="button"
+              </button>)}
+              {canView(access,'system-logs') && (<button type="button"
                 className={`sidebar-link ${activeView === 'system-logs' ? 'active' : ''}`}
                 onClick={() => onViewChange('system-logs')}
               >
                 <span>System Logs</span>
-              </button>
+              </button>)}
             </div>
           </div>
         </div>
       </div>
 
+      {canView(access,'rbac-research') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-research')}>PREP Research</button>}
+      {canView(access,'rbac-admins') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-admins')}>Administrator Management</button>}
+      {canView(access,'rbac-tests') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-tests')}>Testing & Simulation</button>}
       <div className="sidebar-footer">
-        <button className="footer-btn" onClick={() => onViewChange('documentation')} title="Documentation">
+        {canView(access,'documentation') && (<button className="footer-btn" onClick={() => onViewChange('documentation')} title="Documentation">
           <BookOpen size={18} />
-        </button>
+        </button>)}
       </div>
     </aside>
   );

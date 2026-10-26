@@ -3,7 +3,7 @@ import { LogOut, Menu, X } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 import { supabase } from '../supabaseClient';
 
-export default function Header({ session, onMenuToggle, isMenuOpen, menuButtonRef }) {
+export default function Header({ session, access, onMenuToggle, isMenuOpen, menuButtonRef }) {
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
@@ -28,11 +28,11 @@ export default function Header({ session, onMenuToggle, isMenuOpen, menuButtonRe
         </button>
         <BrandLogo variant="header" />
       </div>
-      
+
       <button type="button" className="user-profile-badge" onClick={handleLogout} title="Sign Out" aria-label={`Sign out ${userEmail}`}>
         <div className="avatar-circle">{initials}</div>
         <div className="user-info">
-          <span className="user-name">System Admin</span>
+          <span className="user-name">{access?.roles?.join(', ') || 'Admin'}</span>
           <span className="user-email">{userEmail}</span>
         </div>
         <LogOut size={16} className="dropdown-arrow" style={{ marginLeft: '8px', color: '#ef4444' }} />

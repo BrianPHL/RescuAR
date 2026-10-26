@@ -36,20 +36,10 @@ export default function Auth({ onLogin }) {
 
       if (error) throw error;
 
-      const { data: adminData, error: adminError } = await supabase
-        .from('admin_roles')
-        .select('*')
-        .eq('user_id', data.user.id)
-        .maybeSingle();
-
-      if (adminError) {
+      const { data: access, error: adminError } = await supabase.rpc('rbac_my_access');
+      if (adminError || !Array.isArray(access?.roles) || access.roles.length === 0) {
         await supabase.auth.signOut();
-        throw new Error('Error verifying admin privileges. Please try again.');
-      }
-
-      if (!adminData) {
-        await supabase.auth.signOut();
-        throw new Error('Unauthorized. You do not have administrator access.');
+        throw new Error('Unauthorized. An active RBAC administrator role is required.');
       }
 
       setFailedAttempts(0);
