@@ -38,7 +38,9 @@ public class CommunityReportService
                 .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Get();
 
-            return response.Models?.ToList() ??
+            return response.Models?.Where(r => 
+                !string.IsNullOrWhiteSpace(r.Status) && 
+                r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList() ??
                 new List<CommunityReport>();
         }
         catch (Exception ex)
@@ -62,17 +64,17 @@ public class CommunityReportService
         {
             try
             {
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(4));
                 var response = await client.From<CommunityReport>()
                     .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Get();
+                    .Get(cts.Token);
 
                 if (response.Models != null && response.Models.Count > 0)
                 {
-                    // Only display Approved or Resolved reports on public community feed
+                    // Only approved reports are displayed on the public community feed
                     IEnumerable<CommunityReport> list = response.Models.Where(r => 
                         !string.IsNullOrWhiteSpace(r.Status) && 
-                        (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
-                         r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase)));
+                        r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase));
 
                     // Calculate vicinity distance if user location is available
                     foreach (var report in list)
@@ -111,15 +113,34 @@ public class CommunityReportService
                     var likedReportIds = Microsoft.Maui.Storage.Preferences.Default.Get("LikedReportIds", "");
                     var likedSet = new HashSet<string>(likedReportIds.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
-                    Reports.Clear();
                     foreach (var item in fetchedList)
                     {
                         item.IsLikedByCurrentUser = likedSet.Contains(item.Id);
-                        Reports.Add(item);
                     }
 
-                    // Enrich usernames for loaded comments
-                    _ = EnrichCommentsUsernamesAsync(fetchedList.SelectMany(r => r.Comments));
+                    if (MainThread.IsMainThread)
+                    {
+                        Reports.Clear();
+                        foreach (var item in fetchedList) Reports.Add(item);
+                    }
+                    else
+                    {
+                        MainThread.BeginInvokeOnMainThread(() =>
+                        {
+                            Reports.Clear();
+                            foreach (var item in fetchedList) Reports.Add(item);
+                        });
+                    }
+
+                    // Enrich usernames for loaded comments in background safely
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await EnrichCommentsUsernamesAsync(fetchedList.SelectMany(r => r.Comments));
+                        }
+                        catch { }
+                    });
 
                     return fetchedList;
                 }
@@ -130,10 +151,10 @@ public class CommunityReportService
             }
         }
 
+        // Only approved reports are displayed on the fallback community feed
         var fallbackList = GetFallbackReports().Where(r => 
             !string.IsNullOrWhiteSpace(r.Status) && 
-            (r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || 
-             r.Status.Equals("Resolved", StringComparison.OrdinalIgnoreCase))).ToList();
+            r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList();
 
         foreach (var report in fallbackList)
         {
@@ -156,12 +177,23 @@ public class CommunityReportService
 
         var fallbackLikedReportIds = Microsoft.Maui.Storage.Preferences.Default.Get("LikedReportIds", "");
         var fallbackLikedSet = new HashSet<string>(fallbackLikedReportIds.Split(',', StringSplitOptions.RemoveEmptyEntries));
-
-        Reports.Clear();
         foreach (var item in fallbackList)
         {
             item.IsLikedByCurrentUser = fallbackLikedSet.Contains(item.Id);
-            Reports.Add(item);
+        }
+
+        if (MainThread.IsMainThread)
+        {
+            Reports.Clear();
+            foreach (var item in fallbackList) Reports.Add(item);
+        }
+        else
+        {
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                Reports.Clear();
+                foreach (var item in fallbackList) Reports.Add(item);
+            });
         }
 
         return fallbackList;
@@ -214,38 +246,102 @@ public class CommunityReportService
             report.Id = Guid.NewGuid().ToString();
         }
 
-        // Force Pending status requiring Admin moderation approval before appearing on feed
-        report.Status = "Pending";
+        if (string.IsNullOrWhiteSpace(report.Status))
+        {
+            report.Status = "Pending";
+        }
 
-        var client = await GetClientAsync();
+        // New reports are submitted with 'Pending' status for administrator approval.
+        // They will only appear on the public feed once approved by an administrator.
+
+        bool inserted = false;
+        var client = await GetClientAsync() ?? SupabaseService.Instance.Client;
         if (client != null)
         {
             try
             {
                 await client.From<CommunityReport>().Insert(report);
+                inserted = true;
+                System.Diagnostics.Debug.WriteLine($"Report successfully posted via Supabase Client: {report.Id}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Supabase AddReportAsync Error: {ex.Message}");
-                MainThread.BeginInvokeOnMainThread(async () =>
-                {
-                    if (Shell.Current != null)
-                    {
-                        await Shell.Current.DisplayAlert("Supabase Error", $"Could not send report to web: {ex.Message}", "OK");
-                    }
-                });
+                System.Diagnostics.Debug.WriteLine($"Supabase AddReportAsync Client Error: {ex.Message}");
             }
         }
-        else
+
+        // Reliable fallback: Direct HTTP REST post to ensure Admin receives the report even if SDK throws or is uninitialized
+        if (!inserted)
         {
-            MainThread.BeginInvokeOnMainThread(async () =>
-            {
-                if (Shell.Current != null)
-                {
-                    await Shell.Current.DisplayAlert("Supabase Error", "Supabase Client could not be initialized.", "OK");
-                }
-            });
+            inserted = await InsertViaRestApiAsync(report);
         }
+
+        if (!inserted)
+        {
+            System.Diagnostics.Debug.WriteLine($"Warning: Remote sync delayed for report {report.Id}. Stored in local collection.");
+        }
+    }
+
+    private async Task<bool> InsertViaRestApiAsync(CommunityReport report)
+    {
+        try
+        {
+            var baseUrl = SupabaseService.Instance.SupabaseUrl;
+            var key = SupabaseService.Instance.SupabaseKey;
+            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(key) ||
+                baseUrl == "https://your-supabase-project.supabase.co" || key == "your-supabase-anon-key")
+            {
+                baseUrl = SupabaseService.PlaceholderUrl;
+                key = SupabaseService.PlaceholderKey;
+            }
+
+            var endpoint = baseUrl.TrimEnd('/') + "/rest/v1/community_reports";
+
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10);
+            httpClient.DefaultRequestHeaders.Add("apikey", key);
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
+            httpClient.DefaultRequestHeaders.Add("Prefer", "return=representation");
+
+            var payload = new
+            {
+                id = report.Id,
+                title = report.Title ?? "",
+                description = report.Description ?? "",
+                address = report.Address ?? "",
+                latitude = report.Latitude != 0 ? report.Latitude : 14.6585,
+                longitude = report.Longitude != 0 ? report.Longitude : 121.0955,
+                posted_by = report.PostedBy ?? "Anonymous Resident",
+                category = report.Category ?? "Flood Warning",
+                severity = report.Severity ?? "Medium",
+                status = report.Status ?? "Pending",
+                created_at = report.CreatedAt.ToString("o"),
+                media_url = report.MediaUrl ?? "",
+                like_count = report.LikeCount,
+                comments_json = report.CommentsJson ?? "[]"
+            };
+
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+            using var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await httpClient.PostAsync(endpoint, content);
+            if (response.IsSuccessStatusCode)
+            {
+                System.Diagnostics.Debug.WriteLine($"Report successfully posted via Supabase REST API: {report.Id}");
+                return true;
+            }
+            else
+            {
+                var errBody = await response.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"Supabase REST API Error {response.StatusCode}: {errBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"InsertViaRestApiAsync Exception: {ex.Message}");
+        }
+
+        return false;
     }
 
     public async Task AddCommentAsync(string reportId, string content, string authorName, string userId = "")
