@@ -5038,10 +5038,15 @@
     "RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs",
     "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
     "RescuAR.MAUI/Services/Reports/AdvisoryService.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/CircleChatModels.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/CircleChatService.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/CircleChatWriteRow.cs",
     "RescuAR.MAUI/Services/SafetyCircle/CircleMapCoordinator.cs",
     "RescuAR.MAUI/Services/SafetyCircle/CircleMembershipService.cs",
     "RescuAR.MAUI/Services/SafetyCircle/CirclePresencePolicy.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/FileCircleChatStore.cs",
     "RescuAR.MAUI/Services/SafetyCircle/FileCircleMembershipStore.cs",
+    "RescuAR.MAUI/Services/SafetyCircle/MauiCircleChat.cs",
     "RescuAR.MAUI/Services/SafetyCircle/MauiCircleMembership.cs",
     "RescuAR.MAUI/Services/SafetyCircle/MauiCirclePresence.cs",
     "RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs",
@@ -5057,6 +5062,7 @@
     "RescuAR.MAUI/ViewModels/Authentication/RegistrationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
     "RescuAR.MAUI/ViewModels/Dashboard/DashboardViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Map/CircleChatViewModel.cs",
     "RescuAR.MAUI/ViewModels/Map/MapViewModel.cs",
     "RescuAR.MAUI/ViewModels/Map/SafetyCircleViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/AppSettingsViewModel.cs",
@@ -5086,6 +5092,8 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs",
+    "RescuAR.MAUI/Views/Map/CircleChatPage.xaml",
+    "RescuAR.MAUI/Views/Map/CircleChatPage.xaml.cs",
     "RescuAR.MAUI/Views/Map/MapPage.xaml.cs",
     "RescuAR.MAUI/Views/Map/SafetyCirclePage.xaml",
     "RescuAR.MAUI/Views/Map/SafetyCirclePage.xaml.cs",
@@ -5118,6 +5126,7 @@
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFormChecks.cs",
+    "tests/RescuAR.AuthenticationChecks/CircleChatChecks.cs",
     "tests/RescuAR.AuthenticationChecks/CircleMapChecks.cs",
     "tests/RescuAR.AuthenticationChecks/CircleMembershipChecks.cs",
     "tests/RescuAR.AuthenticationChecks/ContactShortcutChecks.cs",
@@ -5198,6 +5207,10 @@
     {
       "commit": "a6cd5d7118df81bd490923444052626fd130cf62",
       "subject": "feat(circle): add Athena map and explicit location sharing"
+    },
+    {
+      "commit": "c4d1d578090a3d55f4efd27fb1ca378b08f6b976",
+      "subject": "feat(circle): connect chat delivery and local media drafts"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5216,7 +5229,6 @@
   },
   "pending_scope": [
     "deferred detailed-offline-map switch and navigation voice/turn feedback consumer choices at their module gates",
-    "Management roster/group photo and Circle chat consumers using the approved membership foundation",
     "shared offline display extensions",
     "camera 2D experience retaining dev AR/navigation",
     "later dev Admin RBAC/provisioning preservation review",
@@ -5439,7 +5451,7 @@
     "cache_scope": "AppDataDirectory/circle-memberships-v1; SHA-256 key of normalized full backend URL plus verified user ID; envelope checked; atomic replacement; membership metadata/selection only; no chat/media/pending deletion",
     "cloud_confirmation": "create/join require actual membership readback; creator-only rename and delete, own-member-only leave; no fabricated identity or local-success fallback; interrupted creator membership is recovered on Refresh",
     "failure_behavior": "unknown mutation result blocks further mutations until Refresh; cloud success/local-storage failure is distinct; stale account/server/session responses cannot publish; auth/access failures do not become offline success; corrupt cache is reported and preserved",
-    "pending_consumers": "Circle map now uses the approved membership/selection foundation; chat still uses the legacy delivery/cache service, and management roster/group-photo consumers remain for their own decisions.",
+    "pending_consumers": "Approved Map/chat/management consumers are now connected. Shared offline display and manual/backend/device acceptance remain separate.",
     "backend_validation": "not performed; existing RLS/table access/FK cascade behavior unverified; no migrations or live writes performed",
     "device_validation": "not performed",
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\09-circle-membership\\RescuAR-Batch09-CircleMembership.apk",
@@ -5463,10 +5475,43 @@
     "sharing": "Off on entry, circle/account switch, exit and app stop; explicit permission request on enable only; device fixes <=30 seconds old, <=100m known accuracy, finite supported coordinates, nonmock; actual acquisition timestamp stored; cancellable requests; no cached/default GPS upload or silent update/insert retry chain",
     "backend_scope": "existing per-user user_locations row retained; backend-authorized Circles may read that last-known row, not a new per-circle sharing schema; disabling/exit does not delete prior cloud positions and cannot retract an already accepted in-flight request",
     "offline": "labelled membership list plus page-memory people already fetched for the same scope/circle; cold offline roster not fabricated; Circle basemap remains online until shared offline-display stage, with dev General/Offline Map reachable",
-    "pending": "management roster/group photo and chat consumers; shared offline map layers; no chat delivery/cache changes in this batch",
+    "pending": "Approved chat, local group-photo and management-roster consumers are completed in the following batch; shared offline background layers and manual device/backend validation remain pending.",
     "backend_device_validation": "not performed; no live writes/migrations, app/browser interaction or integration/E2E testing",
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\10-circle-map\\RescuAR-Batch10-CircleMap.apk",
     "apk_bytes": 103352564,
     "apk_sha256": "3a271b8419fb064b30ae2c2bb23a63de90cda39fdf9148612bcd814d44a3853d"
+  },
+  "circle_chat_validation": {
+    "decisions": [
+      "Athena chat layout with stable message ID, account/server/Circle storage, visible Pending/Failed/Sent and explicit membership-checked retry",
+      "Photo/video preview before Send/Cancel; failed queued media retained for Retry; Sent requires upload and message confirmation",
+      "Group photo is explicitly account-and-Circle local, with no shared group-photo upload/schema claim",
+      "Quick chips fill the composer and require Send",
+      "Management uses the same verified roster and dated/unknown policy as Map",
+      "Legacy unscoped chat files remain untouched/asid\u0435; cloud history loads into the new scoped cache"
+    ],
+    "unit_checks_passed": 324,
+    "new_chat_checks_passed": 51,
+    "unit_scope": "fake membership/remote/provider services, isolated filesystem fixtures and the actual installed Postgrest insert serializer; no live backend/provider calls",
+    "android_build": "initial and final source-review builds passed; final 0 warnings, 0 errors",
+    "arcore_declarations": "passed",
+    "source_preservation": "14 approved files; accepted 14 newer-dev AR hashes and shared runner unchanged; Circle Map changes only the roster mapper access modifier; membership/sharing implementation, auth/profile/contact/settings/general-map/native/Cloudinary/Admin source preserved",
+    "delivery": "one durable client UUID is serialized explicitly using a separate insert row model; confirmation lookup before insert/retry and after response; server acceptance is not a read/rescue receipt; no auto-retry on refresh/reconnect",
+    "media": "scoped local photo/video copy and preview before provider call; actual acquisition filename/type/size retained; streaming resource-specific Cloudinary multipart upload using existing configuration; provider URL saved before message submission; message retries reuse confirmed uploads",
+    "media_limits": "10 MB photo/local-photo and 50 MB video per copy; empty/oversized copy rejected; file/directory owner and link guards; no added package or whole-cache deletion",
+    "storage": "AppDataDirectory/circle-chat-v1 hashed full server/account/Circle directories; owner-envelope and message checks; atomic state updates; no legacy cache import/delete; local media/photo paths never serialized as database columns",
+    "local_photo": "same scoped photo shared by this account/device management and chat; no network upload or remote Circle schema change",
+    "roster": "management reads confirmed roster through the existing scoped Circle presence remote and shares its dated/unknown projection; no fabricated Online/Safe/full-battery labels; offline unloaded details are unavailable",
+    "lifecycle": "no fire-and-forget sends; polling stops/cancels on exit/background; chooser/viewer suspension preserves the intended scope; stale account/Circle callbacks cannot publish; pending data survives interruption for explicit Retry",
+    "limitations": [
+      "Live Supabase/RLS/UUID insertion, Cloudinary preset/media support, permissions, OS picker/viewer and lifecycle behavior unverified",
+      "A provider-accepted upload whose response/local URL save is lost can leave an orphan asset or be uploaded again on explicit Retry; no automatic remote cleanup claimed",
+      "Cancel clears the preview selection; unused owned local copies are retained, not swept from the app data directory",
+      "Composer text is retained in that page view model by account/session/Circle while switching; only queued messages and selected attachment drafts persist across a new app session"
+    ],
+    "cloudinary_reference": "https://cloudinary.com/documentation/image_upload_api_reference",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\11-circle-chat\\RescuAR-Batch11-CircleChat.apk",
+    "apk_bytes": 103393524,
+    "apk_sha256": "01838196ac9c2373e54f2b9891ac582e060c7fbe8ddb4ab843748d88c7d71004"
   }
 }
