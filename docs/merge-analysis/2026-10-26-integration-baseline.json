@@ -5035,6 +5035,11 @@
     "RescuAR.MAUI/Services/Profile/ProfileEditingPolicy.cs",
     "RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs",
     "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
+    "RescuAR.MAUI/Services/Reports/AdvisoryService.cs",
+    "RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs",
+    "RescuAR.MAUI/Services/Settings/AppPreferences.cs",
+    "RescuAR.MAUI/Services/Settings/AppSettingsStore.cs",
+    "RescuAR.MAUI/Services/Settings/DerivedMapCache.cs",
     "RescuAR.MAUI/ViewModels/Authentication/AddressInputViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/GoogleAuthViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/LoginViewModel.PasswordRecovery.cs",
@@ -5044,6 +5049,8 @@
     "RescuAR.MAUI/ViewModels/Authentication/RegistrationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
     "RescuAR.MAUI/ViewModels/Dashboard/DashboardViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Map/MapViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Profile/AppSettingsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/EmergencyContactsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/HealthInformationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/HelpCenterViewModel.cs",
@@ -5053,6 +5060,8 @@
     "RescuAR.MAUI/ViewModels/Profile/ProfileViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/SystemInformationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Profile/TermsConditionsViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Reports/AdvisoryFeedViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Reports/ReportsViewModel.cs",
     "RescuAR.MAUI/Views/Authentication/AuthenticationFormControls.cs",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml.cs",
@@ -5067,6 +5076,8 @@
     "RescuAR.MAUI/Views/Camera/CameraPage.Positioning.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.VisualRoadAlignment.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.xaml.cs",
+    "RescuAR.MAUI/Views/Profile/AppSettingsPage.xaml",
+    "RescuAR.MAUI/Views/Profile/AppSettingsPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml",
     "RescuAR.MAUI/Views/Profile/EmergencyContactsPage.xaml.cs",
     "RescuAR.MAUI/Views/Profile/HealthInformationPage.xaml",
@@ -5096,6 +5107,7 @@
     "tests/RescuAR.AuthenticationChecks/ProfileEditingChecks.cs",
     "tests/RescuAR.AuthenticationChecks/Program.cs",
     "tests/RescuAR.AuthenticationChecks/RescuAR.AuthenticationChecks.csproj",
+    "tests/RescuAR.AuthenticationChecks/SettingsChecks.cs",
     "tests/RescuAR.RegressionChecks/Program.cs",
     "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
   ],
@@ -5157,6 +5169,10 @@
     {
       "commit": "56fa572d96ac894c92b95afefdfa052fc726ab9a",
       "subject": "feat(profile): adopt help and shared policy screens"
+    },
+    {
+      "commit": "1f0cc6a99062edec68f1354a2da9b5415bff128f",
+      "subject": "feat(settings): wire advisory controls and map-only cleanup"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5174,7 +5190,7 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "settings UI and consumers",
+    "deferred detailed-offline-map switch and navigation voice/turn feedback consumer choices at their module gates",
     "circle membership, map and chat",
     "shared offline display extensions",
     "camera 2D experience retaining dev AR/navigation",
@@ -5367,5 +5383,20 @@
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\07-help-terms\\RescuAR-Batch07-HelpTerms.apk",
     "apk_bytes": 103274740,
     "apk_sha256": "c9aff52cb660bc8b48d28a86d690075a8d397cc506f7aa7143f9449254584a18"
+  },
+  "settings_validation": {
+    "unit_checks_passed": 154,
+    "new_settings_checks_passed": 27,
+    "unit_scope": "fake preferences/audio plus isolated filesystem fixtures under ignored worktree artifacts; no app/backend interaction",
+    "android_build": "passed; 0 warnings; 0 errors",
+    "arcore_declarations": "passed",
+    "xml_and_source_preservation": "passed; only approved popup gates in five consumers, live feed/camera source retained, native manifest adds VIBRATE only",
+    "cache_scope": "FileSystem.CacheDirectory/rescuar-map-cache only; existing general cache, routing, profiles/photos/messages/pending data excluded; links skipped; no recursive directory deletion",
+    "offline_map_switch": "deferred until its module is connected",
+    "manual_siren": "preserved independently of automatic sound",
+    "device_validation": "not performed",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\08-settings\\RescuAR-Batch08-Settings.apk",
+    "apk_bytes": 103291124,
+    "apk_sha256": "856a490e1a8e30b7a8879f1ed2f5f78f3abed8b7e69bc55e36b7f9e660a40f50"
   }
 }

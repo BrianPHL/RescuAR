@@ -40,6 +40,9 @@
 | D0-02 | Shared regression runner | Add all new dev checks; retain current checks and parser fixes | Runner matches newer dev plus the four previously accepted parser argument fixes. |
 | P3-07 | Help Center layout/FAQ/contact actions | Adopt Athena FAQ/layout with the existing Hotlines directory | Search/accordion retained; feature-accurate answers; existing registered directory route; no unconfirmed support email or automatic rescue call. |
 | P3-08 | Registration/profile Terms and Privacy | Adopt Athena layouts with shared text matching implemented features | One section model/content catalog supplies both entry points; contradictory retention claims and unsupported guarantees removed. |
+| S4-01 | Notification/haptic settings | Adopt functional Athena controls; retain feed and camera warnings | Optional in-app popup gates in five view models; advisory-only vibration; live updates remain unconditional. Device notification permission remains separate. |
+| S4-02 | Siren setting versus dashboard shortcut | Control automatic alarms; retain the manual shortcut | Separate playback ownership and automatic preference gating; manual/SOS sound calls and shortcut visibility are unchanged. |
+| S4-03 | Cache scope/offline-map switch | Clear only replaceable map copies; defer the offline-map switch | Dedicated cache root with path/link guards and partial-failure reporting; routing/account/photo/message/pending data and general caches excluded. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -258,6 +261,36 @@ Use the preserved batch-7 APK and report actual results before behavior-dependen
 2. Open Terms and Privacy from registration and from Profile. Expect the same six sections and bullets in each corresponding document, with readable scrolling and the appropriate Back action returning to where it was opened.
 3. Review the revised wording against your intended published app behavior. Stored last-known positions and retained local caches must not be described as never stored or automatically deleted by sign-out.
 
+## Earlier settings gate (completed below)
+
+The user explicitly approved all three settings choices. Their implementation and validation follow.
+
+
+## Settings and optional advisory controls completed
+
+- Commit: `1f0cc6a` — `feat(settings): wire advisory controls and map-only cleanup`.
+- Adopted Athena's settings layout with three functional controls: optional in-app advisory popups, automatic advisory sound and advisory vibration. Renamed the misleading push-notification label; OS notification access remains a separate device permission and uses the existing truthful metadata view model.
+- A shared device settings store preserves current values and migrates the old popup key only when the current key is absent. Confirmed writes notify consumers; failed writes do not emit a successful change. Settings refresh after returning from device settings.
+- Dashboard, Profile, general Map, Reports and Advisory Feed now gate only their optional incoming-advisory dialogs. Turning popups off closes existing optional dialogs through weak observers. Feed/summary refreshes, dashboard data updates, manual advisory opening and the Camera's event subscription/source remain preserved.
+- Automatic sound is separate from the existing public manual-play API. Muting it stops an active automatic alarm, leaves a manually started siren running, and does not hide or change the dashboard shortcut. Playback generations prevent an old completion callback from clearing a newer manual playback state. This is not a claim of device volume override.
+- Added only the normal `VIBRATE` declaration from Athena for the approved optional feedback. The helper checks the setting and tolerates unavailable hardware. Navigation voice and turn-feedback behavior were not changed in this batch.
+- Map cleanup can inspect/remove files only under `FileSystem.CacheDirectory/rescuar-map-cache`. It checks each file and ancestor, skips links/reparse points and never recursively deletes/moves directories. It excludes general cache, packaged/core routing data, saved evacuation data, profile/identity archives, photos, messages and pending files. Locked/failed files remain counted rather than producing a false zero-cache success.
+- The detailed-offline-map switch is deferred as requested. Until the map module writes replaceable copies into this reserved area, 0 KB and a disabled Clear button are expected; this is not the size of every map/media file on the device. No existing general cache was swept or reclassified.
+- **154/154 targeted local checks passed**, including all prior 127 cases and 27 settings/audio/cache cases. They use fake preferences/audio plus isolated filesystem fixtures under ignored worktree artifacts. In-use-file deletion and retry were exercised on Windows. No real app cache or media was deleted by these checks.
+- Android build passed on the first attempt with **0 warnings, 0 errors**. ARCore declarations, XML/binding/source review and `git diff --check` passed. The source check reconstructs the five original view models after removing only the approved popup gates/weak observers; blank-line/indentation normalization was needed in that comparison. No application correction was needed for that verification-script adjustment.
+- Accepted newer dev AR source, Camera emergency handling, dashboard action logic/shortcut persistence, advisory data delivery and unrelated report/map/profile behavior are preserved. No full AR retest was repeated for these source-preserved paths; their preceding 718-case checkpoint remains recorded above.
+- Preserved APK: `artifacts/athena-integration/08-settings/RescuAR-Batch08-Settings.apk` (103,291,124 bytes; SHA-256 `856a490e1a8e30b7a8879f1ed2f5f78f3abed8b7e69bc55e36b7f9e660a40f50`).
+- No running app/browser/device, backend write, integration/E2E test, dependency installation, deployment, branch merge or push was performed. Real sound/vibration, permission/lifecycle behavior and live advisory presentation remain device checks.
+
+## Required manual settings checks
+
+Use the preserved settings APK and report actual results before behavior-dependent fixes:
+
+1. Toggle each advisory control, fully restart and return to Settings. Expect the stored choices. Use controlled test advisories to check that optional dialogs follow their switch while the feed and camera still receive updates; manual advisory details should remain accessible.
+2. Start the manual Loud Siren, then turn automatic advisory sound off. Expect manual playback/shortcut availability to remain. With automatic sound enabled, verify a test advisory's sound; turn it off while automatic sound is playing and expect that automatic playback to stop.
+3. Check optional vibration on supported hardware, then disable it and repeat the controlled test. Device audio/notification permissions remain independent. Return from OS settings and expect current permission text rather than fabricated Granted values.
+4. Cache size currently may be 0 KB with clearing disabled. Once the map module is connected, verify that clearing removes only its replaceable copies, retains account/media/messages/pending/routing data, and reports any files that remain in use.
+
 ## Current next gate
 
-Ask about settings notification/popup/haptic behavior, automatic advisory sound versus the manual dashboard siren, and scoped map-cache clearing/offline-control timing. Navigation voice remains dev behavior until its own consumer decision. Circle membership/map/chat, offline display, Camera 2D and later Admin preservation gates remain. Commit every finished batch; no branch merge or push is authorized yet.
+Ask before reconciling Circle membership/create/join/selection and management behavior. Circle map/chat, shared offline display, deferred map/voice controls, Camera 2D and later Admin preservation remain separate stages. Keep the accepted dev AR source when reconciling Camera changes. Commit every finished batch; no branch merge or push is authorized yet.
