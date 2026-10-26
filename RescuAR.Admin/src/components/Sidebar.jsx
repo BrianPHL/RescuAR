@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {canView} from '../rbac/access';
+import './SidebarRbac.css';
 import { 
   LayoutDashboard, 
   Activity, 
@@ -12,18 +13,25 @@ import {
   Settings, 
   BookOpen,
   HelpCircle,
-  Gavel
+  Gavel,
+  FlaskConical,
+  UserRoundCog
 } from 'lucide-react';
 
 export default function Sidebar({ activeView, onViewChange, isMobileViewport = false, isMobileOpen = false, access }) {
   // Determine initial active group from activeView
   const getInitialGroup = () => {
-    if (activeView.startsWith('monitoring-')) return 'monitoring';
-    if (activeView.startsWith('community-')) return 'community';
+    if (activeView.startsWith('monitoring-') || activeView === 'rbac-tests') return 'monitoring';
+    if (activeView.startsWith('community-') || activeView === 'rbac-admins') return 'community';
     if (activeView.startsWith('content-')) return 'content';
     if (activeView.startsWith('system-')) return 'system';
     return 'monitoring';
   };
+
+  const [expandedNested, setExpandedNested] = useState({
+    hazard: activeView === 'rbac-tests' || activeView === 'monitoring-hazard-exposure',
+    users: activeView === 'rbac-admins' || activeView === 'community-user-management'
+  });
 
   const [expandedGroups, setExpandedGroups] = useState({
     monitoring: getInitialGroup() === 'monitoring',
@@ -35,6 +43,8 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
   // Auto-expand group when activeView changes externally
   React.useEffect(() => {
     const activeGroup = getInitialGroup();
+    if (activeView === 'rbac-tests' || activeView === 'monitoring-hazard-exposure') setExpandedNested((previous) => ({ ...previous, hazard: true }));
+    if (activeView === 'rbac-admins' || activeView === 'community-user-management') setExpandedNested((previous) => ({ ...previous, users: true }));
     setExpandedGroups({
       monitoring: activeGroup === 'monitoring',
       community: activeGroup === 'community',
@@ -56,6 +66,10 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
     });
   };
 
+  const toggleNested = (item) => {
+    setExpandedNested((previous) => ({ ...previous, [item]: !previous[item] }));
+  };
+
   return (
     <aside
       id="admin-sidebar"
@@ -75,10 +89,10 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
         </button>)}
 
         {/* Monitoring Section */}
-        {['monitoring-stations', 'monitoring-river-level', 'monitoring-hazard-exposure'].some((view) => canView(access, view)) && (<div>
+        {['monitoring-stations', 'monitoring-river-level', 'monitoring-hazard-exposure', 'rbac-tests'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
-            className={`menu-group-header ${activeView.startsWith('monitoring-') ? 'active' : ''}`}
+            className={`menu-group-header ${activeView.startsWith('monitoring-') || activeView === 'rbac-tests' ? 'active' : ''}`}
             onClick={() => toggleGroup('monitoring')}
             aria-expanded={expandedGroups.monitoring}
             aria-controls="sidebar-monitoring-links"
@@ -111,22 +125,38 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
                 <Waves size={16} />
                 <span>Marikina River Level</span>
               </button>)}
-              {canView(access,'monitoring-hazard-exposure') && (<button type="button"
-                className={`sidebar-link ${activeView === 'monitoring-hazard-exposure' ? 'active' : ''}`}
-                onClick={() => onViewChange('monitoring-hazard-exposure')}
-              >
-                <AlertTriangle size={16} />
-                <span>Flood Hazard Exposure</span>
-              </button>)}
+              {(canView(access, 'monitoring-hazard-exposure') || canView(access, 'rbac-tests')) && (
+                <div className="sidebar-nested-group">
+                  <div className="sidebar-parent-row">
+                    {canView(access, 'monitoring-hazard-exposure') && (
+                      <button type="button" className={`sidebar-link sidebar-parent-nav ${activeView === 'monitoring-hazard-exposure' ? 'active' : ''}`} onClick={() => onViewChange('monitoring-hazard-exposure')}>
+                        <AlertTriangle size={16} /><span>Flood Hazard Exposure</span>
+                      </button>
+                    )}
+                    {canView(access, 'rbac-tests') && (
+                      <button type="button" className="sidebar-nested-toggle" aria-label="Toggle Flood Hazard Exposure subpages" aria-expanded={expandedNested.hazard} aria-controls="sidebar-hazard-subpages" onClick={() => toggleNested('hazard')}>
+                        <ChevronDown size={13} className={`sidebar-chevron ${expandedNested.hazard ? 'expanded' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                  {canView(access, 'rbac-tests') && (
+                    <div className={`sidebar-accordion sidebar-nested-accordion ${expandedNested.hazard ? 'expanded' : ''}`} id="sidebar-hazard-subpages" aria-hidden={!expandedNested.hazard} inert={!expandedNested.hazard}>
+                      <div className="menu-group-sublist sidebar-nested-sublist">
+                        <button type="button" className={`sidebar-link sidebar-nested-link ${activeView === 'rbac-tests' ? 'active' : ''}`} onClick={() => onViewChange('rbac-tests')}><FlaskConical size={15} /><span>Testing &amp; Simulation</span></button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>)}
 
         {/* Community Management Section */}
-        {['community-reports-moderation', 'community-user-management'].some((view) => canView(access, view)) && (<div>
+        {['community-reports-moderation', 'community-user-management', 'rbac-admins'].some((view) => canView(access, view)) && (<div>
           <button
             type="button"
-            className={`menu-group-header ${activeView.startsWith('community-') ? 'active' : ''}`}
+            className={`menu-group-header ${activeView.startsWith('community-') || activeView === 'rbac-admins' ? 'active' : ''}`}
             onClick={() => toggleGroup('community')}
             aria-expanded={expandedGroups.community}
             aria-controls="sidebar-community-links"
@@ -151,12 +181,27 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
               >
                 <span>Reports Moderation</span>
               </button>)}
-              {canView(access,'community-user-management') && (<button type="button"
-                className={`sidebar-link ${activeView === 'community-user-management' ? 'active' : ''}`}
-                onClick={() => onViewChange('community-user-management')}
-              >
-                <span>User Management</span>
-              </button>)}
+              {(canView(access, 'community-user-management') || canView(access, 'rbac-admins')) && (
+                <div className="sidebar-nested-group">
+                  <div className="sidebar-parent-row">
+                    {canView(access, 'community-user-management') && (
+                      <button type="button" className={`sidebar-link sidebar-parent-nav ${activeView === 'community-user-management' ? 'active' : ''}`} onClick={() => onViewChange('community-user-management')}><span>User Management</span></button>
+                    )}
+                    {canView(access, 'rbac-admins') && (
+                      <button type="button" className="sidebar-nested-toggle" aria-label="Toggle User Management subpages" aria-expanded={expandedNested.users} aria-controls="sidebar-user-subpages" onClick={() => toggleNested('users')}>
+                        <ChevronDown size={13} className={`sidebar-chevron ${expandedNested.users ? 'expanded' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                  {canView(access, 'rbac-admins') && (
+                    <div className={`sidebar-accordion sidebar-nested-accordion ${expandedNested.users ? 'expanded' : ''}`} id="sidebar-user-subpages" aria-hidden={!expandedNested.users} inert={!expandedNested.users}>
+                      <div className="menu-group-sublist sidebar-nested-sublist">
+                        <button type="button" className={`sidebar-link sidebar-nested-link ${activeView === 'rbac-admins' ? 'active' : ''}`} onClick={() => onViewChange('rbac-admins')}><UserRoundCog size={15} /><span>Administrator Management</span></button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>)}
@@ -246,8 +291,6 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
         </div>)}
       </div>
 
-      {canView(access,'rbac-admins') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-admins')}>Administrator Management</button>}
-      {canView(access,'rbac-tests') && <button className="sidebar-link" type="button" onClick={()=>onViewChange('rbac-tests')}>Testing & Simulation</button>}
       <div className="sidebar-footer">
         {canView(access,'documentation') && (<button className="footer-btn" onClick={() => onViewChange('documentation')} title="Documentation">
           <BookOpen size={18} />

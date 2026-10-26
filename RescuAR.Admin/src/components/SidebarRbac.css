@@ -1,0 +1,14 @@
+/* RBAC navigation children: matches the existing sidebar accordion styles. */
+.sidebar-nested-group { min-width: 0; }
+.sidebar-parent-row { display: flex; align-items: center; min-width: 0; }
+.sidebar-parent-row .sidebar-parent-nav { flex: 1 1 auto; min-width: 0; text-align: left; background: transparent; border: 0; }
+.sidebar-parent-row .sidebar-parent-nav.active { background: var(--bg-active); }
+.sidebar-parent-nav span { min-width: 0; overflow-wrap: anywhere; }
+.sidebar-nested-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 32px; margin-right: 4px; border: 0; background: transparent; border-radius: 7px; color: var(--text-muted); cursor: pointer; }
+.sidebar-nested-toggle:hover { background: var(--bg-hover); }
+.sidebar-nested-toggle:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; }
+.sidebar-nested-accordion { margin-left: 8px; }
+.sidebar-nested-accordion > .sidebar-nested-sublist { padding-left: 16px; margin-left: 5px; border-left: 1px solid var(--color-border); }
+.sidebar-nested-link { width: 100%; text-align: left; font-size: 12px; padding-left: 9px; background: transparent; border: 0; }
+.sidebar-nested-link.active { background: var(--bg-active); }
+.sidebar-nested-link svg { flex: 0 0 auto; }
