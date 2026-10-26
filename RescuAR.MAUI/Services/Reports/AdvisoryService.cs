@@ -64,6 +64,7 @@ public class AdvisoryService
             var completedTask = await Task.WhenAny(fetchTask, Task.Delay(2500));
             if (completedTask != fetchTask)
             {
+                _ = fetchTask.ContinueWith(t => { var _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
                 return null;
             }
 
