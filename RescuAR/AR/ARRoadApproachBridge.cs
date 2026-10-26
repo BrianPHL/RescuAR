@@ -45,6 +45,11 @@ public static class ARRoadApproachBridge
         double? accuracy, DateTimeOffset timestamp, long expectedSession,
         Ownership owner = default, Vector2? registeredDirection = null, Vector2? worldTarget = null)
     {
+        if (!MldGuidanceBridge.AllowsStandaloneArrow)
+        {
+            Clear("computed MLD route owns navigation cues");
+            return false;
+        }
         if (owner.Role == "MAPPED_TARGET" &&
             (worldTarget is not { } targetWorld || !float.IsFinite(targetWorld.X) || !float.IsFinite(targetWorld.Y)))
         {
@@ -79,6 +84,11 @@ public static class ARRoadApproachBridge
 
     public static Snapshot GetForFrame(ARCameraPoseBridge.SpatialSnapshot frame)
     {
+        if (!MldGuidanceBridge.AllowsStandaloneArrow)
+        {
+            System.Threading.Volatile.Write(ref lastRenderReason, "computed MLD route owns navigation cues");
+            return default;
+        }
         Snapshot snapshot;
         lock (sync)
         {
@@ -134,7 +144,7 @@ public static class ARRoadApproachBridge
         float length = snapshot.Direction.LengthSquared();
         bool mappedTargetAvailable = snapshot.Owner.Role != "MAPPED_TARGET" ||
             snapshot.WorldTarget is { } target && float.IsFinite(target.X) && float.IsFinite(target.Y);
-        return snapshot.Active && mappedTargetAvailable && trackedFloor && generation.IsValid &&
+        return MldGuidanceBridge.AllowsStandaloneArrow && snapshot.Active && mappedTargetAvailable && trackedFloor && generation.IsValid &&
             snapshot.Generation == generation && snapshot.GroundReference > 0 &&
             snapshot.GroundReference == groundReference && trust != ARGroundTrust.None &&
             snapshot.GroundTrust == trust && age >= 0 && age <= MaximumAgeMilliseconds &&
