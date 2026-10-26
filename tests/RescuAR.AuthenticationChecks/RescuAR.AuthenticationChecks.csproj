@@ -20,5 +20,8 @@
     <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutPolicy.cs" Link="ContactShortcutPolicy.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutStore.cs" Link="ContactShortcutStore.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs" Link="SystemInformationPresentation.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/AppSettingsStore.cs" Link="AppSettingsStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs" Link="AlarmPlaybackController.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/DerivedMapCache.cs" Link="DerivedMapCache.cs" />
   </ItemGroup>
 </Project>

@@ -255,14 +255,23 @@ public partial class DashboardViewModel : ObservableObject
         // Listen for real-time admin advisory pushes
         RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
         {
-            SelectedAdvisory = newAdvisory;
-            IsPopupVisible = true;
+            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+            {
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
+            }
 
             if (newAdvisory != null)
             {
                 FloodAdvisoryDetailText = newAdvisory.DisplayMessageText;
             }
         };
+        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+        {
+            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+        });
         RealtimeAdvisoryManager.StartRealtimeListener();
     }
 
@@ -912,7 +921,7 @@ public partial class DashboardViewModel : ObservableObject
                 UserName = "User";
             }
 
-            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id 
+            string userId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id
                             ?? Preferences.Default.Get("CurrentUserId", "");
 
             int score = 60;
@@ -924,7 +933,7 @@ public partial class DashboardViewModel : ObservableObject
                 score = Preferences.Default.Get($"PASS_ChecklistScore_{userId}", Preferences.Default.Get("PASS_ChecklistScore", Preferences.Default.Get("PASS_Score", 60)));
                 completed = Preferences.Default.Get($"PASS_ChecklistCompleted_{userId}", Preferences.Default.Get("PASS_ChecklistCompleted", 6));
                 total = Preferences.Default.Get($"PASS_ChecklistTotal_{userId}", Preferences.Default.Get("PASS_ChecklistTotal", 10));
-                
+
                 // Cache user id for offline resumption
                 Preferences.Default.Set("CurrentUserId", userId);
             }

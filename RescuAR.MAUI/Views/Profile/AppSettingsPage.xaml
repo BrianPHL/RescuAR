@@ -1,13 +1,165 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     x:Class="RescuAR.App.Views.Profile.AppSettingsPage"
-    Title="App Settings">
+    x:DataType="vm:AppSettingsViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="20,15" BackgroundColor="#F2F2F7">
+            <Button
+                Grid.Column="0"
+                Text="&lt; Back"
+                FontSize="15"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                BackgroundColor="Transparent"
+                Padding="0"
+                Command="{Binding BackCommand}" />
 
+            <Label
+                Grid.Column="1"
+                Text="RescuAR"
+                FontSize="16"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                HorizontalOptions="Center"
+                VerticalOptions="Center" />
+
+            <ImageButton
+                Grid.Column="2"
+                Source="ic_notification.png"
+                WidthRequest="24"
+                HeightRequest="24"
+                BackgroundColor="Transparent" />
+        </Grid>
+
+        <!-- Main Scrollable Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="20" Padding="20,5,20,30">
+                <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="#64748B" />
+                <Label Text="{Binding DeviceInfo.StatusMessage}" FontSize="12" TextColor="#64748B" />
+                <!-- Breadcrumb & Title -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Profile/" FontSize="14" TextColor="#64748B" />
+                    <Label Text="App Settings" FontSize="30" FontAttributes="Bold" TextColor="#0F172A" />
+                    <Label Text="Choose optional advisory feedback and review removable map-cache copies and device permissions." FontSize="13" TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <!-- Section: Alerts & Notifications -->
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Alerts &amp; Notifications" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" Margin="4,0" />
+                    <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                        <VerticalStackLayout Spacing="16">
+                            <!-- Push Notifications -->
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                    <Label Text="In-app advisory popups" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <Label Text="Show optional advisory dialogs. The advisory feed and camera emergency warnings remain active." FontSize="12" TextColor="#64748B" />
+                                </VerticalStackLayout>
+                                <Switch Grid.Column="1" IsToggled="{Binding PushNotificationsEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                            <!-- Emergency Siren -->
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                    <Label Text="Automatic advisory sound" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <Label Text="Play sound for new advisories. The manual Loud Siren shortcut stays available; device audio settings still apply." FontSize="12" TextColor="#64748B" />
+                                </VerticalStackLayout>
+                                <Switch Grid.Column="1" IsToggled="{Binding EmergencySirenEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                            <!-- Advisory vibration -->
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                    <Label Text="Advisory vibration" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <Label Text="Optional vibration for new advisories when supported by the device." FontSize="12" TextColor="#64748B" />
+                                </VerticalStackLayout>
+                                <Switch Grid.Column="1" IsToggled="{Binding HapticFeedbackEnabled}" OnColor="#0A8491" VerticalOptions="Center" />
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Section: Offline & Storage -->
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Offline Data &amp; Storage" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" Margin="4,0" />
+                    <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                        <VerticalStackLayout Spacing="16">
+                            <!-- Clear Cache Row -->
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                    <Label Text="Replaceable map cache" FontSize="14" FontAttributes="Bold" TextColor="#0F172A" />
+                                    <HorizontalStackLayout Spacing="4">
+                                        <Label Text="Current size: " FontSize="12" TextColor="#64748B" />
+                                        <Label Text="{Binding CacheSizeText}" FontSize="12" FontAttributes="Bold" TextColor="#0A8491" />
+                                    </HorizontalStackLayout>
+                                </VerticalStackLayout>
+                                <Button
+                                    Grid.Column="1"
+                                    Text="Clear map cache"
+                                    FontSize="12"
+                                    FontAttributes="Bold"
+                                    TextColor="#DC2626"
+                                    BackgroundColor="#FEE2E2"
+                                    CornerRadius="8"
+                                    HeightRequest="36"
+                                    Padding="12,0"
+                                    Command="{Binding ClearCacheCommand}" IsEnabled="{Binding CanClearCache}"
+                                    VerticalOptions="Center" />
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+
+                <!-- Section: Device Permissions -->
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Device Permissions" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" Margin="4,0" />
+                    <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                        <VerticalStackLayout Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0" Text="Camera Access (AR Guidance)" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="{Binding DeviceInfo.CameraPermission}" FontSize="13" FontAttributes="Bold" TextColor="#64748B" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0" Text="GPS Location (Routing &amp; Safety Circle)" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="{Binding DeviceInfo.LocationPermission}" FontSize="13" FontAttributes="Bold" TextColor="#64748B" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0" Text="Push Notifications (Disaster Alerts)" FontSize="14" TextColor="#334155" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="{Binding DeviceInfo.NotificationsPermission}" FontSize="13" FontAttributes="Bold" TextColor="#64748B" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                            <Button
+                                Text="Manage in Device Settings &gt;"
+                                FontSize="14"
+                                FontAttributes="Bold"
+                                TextColor="#0A8491"
+                                BackgroundColor="Transparent"
+                                HorizontalOptions="Start"
+                                Padding="0"
+                                Margin="0,4,0,0"
+                                Command="{Binding OpenDeviceSettingsCommand}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

@@ -103,15 +103,15 @@ public partial class MapViewModel : ObservableObject
             using var stream = NavigationDataBootstrap.OpenGeoJsonResource(resourceName);
             using var reader = new StreamReader(stream);
             string geoJson = await reader.ReadToEndAsync();
-            
-            var features = await Task.Run(() => 
+
+            var features = await Task.Run(() =>
             {
                 var reader = new GeoJsonReader();
                 var featureCollection = reader.Read<NetTopologySuite.Features.FeatureCollection>(geoJson);
                 if (featureCollection == null) return new List<GeometryFeature>();
 
                 var projector = new SphericalMercatorProjector();
-                return featureCollection.Select(f => 
+                return featureCollection.Select(f =>
                 {
                     var geom = f.Geometry.Copy();
                     geom.Apply(projector);
@@ -179,9 +179,18 @@ public partial class MapViewModel : ObservableObject
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
         {
-            SelectedAdvisory = newAdvisory;
-            IsPopupVisible = true;
+            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+            {
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
+            }
         };
+        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+        {
+            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+        });
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.StartRealtimeListener();
     }

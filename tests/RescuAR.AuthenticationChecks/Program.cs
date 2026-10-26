@@ -92,7 +92,8 @@ await AuthenticationFlowChecks.RunAsync(Check);
 await AuthenticationFormChecks.RunAsync(Check);
 await ProfileEditingChecks.RunAsync(Check);
 await ContactShortcutChecks.RunAsync(Check);
-Console.WriteLine($"{passed} authentication and profile checks passed.");
+SettingsChecks.Run(Check);
+Console.WriteLine($"{passed} authentication, profile and settings checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore
 {

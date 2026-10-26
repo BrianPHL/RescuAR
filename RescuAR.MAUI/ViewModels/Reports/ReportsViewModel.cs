@@ -173,14 +173,23 @@ namespace RescuAR.App.ViewModels.Reports
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+            RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+            {
+                if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                    !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                    MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+            });
         }
 
         private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                SelectedAdvisory = newAdvisory;
-                IsPopupVisible = true;
+                if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+                {
+                    SelectedAdvisory = newAdvisory;
+                    IsPopupVisible = true;
+                }
             });
         }
 
@@ -252,7 +261,7 @@ namespace RescuAR.App.ViewModels.Reports
                 }
 
                 var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter, UserLatitude, UserLongitude);
-                
+
                 foreach (var report in list)
                 {
                     if (!_seenReportIds.Contains(report.Id))
@@ -267,7 +276,7 @@ namespace RescuAR.App.ViewModels.Reports
                         UnreadNotificationsCount++;
                     }
                 }
-                
+
                 foreach (var report in list)
                 {
                     _seenReportIds.Add(report.Id);
@@ -325,21 +334,21 @@ namespace RescuAR.App.ViewModels.Reports
                 }
             }
 
-            VicinityAffectedAreas = areaList.Count > 0 
-                ? $"Affected Areas: {string.Join(" • ", areaList.Take(3))}" 
+            VicinityAffectedAreas = areaList.Count > 0
+                ? $"Affected Areas: {string.Join(" • ", areaList.Take(3))}"
                 : "Affected Areas: Barangay Malanday • Concepcion Uno";
 
             // Determine highest severity
-            bool hasRescueOrFlood = nearbyHazards.Any(r => 
-                (r.Category != null && r.Category.Equals("Rescue Request", StringComparison.OrdinalIgnoreCase)) || 
+            bool hasRescueOrFlood = nearbyHazards.Any(r =>
+                (r.Category != null && r.Category.Equals("Rescue Request", StringComparison.OrdinalIgnoreCase)) ||
                 (r.Category != null && r.Category.Equals("Flood Warning", StringComparison.OrdinalIgnoreCase)));
-            
+
             if (hasRescueOrFlood || (nearest != null && nearest.DistanceKm <= 1.0))
             {
                 VicinityAlertSeverity = "High";
                 VicinityStatusTitle = $"⚠️ Vicinity Hazard Alert ({nearest?.DistanceText ?? "Nearby"})";
-                VicinityStatusSubtitle = nearest != null 
-                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
+                VicinityStatusSubtitle = nearest != null
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}"
                     : $"{count} disaster hazard reports within your vicinity.";
                 VicinityAlertBadgeColor = "#FEF2F2";
                 VicinityAlertTextColor = "#991B1B";
@@ -350,8 +359,8 @@ namespace RescuAR.App.ViewModels.Reports
             {
                 VicinityAlertSeverity = "Medium";
                 VicinityStatusTitle = $"⚡ Vicinity Caution ({nearest?.DistanceText ?? "Nearby"})";
-                VicinityStatusSubtitle = nearest != null 
-                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
+                VicinityStatusSubtitle = nearest != null
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}"
                     : $"{count} active reports nearby.";
                 VicinityAlertBadgeColor = "#FFFBEB";
                 VicinityAlertTextColor = "#92400E";
@@ -648,7 +657,7 @@ namespace RescuAR.App.ViewModels.Reports
                 notif.IsRead = true;
             }
             UnreadNotificationsCount = 0;
-            
+
             if (Shell.Current != null)
             {
                 await Shell.Current.GoToAsync("NotificationsPage");

@@ -1,3 +1,4 @@
+using RescuAR.MAUI.Services.Settings;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -147,64 +148,55 @@ public static class RealtimeAdvisoryManager
     public static event Action<DisasterAdvisory>?
         OnNewAdvisoryPushed;
 
-    public static void PlayAlarmAudio()
+    private static readonly AlarmPlaybackController alarmPlayback = new(StartAlarmPlayer, StopAlarmPlayer);
+    static RealtimeAdvisoryManager()
+    {
+        AppPreferences.Current.Changed += setting =>
+        {
+            if (setting == AppSetting.EmergencySiren && !AppPreferences.IsEnabled(setting))
+                MainThread.BeginInvokeOnMainThread(alarmPlayback.StopAutomatic);
+        };
+    }
+    public static void PlayAlarmAudio() => alarmPlayback.PlayManual();
+    public static void StopAlarmAudio() => alarmPlayback.Stop();
+    private static void PlayAutomaticAdvisoryAlarm() => alarmPlayback.PlayAutomatic(AppPreferences.IsEnabled(AppSetting.EmergencySiren));
+
+    private static bool StartAlarmPlayer(Action completed)
     {
 #if ANDROID
         try
         {
-            StopAlarmAudio();
-
-            using var asset =
-                Android.App.Application.Context.Assets?
-                    .OpenFd("ndrrmc_alarm.ogg");
-
-            if (asset is null)
+            using var asset = Android.App.Application.Context.Assets?.OpenFd("ndrrmc_alarm.ogg");
+            if (asset is null) return false;
+            var player = new Android.Media.MediaPlayer();
+            _activePlayer = player;
+            player.SetDataSource(asset.FileDescriptor, asset.StartOffset, asset.Length);
+            player.Prepare();
+            player.Completion += (_, _) =>
             {
-                Android.Util.Log.Warn(
-                    LogTag,
-                    "NDRRMC alarm asset 'ndrrmc_alarm.ogg' was not found.");
-
-                return;
-            }
-
-            _activePlayer =
-                new Android.Media.MediaPlayer();
-
-            _activePlayer.SetDataSource(
-                asset.FileDescriptor,
-                asset.StartOffset,
-                asset.Length);
-
-            _activePlayer.Prepare();
-            _activePlayer.Start();
-
-            _activePlayer.Completion +=
-                (_, _) =>
+                try { player.Release(); }
+                catch (Exception) { }
+                finally
                 {
-                    try
-                    {
-                        _activePlayer?.Release();
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        _activePlayer =
-                            null;
-                    }
-                };
+                    if (ReferenceEquals(_activePlayer, player)) _activePlayer = null;
+                    completed();
+                }
+            };
+            player.Start();
+            return true;
         }
         catch (Exception exception)
         {
-            Android.Util.Log.Warn(
-                LogTag,
-                $"Unable to play NDRRMC alarm audio: {exception.Message}");
+            Android.Util.Log.Warn(LogTag, $"Unable to play NDRRMC alarm audio: {exception.Message}");
+            StopAlarmPlayer();
+            return false;
         }
+#else
+        return false;
 #endif
     }
 
-    public static void StopAlarmAudio()
+    private static void StopAlarmPlayer()
     {
 #if ANDROID
         try
@@ -322,7 +314,8 @@ public static class RealtimeAdvisoryManager
                     MainThread.BeginInvokeOnMainThread(
                         () =>
                         {
-                            PlayAlarmAudio();
+                            PlayAutomaticAdvisoryAlarm();
+                            AppPreferences.VibrateForAdvisory();
 
                             OnNewAdvisoryPushed?.Invoke(
                                 latest);

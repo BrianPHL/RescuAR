@@ -39,9 +39,18 @@ namespace RescuAR.App.ViewModels.Profile
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
             {
-                SelectedAdvisory = newAdvisory;
-                IsPopupVisible = true;
+                if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+                {
+                    SelectedAdvisory = newAdvisory;
+                    IsPopupVisible = true;
+                }
             };
+            RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+            {
+                if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                    !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                    MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+            });
         }
 
         private Task LoadUserProfileAsync() => RefreshProfileAsync();
