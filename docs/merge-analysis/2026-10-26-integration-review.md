@@ -14,9 +14,9 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 | Contacts/Quick Actions/system/help/policies | Athena cards/import, confirmed contact saves, shortcut sync, real app/permission details and FAQ/layouts | Import fills the form; Save confirms. Dev dashboard layout and unrelated shortcuts remain. Existing Hotlines directory and shared feature-matched policy text retained. |
 | Settings/advisories | Functional optional popups, automatic advisory sound, shared vibration/voice controls and scoped map clearing | Dev feed/camera emergency warnings and manual siren remain; no general cache/account/media/message sweep. |
 | Circle membership/management | Athena controls on confirmed account/server-scoped create/join/selection/roster | Labelled confirmed offline cache; member Leave separate from creator Rename/Delete; failures cannot claim cloud success. |
-| Circle map | Athena main Map tab, people sheet, avatars, phone controls and shared offline detail | General/Offline Map entry retained. Dated/unknown readings, no fabricated people pins; sharing defaults Off and uploads only with visible/qualified/confirmed context. |
+| Circle map | Athena main Map tab, people sheet, avatars, phone controls and shared offline detail | General/Offline Map entry retained. Collapsible People sheet; fresh local self pin independent of uploads. Dated/unknown member readings; sharing defaults Off and uploads only with visible/qualified/confirmed context. |
 | Circle chat/media/photos | Athena layout, one stable message identity, Pending/Failed/Sent/retry, attachment preview then Send | Account/circle cache; old unscoped files stay aside; failed drafts retained. Group photo is labelled device-local. Quick chips fill the composer for review. |
-| Shared offline display | Converted 3,555-tile archive plus buildings/parks/water across General, Circle and Camera maps | Detail defaults On; Off keeps basic roads/points. Dev roads, points, routes, markers and routing datasets retained. Both unused conversion inputs excluded. |
+| Shared offline display | Converted 3,555-tile archive plus buildings/parks/water across General, Circle and Camera maps | Detail defaults On. General Map retains dev basic roads/points; Circle/Camera focus on members or shelters/user/active route. Routing datasets retained. Actual Mapsui local-source contract repaired; both unused conversion inputs excluded. |
 | Camera 2D | Athena AR/2D/Flood tabs, real map, search/planner, overview/directions, Recenter/Overview | One dev accepted destination/route/progress/hazard flow. Current validated GPS only. Pan/zoom retained after initial route framing. Existing AR/flood/recovery implementation preserved. |
 | Turns/arrival/voice/haptics | Dev classifier/arrival rules; qualified cancellable speech, default Off; one short qualified near-turn pulse under the shared haptic preference | No separate route calculation, guessed current position, 15m arrival shortcut or automatic chip/send behavior. Overview destination-ahead is not confirmed arrival. |
 | Dev AR/routing/report/assessment | Latest approved dev recovery, road alignment, progress/ribbon and feed/assessment changes | Required AR/native controls retained. Reports use verified account, stable ID, actual selected point and confirmed server acceptance; failed draft/media retained. |
@@ -35,7 +35,8 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 
 | Check | Result |
 | --- | --- |
-| Local auth/profile/settings/Circle/report/offline policies | 415 passed; fake services and isolated local fixtures, including reading all 3,555 packaged tile entries. |
+| Local auth/profile/settings/Circle/report/offline policies | 421 passed; includes six new current-local-position cases, fake services and isolated fixtures, and all 3,555 packaged entries. |
+| Actual map tile contract | 12 passed using installed Mapsui/BruTile and the production adapter/real PNG; no network/UI. |
 | Camera presentation/directions | 41 passed; GPS quality/expiry, trip ownership, geometry, viewport and shared-classifier cases. |
 | Navigation feedback | 32 passed; fake speech/vibration, cancellation, deduplication, serialization and fallback. |
 | Admin role/access/provisioning | 19 passed; source contracts and mocked access responses, no deployed calls. |
@@ -56,13 +57,19 @@ XC0002 exposed three nonexistent sub-tab handler references. The fix binds AR/2D
 
 Earlier compile-only C#/XAML claims were too broad: Android's Compile target enables design-time mode by default and skips XamlC. Production verification explicitly set `DesignTimeBuild=false`, `RescuArDiagnosticBuild=false` and `MauiXamlCValidateOnly=false`; the log confirms actual XAML compilation. Release passed with **0 warnings/errors**, without creating an APK. Actual device behavior remains unverified.
 
+## Map regression correction
+
+The map review found a real integration defect: the packaged source implemented only `ITileSource` although Mapsui 5.1 requires `ILocalTileSource` to fetch local bytes. The supplied archive was present and valid inside the user's earlier APK. The adapter is corrected, the app-specific online tile identifier restored, and the actual Mapsui fetch conversion now tested. The reported 403 still needs device/network confirmation.
+
+The user also approved removing raw routing-graph overlays from Circle/Camera, restoring a fresh local self pin independent of sharing, and a map-first/collapsible People presentation. General Map and dev routing/AR remain intact. See [findings, commits and device checks](2026-10-26-map-restoration.md). No APK was created for these fixes.
+
 ## Before a later merge/release
 
 APK packaging remains deferred. Earlier APK artifacts are earlier checkpoints and **do not represent this final branch**. Use a later requested build for these checks and report actual outcomes before behavior-dependent fixes:
 
 1. Restart, Remember Me, sign-out/account switch, verified sign-in and field-only profile/contact/photo saves. Expect correct identity routing and no previous account's active data.
 2. Circle create/join/leave/delete, missing/old telemetry, sharing Off/On, offline state and chat/media retry. Expect confirmed or clearly pending results, truthful readings and no silent cross-account/circle reuse.
-3. General/Circle/Camera maps, detail Off/On, coverage boundaries and Clear Map Cache. Expect retained dev route/data overlays, explicit missing coverage and untouched private/routing data.
+3. General/Circle/Camera maps, detail Off/On, coverage boundaries and Clear Map Cache. Expect focused Circle/Camera markers, retained General Map roads/points and active routes, explicit missing coverage and untouched private/routing data.
 4. Start/change/stop routes, pan/zoom, AR/2D/Flood, drift/poor GPS, hazards and background/resume. Expect one accepted dev route, guarded progress and existing arrival confirmation. Check physical road alignment separately with the dev field protocol.
 5. Voice default/persistence/mute, uncertain guidance, trip changes, app stop and qualified turn pulses. Expect cancellation/fallback without overlapping speakers or false arrival claims; verify actual provider/device behavior.
 6. With controlled Admin accounts, verify deployed permissions, first-login password setup, provisioning, audit/report moderation, SMS and flood/data workflows. No live operation is implied by the local tests.

@@ -5212,7 +5212,10 @@
     "RescuAR.Admin/supabase/functions/rbac-admin-provision/index.ts",
     "RescuAR.Admin/tests/rbac-admin-provisioning.test.mjs",
     "RescuAR.Admin/tests/rbac-ui-regression.test.mjs",
-    "RescuAR.Admin.zip"
+    "RescuAR.Admin.zip",
+    "RescuAR.MAUI/Services/Navigation/PackagedMapTileSource.cs",
+    "RescuAR.MAUI/Services/Navigation/MapBaseLayer.cs",
+    "RescuAR.MAUI/ViewModels/Map/SafetyCircleViewModel.LocalMap.cs"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
   "batch_0_1_validation": {
@@ -5340,6 +5343,16 @@
       "commit": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
       "subject": "fix(camera): bind sub-tabs to existing mode handlers",
       "built_checkout_commit": "f2589f45c1c0c2ced7f6ee3009bb79848ab87933"
+    },
+    {
+      "commit": "b0ee28c76d5076e42e0bd8af47ec295e37540887",
+      "subject": "fix(maps): restore packaged tiles and focused map layers",
+      "built_checkout_commit": "51cac464b7cf5605d72c5b34ac4c5afc2036a63c"
+    },
+    {
+      "commit": "18d7f478cca8839eb843bd8e5d994a3f6b8af332",
+      "subject": "fix(maps): restore local position and map-first Circle layout",
+      "built_checkout_commit": "53c5bc8ee37d786884868797617dc49139329b23"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -5732,14 +5745,15 @@
     "source_preservation": "13 approved paths only; 14 accepted dev AR hashes and shared runner preserved; General Map content/layers/advisory behavior unchanged except return navigation and visible shell back/title; auth/profile/contact/settings/chat/Admin unchanged",
     "membership": "approved scoped membership/selection service now consumed by Circle map; selected-circle membership confirmed during reads and again before upload; full membership list refreshed on entry, selection, manual Refresh and every 30 seconds",
     "display": "recorded coordinates and times only; 2-minute recent/last-known styling; unknown battery stays unknown; optional HTTPS avatars and approximate street lookups guarded by page/account scope; no fabricated safety/online/default-coordinate/fanned-out physical location",
-    "sharing": "Off on entry, circle/account switch, exit and app stop; explicit permission request on enable only; device fixes <=30 seconds old, <=100m known accuracy, finite supported coordinates, nonmock; actual acquisition timestamp stored; cancellable requests; no cached/default GPS upload or silent update/insert retry chain",
+    "sharing": "Off on entry, Circle/account switch, exit and app stop; explicit consent controls uploads. A separately permission-gated visible-page reader now supplies the approved device-local self pin even while sharing is Off. Sharing GPS rules and confirmed-membership checks unchanged.",
     "backend_scope": "existing per-user user_locations row retained; backend-authorized Circles may read that last-known row, not a new per-circle sharing schema; disabling/exit does not delete prior cloud positions and cannot retract an already accepted in-flight request",
     "offline": "labelled membership list plus page-memory people already fetched for the same scope/circle; cold offline roster not fabricated; Circle basemap remains online until shared offline-display stage, with dev General/Offline Map reachable",
     "pending": "Approved chat, local group-photo and management-roster consumers are completed in the following batch; shared offline background layers and manual device/backend validation remain pending.",
     "backend_device_validation": "not performed; no live writes/migrations, app/browser interaction or integration/E2E testing",
     "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\10-circle-map\\RescuAR-Batch10-CircleMap.apk",
     "apk_bytes": 103352564,
-    "apk_sha256": "3a271b8419fb064b30ae2c2bb23a63de90cda39fdf9148612bcd814d44a3853d"
+    "apk_sha256": "3a271b8419fb064b30ae2c2bb23a63de90cda39fdf9148612bcd814d44a3853d",
+    "post_review_map_restoration": "See map_restoration_validation and 2026-10-26-map-restoration.md. Earlier raw-graph-display/local-GPS-off assumptions are superseded by the latest explicit user choices; archive-only checks did not prove Mapsui tile rendering."
   },
   "circle_chat_validation": {
     "decisions": [
@@ -5748,7 +5762,7 @@
       "Group photo is explicitly account-and-Circle local, with no shared group-photo upload/schema claim",
       "Quick chips fill the composer and require Send",
       "Management uses the same verified roster and dated/unknown policy as Map",
-      "Legacy unscoped chat files remain untouched/asid\u0435; cloud history loads into the new scoped cache"
+      "Legacy unscoped chat files remain untouched/asidе; cloud history loads into the new scoped cache"
     ],
     "unit_checks_passed": 324,
     "new_chat_checks_passed": 51,
@@ -5892,7 +5906,8 @@
     "device_validation": "not performed",
     "backend_validation": "not performed",
     "merge_or_push": false,
-    "earlier_android_compile_report": "Compile target only, including XamlC; 0 warnings and 0 errors after one Mapsui/MAUI Map alias correction"
+    "earlier_android_compile_report": "Compile target only, including XamlC; 0 warnings and 0 errors after one Mapsui/MAUI Map alias correction",
+    "post_review_map_restoration": "See map_restoration_validation and 2026-10-26-map-restoration.md. Earlier raw-graph-display/local-GPS-off assumptions are superseded by the latest explicit user choices; archive-only checks did not prove Mapsui tile rendering."
   },
   "camera_map_validation": {
     "commit": "505db02d07a38130006bba302df079c92ad33af1",
@@ -5921,7 +5936,8 @@
       "later Admin RBAC/provisioning review",
       "final preservation audit"
     ],
-    "earlier_android_compile_report": "Compile target only; final source passed with 0 warnings and 0 errors"
+    "earlier_android_compile_report": "Compile target only; final source passed with 0 warnings and 0 errors",
+    "post_review_map_restoration": "See map_restoration_validation and 2026-10-26-map-restoration.md. Earlier raw-graph-display/local-GPS-off assumptions are superseded by the latest explicit user choices; archive-only checks did not prove Mapsui tile rendering."
   },
   "navigation_feedback_validation": {
     "commit": "cffe91729b8d8e9fb50b45cd49736d7725b734fa",
@@ -6229,7 +6245,8 @@
     "branch_merge_push_deployment": "not performed or authorized",
     "apk_packaging": "deferred by user; no final-branch APK produced",
     "post_review_source_checkpoint": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
-    "validation_correction": "Android Compile defaults DesignTimeBuild=true; earlier compile-only checks passed C# but skipped XamlC. Earlier C#/XAML pass wording overstated those checks."
+    "validation_correction": "Android Compile defaults DesignTimeBuild=true; earlier compile-only checks passed C# but skipped XamlC. Earlier C#/XAML pass wording overstated those checks.",
+    "post_review_map_restoration": "See map_restoration_validation and 2026-10-26-map-restoration.md. Earlier raw-graph-display/local-GPS-off assumptions are superseded by the latest explicit user choices; archive-only checks did not prove Mapsui tile rendering."
   },
   "post_review_release_validation": {
     "integration_commit": "c628e0109cf72e40bfb9d6e7f3c456c8d38ae327",
@@ -6251,5 +6268,62 @@
     "apk_packaging": false,
     "earlier_validation_correction": "Android Compile defaults DesignTimeBuild=true; earlier compile-only checks passed C# but skipped XamlC. Earlier C#/XAML pass wording overstated those checks.",
     "observed_user_checkout_history": "51ede19 merged integration into migration/athena-modules-pt2 before this report; this fix created ordinary commits only"
+  },
+  "map_restoration_validation": {
+    "source_paths": [
+      "RescuAR.MAUI/Services/Navigation/DetailedOfflineMapService.cs",
+      "RescuAR.MAUI/Services/Navigation/MapBaseLayer.cs",
+      "RescuAR.MAUI/Services/Navigation/OfflineMapLayerController.cs",
+      "RescuAR.MAUI/Services/Navigation/PackagedMapTileSource.cs",
+      "RescuAR.MAUI/Services/SafetyCircle/CirclePresencePolicy.cs",
+      "RescuAR.MAUI/ViewModels/Map/SafetyCircleViewModel.LocalMap.cs",
+      "RescuAR.MAUI/ViewModels/Map/SafetyCircleViewModel.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.Map2D.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.xaml",
+      "RescuAR.MAUI/Views/Map/SafetyCirclePage.xaml",
+      "tests/RescuAR.AuthenticationChecks/CircleMapChecks.cs"
+    ],
+    "matching_checkouts": true,
+    "preserved_ar_references": 33,
+    "admin_tree": "036fd835eb4077192b04b4d9a48d39da3ba58cf4",
+    "dev_ref": "004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9",
+    "athena_ref": "fa777da153a492268ace76162a80389e0d904534",
+    "integration_commits": [
+      "b0ee28c76d5076e42e0bd8af47ec295e37540887",
+      "18d7f478cca8839eb843bd8e5d994a3f6b8af332"
+    ],
+    "built_checkout_commits": [
+      "51cac464b7cf5605d72c5b34ac4c5afc2036a63c",
+      "53c5bc8ee37d786884868797617dc49139329b23"
+    ],
+    "apk_archive_sha256": "1168d7528af49cf0a6d3d6befdbbdfa1a8e3bc2f350ea6ce943928ed07e62b12",
+    "release_xamlc": {
+      "warnings": 0,
+      "errors": 0,
+      "executed": true
+    },
+    "local_policy_checks": 421,
+    "camera_checks": 41,
+    "actual_mapsui_contract_checks": 12,
+    "apk_packaging": false,
+    "device_or_backend_test": false,
+    "compared_integration_checkpoint": "ac5c60c",
+    "compared_user_checkpoint": "776aae1",
+    "approved_decisions": [
+      "Athena-focused Circle/Camera markers; raw graph display remains only in General Map",
+      "Fresh device-local Circle self pin independent of sharing; uploads remain opt-in",
+      "Athena-style map-first layout with collapsible People sheet and retained account/telemetry/chat safeguards"
+    ],
+    "root_causes": [
+      "packaged source did not implement Mapsui 5.1 ILocalTileSource contract",
+      "application-specific online tile identifier dropped (403 cause plausible; device unverified)",
+      "routing-graph overlays added beyond Athena focused presentation",
+      "local self position tied to uploads rather than independent display"
+    ],
+    "local_display_policy": "visible/page-account-scoped; nonmock finite coordinates; known accuracy <=50m; age <=15s; future <=5s; no uploads",
+    "online_source": "canonical OSM endpoint, truthful existing RescuAR identifier, attribution, seven-day replaceable cache; no provider fetch during checks",
+    "apk_inspected": "existing user-built 154490777-byte APK; packaged archive hash matches; APK predates these fixes",
+    "report": "docs/merge-analysis/2026-10-26-map-restoration.md",
+    "limits": "actual Android rendering/permissions/lifecycle/network/backend behavior unverified; no APK packaging or branch merge"
   }
 }
