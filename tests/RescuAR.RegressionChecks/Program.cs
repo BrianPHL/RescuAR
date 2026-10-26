@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--camera-map"))
+{
+    CameraMapChecks.Run(Check);
+    Console.WriteLine($"{passed} Camera map presentation regression checks passed.");
+    return;
+}
 if (args.Contains("--multi-device-recovery"))
 {
     ARMultiDeviceRecoveryChecks.Run(Check);
@@ -101,6 +107,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     Console.WriteLine($"{passed} {(args.Contains("--alignment-recovery") ? "alignment-recovery" : args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
     return;
 }
+CameraMapChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
 VisualRoadAlignmentChecks.Run(Check);

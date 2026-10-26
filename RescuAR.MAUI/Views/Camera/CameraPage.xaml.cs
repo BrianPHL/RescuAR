@@ -676,6 +676,7 @@ namespace RescuAR.App.Views.Camera
             diagnosticTimer.Tick +=
                 OnDiagnosticTimerTick;
             AttachNavigationUiDiagnostics();
+            InitializeCameraMapPresentation();
 
             ApplyCameraModuleView(
                 CameraModuleViewMode.ArCamera,
@@ -925,8 +926,7 @@ namespace RescuAR.App.Views.Camera
             cameraModeSwitcherButton.IsVisible =
                 !safeZoneConfirmed;
 
-            mapModeStatusLabel.Text =
-                "Placeholder";
+            RefreshCameraMapPresentation();
 
             if (floodMode &&
                 currentFloodVisualization.IsAvailable)
@@ -2832,6 +2832,7 @@ namespace RescuAR.App.Views.Camera
 
             pageIsVisible =
                 true;
+            ObserveCameraMapWindow();
 
             if (NavigationDestinationBridge.Current.IsAvailable)
                 _ = GetArrivalGraphSafelyAsync();
@@ -2913,6 +2914,8 @@ namespace RescuAR.App.Views.Camera
 #endif
             pageIsVisible =
                 false;
+            StopCameraMapDisplay();
+            UnobserveCameraMapWindow();
 
             arCoreAutoStartCancellation?.Cancel();
             arCoreAutoStartCancellation?.Dispose();
