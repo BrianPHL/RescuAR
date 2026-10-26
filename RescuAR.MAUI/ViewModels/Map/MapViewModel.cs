@@ -141,7 +141,7 @@ public partial class MapViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("SafetyCirclePage");
+            await Shell.Current.GoToAsync("//Map");
         }
     }
 

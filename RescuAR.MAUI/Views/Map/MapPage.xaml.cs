@@ -8,13 +8,15 @@ namespace RescuAR.App.Views.Map
         public MapPage()
         {
             InitializeComponent();
+            Title = "General / Offline Map";
+            Shell.SetNavBarIsVisible(this, true);
             BindingContext = new MapViewModel();
         }
 
         protected override async void OnAppearing()
         {
             base.OnAppearing();
-            
+
             if (BindingContext is ViewModels.Map.MapViewModel vm)
             {
                 await vm.InitializeMapAsync(MapControl);

@@ -1,28 +1,47 @@
-using Microsoft.Maui.Controls;
 using RescuAR.App.ViewModels.Map;
 
-namespace RescuAR.App.Views.Map
+namespace RescuAR.App.Views.Map;
+
+public partial class SafetyCirclePage : ContentPage
 {
-    public partial class SafetyCirclePage : ContentPage
+    public SafetyCircleViewModel ViewModel { get; }
+    private Window? observedWindow;
+    private bool pageShown;
+
+    public SafetyCirclePage(SafetyCircleViewModel viewModel)
     {
-        public SafetyCircleViewModel ViewModel { get; }
+        ViewModel = viewModel;
+        InitializeComponent();
+        BindingContext = ViewModel;
+    }
 
-        public SafetyCirclePage(SafetyCircleViewModel viewModel)
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        pageShown = true;
+        observedWindow = Window;
+        if (observedWindow is not null)
         {
-            ViewModel = viewModel;
-            InitializeComponent();
-            BindingContext = ViewModel;
+            observedWindow.Stopped += WindowStopped;
+            observedWindow.Resumed += WindowResumed;
         }
-
-        protected override async void OnAppearing()
+        await ViewModel.StartAsync(MapControl);
+    }
+    protected override void OnDisappearing()
+    {
+        pageShown = false;
+        if (observedWindow is not null)
         {
-            base.OnAppearing();
-            
-            if (BindingContext is SafetyCircleViewModel vm)
-            {
-                await vm.InitializeMapAsync(MapControl);
-                await vm.LoadMyCirclesAsync();
-            }
+            observedWindow.Stopped -= WindowStopped;
+            observedWindow.Resumed -= WindowResumed;
+            observedWindow = null;
         }
+        ViewModel.Stop();
+        base.OnDisappearing();
+    }
+    private void WindowStopped(object? sender, EventArgs args) => ViewModel.Stop();
+    private async void WindowResumed(object? sender, EventArgs args)
+    {
+        if (pageShown) await ViewModel.StartAsync(MapControl);
     }
 }

@@ -25,5 +25,7 @@
     <Compile Include="../../RescuAR.MAUI/Services/Settings/DerivedMapCache.cs" Link="DerivedMapCache.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleMembershipService.cs" Link="CircleMembershipService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/FileCircleMembershipStore.cs" Link="FileCircleMembershipStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CirclePresencePolicy.cs" Link="CirclePresencePolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleMapCoordinator.cs" Link="CircleMapCoordinator.cs" />
   </ItemGroup>
 </Project>
