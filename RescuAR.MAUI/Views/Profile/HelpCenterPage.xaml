@@ -1,13 +1,119 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     x:Class="RescuAR.App.Views.Profile.HelpCenterPage"
-    Title="Help Center">
+    x:DataType="vm:HelpCenterViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="20,15" BackgroundColor="#F2F2F7">
+            <Button
+                Grid.Column="0"
+                Text="&lt; Back"
+                FontSize="15"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                BackgroundColor="Transparent"
+                Padding="0"
+                Command="{Binding BackCommand}" />
 
+            <Label
+                Grid.Column="1"
+                Text="RescuAR"
+                FontSize="16"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                HorizontalOptions="Center"
+                VerticalOptions="Center" />
+
+            <ImageButton
+                Grid.Column="2"
+                Source="ic_notification.png"
+                WidthRequest="24"
+                HeightRequest="24"
+                BackgroundColor="Transparent" />
+        </Grid>
+
+        <!-- Main Scrollable Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="20" Padding="20,5,20,30">
+                <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="#64748B" />
+                <!-- Breadcrumb & Title -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Profile/" FontSize="14" TextColor="#64748B" />
+                    <Label Text="Help Center" FontSize="30" FontAttributes="Bold" TextColor="#0F172A" />
+                    <Label Text="Frequently asked questions and technical guidance for disaster navigation." FontSize="13" TextColor="#64748B" />
+                </VerticalStackLayout>
+
+                <!-- Search Bar -->
+                <Border StrokeShape="RoundRectangle 12" Stroke="#E2E8F0" BackgroundColor="White" Padding="14,0" HeightRequest="48">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Path Grid.Column="0"
+                              Data="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"
+                              Fill="#64748B"
+                              Aspect="Uniform"
+                              WidthRequest="18"
+                              HeightRequest="18"
+                              VerticalOptions="Center"
+                              Margin="0,0,10,0" />
+                        <Entry Grid.Column="1" Text="{Binding SearchText}" Placeholder="Search topics or questions..." TextColor="#0F172A" PlaceholderColor="#94A3B8" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- FAQ Accordion List -->
+                <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding FilteredFaqs}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HelpFaqItem">
+                            <Border Margin="0,4" StrokeShape="RoundRectangle 14" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding ToggleExpandCommand}" />
+                                        </Grid.GestureRecognizers>
+
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                            <Label Text="{Binding Category}" FontSize="11" FontAttributes="Bold" TextColor="#0A8491" TextTransform="Uppercase" />
+                                            <Label Text="{Binding Question}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" />
+                                        </VerticalStackLayout>
+
+                                        <Label Grid.Column="1" Text="{Binding ArrowIcon}" FontSize="14" TextColor="#64748B" VerticalOptions="Center" Margin="8,0,0,0" />
+                                    </Grid>
+
+                                    <!-- Expandable Answer -->
+                                    <VerticalStackLayout IsVisible="{Binding IsExpanded}" Spacing="6" Margin="0,6,0,0">
+                                        <BoxView HeightRequest="1" Color="#F1F5F9" />
+                                        <Label Text="{Binding Answer}" FontSize="13" TextColor="#334155" LineHeight="1.3" />
+                                    </VerticalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <!-- Need More Help Banner -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#0A8491" BackgroundColor="#E6F4F5" Padding="18" Margin="0,10,0,0">
+                    <VerticalStackLayout Spacing="12">
+                        <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                            <Path Data="M12 2C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7zm-3 18c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1z"
+                                  Fill="#0A8491"
+                                  Aspect="Uniform"
+                                  WidthRequest="20"
+                                  HeightRequest="20"
+                                  VerticalOptions="Center" />
+                            <Label Text="Still Need Assistance?" FontAttributes="Bold" FontSize="16" TextColor="#0F172A" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                        <Label Text="Open the existing Hotlines directory and choose the appropriate listed contact." FontSize="13" TextColor="#334155" />
+
+                        <Button Text="Open Hotlines" FontSize="13" FontAttributes="Bold" TextColor="White"
+                                BackgroundColor="#0A8491" CornerRadius="10" HeightRequest="44"
+                                Command="{Binding OpenHotlinesCommand}" />
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

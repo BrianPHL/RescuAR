@@ -1,10 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using RescuAR.App.Models;
+using RescuAR.App.Services.Profile;
 
-namespace RescuAR.App.ViewModels.Profile
+namespace RescuAR.App.ViewModels.Profile;
+
+public partial class TermsConditionsViewModel : ObservableObject
 {
-    internal class TermsConditionsViewModel
-    {
-    }
+    public IReadOnlyList<InformationSection> TermsSections => AppInformationContent.Terms;
+    [RelayCommand] private async Task Back() { if (Shell.Current != null) await Shell.Current.GoToAsync(".."); }
 }

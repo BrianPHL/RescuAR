@@ -1,13 +1,110 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
+    xmlns:models="clr-namespace:RescuAR.App.Models"
     x:Class="RescuAR.App.Views.Profile.PrivacyPolicyPage"
-    Title="Privacy Policy">
+    x:DataType="vm:PrivacyPolicyViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="20,15" BackgroundColor="#F2F2F7">
+            <Button
+                Grid.Column="0"
+                Text="&lt; Back"
+                FontSize="15"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                BackgroundColor="Transparent"
+                Padding="0"
+                Command="{Binding BackCommand}" />
 
+            <Label
+                Grid.Column="1"
+                Text="RescuAR"
+                FontSize="16"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                HorizontalOptions="Center"
+                VerticalOptions="Center" />
+
+            <ImageButton
+                Grid.Column="2"
+                Source="ic_notification.png"
+                WidthRequest="24"
+                HeightRequest="24"
+                BackgroundColor="Transparent" />
+        </Grid>
+
+        <!-- Main Scrollable Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="16" Padding="20,5,20,30">
+                <!-- Breadcrumb & Title -->
+                <VerticalStackLayout Spacing="4" Margin="0,0,0,8">
+                    <Label Text="Profile/" FontSize="14" TextColor="#64748B" />
+                    <Label Text="Privacy Policy" FontSize="32" FontAttributes="Bold" TextColor="#0F172A" />
+                </VerticalStackLayout>
+
+                <!-- Policy Cards List -->
+                <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding PolicySections}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:InformationSection">
+                            <Border Margin="0,5" StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="16">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                    <!-- Number Box -->
+                                    <Border
+                                        Grid.Column="0"
+                                        StrokeShape="RoundRectangle 8"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        BackgroundColor="#F8FAFC"
+                                        WidthRequest="36"
+                                        HeightRequest="36"
+                                        VerticalOptions="Start">
+                                        <Label
+                                            Text="{Binding Number}"
+                                            FontAttributes="Bold"
+                                            FontSize="15"
+                                            TextColor="#0F172A"
+                                            HorizontalOptions="Center"
+                                            VerticalOptions="Center" />
+                                    </Border>
+
+                                    <!-- Content -->
+                                    <VerticalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Start">
+                                        <Label
+                                            Text="{Binding Title}"
+                                            FontAttributes="Bold"
+                                            FontSize="16"
+                                            TextColor="#0A8491" />
+
+                                        <Label
+                                            Text="{Binding Description}"
+                                            FontSize="14"
+                                            TextColor="#334155"
+                                            LineHeight="1.3" />
+
+                                        <!-- Bullet points -->
+                                        <VerticalStackLayout IsVisible="{Binding HasBullets}" BindableLayout.ItemsSource="{Binding BulletPoints}" Spacing="4" Margin="0,4,0,0">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                                        <Label Grid.Column="0" Text="•" FontSize="14" TextColor="#0A8491" VerticalOptions="Start" />
+                                                        <Label Grid.Column="1" Text="{Binding .}" FontSize="13" TextColor="#475569" LineHeight="1.2" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>
