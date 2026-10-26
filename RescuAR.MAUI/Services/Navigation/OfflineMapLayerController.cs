@@ -56,11 +56,11 @@ public sealed class OfflineMapLayerController
         coverageRequest++;
         status(state switch
         {
-            OfflineDisplayState.Loading => "Preparing packaged detail… Basic roads and points remain available where covered.",
-            OfflineDisplayState.Disabled => "Detailed offline map Off · basic roads and points remain where available.",
-            OfflineDisplayState.Unavailable => "Packaged detail unavailable · basic roads and points remain where available.",
+            OfflineDisplayState.Loading => "Loading offline map…",
+            OfflineDisplayState.Disabled => "Offline detail Off · online map requires a connection.",
+            OfflineDisplayState.Unavailable => "Offline detail unavailable · online map requires a connection.",
             OfflineDisplayState.Cleared => "Map cache cleared · reopen this map or enable detail to recreate replaceable copies.",
-            OfflineDisplayState.Ready => "Packaged detail loaded · checking coverage at the map center…",
+            OfflineDisplayState.Ready => "Offline map ready · checking coverage…",
             _ => ""
         });
         if (state == OfflineDisplayState.Ready) _ = UpdateCoverageAsync();
@@ -77,10 +77,10 @@ public sealed class OfflineMapLayerController
         {
             bool covered = await OfflineMapRuntime.Cache.CoversAsync(longitude, latitude, zoom, token);
             if (token.IsCancellationRequested || current != coverageRequest || session.Map != map || session.State != OfflineDisplayState.Ready) return;
-            status(covered ? "Packaged tile at map center · zoom 13–18 · static context; verify current conditions."
-                : "No packaged tile at map center or this zoom · basic data where available; detail covers part of Marikina at zoom 13–18.");
+            status(covered ? "Offline map · Marikina detail"
+                : "Outside offline detail · online map requires a connection.");
         }
         catch (OperationCanceledException) { }
-        catch { if (current == coverageRequest && session.State == OfflineDisplayState.Ready) status("Packaged tile coverage unavailable · basic data remains where available."); }
+        catch { if (current == coverageRequest && session.State == OfflineDisplayState.Ready) status("Offline coverage unavailable · online map requires a connection."); }
     }
 }

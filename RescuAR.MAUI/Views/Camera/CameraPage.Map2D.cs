@@ -43,7 +43,7 @@ public partial class CameraPage
     private CancellationTokenSource? cameraMapPage;
     private CancellationTokenSource? cameraMapLocationRequest;
     private Window? cameraMapWindow;
-    private bool cameraMapWindowStopped, cameraMapBasicReady, cameraMapPermissionChecked, cameraMapPermissionGranted;
+    private bool cameraMapWindowStopped, cameraMapPermissionChecked, cameraMapPermissionGranted;
     private bool cameraMapPlannerOpen;
     private long cameraMapGeneration;
     private long cameraMapPlacesTrip = -1;
@@ -51,14 +51,13 @@ public partial class CameraPage
     private LocationReading? cameraMapBrowsingReading, cameraMapRenderedLocation;
     private LocationReading? cameraMapSearchLocation;
     private Shelter? cameraMapSelectedShelter;
-    private string cameraMapBasicNotice = "";
     private string cameraMapCoverage = "";
     private string cameraMapLocationNotice = "Waiting for a current validated GPS fix.";
 
     private void InitializeCameraMapPresentation()
     {
         var map = new Mapsui.Map { CRS = "EPSG:3857" };
-        var online = Mapsui.Tiling.OpenStreetMap.CreateTileLayer();
+        var online = MapBaseLayer.CreateOnlineLayer("Camera2DOnlineBase");
         online.Name = "Camera2DOnlineBase"; online.Enabled = false;
         map.Layers.Add(online);
         map.Layers.Add(new ILayer[] { cameraMapPlacesLayer, cameraMapRouteLayer, cameraMapUserLayer });
@@ -110,27 +109,11 @@ public partial class CameraPage
 
     private async Task PrepareCameraMapDisplayAsync(long generation, CancellationToken token)
     {
-        IReadOnlyList<ILayer>? loaded = null;
-        try
-        {
-            if (!cameraMapBasicReady)
-            {
-                try
-                {
-                    loaded = await DetailedOfflineMapService.CreateBasicLayersAsync(token);
-                    if (!IsCameraMapRequest(generation, token)) return;
-                    CameraMapControl.Map.Layers.Insert(1, loaded); loaded = null; cameraMapBasicReady = true; cameraMapBasicNotice = "";
-                }
-                catch (OperationCanceledException) { return; }
-                catch { if (IsCameraMapRequest(generation, token)) cameraMapBasicNotice = "Basic roads/points unavailable. "; }
-            }
-            if (!IsCameraMapRequest(generation, token)) return;
-            await cameraMapDetails!.ActivateAsync(CameraMapControl.Map);
-        }
-        finally { if (loaded is not null) foreach (var layer in loaded) layer.Dispose(); }
+        if (!IsCameraMapRequest(generation, token)) return;
+        await cameraMapDetails!.ActivateAsync(CameraMapControl.Map);
     }
 
-    private void UpdateCameraMapCoverage() => mapModeStatusLabel.Text = cameraMapBasicNotice + cameraMapCoverage;
+    private void UpdateCameraMapCoverage() => mapModeStatusLabel.Text = cameraMapCoverage;
 
     private void RefreshCameraMapPresentation()
     {

@@ -47,8 +47,6 @@ public partial class SafetyCircleViewModel : ObservableObject
     private bool enablingSharing;
     private long sharingRequest;
     private bool centered;
-    private bool basicMapReady;
-    private string basicMapNotice = "";
     private readonly OfflineMapLayerController offlineLayers;
     [ObservableProperty] private string offlineMapStatus = "";
     private string selectedId = "";
@@ -64,7 +62,7 @@ public partial class SafetyCircleViewModel : ObservableObject
 
     public SafetyCircleViewModel()
     {
-        offlineLayers = new(message => OfflineMapStatus = basicMapNotice + message);
+        offlineLayers = new(message => OfflineMapStatus = message);
         coordinator = new(memberships, new SupabaseCirclePresenceRemote(CircleMembershipRuntime.Context), new MauiCircleDeviceReader(), () => DateTimeOffset.UtcNow);
         timer = Application.Current?.Dispatcher?.CreateTimer() ?? throw new InvalidOperationException("A page dispatcher is required.");
         timer.Interval = TimeSpan.FromSeconds(5);
@@ -85,7 +83,7 @@ public partial class SafetyCircleViewModel : ObservableObject
             if (!Map.Layers.Any())
             {
                 Map = new Mapsui.Map { CRS = "EPSG:3857" };
-                Map.Layers.Add(Mapsui.Tiling.OpenStreetMap.CreateTileLayer());
+                Map.Layers.Add(MapBaseLayer.CreateOnlineLayer("CircleOnlineBase"));
                 ZoomReset();
             }
             foreach (var layer in Map.Layers) layer.Enabled = true;
@@ -99,19 +97,6 @@ public partial class SafetyCircleViewModel : ObservableObject
     }
     private async Task PrepareDisplayAsync(long request, CancellationToken token)
     {
-        if (!basicMapReady)
-        {
-            IReadOnlyList<Mapsui.Layers.ILayer>? loaded = null;
-            try
-            {
-                loaded = await DetailedOfflineMapService.CreateBasicLayersAsync(token);
-                if (token.IsCancellationRequested || request != version) return;
-                Map.Layers.Insert(Math.Min(1, Map.Layers.Count), loaded); loaded = null; basicMapReady = true; basicMapNotice = "";
-            }
-            catch (OperationCanceledException) { return; }
-            catch { if (request == version) basicMapNotice = "Basic roads/points could not be loaded. "; }
-            finally { if (loaded is not null) foreach (var layer in loaded) layer.Dispose(); }
-        }
         if (token.IsCancellationRequested || request != version) return;
         await offlineLayers.ActivateAsync(Map);
     }
@@ -282,7 +267,7 @@ public partial class SafetyCircleViewModel : ObservableObject
     [RelayCommand] private void ZoomReset()
     {
         var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
-        Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 38.2);
+        Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 9.5546);
     }
     [RelayCommand] private void CenterOnMember(CircleMember member)
     {

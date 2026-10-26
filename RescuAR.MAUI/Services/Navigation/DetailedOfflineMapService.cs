@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using BruTile;
-using BruTile.Predefined;
 using Mapsui.Layers;
 using Mapsui.Nts;
 using Mapsui.Styles;
@@ -55,7 +53,8 @@ public static class DetailedOfflineMapService
         if (OfflineMapRuntime.IsClearing) throw new OperationCanceledException("Map copies are being cleared.", token);
         await OfflineMapRuntime.Cache.PrepareAsync(token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        List<ILayer> layers = [new TileLayer(new LocalTileSource(token)) { Name = "Packaged detail (zoom 13–18)" }];
+        List<ILayer> layers = [new TileLayer(new PackagedMapTileSource(OfflineMapRuntime.Cache.ReadTileAsync,
+            () => !OfflineMapRuntime.IsClearing && AppPreferences.IsEnabled(AppSetting.DetailedOfflineMap), token)) { Name = "Packaged detail (zoom 13–18)" }];
         try
         {
             foreach (string context in new[] { "WATER", "PARKS", "BUILDINGS" })
@@ -63,26 +62,6 @@ public static class DetailedOfflineMapService
                 var color = context == "WATER" ? Color.FromString("#90CBE8") : context == "PARKS" ? Color.FromString("#B4D9B7") : Color.FromString("#D4D4CE");
                 layers.Add(await LayerAsync(context, context + " (static context)", () => FileSystem.OpenAppPackageFileAsync(context + ".geojson"),
                     new VectorStyle { Fill = new Brush(color), Line = new Pen(color, 0.5) }, token).ConfigureAwait(false));
-            }
-            token.ThrowIfCancellationRequested();
-            return layers;
-        }
-        catch { foreach (var layer in layers) layer.Dispose(); throw; }
-    }
-
-    /// <summary>Circle's basic display uses dev's embedded road/point resources, including when detail is Off.</summary>
-    public static async Task<IReadOnlyList<ILayer>> CreateBasicLayersAsync(CancellationToken token)
-    {
-        var layers = new List<ILayer>();
-        try
-        {
-            foreach (string kind in new[] { "ROADS", "POINTS" })
-            foreach (string resource in NavigationDataBootstrap.GetGeoJsonResourceNames(kind))
-            {
-                string name = resource[NavigationDataBootstrap.GeoJsonResourcePrefix.Length..];
-                var color = name == "ROADS.geojson" ? Color.Gray : name == "POINTS.geojson" ? Color.Teal : Color.Blue;
-                IStyle style = kind == "ROADS" ? new VectorStyle { Line = new Pen(color, 1.5) } : new SymbolStyle { Fill = new Brush(color), SymbolScale = 0.5 };
-                layers.Add(await LayerAsync(resource, name, () => Task.FromResult(NavigationDataBootstrap.OpenGeoJsonResource(resource)), style, token).ConfigureAwait(false));
             }
             token.ThrowIfCancellationRequested();
             return layers;
@@ -99,16 +78,4 @@ public static class DetailedOfflineMapService
         }
     }
 
-    private sealed class LocalTileSource(CancellationToken owner) : ITileSource
-    {
-        public string Name => "RescuAR packaged offline map";
-        public ITileSchema Schema { get; } = new GlobalSphericalMercator(13, 18);
-        public Attribution Attribution { get; } = new("Made with Maperitive · static map context");
-        public async Task<byte[]?> GetTileAsync(TileInfo tileInfo)
-        {
-            if (owner.IsCancellationRequested || OfflineMapRuntime.IsClearing || !AppPreferences.IsEnabled(AppSetting.DetailedOfflineMap)) return null;
-            try { return await OfflineMapRuntime.Cache.ReadTileAsync(tileInfo.Index.Level, tileInfo.Index.Col, tileInfo.Index.Row, owner).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return null; }
-        }
-    }
 }
