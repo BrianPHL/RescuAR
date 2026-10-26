@@ -15,6 +15,14 @@ namespace RescuAR.App.Views.Profile
             BindingContext = new ProfileViewModel();
         }
 
+        private bool appeared;
+        protected override async void OnAppearing()
+        {
+            base.OnAppearing();
+            if (!appeared) { appeared = true; return; }
+            if (BindingContext is ProfileViewModel model) await model.RefreshProfileAsync();
+        }
+
         private async void OnPersonalInformationTapped(object sender, EventArgs e)
         {
             await Shell.Current.GoToAsync(nameof(PersonalInformationPage));

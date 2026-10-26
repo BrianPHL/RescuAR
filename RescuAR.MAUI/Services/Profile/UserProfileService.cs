@@ -18,6 +18,61 @@ public sealed class UserProfileService
     public string GetLocal(string name) => Preferences.Default.Get(Root(UserId) + name, string.Empty);
     public void SetLocal(string name, string value) => Preferences.Default.Set(Root(UserId) + name, value);
 
+    public ProfileAccountScope CaptureOwner()
+    {
+        var owner = new ProfileAccountScope(Project, UserId, SupabaseService.Instance.SessionRevision);
+        RequireOwner(owner);
+        return owner;
+    }
+
+    public void RequireOwner(ProfileAccountScope owner, CancellationToken token = default) =>
+        RequireAccount(owner.UserId, token, owner.Project, owner.Revision);
+
+    public bool IsCurrentOwner(ProfileAccountScope owner)
+    {
+        try { RequireOwner(owner); return true; }
+        catch (OperationCanceledException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    public string GetLocal(ProfileAccountScope owner, string name)
+    {
+        RequireOwner(owner);
+        return Preferences.Default.Get(Root(owner.UserId) + name, string.Empty);
+    }
+
+    public void SetLocal(ProfileAccountScope owner, string name, string value)
+    {
+        RequireOwner(owner);
+        Preferences.Default.Set(Root(owner.UserId) + name, value);
+    }
+
+    internal sealed record ProfileDisplay(ProfileUser User, bool Cached);
+    internal async Task<ProfileDisplay> LoadForDisplayAsync(ProfileAccountScope owner, CancellationToken token = default)
+    {
+        RequireOwner(owner, token);
+        if (Microsoft.Maui.Networking.Connectivity.Current.NetworkAccess != Microsoft.Maui.Networking.NetworkAccess.Internet)
+            return Cached();
+        try
+        {
+            var user = await LoadAsync(token, owner.UserId);
+            RequireOwner(owner, token);
+            return new(user, false);
+        }
+        catch (Exception error) when (error is HttpRequestException or TimeoutException || error is TaskCanceledException && !token.IsCancellationRequested)
+        {
+            return Cached();
+        }
+
+        ProfileDisplay Cached()
+        {
+            RequireOwner(owner, token);
+            var user = ReadCached(owner.UserId) ?? throw new InvalidOperationException("Connect to load this account's profile for the first time.");
+            user.Email = SupabaseService.Instance.Client?.Auth.CurrentUser?.Email ?? user.Email;
+            return new(user, true);
+        }
+    }
+
     internal ProfileUser? ReadCached(string id)
     {
         try
@@ -57,25 +112,47 @@ public sealed class UserProfileService
     }
 
     public Task<ProfileUser> PatchAsync(params (Expression<Func<ProfileUser, object>> Field, object Value)[] fields) =>
-        PatchForUserAsync(UserId, fields);
+        PatchOwnedAsync(CaptureOwner(), fields);
 
-    private async Task<ProfileUser> PatchForUserAsync(string id, params (Expression<Func<ProfileUser, object>> Field, object Value)[] fields)
+    private Task<ProfileUser> PatchForUserAsync(string id, params (Expression<Func<ProfileUser, object>> Field, object Value)[] fields)
     {
-        string project = Project;
-        long revision = SupabaseService.Instance.SessionRevision;
+        var owner = CaptureOwner();
+        if (owner.UserId != id) throw new OperationCanceledException("Your account changed. Reopen this screen.");
+        return PatchOwnedAsync(owner, fields);
+    }
+
+    public async Task<ProfileUser> PatchOwnedAsync(ProfileAccountScope owner, params (Expression<Func<ProfileUser, object>> Field, object Value)[] fields)
+    {
+        RequireOwner(owner);
+        if (fields.Length == 0) throw new InvalidOperationException("There are no fields to save.");
         await writes.WaitAsync();
         try
         {
-            RequireAccount(id, CancellationToken.None, project, revision);
-            await LoadAsync(CancellationToken.None, id);
-            RequireAccount(id, CancellationToken.None, project, revision);
+            RequireOwner(owner);
+            if (Microsoft.Maui.Networking.Connectivity.Current.NetworkAccess != Microsoft.Maui.Networking.NetworkAccess.Internet)
+                throw new IOException("Connect before saving changes to your account.");
+            await LoadAsync(CancellationToken.None, owner.UserId);
+            RequireOwner(owner);
             var client = SupabaseService.Instance.Client!;
-            var query = client.From<ProfileUser>().Where(user => user.Id == id);
+            var query = client.From<ProfileUser>().Where(user => user.Id == owner.UserId);
             foreach (var field in fields) query = query.Set(field.Field, field.Value);
             var response = await query.Update();
-            RequireAccount(id, CancellationToken.None, project, revision);
-            var result = response.Models.FirstOrDefault() ?? throw new InvalidOperationException("No profile was updated. Please retry.");
-            Preferences.Default.Set(Root(id) + "User", JsonConvert.SerializeObject(result));
+            RequireOwner(owner);
+            var result = response.Models.FirstOrDefault() ?? throw new InvalidOperationException("No profile update was confirmed. Please retry.");
+            if (result.Id != owner.UserId) throw new OperationCanceledException("The returned profile belongs to another account.");
+            result.Email = client.Auth.CurrentUser?.Email ?? result.Email;
+            Preferences.Default.Set(Root(owner.UserId) + "User", JsonConvert.SerializeObject(result));
+            if (Preferences.Default.Get("CurrentUserId", string.Empty) == owner.UserId &&
+                Preferences.Default.Get("CurrentAuthProject", string.Empty) == owner.Project)
+            {
+                Preferences.Default.Set("UserFirstName", result.FirstName);
+                Preferences.Default.Set("UserMiddleName", result.MiddleName);
+                Preferences.Default.Set("UserLastName", result.LastName);
+                Preferences.Default.Set("UserPhoneNumber", result.PhoneNumber);
+                Preferences.Default.Set("UserPhone", result.PhoneNumber);
+                Preferences.Default.Set("UserAddress", result.Address);
+                Preferences.Default.Set("UserAvatarUrl", result.AvatarUrl);
+            }
             return result;
         }
         finally { writes.Release(); }
@@ -119,7 +196,7 @@ public sealed class UserProfileService
     private void RequireAccount(string id, CancellationToken token, string project, long revision)
     {
         token.ThrowIfCancellationRequested();
-        if (UserId != id || Project != project || SupabaseService.Instance.SessionRevision != revision)
+        if (SupabaseService.Instance.Client?.Auth.CurrentUser?.Id != id || Project != project || SupabaseService.Instance.SessionRevision != revision)
             throw new OperationCanceledException("Your account changed. Please reopen this screen.");
     }
 

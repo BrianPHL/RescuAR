@@ -90,7 +90,8 @@ Check(archiveFailed && !failingArchive.SignedIn && failingArchive.Values["UserPh
     "failed archiving signs out without discarding the original saved details");
 await AuthenticationFlowChecks.RunAsync(Check);
 await AuthenticationFormChecks.RunAsync(Check);
-Console.WriteLine($"{passed} authentication persistence, cleanup, routing and form checks passed.");
+await ProfileEditingChecks.RunAsync(Check);
+Console.WriteLine($"{passed} authentication and profile checks passed.");
 
 sealed class FakeSecureStore : ISecureSessionStore
 {

@@ -42,13 +42,14 @@ namespace RescuAR.App.Views.Profile
         public HealthInformationPage()
         {
             InitializeComponent();
-            BindingContext = new ProfileViewModel();
+            BindingContext = new HealthInformationViewModel();
         }
 
-        protected override void OnAppearing()
+        protected override async void OnAppearing()
         {
             base.OnAppearing();
-            
+            if (BindingContext is HealthInformationViewModel model) await model.LoadAsync();
+
             bool hasSeenTutorial = Preferences.Default.Get("HasSeenHealthTutorial", false);
             if (!hasSeenTutorial)
             {
@@ -59,6 +60,12 @@ namespace RescuAR.App.Views.Profile
             {
                 IsTutorialVisible = false;
             }
+        }
+
+        protected override void OnDisappearing()
+        {
+            if (BindingContext is HealthInformationViewModel model) model.StopLoading();
+            base.OnDisappearing();
         }
 
         private void OnSkipTutorialClicked(object sender, System.EventArgs e)
@@ -99,6 +106,14 @@ namespace RescuAR.App.Views.Profile
                     TutorialMessage = "Finally, list any allergies or maintenance medications to prevent adverse reactions during treatment.";
                     NextButtonText = "Finish";
                     break;
+            }
+        }
+
+        private async void OnBackTapped(object sender, System.EventArgs e)
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("..");
             }
         }
 

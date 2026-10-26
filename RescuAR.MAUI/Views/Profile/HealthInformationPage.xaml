@@ -5,54 +5,157 @@
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     xmlns:local="clr-namespace:RescuAR.App.Views.Profile"
     x:Class="RescuAR.App.Views.Profile.HealthInformationPage"
-    x:DataType="vm:ProfileViewModel"
-    Title="Health Information"
+    x:DataType="vm:HealthInformationViewModel"
+    Shell.NavBarIsVisible="False"
     BackgroundColor="#F2F2F7">
 
-    <Grid>
+    <Grid RowDefinitions="Auto, *">
+        <!-- Top App Bar / Header -->
+        <Border Grid.Row="0" BackgroundColor="White" HeightRequest="56" StrokeThickness="0" Padding="12,0" ZIndex="10" Shadow="{Shadow Brush=Black, Offset='0,2', Radius=4, Opacity=0.06}">
+            <Grid ColumnDefinitions="Auto, *, Auto" VerticalOptions="Center">
+                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                    <HorizontalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnBackTapped" />
+                    </HorizontalStackLayout.GestureRecognizers>
+                    <Path Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" Fill="#0F172A" Aspect="Uniform" WidthRequest="18" HeightRequest="18" VerticalOptions="Center" />
+                    <Label Text="Back" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+                <Label Grid.Column="1" Text="RescuAR" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+
+                <Path Grid.Column="2" Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"
+                      Fill="#334155" Aspect="Uniform" WidthRequest="20" HeightRequest="20" VerticalOptions="Center" Margin="0,0,4,0" />
+            </Grid>
+        </Border>
+
         <!-- Main Content -->
-        <ScrollView>
-            <VerticalStackLayout Spacing="20" Padding="20">
-                <Border StrokeShape="RoundRectangle 15" StrokeThickness="0" BackgroundColor="White" Padding="15">
-                    <VerticalStackLayout Spacing="10">
-                        <Label Text="Health &amp; Medical Information" FontAttributes="Bold" FontSize="18" TextColor="Black" />
-                        
-                        <Entry Placeholder="Health Card Number" Text="{Binding CurrentUser.HealthCardNumber}" TextColor="Black" />
-                        <Picker Title="Blood Type" ItemsSource="{Binding BloodTypes}" SelectedItem="{Binding CurrentUser.BloodType}" TextColor="Black" TitleColor="Gray" />
-                        <Entry Placeholder="Allergies (comma separated)" Text="{Binding CurrentUser.Allergies}" TextColor="Black" />
-                        <Entry Placeholder="Maintenance Medications" Text="{Binding CurrentUser.MaintenanceMedications}" TextColor="Black" />
-                        <Entry Placeholder="Average Blood Pressure" Text="{Binding CurrentUser.AverageBloodPressure}" TextColor="Black" />
-                        <Entry Placeholder="Disability / Special Needs" Text="{Binding CurrentUser.DisabilityOrSpecialNeeds}" TextColor="Black" />
-                        <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                            <Switch IsToggled="{Binding CurrentUser.IsOrganDonor}" />
-                            <Label Text="Organ Donor" VerticalOptions="Center" TextColor="Black" />
-                        </HorizontalStackLayout>
+        <ScrollView Grid.Row="1" Padding="20">
+            <VerticalStackLayout Spacing="16">
+                <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="#64748B" />
+                <!-- Page Title Header -->
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="Profile/" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
+                    <Label Text="Health Information" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" />
+                    <Label Text="Provide vital health information for emergency triage and medical first responders." TextColor="#64748B" FontSize="12" />
+                </VerticalStackLayout>
+
+                <Border BackgroundColor="White" StrokeThickness="0" Padding="18,16" Shadow="{Shadow Brush=Black, Offset='0,3', Radius=8, Opacity=0.08}">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="16" />
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="14" IsEnabled="{Binding CanSave}">
+                        <!-- Blood Type -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Blood Type" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="12,0" HeightRequest="48">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Picker Grid.Column="0" ItemsSource="{Binding BloodTypes}" SelectedItem="{Binding CurrentUser.BloodType}" Title="Select Blood Type" TextColor="#0F172A" TitleColor="#94A3B8" FontSize="13" VerticalOptions="Center" />
+                                    <Path Grid.Column="1" Data="M7 10l5 5 5-5z" Fill="#64748B" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" InputTransparent="True"/>
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Health Card Number -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="PhilHealth / Health Card Number" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="10,0" HeightRequest="46">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Entry Placeholder="e.g. 12-345678901-2" Text="{Binding CurrentUser.HealthCardNumber}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Allergies -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Known Allergies (Food / Medication)" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="10,0" HeightRequest="46">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Entry Placeholder="e.g. Penicillin, Peanuts, None" Text="{Binding CurrentUser.Allergies}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Maintenance Medications -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Maintenance Medications" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="10,0" HeightRequest="46">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Entry Placeholder="e.g. Amlodipine 5mg, Insulin" Text="{Binding CurrentUser.MaintenanceMedications}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Average Blood Pressure -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Average Blood Pressure" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="10,0" HeightRequest="46">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Entry Placeholder="e.g. 120/80" Text="{Binding CurrentUser.AverageBloodPressure}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Disability or Special Needs -->
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Disability / Special Mobility Assistance" TextColor="#334155" FontSize="12" FontAttributes="Bold" />
+                            <Border BackgroundColor="#F8FAFC" Stroke="#CBD5E1" StrokeThickness="1" Padding="10,0" HeightRequest="46">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                </Border.StrokeShape>
+                                <Entry Placeholder="e.g. Wheelchair user, Hearing impaired, None" Text="{Binding CurrentUser.DisabilityOrSpecialNeeds}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" />
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Organ Donor Switch -->
+                        <Grid ColumnDefinitions="*, Auto" Padding="4,4">
+                            <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                <Label Text="Registered Organ Donor" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="Indicate consent on emergency triage records" TextColor="#64748B" FontSize="11" />
+                            </VerticalStackLayout>
+                            <Switch Grid.Column="1" IsToggled="{Binding CurrentUser.IsOrganDonor}" OnColor="#0A8491" VerticalOptions="Center" />
+                        </Grid>
                     </VerticalStackLayout>
                 </Border>
 
-                <Button Text="Save Health Profile" Command="{Binding SaveProfileCommand}" BackgroundColor="#0A8491" TextColor="White" FontAttributes="Bold" CornerRadius="8" HeightRequest="50" />
+                <!-- Save Button -->
+                <Button Text="Save Health Profile"
+                        Command="{Binding SaveHealthCommand}" IsEnabled="{Binding CanSave}"
+                        BackgroundColor="#0A8491"
+                        TextColor="White"
+                        FontSize="14"
+                        FontAttributes="Bold"
+                        CornerRadius="12"
+                        HeightRequest="48"
+                        Margin="0,6,0,24" />
             </VerticalStackLayout>
         </ScrollView>
 
         <!-- Tutorial Overlay -->
-        <Grid BackgroundColor="#B3000000" IsVisible="{Binding IsTutorialVisible, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" ZIndex="10">
+        <Grid Grid.RowSpan="2" BackgroundColor="#B3000000" IsVisible="{Binding IsTutorialVisible, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" ZIndex="50">
             <!-- Center Card -->
-            <Border StrokeShape="RoundRectangle 12" StrokeThickness="0" BackgroundColor="White" Padding="20" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="300">
-                <VerticalStackLayout Spacing="15">
-                    <Label Text="Welcome to Health Info" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" HorizontalOptions="Center" />
-                    <Label Text="{Binding TutorialMessage, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" TextColor="Black" HorizontalTextAlignment="Center" />
-                    
+            <Border StrokeShape="RoundRectangle 16" StrokeThickness="0" BackgroundColor="White" Padding="24,20" HorizontalOptions="Center" VerticalOptions="Center" WidthRequest="320">
+                <VerticalStackLayout Spacing="16">
+                    <Label Text="Health Info Guide" FontAttributes="Bold" FontSize="18" TextColor="#0A8491" HorizontalOptions="Center" />
+                    <Label Text="{Binding TutorialMessage, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" TextColor="#334155" FontSize="13" HorizontalTextAlignment="Center" />
+
                     <!-- Indicator dots -->
-                    <HorizontalStackLayout Spacing="5" HorizontalOptions="Center">
+                    <HorizontalStackLayout Spacing="6" HorizontalOptions="Center">
                         <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step1Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
                         <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step2Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
                         <Ellipse WidthRequest="8" HeightRequest="8" Fill="{Binding Step3Color, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" />
                     </HorizontalStackLayout>
 
-                    <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
-                        <Button Text="Skip" Clicked="OnSkipTutorialClicked" BackgroundColor="Transparent" TextColor="Gray" FontAttributes="Bold" />
-                        <Button Text="{Binding NextButtonText, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" Clicked="OnNextTutorialClicked" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" />
-                    </HorizontalStackLayout>
+                    <Grid ColumnDefinitions="*, *" ColumnSpacing="12" Margin="0,6,0,0">
+                        <Button Grid.Column="0" Text="Skip" Clicked="OnSkipTutorialClicked" BackgroundColor="#F1F5F9" TextColor="#64748B" FontSize="13" FontAttributes="Bold" CornerRadius="8" HeightRequest="40" />
+                        <Button Grid.Column="1" Text="{Binding NextButtonText, Source={RelativeSource AncestorType={x:Type local:HealthInformationPage}}, x:DataType=local:HealthInformationPage}" Clicked="OnNextTutorialClicked" BackgroundColor="#0A8491" TextColor="White" FontSize="13" FontAttributes="Bold" CornerRadius="8" HeightRequest="40" />
+                    </Grid>
                 </VerticalStackLayout>
             </Border>
         </Grid>
