@@ -8,7 +8,7 @@ public class SupabaseService
     public static SupabaseService Instance => _instance ??= new SupabaseService();
 
     public const string PlaceholderUrl = "https://itxjqcnvxlgzeqkivhhc.supabase.co";
-    public const string PlaceholderKey = "sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F";
+    public const string PlaceholderKey = "sb_publishable_QQi7onBtfe-d8fV0ep_K9g_N94rlE0s";
 
     public string SupabaseUrl { get; private set; } = PlaceholderUrl;
     public string SupabaseKey { get; private set; } = PlaceholderKey;
@@ -16,9 +16,9 @@ public class SupabaseService
 
     public Client? Client { get; private set; }
 
-    public bool IsMockMode => string.IsNullOrWhiteSpace(SupabaseUrl) || 
-                              SupabaseUrl == "https://your-supabase-project.supabase.co" || 
-                              string.IsNullOrWhiteSpace(SupabaseKey) || 
+    public bool IsMockMode => string.IsNullOrWhiteSpace(SupabaseUrl) ||
+                              SupabaseUrl == "https://your-supabase-project.supabase.co" ||
+                              string.IsNullOrWhiteSpace(SupabaseKey) ||
                               SupabaseKey == "your-supabase-anon-key";
 
     private SupabaseService()
@@ -31,7 +31,7 @@ public class SupabaseService
     {
         SupabaseUrl = Preferences.Default.Get("SupabaseUrl", PlaceholderUrl);
         SupabaseKey = Preferences.Default.Get("SupabaseKey", PlaceholderKey);
-        
+
         // Reset preferences if they contain old placeholders
         if (SupabaseUrl == "https://your-supabase-project.supabase.co")
         {

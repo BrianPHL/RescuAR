@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient('https://itxjqcnvxlgzeqkivhhc.supabase.co', 'sb_publishable_vD7hDjeuohyysFweHnJPPQ_xId2pJ4F');
+const supabase = createClient('https://itxjqcnvxlgzeqkivhhc.supabase.co', 'sb_publishable_QQi7onBtfe-d8fV0ep_K9g_N94rlE0s');
 
 async function testFetch() {
   const { data, error } = await supabase.rpc('get_all_users_with_roles');
