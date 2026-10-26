@@ -8,19 +8,13 @@ namespace RescuAR.App.Services.Authentication
 {
     public class AuthenticationService
     {
-        private Supabase.Client GetClient()
-        {
-            var client = SupabaseService.Instance.Client;
-            if (client == null)
-            {
-                throw new InvalidOperationException("Supabase client is not initialized. Please configure the Supabase URL and Key.");
-            }
-            return client;
-        }
+        private async Task<Supabase.Client> GetClientAsync() =>
+            await SupabaseService.Instance.GetClientAsync()
+                ?? throw new InvalidOperationException("Supabase is not configured.");
 
         public async Task<Session> SignUpWithEmailAsync(string email, string password, string firstName, string lastName, string? middleName, string? contactNumber)
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
 
             var options = new SignUpOptions
             {
@@ -50,7 +44,7 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task<Session> SignInWithEmailAsync(string email, string password)
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
             var session = await client.Auth.SignIn(email, password);
             return session
                 ?? throw new InvalidOperationException("Supabase sign-in completed without returning an authentication session.");
@@ -58,7 +52,7 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task<Session> SignInWithGoogleAsync()
         {
-            var client = GetClient();
+            var client = await GetClientAsync();
 
             // Set up OAuth sign-in options. 
             // In modern OAuth, PKCE flow is highly recommended for mobile clients.
@@ -111,8 +105,18 @@ namespace RescuAR.App.Services.Authentication
 
         public async Task SignOutAsync()
         {
-            var client = GetClient();
-            await client.Auth.SignOut();
+            string? userHint = SupabaseService.Instance.Client?.Auth.CurrentUser?.Id;
+            try
+            {
+                var client = await GetClientAsync();
+                userHint = client.Auth.CurrentUser?.Id;
+                await client.Auth.SignOut();
+            }
+            finally
+            {
+                try { await SupabaseService.Instance.ClearSessionAsync(); }
+                finally { AuthenticationIdentity.ClearActive(new MauiIdentityPreferences(), userHint); }
+            }
         }
     }
 }
