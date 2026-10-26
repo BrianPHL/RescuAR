@@ -76,13 +76,15 @@ public sealed partial class ArCoreService
             var components = SemanticRoadBoundaries.Extract(view.Labels, view.Confidence, view.Width, view.Height,
                 view.Width, view.Width, request.Label);
             RoadSurfaceAlignment.RoadLine line = default;
-            int qualified = 0, boundaryCount = 0;
+            int qualified = 0, boundaryCount = 0, imageBoundaryCount = 0, groundBoundaryCount = 0;
             foreach (var component in components)
             {
+                imageBoundaryCount += component.Count;
                 var boundaries = new List<RoadSurfaceAlignment.Boundary>();
                 foreach (var pixel in component)
                     if (RoadSurfaceAlignment.TryGroundPoint((pixel.X + .5f) / view.Width, (pixel.Y + .5f) / view.Height,
                         spatial, cameraZoomRatio, out var point)) boundaries.Add(new(point, pixel.Cropped));
+                groundBoundaryCount += boundaries.Count;
                 if (!RoadSurfaceAlignment.TryFit(boundaries, new Vector2(spatial.Pose.PositionX, spatial.Pose.PositionZ),
                     request.Direction, out var fitted, request.Label == 5 ? .8f : 2, request.Label == 5 ? 6 : 15)) continue;
                 qualified++; line = fitted; boundaryCount = boundaries.Count;
@@ -90,7 +92,10 @@ public sealed partial class ArCoreService
             if (qualified != 1)
             {
                 RoadSurfaceStatus(qualified > 1 ? "Visible road alignment is ambiguous" : "Looking for clear road edges", now,
-                    dimensions + $"; viewMask={view.Width}x{view.Height}; components={components.Count}; qualified={qualified}");
+                    dimensions + $"; viewMask={view.Width}x{view.Height}; components={components.Count}; qualified={qualified}; " +
+                    $"imageEdges={imageBoundaryCount}; groundEdges={groundBoundaryCount}; " +
+                    $"expectedDirection=({request.Direction.X:F3},{request.Direction.Y:F3}); " +
+                    $"cameraHeight={spatial.Pose.PositionY - spatial.Anchor.PositionY:F2}");
                 return;
             }
             ARRoadSurfaceBridge.Observe(request, line, spatial);

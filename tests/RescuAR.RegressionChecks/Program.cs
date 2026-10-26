@@ -42,6 +42,12 @@ if (args.Contains("--mld-guidance"))
     Console.WriteLine($"{passed} MLD guidance ownership regression checks passed.");
     return;
 }
+if (args.Contains("--registration-only"))
+{
+    ARRegistrationChecks.Run(Check);
+    Console.WriteLine($"{passed} registration regression checks passed.");
+    return;
+}
 if (args.Contains("--road-surface"))
 {
     VisualRoadAlignmentChecks.Run(Check);

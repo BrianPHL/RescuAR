@@ -150,6 +150,38 @@ public sealed class ArHeadingAlignmentService : IDisposable
         }
     }
 
+    // A magnetic calibration belongs to the tracking frame in which it was
+    // measured. A new tracked frame can acquire a fresh calibration without
+    // pretending that the old yaw is still validated.
+    private static bool CanReacquireMagneticFrame(HeadingAlignmentResult? retained,
+        ARCameraPoseBridge.SpatialSnapshot frame) =>
+        retained is { Source: "MAGNETIC" } previous && frame.IsFresh && frame.IsTracking &&
+        previous.SessionGeneration == frame.Generation.SessionGeneration &&
+        previous.WorldFrame == frame.WorldFrame && previous.TrackingEpoch != frame.TrackingEpoch;
+
+    public bool CanCaptureAutomatically
+    {
+        get
+        {
+            lock (sessionCalibrationSync)
+                return LastResult is not { RequiresMovementValidation: true } ||
+                    CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame);
+        }
+    }
+
+    public void PrepareForNavigationTrip()
+    {
+        lock (sessionCalibrationSync)
+        {
+            // Preserve healthy session alignment and stronger movement/road
+            // evidence. Only an already invalid magnetic cache is discarded.
+            if (sessionCalibration is not { Source: "MAGNETIC" } ||
+                LastResult is not { IsStable: false }) return;
+            sessionCalibration = null;
+            calibrationRevision++;
+        }
+    }
+
     /// <summary>
     /// Clears the cached map-to-AR yaw because a genuinely new ARCore world
     /// frame is about to be created. Do not call this for Camera-tab pause /
@@ -299,6 +331,11 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
         lock (sessionCalibrationSync)
         {
+            if (CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame))
+            {
+                sessionCalibration = null;
+                calibrationRevision++;
+            }
             cachedCalibration = LastResult;
             captureRevision = calibrationRevision;
         }

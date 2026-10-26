@@ -4481,6 +4481,7 @@ namespace RescuAR.App.Views.Camera
              * Destination changes do not change the retained ARCore world
              * frame. Reuse its existing map-to-AR alignment.
              */
+            if (destination.IsAvailable) _headingAlignmentService.PrepareForNavigationTrip();
             lastHeadingAlignment =
                 _headingAlignmentService.LastResult;
 
@@ -10864,7 +10865,7 @@ namespace RescuAR.App.Views.Camera
                 TryPublishUncertainRouteEstimate(continuityRoute);
             if (activeRoute is { } headingRoute && !routeRequestInProgress && pageIsVisible &&
                 !safeZoneConfirmed && !HasCurrentRouteHeading() &&
-                _headingAlignmentService.LastResult is not { RequiresMovementValidation: true } &&
+                _headingAlignmentService.CanCaptureAutomatically &&
                 _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
                 IsRoadApproachFixUsable(latestRouteStartupReading) &&

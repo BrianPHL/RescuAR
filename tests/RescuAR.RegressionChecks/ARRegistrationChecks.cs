@@ -42,6 +42,7 @@ internal static class ARRegistrationChecks
             foreach (string provider in new[] { "AStar", "MLD (Railway OSRM)" })
             {
                 FieldPair(check, provider);
+                LatestFieldPlacement(check, provider);
                 CorrectionAndOwnership(check, provider);
                 Arrival(check, provider);
             }
@@ -120,6 +121,28 @@ internal static class ARRegistrationChecks
                 at.AddSeconds(8.441), Motion(-23.37f, -123.86f) with { GroundReference = 68 }, out var supported) &&
             Math.Abs(supported.WorldX - retained.WorldX) < .01 && Math.Abs(supported.WorldZ - retained.WorldZ) < .01,
             $"{provider}: the second captured lateral shift near the eight-second boundary retains its supported reference");
+    }
+
+    private static void LatestFieldPlacement(Action<bool, string> check, string provider)
+    {
+        var coordinates = new[] { C(.592, 5.415), C(-89.240, 13.755), C(-105.592, 15.312),
+            C(-188.969, 22.984), C(-229.850, 26.765), C(-258.682, 29.433) };
+        var distances = new[] { 0.0, 90.218, 106.644, 190.373, 231.429, 260.384 };
+        var route = new RouteResult(coordinates.Select((c, i) => new RoutePoint(c, distances[i])).ToArray(),
+            260.384, provider);
+        var at = DateTimeOffset.UtcNow;
+        var policy = new RouteDisplayProgressPolicy();
+        var gps = Fix(route, C(5.276, .743), 7.5);
+        var pose = new RouteBacktrackingPolicy.TrackedMotion(.089f, -.152f, -90.669, 1, 1, 4);
+        Observe(policy, route, gps, at, pose);
+        check(policy.TryGetRegisteredReference(route, route.Points[0].Coordinate, at.AddMilliseconds(300), pose, out var placed) &&
+            Math.Abs(placed.WorldX - 4.816) < .015 && Math.Abs(placed.WorldZ + 4.781) < .015,
+            $"{provider}: the latest captured GPS/pose pair reproduces the 4.7m rightward placement; it is not a physical accuracy pass");
+        check(placed.Source == "QUALIFIED_ACQUISITION" && policy.RegistrationAccuracyMeters == 7.5,
+            $"{provider}: a 7.5m GPS accuracy radius is not promoted to an observed physical-road registration");
+        policy.Reset();
+        check(!policy.TryGetRegisteredReference(route, route.Points[0].Coordinate, at, pose, out _),
+            $"{provider}: stop/change-destination clears the captured placement before a new route can bind");
     }
 
     private static void CorrectionAndOwnership(Action<bool, string> check, string provider)

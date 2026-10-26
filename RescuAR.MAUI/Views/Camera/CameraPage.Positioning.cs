@@ -12,6 +12,9 @@ public partial class CameraPage
     // Physical display references are separate from monotonic trip progress.
     // They never become routing origins, device locations or arrival evidence.
     private VerifiedPosition? verifiedPosition;
+    private AcceptedGpsPosition? acceptedGpsPosition;
+    private sealed record AcceptedGpsPosition(RouteResult Route, LocationReading Reading,
+        RouteProgressTracker.RouteProgressUpdate Update);
     private readonly RoutePositionObservationPolicy positionObservationPolicy = new();
     private readonly RouteProgressMotionPolicy progressMotionPolicy = new();
     private volatile bool positionObservationHeld;
@@ -32,6 +35,8 @@ public partial class CameraPage
             positionObservationPolicy.Reset();
             progressMotionPolicy.Reset();
             verifiedPosition = null;
+            acceptedGpsPosition = null;
+            ResetVisualRoadAlignmentState();
             lastRegisteredPublication = null;
             lastRegistrationRejection = null;
             Interlocked.Exchange(ref routeWindowPublishedCount, 0);
@@ -126,9 +131,14 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             if (!ReferenceEquals(route, activeRoute) ||
-                (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
-                 reading.Timestamp <= previous.At) ||
                 !RouteDisplayProgressPolicy.TryResolveGps(route, update, out _)) return;
+            // Geographic acceptance precedes AR readiness. Retain that exact
+            // accepted observation so heading completion can bind it once.
+            if (acceptedGpsPosition is null || !ReferenceEquals(acceptedGpsPosition.Route, route) ||
+                reading.Timestamp > acceptedGpsPosition.Reading.Timestamp)
+                acceptedGpsPosition = new(route, reading, update);
+            if (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
+                reading.Timestamp <= previous.At) return;
             // A coarse MLD bootstrap reference still passes the shared heading,
             // tracking and placement gates before publication.
             if (GetAcquisitionMotion(reading, requireTrustedHeading: !IsMldRoute(route)) is not { } motion) return;
@@ -277,9 +287,12 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             position = default;
-            if (IsMldRoute(route))
-                return GetTrackedRouteMotion() is { } motion &&
-                    _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position);
+            if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion)
+            {
+                if (_routeDisplayProgressPolicy.HasContradictedVisualReference(route, motion)) return false;
+                if (_routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, DateTimeOffset.UtcNow, motion, out position))
+                    return true;
+            }
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
         }
     }
@@ -305,8 +318,8 @@ public partial class CameraPage
 
             double dx = to.X - from.X, dz = to.Z - from.Z;
             if (dx * dx + dz * dz > MaximumPdrRouteWindowAdvanceMeters * MaximumPdrRouteWindowAdvanceMeters ||
-                !(IsMldRoute(route)
-                    ? _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, now, to, out position)
+                !(IsMldRoute(route) && HasVisualRoadRegistration()
+                    ? _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, now, to, out position)
                     : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
                 return false;
             accuracy = previous.Accuracy;

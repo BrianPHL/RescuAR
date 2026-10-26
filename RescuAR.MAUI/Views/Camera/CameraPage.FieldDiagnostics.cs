@@ -264,7 +264,7 @@ public partial class CameraPage
                 $"registration='{placed.AlignmentSource}'; visual={HasVisualRoadRegistration()}; " +
                 $"contradicted={(motion.HasValue && _routeDisplayProgressPolicy.HasContradictedVisualReference(mldRoute, motion.Value))}; " +
                 $"style=SOLID_RIBBON; width={ARRouteVisualPolicy.GetRouteWidthMeters(0):F2}m; " +
-                $"displaySource=REGISTERED_AR; rawGpsProgress={progress.RawProgressMeters:F2}; " +
+                $"displaySource={(HasVisualRoadRegistration() ? "VISUAL_AR" : "ACCEPTED_GPS_PDR")}; rawGpsProgress={progress.RawProgressMeters:F2}; " +
                 $"acceptedProgress={progress.CommittedProgressMeters:F2}; displayProgress={route.NavigationState.WindowStartProgressMeters:F2}; " +
                 $"window={(route.Points.Count > 0 ? route.Points[^1].DistanceFromWindowStartMeters : 0):F2}; " +
                 $"session={frame.Generation.SessionGeneration}; epoch={frame.TrackingEpoch}; world={frame.WorldFrame}.");

@@ -21,6 +21,10 @@ public partial class CameraPage
             confidence = confidence with { AllowsRouteGeometry = false,
                 State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
                 DisplayMessage = "Checking road alignment — follow text guidance" };
+        else if (!visual && positionObservationHeld)
+            confidence = confidence with { AllowsRouteGeometry = false,
+                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                DisplayMessage = "Position uncertain — follow text guidance" };
         else if (!visual && confidence.AllowsRouteGeometry)
             confidence = confidence with {
                 State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
@@ -74,14 +78,28 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             bool visual = HasVisualRoadRegistration();
+            var accepted = acceptedGpsPosition;
             if (!ReferenceEquals(activeRoute, route) || safeZoneConfirmed || dynamicRerouteInProgress ||
                 positionObservationHeld && !visual || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
-                !visual && latestGpsTimestampForRouting != reading.Timestamp ||
-                !visual && (verifiedPosition is not { } accepted || accepted.At != reading.Timestamp) ||
+                !visual && (accepted is null || !ReferenceEquals(accepted.Route, route) ||
+                    accepted.Reading.Timestamp != reading.Timestamp || latestGpsTimestampForRouting != reading.Timestamp) ||
                 !visual &&
                     (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35))
                 return;
+            if (!visual && accepted is not null)
+            {
+                if (verifiedPosition?.Motion is { } old && GetTrackedRouteMotion() is { } current &&
+                    (!old.IsContinuousWith(current) ||
+                     Math.Abs(Math.IEEERemainder(old.YawDegrees - current.YawDegrees, 360)) >= .001))
+                {
+                    _routeDisplayProgressPolicy.Reset();
+                    verifiedPosition = null;
+                    lastRegisteredPublication = null;
+                }
+                ObserveVerifiedGpsPosition(route, accepted.Update, accepted.Reading);
+                if (verifiedPosition is not { } verified || verified.At != accepted.Reading.Timestamp) return;
+            }
             // Observe-only matching cannot add a second progress/arrival/entry
             // sample. Existing acquisition pairing, age, precision, registration,
             // access, tracking and hazard gates still own publication eligibility.
