@@ -9,6 +9,8 @@ import {
   ShieldCheck,
   ShieldOff,
   UserRoundCog,
+  UserPlus,
+  Copy,
   Users,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
@@ -49,6 +51,9 @@ export default function RbacAdmins() {
   const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [rows, setRows] = useState([]);
   const [email, setEmail] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminRole, setNewAdminRole] = useState('operations_admin');
+  const [oneTimeCredential, setOneTimeCredential] = useState(null);
   const [role, setRole] = useState('data_analyst');
   const [customName, setCustomName] = useState('');
   const [customLabel, setCustomLabel] = useState('');
@@ -108,6 +113,50 @@ export default function RbacAdmins() {
     }
   };
 
+  // Account creation is performed exclusively by the Supabase Edge Function.
+  // This UI never receives or stores a service-role key. The generated password
+  // is returned once, held in component memory, and never added to persistent browser storage.
+  const provisionAdministrator = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    if (!newAdminEmail.trim() || newAdminRole === 'superadmin') {
+      setNotice({ type: 'error', text: 'Enter a valid email and select a non-Superadmin role.' });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    setOneTimeCredential(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('rbac-admin-provision', {
+        body: { action: 'create_admin', email: newAdminEmail.trim(), role: newAdminRole },
+      });
+      if (error) {
+        let message = error.message || 'Account provisioning failed.';
+        try { const response = await error.context?.json?.(); if (response?.error) message = response.error; } catch { /* no JSON body */ }
+        throw new Error(message);
+      }
+      if (!data?.temporaryPassword || !data?.email) throw new Error('Unexpected provisioning response. Verify the new account in Supabase.');
+      setOneTimeCredential({ email: data.email, temporaryPassword: data.temporaryPassword });
+      setNewAdminEmail('');
+      await refresh();
+      setNotice({ type: 'success', text: 'Administrator created, assigned and marked for mandatory first-login password change.' });
+    } catch (error) {
+      setNotice({ type: 'error', text: error.message || 'Unable to create an administrator.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyOneTimePassword = async () => {
+    if (!oneTimeCredential) return;
+    try {
+      await navigator.clipboard.writeText(oneTimeCredential.temporaryPassword);
+      setNotice({ type: 'success', text: 'Temporary password copied. Deliver it securely and clear your clipboard afterward.' });
+    } catch {
+      setNotice({ type: 'error', text: 'Clipboard unavailable. Copy the displayed password manually.' });
+    }
+  };
+
   const createCustomRole = async (event) => {
     event.preventDefault();
     if (busy) return;
@@ -162,6 +211,29 @@ export default function RbacAdmins() {
         <button type="button" aria-label="Dismiss message" onClick={() => setNotice(null)}>×</button>
       </div>}
 
+      <section className="rbac-panel" aria-labelledby="rbac-create-admin-title">
+        <div className="rbac-panel-heading"><div className="rbac-section-icon"><UserPlus size={19} /></div><div><h2 id="rbac-create-admin-title">Create Verified Administrator</h2><p>Create a new Supabase Auth account with a temporary password and an RBAC role. Email ownership must be checked by your organization.</p></div></div>
+        <form className="rbac-assign-form" onSubmit={provisionAdministrator}>
+          <div className="form-group rbac-grow">
+            <label className="form-label" htmlFor="rbac-create-email">New administrator email</label>
+            <input id="rbac-create-email" className="form-input" type="email" autoComplete="off" placeholder="operator@example.com" value={newAdminEmail} onChange={(event) => setNewAdminEmail(event.target.value)} required maxLength={254} />
+          </div>
+          <div className="form-group rbac-role-field">
+            <label className="form-label" htmlFor="rbac-create-role">Initial role</label>
+            <select className="form-input" id="rbac-create-role" value={newAdminRole} onChange={(event) => setNewAdminRole(event.target.value)}>
+              {roles.filter(([id]) => id !== 'superadmin').map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </div>
+          <button className="btn-primary rbac-action-btn" type="submit" disabled={busy || !newAdminEmail.trim()}><UserPlus size={16} /> {busy ? 'Creating…' : 'Create Admin'}</button>
+        </form>
+        <div className="rbac-panel-help"><ShieldCheck size={15}/><span>The backend administratively confirms the email without sending an invitation. This is not proof of mailbox ownership. Share the one-time password securely; the user must change it before accessing the dashboard.</span></div>
+        {oneTimeCredential && <div className="rbac-one-time-box" role="status">
+          <div><strong>One-time temporary password</strong><p>Shown only until you dismiss this panel or leave the page. It cannot be recovered from RescuAR.</p></div>
+          <p className="rbac-one-time-email">Account: {oneTimeCredential.email}</p>
+          <div className="rbac-one-time-actions"><input className="form-input" aria-label="Temporary administrator password" readOnly type="text" value={oneTimeCredential.temporaryPassword} autoComplete="off" spellCheck={false} /><button type="button" className="btn-secondary rbac-action-btn" onClick={copyOneTimePassword}><Copy size={15}/> Copy</button><button type="button" className="btn-secondary rbac-action-btn" onClick={() => setOneTimeCredential(null)}>Discard</button></div>
+        </div>}
+      </section>
+
       <section className="rbac-panel" aria-labelledby="rbac-assign-title">
         <div className="rbac-panel-heading"><div className="rbac-section-icon"><UserRoundCog size={19} /></div><div><h2 id="rbac-assign-title">Assign an Administrator Role</h2><p>Use an account already registered in Supabase Authentication.</p></div></div>
         <form className="rbac-assign-form" onSubmit={(event) => { event.preventDefault(); void changeAssignment(true); }}>
@@ -175,7 +247,7 @@ export default function RbacAdmins() {
           </div>
           <button type="submit" className="btn-primary rbac-action-btn" disabled={busy || !email.trim()}><Plus size={16} /> {busy ? 'Saving…' : 'Assign Role'}</button>
         </form>
-        <div className="rbac-panel-help"><ShieldCheck size={15} /><span>Accounts are created through Supabase Auth. This page cannot create authentication credentials or override database permissions.</span></div>
+        <div className="rbac-panel-help"><ShieldCheck size={15} /><span>Assign a role to an existing account here, or create an administrator securely using the section above. Neither action overrides database permission enforcement.</span></div>
       </section>
 
       <section className="rbac-panel rbac-panel--flush" aria-labelledby="rbac-list-title">

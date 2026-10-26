@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import App from './App';
 import Auth from './components/Auth';
+import FirstLoginPasswordChange from './components/FirstLoginPasswordChange';
 import { supabase } from './supabaseClient';
 import { loadAccess, preferredView } from './rbac/access';
 
@@ -52,9 +53,16 @@ export default function AuthWrapper() {
     if (!userId) return undefined;
 
     let cancelled = false;
-    loadAccess(supabase).then((access) => {
+    Promise.all([
+      loadAccess(supabase),
+      supabase.rpc('rbac_password_setup_status'),
+    ]).then(([access, passwordStatus]) => {
+      if (passwordStatus.error || typeof passwordStatus.data !== 'boolean') {
+        throw passwordStatus.error || new Error('Unable to verify first-login password status.');
+      }
       if (!cancelled) {
-        setAccessState({ userId, attempt: accessAttempt, access, error: '' });
+        setAccessState({ userId, attempt: accessAttempt, access,
+          passwordChangeRequired: passwordStatus.data, error: '' });
       }
     }).catch(() => {
       if (!cancelled) {
@@ -91,6 +99,18 @@ export default function AuthWrapper() {
 
   if (!accessState || accessState.userId !== userId || accessState.attempt !== accessAttempt) {
     return <div className="main-view" role="status">Loading administrator access...</div>;
+  }
+
+  // Gate is enforced here *and* by the server-side rbac_can() policy.
+  // Pending accounts cannot access administrative screens until their
+  // password has actually been changed by the authenticated backend.
+  if (!accessState.error && accessState.passwordChangeRequired) {
+    return <FirstLoginPasswordChange
+      email={session?.user?.email || ''}
+      onComplete={() => setAccessAttempt((attempt) => attempt + 1)}
+      onSignOut={handleSignOut}
+      signOutError={signOutError}
+    />;
   }
 
   if (accessState.error || !preferredView(accessState.access)) {

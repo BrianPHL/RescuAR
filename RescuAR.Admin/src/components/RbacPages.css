@@ -107,3 +107,12 @@
 @media (max-width: 1040px) { .rbac-test-grid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .rbac-summary-grid,.rbac-form-grid,.rbac-permission-grid { grid-template-columns: 1fr; } .rbac-panel { padding: 18px; } .rbac-panel--flush,.rbac-custom-role { padding: 0; } .rbac-panel-toolbar,.rbac-custom-role summary { padding: 17px; } .rbac-custom-content { padding: 17px; } .rbac-page .view-title-container h1 { font-size: 26px; } .rbac-page-heading { align-items: flex-start; } .rbac-assign-form { flex-direction: column; align-items: stretch; } .rbac-grow,.rbac-role-field { flex: 1 1 auto; width: 100%; } .rbac-action-btn { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .rbac-spin { animation: none; } }
+
+/* Superadmin account provisioning: secret stays in transient component memory. */
+.rbac-one-time-box { margin-top: 18px; padding: 16px; border: 1px solid #f6d365; background: #fffbeb; border-radius: 10px; color: #78350f; }
+.rbac-one-time-box strong { display: block; font-size: 14px; }
+.rbac-one-time-box p { margin-top: 5px; font-size: 12px; line-height: 1.5; }
+.rbac-one-time-email { overflow-wrap: anywhere; }
+.rbac-one-time-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.rbac-one-time-actions > input { flex: 1 1 280px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+@media (max-width: 760px) { .rbac-one-time-actions { flex-direction: column; align-items: stretch; } }
