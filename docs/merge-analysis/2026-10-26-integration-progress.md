@@ -33,6 +33,9 @@
 | P3-01 | Profile overview and avatar | Adopt Athena layout and account-scoped photo handling | Preserve dev advisory overlay/actions; isolate new local photos by project/account; expose local-only versus confirmed cloud status and retry. |
 | P3-02 | Personal information | Athena layout; retain username/middle name; verified email read-only; field-only saves | New editor keeps the dev fields, patches only changed values and preserves raw/unfamiliar addresses until edited. |
 | P3-03 | Health information | Athena layout/guide; retain all dev health fields; save only health fields | Separate editor retains the seven health fields and existing guide-completion key; changed-field patches preserve identity, contacts, avatar and circle fields. |
+| P3-04 | Emergency-contact layout/import/save | Adopt Athena layout/import; save only when confirmed | Import fills the form. Save patches only changed contact fields. Relationship labels remain scoped to this account/device; late results are rejected. |
+| P3-05 | Dashboard contact shortcuts | Synchronize after Save; preserve dev dashboard and unrelated shortcuts/order/toggles | Account-scoped shortcut storage, stable contact IDs, matching-contact reuse, queued first-dashboard sync and explicit local-failure/retry status. Legacy archives stay aside. |
+| P3-06 | System Information | Athena layout with real app and permission information | Actual installed version/build and Android package update date; current camera/location/notification permission state and motion-sensor availability; unavailable values are labelled honestly. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -164,6 +167,42 @@ Use a test account and the preserved profile APK. Report actual results before b
 3. Change a photo offline or with upload/profile access denied. Expect a visible local-only status and retry. Reconnect/retry; expect cloud confirmation only after the account profile actually updates. A successful upload followed by a failed profile patch must be retryable.
 4. Switch accounts while a load/upload/save is waiting. Expect no old-account details or photo to appear as the new account's active data. Return to the original account; its newly scoped photo may reappear, while legacy archives stay aside.
 
+## Earlier contacts/System Information gate (completed below)
+
+The user explicitly approved all three choices. Their applied scope and verification follow.
+
+
+## Confirmed contacts, Quick Actions and System Information completed
+
+- Commit: `e9e5fd8` — `feat(profile): add confirmed contacts and system details`.
+- Adopted Athena's two contact-card form and phone-contact import. Import only fills editable fields; cancelling/leaving before Save does not write the account or publish shortcut changes. A multi-number contact prompts for a number. Permission denial retains manual entry.
+- Save computes only changed values among the four existing emergency-contact fields. No whole-user upsert is used by the contact screen. Existing personal/health/address/avatar/circle data is preserved by the field-specific update. The prior profile-batch contacts limitation is now resolved for this screen; the old helper remains preserved pending later Circle reconciliation.
+- Relationship labels are account-scoped local data, associated with matching contact identities. No new backend columns or migration were added. Unchanged account contacts need no remote write; explicit Save can still repair local labels/shortcuts after reopening. Failed account writes do not publish draft contacts. A confirmed cloud save followed by local failure is reported separately, with local retry.
+- Added only `READ_CONTACTS` to the native manifest. Permission is requested when Import is tapped. This declaration is required by the current [MAUI contacts API setup](https://learn.microsoft.com/en-us/dotnet/maui/platform-integration/communication/contacts?view=net-maui-9.0); no address-book enumeration or upload was introduced.
+- Quick Actions now use the signed-in account/backend scope rather than the old device-wide shortcut key. Legacy archives are kept aside with no automatic restoration, as previously chosen. Dev's layout, default shortcuts, icon handling and unrelated call/SOS/flashlight/siren/data behaviors remain unchanged.
+- Confirmed contact saves queue an account-scoped sync. Dev defaults are populated before applying contact shortcuts on the first dashboard. Existing shortcut positions, disabled toggles and unrelated entries remain; matching manual contacts are reused, duplicate contact slots collapse to one shortcut, and same-name/different-number contacts remain distinct. Explicitly deleted contact shortcuts remain deleted until another Save requests synchronization.
+- Stored synchronization revisions make repeat application idempotent. A failed marker write can be retried without duplicate shortcuts. Invalid saved shortcut JSON is preserved rather than replaced silently. Old-session callbacks cannot store or dial another account's saved custom contact.
+- System Information displays the actual installed app version/build and Android package `LastUpdateTime`; missing metadata shows **Unavailable**. It reports current camera/location/notification states and actual motion-sensor availability without requesting permissions. It refreshes when the page appears or its window resumes after device settings. Opening settings failures have a visible status.
+- **127/127 targeted local checks passed**: all 93 previous checks plus 34 contact-confirmation, shortcut-preservation/scope, retry and metadata-format cases. The nullable-value warning in the first Android build was corrected in one correction/rebuild. A later explicit-Save local-recovery refinement was covered by a focused retest and final build. Final Android build: **0 warnings, 0 errors**.
+- ARCore declarations, `git diff --check`, approved source boundaries and source-preservation checks passed. The native manifest is identical to dev after removing the one newly approved contact permission. Dev dashboard defaults/icon methods and unrelated call/SOS/device/data methods remain equivalent; dashboard XAML is unchanged.
+- An initial patch guard found two similar method guards and stopped before applying the dashboard/manifest portion. The patch was narrowed to the contact-action method and completed once. No unrelated method was changed by that correction.
+- Preserved APK: `artifacts/athena-integration/05-contacts-system/RescuAR-Batch05-ContactsSystem.apk` (103,241,972 bytes; SHA-256 `987c3003c136e7948b5399bd9550d9cadb74edbbfff2faa8371fdf41bb5a4f7d`).
+- No running app/browser/device, provider/database write, integration/E2E test, dependency installation, deployment, branch merge or push was performed. Permission/picker behavior, deployed profile RLS, real dialer actions and device metadata remain manual checks.
+
+## Required manual contacts/System Information checks
+
+Use a test account and the preserved batch-5 APK. Report actual results before behavior-dependent fixes:
+
+1. Import a contact, cancel, leave/reopen, and deny contacts permission. Expect no account/shortcut write before Save and continued manual entry. For a contact with multiple numbers, expect a number choice. Save a contact; expect its call shortcut after returning to the dashboard.
+2. Disable a contact shortcut, modify that contact and Save. Expect its position/toggle to remain. Add unrelated custom shortcuts and verify their order, routes and toggles remain. Test the same contact in both slots, two same-name/different-number contacts and clearing a slot; expect no duplicate or unrelated deletion.
+3. Attempt a changed-contact save offline or with backend write access denied. Expect an unconfirmed-save error and no draft shortcut. Restore access and Save. If local sync fails after the cloud save, expect distinct status and local retry; an explicit Save after reopening can repair local sync without rewriting unchanged account fields. Reopen personal/health pages to confirm their fields remain intact.
+4. Change accounts while import/save is waiting. Expect no old-account contact form, shortcut persistence or dialing through a stale custom-contact action. First use of a new account should retain dev's standard shortcuts while legacy archives stay aside.
+5. Compare System Information with the installed app/package and device permission settings. Change camera/location/notification access in device settings and return. Expect the current status, a real package update date or Unavailable, and sensor availability rather than a false motion-permission claim.
+
+## Newly observed dev changes
+
+Dev advanced to `53d7cab` (`fix(mld): align guidance with locally observed road surfaces`). Its new road-surface bridge, native AR surface logic, visual road alignment, MLD/progress changes and regression checks are not yet imported into this integration branch. They overlap the later Camera/map work and require a preservation decision before that stage. The prior Admin RBAC/provisioning changes remain reserved for the Admin/final review. The pinned implementation baseline remains `1b3db7e`; no branch update was performed silently.
+
 ## Current next gate
 
-Ask before importing emergency-contact UI/import/save behavior, synchronizing confirmed contacts with dev dashboard Quick Actions, and replacing System Information with real installed-app/permission metadata. Help/legal presentation and settings remain separate later decisions, followed by circle/offline/Camera 2D work. Dev's latest observed Admin revision `53d7cab` remains deferred to the final preservation review. Commit every finished batch; no branch merge or push is authorized yet.
+Ask about carrying over the newer dev AR fixes in a separate reviewed step, Athena Help Center/FAQ/contact actions, and consistent registration/profile Terms/Privacy wording. Then continue settings, circle, offline display and Camera 2D decisions. Keep committing every finished batch; no branch merge or push is authorized yet.
