@@ -1,6 +1,8 @@
 using System;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Projection;
+using RescuAR.AR;
+using System.Numerics;
 
 namespace RescuAR.Navigation.Progress;
 
@@ -23,6 +25,10 @@ public sealed class RouteDisplayProgressPolicy
     private DateTimeOffset? registrationSupportedAt;
     private DateTimeOffset? lastRegistrationObservation;
     private int registrationConfirmations;
+    private VisualRegistration? visualRegistration;
+    private sealed record VisualRegistration(GeoCoordinate Coordinate, Vector2 WorldPoint,
+        RouteBacktrackingPolicy.TrackedMotion Motion, DateTimeOffset At, DateTimeOffset SupportedAt,
+        float ObservedSpan, double AlongRouteUncertainty, bool Contradicted = false);
     public RegistrationDecision LastRegistrationDecision { get; private set; }
 
     private readonly record struct RegistrationObservation(GeoCoordinate Coordinate,
@@ -31,7 +37,7 @@ public sealed class RouteDisplayProgressPolicy
         double CorrectionX = 0, double CorrectionZ = 0, int EvidenceCount = 0);
     public readonly record struct RegisteredReference(GeoCoordinate Coordinate, float WorldX, float WorldZ,
         long Session, long TrackingEpoch, long WorldFrame, double YawDegrees, DateTimeOffset RegisteredAt,
-        DateTimeOffset SupportedAt);
+        DateTimeOffset SupportedAt, string Source = "QUALIFIED_ACQUISITION");
 
     public RouteDisplayProgressPolicy(NavigationStabilityOptions? options = null)
     {
@@ -53,6 +59,7 @@ public sealed class RouteDisplayProgressPolicy
         registration = pendingRegistration = null;
         registrationSupportedAt = lastRegistrationObservation = null;
         registrationConfirmations = 0;
+        visualRegistration = null;
         LastRegistrationDecision = default;
     }
 
@@ -199,6 +206,7 @@ public sealed class RouteDisplayProgressPolicy
         TimeSpan? maximumSupportAge = null)
     {
         reference = default;
+        if (TryGetVisualReference(route, coordinate, now, current, out reference)) return true;
         if (!ReferenceEquals(currentRoute, route) || registration is not { } retained ||
             !coordinate.IsValid || !SameFrame(retained.Motion, current) || !registrationSupportedAt.HasValue ||
             now < registrationSupportedAt.Value ||
@@ -208,6 +216,115 @@ public sealed class RouteDisplayProgressPolicy
         if (!float.IsFinite(x) || !float.IsFinite(z)) return false;
         reference = new(coordinate, x, z, current.Session, current.TrackingEpoch, current.WorldFrame,
             retained.Motion.YawDegrees, retained.At, registrationSupportedAt.Value);
+        return true;
+    }
+
+    public bool TrySetVisualReference(RouteResult route, GeoCoordinate mapPoint, Vector2 worldPoint,
+        RouteBacktrackingPolicy.TrackedMotion correctedMotion, ARRoadSurfaceBridge.Observation proof,
+        ARCameraPoseBridge.SpatialSnapshot frame, DateTimeOffset now)
+    {
+        if (!ReferenceEquals(currentRoute, route) || !mapPoint.IsValid || !correctedMotion.IsValid ||
+            proof.Owner.Geometry != route.GeometryFingerprint || proof.Evidence < 3 || !proof.IsFor(frame) ||
+            now < proof.ObservedAt || now - proof.ObservedAt > TimeSpan.FromSeconds(3) ||
+            correctedMotion.Session != frame.Generation.SessionGeneration || correctedMotion.TrackingEpoch != frame.TrackingEpoch ||
+            correctedMotion.WorldFrame != frame.WorldFrame || !float.IsFinite(worldPoint.X + worldPoint.Y)) return false;
+        visualRegistration = new(mapPoint, worldPoint, correctedMotion, proof.ObservedAt, proof.ObservedAt,
+            proof.Line.Span, registration?.Accuracy ?? 20);
+        return true;
+    }
+
+    public bool TryGetVisualReference(RouteResult route, GeoCoordinate coordinate, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion current, out RegisteredReference reference, bool allowContradicted = false)
+    {
+        reference = default;
+        if (!ReferenceEquals(currentRoute, route) || visualRegistration is not { } visual ||
+            !coordinate.IsValid || !SameFrame(visual.Motion, current) || now < visual.At ||
+            visual.Contradicted && !allowContradicted) return false;
+        var offset = Offset(visual.Coordinate, coordinate, visual.Motion.YawDegrees);
+        reference = new(coordinate, visual.WorldPoint.X + (float)offset.X, visual.WorldPoint.Y + (float)offset.Z,
+            current.Session, current.TrackingEpoch, current.WorldFrame, visual.Motion.YawDegrees,
+            // A physical reference is retained by continuous live AR tracking,
+            // not by continued visibility of the road. The caller first
+            // qualifies the current pose/session/epoch/world. This timestamp
+            // denotes that pose support; it does not refresh acquisition time.
+            visual.At, now, "VISUAL_ROAD_CORRIDOR");
+        return float.IsFinite(reference.WorldX + reference.WorldZ);
+    }
+
+    public bool RenewVisualSupport(RouteResult route, ARRoadSurfaceBridge.Observation proof,
+        ARCameraPoseBridge.SpatialSnapshot frame, GeoCoordinate mapPoint, Vector2 mapDirection,
+        DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion motion)
+    {
+        if (proof.Evidence < 3 || proof.Owner.Geometry != route.GeometryFingerprint || !proof.IsFor(frame) ||
+            now < proof.ObservedAt || now - proof.ObservedAt > TimeSpan.FromSeconds(3)) return false;
+        if (!TryGetVisualReference(route, mapPoint, now, motion, out var existing, allowContradicted: true)) return false;
+        var observed = proof.Line;
+        var rotated = MapToArCoordinates.Rotate(mapDirection.X, mapDirection.Y, motion.YawDegrees);
+        var expected = new RoadSurfaceAlignment.RoadLine(new(existing.WorldX, existing.WorldZ),
+            Vector2.Normalize(new((float)rotated.X, (float)rotated.Z)), observed.Width,
+            observed.Span, 0, observed.Sections);
+        if (!RoadSurfaceAlignment.Agrees(expected, observed))
+        {
+            visualRegistration = visualRegistration! with { Contradicted = true };
+            return false;
+        }
+        var supportedAt = proof.ObservedAt;
+        visualRegistration = visualRegistration! with { Contradicted = false,
+            SupportedAt = supportedAt > visualRegistration.SupportedAt ? supportedAt : visualRegistration.SupportedAt,
+            ObservedSpan = Math.Max(visualRegistration.ObservedSpan, observed.Span) };
+        return true;
+    }
+
+    public double ConstrainVisualWindow(RouteResult route, double progress, double requested)
+    {
+        if (!ReferenceEquals(currentRoute, route) || visualRegistration is not { Contradicted: false } visual ||
+            !TryAtDistance(route, progress, out var position)) return 0;
+        double window = Math.Min(requested, visual.ObservedSpan);
+        var a = route.Points[position.SegmentIndex].Coordinate;
+        var b = route.Points[position.SegmentIndex + 1].Coordinate;
+        var initial = Offset(a, b, 0);
+        double heading = Math.Atan2(initial.Z, initial.X);
+        for (int i = position.SegmentIndex + 1; i < route.Points.Count - 1; i++)
+        {
+            if (route.Points[i].DistanceFromStartMeters > progress + window + visual.AlongRouteUncertainty) break;
+            var next = Offset(route.Points[i].Coordinate, route.Points[i + 1].Coordinate, 0);
+            if (Math.Abs(Math.IEEERemainder(Math.Atan2(next.Z, next.X) - heading, 2 * Math.PI)) <= Math.PI / 18) continue;
+            // A straight visible corridor does not identify an intersection's
+            // absolute position. Preserve the GPS uncertainty before the turn.
+            window = Math.Min(window, route.Points[i].DistanceFromStartMeters - progress - visual.AlongRouteUncertainty);
+            break;
+        }
+        return Math.Max(0, window);
+    }
+
+    /// <summary>Local visual display progress only. Never routing-origin, GPS,
+    /// rerouting or arrival evidence. Phone turns cannot manufacture steps.</summary>
+    public bool TryGetVisualDisplayPosition(RouteResult route, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion motion, out DisplayPosition position)
+    {
+        position = default;
+        if (visualRegistration is not { } visual ||
+            !TryGetVisualReference(route, visual.Coordinate, now, motion, out _)) return false;
+        double dx = motion.X - visual.WorldPoint.X, dz = motion.Z - visual.WorldPoint.Y;
+        double angle = motion.YawDegrees * Math.PI / 180;
+        double east = dx * Math.Cos(angle) - dz * Math.Sin(angle);
+        double north = -dx * Math.Sin(angle) - dz * Math.Cos(angle);
+        var estimated = new GeoCoordinate(visual.Coordinate.Latitude + north / 6371008.8 * 180 / Math.PI,
+            visual.Coordinate.Longitude + east / (6371008.8 * Math.Cos(visual.Coordinate.Latitude * Math.PI / 180)) * 180 / Math.PI);
+        double best = double.PositiveInfinity, progress = 0;
+        for (int i = 0; i < route.Points.Count - 1; i++)
+        {
+            var a = route.Points[i]; var b = route.Points[i + 1];
+            var start = Offset(estimated, a.Coordinate, 0); var end = Offset(estimated, b.Coordinate, 0);
+            double x = end.X - start.X, z = end.Z - start.Z, length = x * x + z * z;
+            if (length < .0001) continue;
+            double t = Math.Clamp(-(start.X * x + start.Z * z) / length, 0, 1);
+            double error = Math.Pow(start.X + t * x, 2) + Math.Pow(start.Z + t * z, 2);
+            if (error >= best) continue;
+            best = error; progress = a.DistanceFromStartMeters + t * (b.DistanceFromStartMeters - a.DistanceFromStartMeters);
+        }
+        if (best > 400 || !TryAtDistance(route, progress, out position)) return false;
+        position = position with { AlignmentCoordinate = estimated };
         return true;
     }
 

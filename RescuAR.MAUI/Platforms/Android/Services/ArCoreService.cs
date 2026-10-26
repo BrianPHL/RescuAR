@@ -581,6 +581,8 @@ public sealed partial class ArCoreService : IArCoreService
                 Tag,
                 "STEP 9: Applying ARCore configuration.");
 
+            ConfigureRoadSemantics(session, config);
+
             session.Configure(
                 config);
 
@@ -2030,6 +2032,8 @@ public sealed partial class ArCoreService : IArCoreService
             anchorZ,
             frameMetadata,
             anchorRotation);
+
+        PublishRoadSurface(frame);
 
         /*
          * Start/clear retained-anchor recovery from the ARCore frame cadence

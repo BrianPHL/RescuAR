@@ -29,6 +29,12 @@ if (args.Contains("--mld-guidance"))
     Console.WriteLine($"{passed} MLD guidance ownership regression checks passed.");
     return;
 }
+if (args.Contains("--road-surface"))
+{
+    VisualRoadAlignmentChecks.Run(Check);
+    Console.WriteLine($"{passed} visual road alignment regression checks passed.");
+    return;
+}
 if (args.Contains("--startup-scene"))
 {
     StartupSceneChecks.Run(Check);
@@ -46,6 +52,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance"))
     {
         await MldGuidanceOwnershipChecks.RunAsync(Check);
+        VisualRoadAlignmentChecks.Run(Check);
         ARRegistrationChecks.Run(Check);
         ARMultiDeviceRecoveryChecks.Run(Check);
         NavigationStabilityChecks.Run(Check);
@@ -68,6 +75,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
 }
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
+VisualRoadAlignmentChecks.Run(Check);
 ARMultiDeviceRecoveryChecks.Run(Check);
 NavigationStabilityChecks.Run(Check);
 await ARHeadingRecoveryChecks.RunAsync(Check);
