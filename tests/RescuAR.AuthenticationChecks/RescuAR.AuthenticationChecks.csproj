@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Supabase" Version="1.1.1" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs" Link="SecureSessionPersistence.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationIdentity.cs" Link="AuthenticationIdentity.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationFlowCoordinator.cs" Link="AuthenticationFlowCoordinator.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/ResidentProfileDraft.cs" Link="ResidentProfileDraft.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/AuthenticationFormPolicy.cs" Link="AuthenticationFormPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Authentication/PasswordRecoveryFlow.cs" Link="PasswordRecoveryFlow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/User.cs" Link="User.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ProfileEditingPolicy.cs" Link="ProfileEditingPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/AvatarUpdateFlow.cs" Link="AvatarUpdateFlow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactSaveFlow.cs" Link="ContactSaveFlow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutPolicy.cs" Link="ContactShortcutPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/ContactShortcutStore.cs" Link="ContactShortcutStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Profile/SystemInformationPresentation.cs" Link="SystemInformationPresentation.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/AppSettingsStore.cs" Link="AppSettingsStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/AlarmPlaybackController.cs" Link="AlarmPlaybackController.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Settings/DerivedMapCache.cs" Link="DerivedMapCache.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleMembershipService.cs" Link="CircleMembershipService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/FileCircleMembershipStore.cs" Link="FileCircleMembershipStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CirclePresencePolicy.cs" Link="CirclePresencePolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleMapCoordinator.cs" Link="CircleMapCoordinator.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleChatModels.cs" Link="CircleChatModels.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleChatService.cs" Link="CircleChatService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/FileCircleChatStore.cs" Link="FileCircleChatStore.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/CircleChatWriteRow.cs" Link="CircleChatWriteRow.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportSubmission.cs" Link="ResidentReportSubmission.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Reports/ResidentReportWire.cs" Link="ResidentReportWire.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/CommunityReport.cs" Link="CommunityReport.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapInstaller.cs" Link="OfflineMapInstaller.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineTileArchive.cs" Link="OfflineTileArchive.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapCache.cs" Link="OfflineMapCache.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs" Link="OfflineOverlaySession.cs" />
+  </ItemGroup>
+</Project>

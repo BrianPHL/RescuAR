@@ -259,27 +259,15 @@ namespace RescuAR.App.ViewModels.Authentication
             }
         }
 
-        private void CompletePermissionsFlow()
+        private async void CompletePermissionsFlow()
         {
             Preferences.Default.Set("HasCompletedPermissions", true);
-
-            MainThread.BeginInvokeOnMainThread(() =>
+            try { await AuthenticationNavigation.CompletePermissionsAsync(_serviceProvider); }
+            catch (Exception)
             {
-                if (Application.Current != null)
-                {
-                    var shell = new AppShell();
-                    if (Application.Current.Windows.Count > 0)
-                    {
-                        Application.Current.Windows[0].Page = shell;
-                    }
-                    else
-                    {
-#pragma warning disable CS0618
-                        AuthenticationNavigation.TrySetRootPage(shell);
-#pragma warning restore CS0618
-                    }
-                }
-            });
+                if (AuthenticationNavigation.RootPage is { } page)
+                    await page.DisplayAlert("Sign-in incomplete", "Your account could not be loaded. Reopen the app to retry.", "OK");
+            }
         }
     }
 }

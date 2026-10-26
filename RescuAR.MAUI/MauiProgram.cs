@@ -64,6 +64,8 @@ public static class MauiProgram
 
         // RescuAR authentication service
         builder.Services.AddSingleton<AuthenticationService>();
+        builder.Services.AddSingleton<AuthenticationFlowCoordinator>(_ =>
+            new AuthenticationFlowCoordinator(new MauiAuthenticationFlowSource()));
 
         // Authentication Views + ViewModels
         builder.Services.AddTransient<SplashPage>();

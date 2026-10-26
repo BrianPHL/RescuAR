@@ -18,5 +18,11 @@
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/IdempotentReleaseLease.cs" Link="IdempotentReleaseLease.cs" />
     <Compile Include="../../RescuAR.MAUI/Platforms/Android/Services/ArCameraImportFailurePolicy.cs" Link="ArCameraImportFailurePolicy.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Flood/FloodDepthVisualizationService.cs" Link="FloodDepthVisualizationService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/CameraMapPresentationPolicy.cs" Link="CameraMapPresentationPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/RouteDirectionsService.cs" Link="RouteDirectionsService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Location/LocationReading.cs" Link="LocationReading.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationVoiceGuidanceService.cs" Link="NavigationVoiceGuidanceService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationHapticGuidanceService.cs" Link="NavigationHapticGuidanceService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationFeedbackController.cs" Link="NavigationFeedbackController.cs" />
   </ItemGroup>
 </Project>

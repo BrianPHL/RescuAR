@@ -38,8 +38,8 @@ public class CommunityReportService
                 .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
                 .Get();
 
-            return response.Models?.Where(r => 
-                !string.IsNullOrWhiteSpace(r.Status) && 
+            return response.Models?.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Status) &&
                 r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList() ??
                 new List<CommunityReport>();
         }
@@ -239,109 +239,15 @@ public class CommunityReportService
         }
     }
 
-    public async Task AddReportAsync(CommunityReport report)
+    public Task<ResidentReportReceipt> AddReportAsync(CommunityReport report, ResidentReportScope owner,
+        IncidentPoint point, System.Threading.CancellationToken token = default)
     {
-        if (string.IsNullOrWhiteSpace(report.Id))
-        {
-            report.Id = Guid.NewGuid().ToString();
-        }
-
-        if (string.IsNullOrWhiteSpace(report.Status))
-        {
-            report.Status = "Pending";
-        }
-
-        // New reports are submitted with 'Pending' status for administrator approval.
-        // They will only appear on the public feed once approved by an administrator.
-
-        bool inserted = false;
-        var client = await GetClientAsync() ?? SupabaseService.Instance.Client;
-        if (client != null)
-        {
-            try
-            {
-                await client.From<CommunityReport>().Insert(report);
-                inserted = true;
-                System.Diagnostics.Debug.WriteLine($"Report successfully posted via Supabase Client: {report.Id}");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Supabase AddReportAsync Client Error: {ex.Message}");
-            }
-        }
-
-        // Reliable fallback: Direct HTTP REST post to ensure Admin receives the report even if SDK throws or is uninitialized
-        if (!inserted)
-        {
-            inserted = await InsertViaRestApiAsync(report);
-        }
-
-        if (!inserted)
-        {
-            System.Diagnostics.Debug.WriteLine($"Warning: Remote sync delayed for report {report.Id}. Stored in local collection.");
-        }
-    }
-
-    private async Task<bool> InsertViaRestApiAsync(CommunityReport report)
-    {
-        try
-        {
-            var baseUrl = SupabaseService.Instance.SupabaseUrl;
-            var key = SupabaseService.Instance.SupabaseKey;
-            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(key) ||
-                baseUrl == "https://your-supabase-project.supabase.co" || key == "your-supabase-anon-key")
-            {
-                baseUrl = SupabaseService.PlaceholderUrl;
-                key = SupabaseService.PlaceholderKey;
-            }
-
-            var endpoint = baseUrl.TrimEnd('/') + "/rest/v1/community_reports";
-
-            using var httpClient = new System.Net.Http.HttpClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
-            httpClient.DefaultRequestHeaders.Add("apikey", key);
-            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
-            httpClient.DefaultRequestHeaders.Add("Prefer", "return=representation");
-
-            var payload = new
-            {
-                id = report.Id,
-                title = report.Title ?? "",
-                description = report.Description ?? "",
-                address = report.Address ?? "",
-                latitude = report.Latitude != 0 ? report.Latitude : 14.6585,
-                longitude = report.Longitude != 0 ? report.Longitude : 121.0955,
-                posted_by = report.PostedBy ?? "Anonymous Resident",
-                category = report.Category ?? "Flood Warning",
-                severity = report.Severity ?? "Medium",
-                status = report.Status ?? "Pending",
-                created_at = report.CreatedAt.ToString("o"),
-                media_url = report.MediaUrl ?? "",
-                like_count = report.LikeCount,
-                comments_json = report.CommentsJson ?? "[]"
-            };
-
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-            using var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-            var response = await httpClient.PostAsync(endpoint, content);
-            if (response.IsSuccessStatusCode)
-            {
-                System.Diagnostics.Debug.WriteLine($"Report successfully posted via Supabase REST API: {report.Id}");
-                return true;
-            }
-            else
-            {
-                var errBody = await response.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"Supabase REST API Error {response.StatusCode}: {errBody}");
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"InsertViaRestApiAsync Exception: {ex.Message}");
-        }
-
-        return false;
+        if (report.Latitude != point.Latitude || report.Longitude != point.Longitude)
+            throw new ResidentReportInputException("Review the selected incident point before submitting.");
+        var created = report.CreatedAt.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(report.CreatedAt, DateTimeKind.Utc) : report.CreatedAt.ToUniversalTime();
+        var payload = new ResidentReportPayload(report.Id, report.Title, report.Description, report.Category, report.Address,
+            point, report.PostedBy, report.Severity, report.MediaUrl ?? "", new DateTimeOffset(created));
+        return ResidentReportRuntime.Submission.SubmitAsync(owner, payload, token);
     }
 
     public async Task AddCommentAsync(string reportId, string content, string authorName, string userId = "")
@@ -432,7 +338,7 @@ public class CommunityReportService
         // Apply fallback if author name is missing, placeholder "User", or unresolved GUID
         foreach (var c in commentList)
         {
-            if (string.IsNullOrWhiteSpace(c.AuthorName) 
+            if (string.IsNullOrWhiteSpace(c.AuthorName)
                 || string.Equals(c.AuthorName.Trim(), "User", StringComparison.OrdinalIgnoreCase)
                 || Guid.TryParse(c.AuthorName.Trim(), out _))
             {

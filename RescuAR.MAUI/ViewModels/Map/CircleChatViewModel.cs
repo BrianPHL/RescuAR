@@ -1,459 +1,249 @@
-using System;
 using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Controls;
-using Microsoft.Maui.Media;
-using Microsoft.Maui.Storage;
-using RescuAR.App.Models;
-using RescuAR.App.Services.Cloud;
+using RescuAR.App.Services.SafetyCircle;
 
 namespace RescuAR.App.ViewModels.Map;
 
-public class ChatMessageItem
+public sealed class ChatMessageItem(CircleChatMessage message, CircleChatScope scope)
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string UserId { get; set; } = string.Empty;
-    public string SenderName { get; set; } = string.Empty;
-    public string SenderAvatarUrl { get; set; } = string.Empty;
-    public string SenderInitials
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(SenderName)) return "?";
-            var parts = SenderName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 1) return parts[0].Substring(0, Math.Min(2, parts[0].Length)).ToUpper();
-            return $"{parts[0][0]}{parts[parts.Length - 1][0]}".ToUpper();
-        }
-    }
-    public string MessageText { get; set; } = string.Empty;
-    public string MediaUrl { get; set; } = string.Empty;
-    public string MediaType { get; set; } = "Text";
-    public bool HasMedia => !string.IsNullOrWhiteSpace(MediaUrl);
-    public bool IsImage => HasMedia && MediaType.Equals("Image", StringComparison.OrdinalIgnoreCase);
-    public bool IsVideo => HasMedia && MediaType.Equals("Video", StringComparison.OrdinalIgnoreCase);
-    public bool HasText => !string.IsNullOrWhiteSpace(MessageText);
-    public bool IsMyMessage { get; set; } = true;
+    public CircleChatMessage Message { get; } = message;
+    public string Id => Message.Id;
+    public string SenderName => Message.SenderName;
+    public string SenderAvatarUrl => CirclePresencePolicy.SafeAvatar(Message.AvatarUrl);
+    public string SenderInitials => string.Concat(SenderName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
+    public string MessageText => Message.Text;
+    public string MediaUrl => Message.LocalMedia is { } file && CircleChatRuntime.Files.Owns(scope, file) && File.Exists(file.Path) ? file.Path : Message.MediaUrl;
+    public bool HasMedia => MediaUrl.Length > 0;
+    public bool IsImage => HasMedia && Message.MediaType == "Image";
+    public bool IsVideo => HasMedia && Message.MediaType == "Video";
+    public bool HasText => MessageText.Length > 0;
+    public bool IsMyMessage => Message.UserId == scope.Account.UserId;
     public bool IsNotMyMessage => !IsMyMessage;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public string FormattedTime => CreatedAt.ToLocalTime().ToString("h:mm tt");
+    public bool CanRetry => IsMyMessage && Message.Delivery != ChatDelivery.Sent;
+    public string DeliveryText => Message.Delivery switch { ChatDelivery.Sent => "Sent to server", ChatDelivery.Failed => "Failed · Retry", _ => "Pending · Retry when online" };
+    public string FormattedTime => Message.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm");
 }
 
-[QueryProperty(nameof(CircleId), "circleId")]
-[QueryProperty(nameof(CircleName), "circleName")]
-public partial class CircleChatViewModel : ObservableObject
+public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
 {
-    private readonly SafetyCircleService _safetyCircleService;
-    private IDispatcherTimer? _chatTimer;
-    private string _currentUserId = string.Empty;
-
-    public event Action<ChatMessageItem>? MessageAdded;
-
-    [ObservableProperty]
-    private string circleId = string.Empty;
-
-    [ObservableProperty]
-    private string circleName = "Family Circle";
-
-    [ObservableProperty]
-    private string groupAvatarUrl = string.Empty;
-
-    [ObservableProperty]
-    private bool hasGroupAvatar = false;
-
-    public bool HasNoGroupAvatar => !HasGroupAvatar;
-
-    [ObservableProperty]
-    private string inviteCode = string.Empty;
-
-    [ObservableProperty]
-    private string memberCountText = "Family Updates";
-
-    [ObservableProperty]
-    private string newMessageText = string.Empty;
-
-    [ObservableProperty]
-    private bool isUploading = false;
-
-    [ObservableProperty]
-    private string uploadStatusText = string.Empty;
-
+    private readonly CircleChatService chat = CircleChatRuntime.Current;
+    private readonly CircleMembershipService memberships = CircleMembershipRuntime.Current;
+    private readonly IDispatcherTimer timer;
+    private readonly Dictionary<CircleChatScope, string> composerDrafts = new();
+    private CircleChatScope? scope;
+    private CancellationTokenSource? lifetime;
+    private CancellationTokenSource? network;
+    private ChatFile? attachment;
+    private string requestedId = "";
+    private long version;
+    private int externalInteraction;
     public ObservableCollection<ChatMessageItem> Messages { get; } = new();
+    public ObservableCollection<CircleMembership> MyCircles { get; } = new();
+    public event Action<ChatMessageItem>? MessageAdded;
+    [ObservableProperty] private string circleName = "Circle chat";
+    [ObservableProperty] private string inviteCode = "";
+    [ObservableProperty] private string memberCountText = "";
+    [ObservableProperty] private string groupAvatarUrl = "";
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasNoGroupAvatar))] private bool hasGroupAvatar;
+    [ObservableProperty] private string newMessageText = "";
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsNotBusy), nameof(CanSend))] private bool isBusy;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanSend))] private bool isReady;
+    [ObservableProperty] private bool isCirclePickerOpen;
+    [ObservableProperty] private string statusMessage = "";
+    [ObservableProperty] private bool hasAttachment;
+    [ObservableProperty] private bool isAttachmentImage;
+    [ObservableProperty] private bool isAttachmentVideo;
+    [ObservableProperty] private string attachmentPath = "";
+    [ObservableProperty] private string attachmentDetails = "";
+    public bool HasNoGroupAvatar => !HasGroupAvatar;
+    public bool IsNotBusy => !IsBusy;
+    public bool CanSend => IsReady && !IsBusy;
+    public bool HasExternalInteraction => externalInteraction > 0;
 
-    public CircleChatViewModel(SafetyCircleService safetyCircleService)
+    public CircleChatViewModel()
     {
-        _safetyCircleService = safetyCircleService;
-        RefreshCurrentUserId();
-
-        _chatTimer = Application.Current?.Dispatcher?.CreateTimer();
-        if (_chatTimer != null)
-        {
-            _chatTimer.Interval = TimeSpan.FromSeconds(3);
-            _chatTimer.Tick += async (s, e) => await RefreshMessagesSilentAsync();
-        }
+        timer = Application.Current?.Dispatcher?.CreateTimer() ?? throw new InvalidOperationException("A page dispatcher is required.");
+        timer.Interval = TimeSpan.FromSeconds(5);
+        timer.Tick += async (_, _) => await RefreshAsync();
     }
-
-    private void RefreshCurrentUserId()
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
     {
+        if (query.TryGetValue("circleId", out var value)) requestedId = value?.ToString() ?? "";
+    }
+    private void Require(CircleChatScope owner, long request)
+    {
+        if (lifetime is null || lifetime.IsCancellationRequested || request != version || scope != owner) throw new OperationCanceledException();
+        chat.Require(owner);
+    }
+    public async Task StartAsync()
+    {
+        Stop(); long request = version;
         try
         {
-            _currentUserId = _safetyCircleService.GetCurrentUserId();
+            var account = memberships.Capture();
+            lifetime = new(); network = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            IsBusy = true; StatusMessage = "Checking Circle membership…";
+            var circles = await memberships.LoadAsync(account).WaitAsync(network.Token);
+            if (request != version) return;
+            memberships.Require(account);
+            string id = requestedId.Length > 0 ? requestedId : circles.SelectedId;
+            var selected = circles.Circles.FirstOrDefault(circle => circle.Id == id) ?? throw new UnauthorizedAccessException("This Circle is unavailable to your account.");
+            scope = chat.Capture(id); requestedId = id;
+            foreach (var circle in circles.Circles) MyCircles.Add(circle);
+            CircleName = selected.Name; InviteCode = selected.InviteCode;
+            MemberCountText = circles.IsCached ? "Cached Circle · photo is local" : "Circle members · photo is local";
+            NewMessageText = composerDrafts.GetValueOrDefault(scope.Value, "");
+            var snapshot = await chat.LoadAsync(scope.Value, network.Token);
+            Require(scope.Value, request); Present(snapshot); IsReady = true;
+            timer.Start();
         }
-        catch
-        {
-            _currentUserId = string.Empty;
-        }
+        catch (Exception error) { if (request == version) Failure(error); }
+        finally { if (request == version) IsBusy = false; }
     }
-
-    partial void OnCircleIdChanged(string value)
+    public void Suspend() { timer.Stop(); network?.Cancel(); }
+    public async Task ResumeAsync()
     {
-        if (!string.IsNullOrEmpty(value))
-        {
-            RefreshCurrentUserId();
-            _ = LoadCircleDetailsAndMessagesAsync();
-            _chatTimer?.Start();
-        }
+        if (lifetime is null || lifetime.IsCancellationRequested || HasExternalInteraction) return;
+        network?.Dispose(); network = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        timer.Start(); await RefreshAsync();
     }
-
-    public async Task InitializeWithCircleAsync(string id, string name)
+    public void Stop()
     {
-        CircleId = id;
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            CircleName = name;
-        }
-
-        RefreshCurrentUserId();
-        await LoadCircleDetailsAndMessagesAsync();
-        _chatTimer?.Start();
+        if (scope is { } old) composerDrafts[old] = NewMessageText;
+        Interlocked.Increment(ref version); timer.Stop(); network?.Cancel(); network?.Dispose(); network = null;
+        lifetime?.Cancel(); lifetime?.Dispose(); lifetime = null; scope = null;
+        Messages.Clear(); MyCircles.Clear(); NewMessageText = ""; GroupAvatarUrl = ""; HasGroupAvatar = false;
+        attachment = null; HasAttachment = IsAttachmentImage = IsAttachmentVideo = false; AttachmentPath = AttachmentDetails = "";
+        IsReady = false; IsBusy = false; IsCirclePickerOpen = false; StatusMessage = "";
     }
-
-    public void StopTimer()
+    private void Present(CircleChatSnapshot snapshot)
     {
-        _chatTimer?.Stop();
+        if (scope is not { } owner) return;
+        chat.Require(owner);
+        string priorLast = Messages.LastOrDefault()?.Id ?? "";
+        Messages.Clear(); foreach (var item in snapshot.State.Messages) Messages.Add(new(item, owner));
+        attachment = snapshot.State.Attachment; HasAttachment = attachment is not null;
+        AttachmentPath = attachment?.Path ?? ""; IsAttachmentImage = attachment?.Kind == "Image"; IsAttachmentVideo = attachment?.Kind == "Video";
+        AttachmentDetails = attachment is null ? "" : $"{attachment.Name} · {attachment.Kind} · {attachment.Bytes / 1024.0:F1} KB · not uploaded";
+        var photo = snapshot.State.LocalPhoto;
+        HasGroupAvatar = photo is not null && CircleChatRuntime.Files.Owns(owner, photo) && File.Exists(photo.Path);
+        GroupAvatarUrl = HasGroupAvatar ? photo!.Path : "";
+        StatusMessage = snapshot.Notice;
+        if (Messages.LastOrDefault() is { } last && last.Id != priorLast) MessageAdded?.Invoke(last);
     }
-
-    public async Task LoadCircleDetailsAndMessagesAsync()
+    private void Failure(Exception error)
     {
-        if (string.IsNullOrEmpty(CircleId)) return;
-
-        try
+        if (error is UnauthorizedAccessException or InvalidDataException)
+        { Messages.Clear(); IsReady = false; StatusMessage = "Circle access or message data could not be confirmed. Reopen after checking membership."; }
+        else if (error is OperationCanceledException)
         {
-            // Load circle metadata (group avatar, invite code, members count)
-            var circles = await _safetyCircleService.GetMyCirclesAsync();
-            var circle = circles.FirstOrDefault(c => c.Id == CircleId);
-            if (circle != null)
-            {
-                InviteCode = circle.InviteCode;
-                CircleName = circle.Name;
-            }
-
-            var members = await _safetyCircleService.GetCircleMembersAsync(CircleId);
-            if (members != null && members.Count > 0)
-            {
-                MemberCountText = $"{members.Count} {(members.Count == 1 ? "Member" : "Members")} Online";
-            }
-
-            // Load saved group photo from preferences if exists
-            var savedGroupPhoto = Preferences.Default.Get($"circle_avatar_{CircleId}", string.Empty);
-            if (!string.IsNullOrWhiteSpace(savedGroupPhoto))
-            {
-                GroupAvatarUrl = savedGroupPhoto;
-                HasGroupAvatar = true;
-            }
+            bool current = scope is { } owner;
+            if (current) { try { chat.Require(scope!.Value); } catch { current = false; } }
+            if (!current) { Stop(); StatusMessage = "Your account or Circle changed. Reopen chat."; }
+            else StatusMessage = "Request paused. Saved pending messages remain available for explicit Retry.";
         }
-        catch { }
-
-        await LoadMessagesAsync();
+        else if (error is CircleChatInputException) StatusMessage = error.Message;
+        else StatusMessage = "Chat or local storage could not complete the request. Drafts and unconfirmed messages have not been marked Sent.";
     }
-
-    public async Task LoadMessagesAsync()
+    private async Task Run(Func<CircleChatScope, CancellationToken, Task<CircleChatSnapshot>> operation)
     {
-        if (string.IsNullOrEmpty(CircleId)) return;
-
-        try
-        {
-            RefreshCurrentUserId();
-            var rawMsgs = await _safetyCircleService.GetCircleMessagesAsync(CircleId);
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                UpdateMessagesCollection(rawMsgs);
-            });
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"LoadMessages error: {ex.Message}");
-        }
+        if (scope is not { } owner || network is null || IsBusy || !IsReady) return;
+        long request = version; var token = network.Token; IsBusy = true;
+        try { Require(owner, request); var result = await operation(owner, token); Require(owner, request); Present(result); }
+        catch (Exception error) { if (request == version) Failure(error); }
+        finally { if (request == version) IsBusy = false; }
     }
-
-    private async Task RefreshMessagesSilentAsync()
+    private Task RefreshAsync() => Run((owner, token) => chat.LoadAsync(owner, token));
+    [RelayCommand] private Task RefreshMessages() => RefreshAsync();
+    [RelayCommand] private Task SendMessage()
     {
-        if (string.IsNullOrEmpty(CircleId)) return;
-
-        try
+        if (!CanSend || scope is not { } owner || (string.IsNullOrWhiteSpace(NewMessageText) && attachment is null)) return Task.CompletedTask;
+        string text = NewMessageText; string? path = attachment?.Path; long request = version;
+        return Run((captured, token) =>
         {
-            var rawMsgs = await _safetyCircleService.GetCircleMessagesAsync(CircleId);
-            if (rawMsgs.Count != Messages.Count)
-            {
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    UpdateMessagesCollection(rawMsgs);
-                });
-            }
-        }
-        catch { }
-    }
-
-    private void UpdateMessagesCollection(System.Collections.Generic.List<SupabaseCircleMessage> rawMsgs)
-    {
-        RefreshCurrentUserId();
-        Messages.Clear();
-        foreach (var m in rawMsgs)
-        {
-            bool isMine = !string.IsNullOrEmpty(_currentUserId) ? (m.UserId == _currentUserId) : true;
-            Messages.Add(new ChatMessageItem
-            {
-                Id = m.Id,
-                UserId = m.UserId,
-                SenderName = !string.IsNullOrWhiteSpace(m.SenderName) ? m.SenderName : "Family Member",
-                SenderAvatarUrl = m.SenderAvatarUrl,
-                MessageText = m.MessageText,
-                MediaUrl = m.MediaUrl,
-                MediaType = m.MediaType,
-                IsMyMessage = isMine,
-                CreatedAt = m.CreatedAt
-            });
-        }
-    }
-
-    [RelayCommand]
-    private async Task SendMessageAsync()
-    {
-        if (string.IsNullOrWhiteSpace(NewMessageText)) return;
-
-        var textToSend = NewMessageText.Trim();
-        NewMessageText = string.Empty;
-
-        RefreshCurrentUserId();
-
-        // Optimistic display immediately
-        var localItem = new ChatMessageItem
-        {
-            Id = Guid.NewGuid().ToString(),
-            UserId = _currentUserId,
-            SenderName = "Me",
-            MessageText = textToSend,
-            MediaType = "Text",
-            IsMyMessage = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            Messages.Add(localItem);
-            MessageAdded?.Invoke(localItem);
+            var sender = CircleChatRuntime.Sender(captured);
+            return chat.SendAsync(captured, text, path, sender.Name, sender.Avatar, pending =>
+            { if (request == version && scope == captured) { Present(pending); NewMessageText = ""; } }, token);
         });
-
-        // Send to cloud
-        if (!string.IsNullOrEmpty(CircleId))
-        {
-            _ = Task.Run(async () =>
-            {
-                await _safetyCircleService.SendMessageAsync(CircleId, textToSend, null, "Text");
-            });
-        }
     }
-
-    [RelayCommand]
-    private async Task CapturePhotoAsync()
+    [RelayCommand] private Task RetryMessage(ChatMessageItem message) => message is not null && message.CanRetry && Messages.Contains(message)
+        ? Run((owner, token) => chat.RetryAsync(owner, message.Id, token)) : Task.CompletedTask;
+    [RelayCommand] private void QuickChat(string text) { if (CanSend && !string.IsNullOrWhiteSpace(text)) NewMessageText = text; }
+    [RelayCommand] private void ToggleCirclePicker() => IsCirclePickerOpen = !IsCirclePickerOpen;
+    [RelayCommand] private async Task SwitchCircle(CircleMembership circle)
     {
+        if (!CanSend || scope is not { } owner || lifetime is null || circle is null) return;
+        long request = version; IsBusy = true;
         try
         {
-            var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
-            if (status != PermissionStatus.Granted)
-            {
-                status = await Permissions.RequestAsync<Permissions.Camera>();
-            }
-
-            if (status != PermissionStatus.Granted)
-            {
-                if (Shell.Current != null)
-                    await Shell.Current.DisplayAlert("Permission Denied", "Camera permission is required to capture status photos.", "OK");
-                return;
-            }
-
-            if (!MediaPicker.Default.IsCaptureSupported)
-            {
-                if (Shell.Current != null)
-                    await Shell.Current.DisplayAlert("Unavailable", "Camera capture is not supported on this device.", "OK");
-                return;
-            }
-
-            var photo = await MediaPicker.Default.CapturePhotoAsync();
-            if (photo != null)
-            {
-                await UploadAndSendMediaAsync(photo, "Image");
-            }
+            await memberships.SelectAsync(owner.Account, circle.Id).WaitAsync(lifetime.Token); Require(owner, request);
+            requestedId = circle.Id; await StartAsync();
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"CapturePhoto error: {ex.Message}");
-        }
+        catch (Exception error) { if (request == version) { Failure(error); IsBusy = false; } }
     }
-
-    [RelayCommand]
-    private async Task PickMediaAsync()
+    [RelayCommand] private Task CancelAttachment() => Run((owner, token) => chat.SetAttachmentAsync(owner, null, token));
+    [RelayCommand] private Task PickGroupPhoto() => PickAsync("LocalPhoto");
+    [RelayCommand] private async Task PickMedia()
     {
+        if (!CanSend || scope is not { } owner || Shell.Current is null) return;
+        long request = version;
         try
         {
-            var file = await MediaPicker.Default.PickPhotoAsync();
-            if (file != null)
-            {
-                await UploadAndSendMediaAsync(file, "Image");
-            }
+            string? choice = await Shell.Current.DisplayActionSheet("Choose attachment (photo 10 MB / video 50 MB)", "Cancel", null, "Photo", "Video", "Camera");
+            Require(owner, request);
+            if (choice is "Photo" or "Video" or "Camera") await PickAsync(choice);
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"PickMedia error: {ex.Message}");
-        }
+        catch (Exception error) { if (request == version) Failure(error); }
     }
-
-    [RelayCommand]
-    private async Task PickVideoAsync()
+    private async Task PickAsync(string choice)
     {
+        if (!CanSend || scope is not { } owner || lifetime is null) return;
+        long request = version; var token = lifetime.Token; IsBusy = true; externalInteraction++;
         try
         {
-            var file = await MediaPicker.Default.PickVideoAsync();
-            if (file != null)
-            {
-                await UploadAndSendMediaAsync(file, "Video");
-            }
+            Require(owner, request);
+            if (choice == "Camera" && await Permissions.RequestAsync<Permissions.Camera>() != PermissionStatus.Granted)
+            { StatusMessage = "Camera permission was not granted. Nothing was selected or uploaded."; return; }
+            FileResult? file = choice == "Video" ? await MediaPicker.Default.PickVideoAsync()
+                : choice == "Camera" ? await MediaPicker.Default.CapturePhotoAsync() : await MediaPicker.Default.PickPhotoAsync();
+            Require(owner, request); if (file is null) return;
+            string kind = choice == "LocalPhoto" ? "LocalPhoto" : choice == "Video" ? "Video" : "Image";
+            var local = await CircleChatRuntime.ImportAsync(owner, file, kind, token); Require(owner, request);
+            var result = kind == "LocalPhoto" ? await chat.SetLocalPhotoAsync(owner, local, token) : await chat.SetAttachmentAsync(owner, local, token);
+            Require(owner, request); Present(result);
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"PickVideo error: {ex.Message}");
-        }
+        catch (Exception error) { if (request == version) Failure(error); }
+        finally { externalInteraction--; if (request == version) { IsBusy = false; await ResumeAsync(); } }
     }
-
-    [RelayCommand]
-    private async Task PickGroupPhotoAsync()
+    [RelayCommand] private async Task PreviewAttachment()
     {
+        if (scope is not { } owner || attachment is not { } file || !CircleChatRuntime.Files.Owns(owner, file)) return;
+        long request = version;
+        try { chat.Require(owner); externalInteraction++; await Launcher.Default.OpenAsync(new OpenFileRequest("Preview attachment", new ReadOnlyFile(file.Path))); }
+        catch { if (request == version) StatusMessage = "This attachment could not be previewed by the device. Nothing was uploaded."; }
+        finally { externalInteraction--; if (request == version) await ResumeAsync(); }
+    }
+    [RelayCommand] private async Task OpenMedia(ChatMessageItem message)
+    {
+        if (scope is not { } owner || message is null || !Messages.Contains(message) || !message.HasMedia) return;
+        long request = version;
         try
         {
-            var file = await MediaPicker.Default.PickPhotoAsync();
-            if (file != null)
-            {
-                IsUploading = true;
-                UploadStatusText = "Updating group photo...";
-
-                using var stream = await file.OpenReadAsync();
-                var uploadedUrl = await CloudinaryService.UploadImageStreamAsync(stream, file.FileName);
-
-                if (!string.IsNullOrWhiteSpace(uploadedUrl))
-                {
-                    GroupAvatarUrl = uploadedUrl;
-                    HasGroupAvatar = true;
-                    Preferences.Default.Set($"circle_avatar_{CircleId}", uploadedUrl);
-
-                    if (Shell.Current != null)
-                        await Shell.Current.DisplayAlert("Group Photo Updated", "The Safety Circle group photo has been updated!", "OK");
-                }
-            }
+            chat.Require(owner); externalInteraction++;
+            if (message.Message.LocalMedia is { } file && CircleChatRuntime.Files.Owns(owner, file) && File.Exists(file.Path))
+                await Launcher.Default.OpenAsync(new OpenFileRequest("Open attachment", new ReadOnlyFile(file.Path)));
+            else if (CirclePresencePolicy.SafeAvatar(message.MediaUrl).Length > 0) await Launcher.Default.OpenAsync(new Uri(message.MediaUrl));
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"PickGroupPhoto error: {ex.Message}");
-        }
-        finally
-        {
-            IsUploading = false;
-            UploadStatusText = string.Empty;
-        }
+        catch { if (request == version) StatusMessage = "The device could not open this media."; }
+        finally { externalInteraction--; if (request == version) await ResumeAsync(); }
     }
-
-    [RelayCommand]
-    private async Task CopyInviteCodeAsync()
+    [RelayCommand] private async Task CopyInviteCode()
     {
-        if (string.IsNullOrWhiteSpace(InviteCode)) return;
-
-        await Clipboard.Default.SetTextAsync(InviteCode);
-        if (Shell.Current != null)
-        {
-            await Shell.Current.DisplayAlert("Copied to Clipboard!", $"Invite Code: {InviteCode}\nShare this with family members so they can join and chat with you.", "OK");
-        }
+        if (scope is not { } owner || InviteCode.Length == 0) return;
+        long request = version;
+        try { Require(owner, request); await Clipboard.Default.SetTextAsync(InviteCode); Require(owner, request); StatusMessage = "Invite code copied."; }
+        catch { if (request == version) StatusMessage = "The invite code could not be copied."; }
     }
-
-    private async Task UploadAndSendMediaAsync(FileResult file, string mediaType)
-    {
-        IsUploading = true;
-        UploadStatusText = $"Uploading {mediaType.ToLower()}...";
-
-        try
-        {
-            using var stream = await file.OpenReadAsync();
-            var uploadedUrl = await CloudinaryService.UploadImageStreamAsync(stream, file.FileName);
-
-            if (!string.IsNullOrWhiteSpace(uploadedUrl))
-            {
-                var caption = !string.IsNullOrWhiteSpace(NewMessageText) ? NewMessageText.Trim() : string.Empty;
-                NewMessageText = string.Empty;
-
-                RefreshCurrentUserId();
-
-                var localItem = new ChatMessageItem
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    UserId = _currentUserId,
-                    SenderName = "Me",
-                    MessageText = caption,
-                    MediaUrl = uploadedUrl,
-                    MediaType = mediaType,
-                    IsMyMessage = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    Messages.Add(localItem);
-                    MessageAdded?.Invoke(localItem);
-                });
-
-                if (!string.IsNullOrEmpty(CircleId))
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        await _safetyCircleService.SendMessageAsync(CircleId, caption, uploadedUrl, mediaType);
-                    });
-                }
-            }
-            else
-            {
-                if (Shell.Current != null)
-                    await Shell.Current.DisplayAlert("Upload Failed", "Could not upload the media. Please try again.", "OK");
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"UploadAndSendMedia error: {ex.Message}");
-        }
-        finally
-        {
-            IsUploading = false;
-            UploadStatusText = string.Empty;
-        }
-    }
-
-    [RelayCommand]
-    private async Task BackAsync()
-    {
-        StopTimer();
-        if (Shell.Current != null)
-        {
-            await Shell.Current.GoToAsync("..");
-        }
-    }
+    [RelayCommand] private async Task Back() { if (Shell.Current is not null) await Shell.Current.GoToAsync(".."); }
 }

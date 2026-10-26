@@ -19,6 +19,22 @@ namespace RescuAR.App.ViewModels.Authentication
         private readonly AuthenticationService _authService;
 
         [ObservableProperty]
+        private int _currentStep = 1;
+        public bool IsStep1 => CurrentStep == 1;
+        public bool IsStep2 => CurrentStep == 2;
+        public static DateTime TodayDate => DateTime.Today;
+        public IReadOnlyList<string> MarikinaBarangays => AuthenticationFormPolicy.MarikinaBarangays;
+        partial void OnCurrentStepChanged(int value)
+        {
+            OnPropertyChanged(nameof(IsStep1));
+            OnPropertyChanged(nameof(IsStep2));
+        }
+        [ObservableProperty] private DateTime _birthday = DateTime.Today.AddYears(-20);
+        [ObservableProperty] private string _houseNumber = string.Empty;
+        [ObservableProperty] private string _streetName = string.Empty;
+        [ObservableProperty] private string _selectedBarangay = "Malanday";
+
+        [ObservableProperty]
         private string _firstName = string.Empty;
 
         [ObservableProperty]
@@ -54,10 +70,10 @@ namespace RescuAR.App.ViewModels.Authentication
         partial void OnPasswordChanged(string value)
         {
             if (value == null) value = string.Empty;
-            HasMinLength = value.Length >= 10;
-            HasSpecialChar = Regex.IsMatch(value, @"[!@#$%^&*()]");
-            HasDigit = Regex.IsMatch(value, @"\d");
-            HasUpperCase = Regex.IsMatch(value, @"[A-Z]");
+            HasMinLength = value.Length >= AuthenticationFormPolicy.MinimumPasswordLength;
+            HasSpecialChar = AuthenticationFormPolicy.HasSpecialCharacter(value);
+            HasDigit = AuthenticationFormPolicy.HasDigit(value);
+            HasUpperCase = AuthenticationFormPolicy.HasUppercase(value);
         }
 
         [ObservableProperty]
@@ -124,6 +140,35 @@ namespace RescuAR.App.ViewModels.Authentication
             IsConfirmPasswordVisible = !IsConfirmPasswordVisible;
         }
 
+        private Models.ResidentProfileDraft BuildDraft() => new()
+        {
+            Email = Email?.Trim() ?? string.Empty,
+            FirstName = FirstName?.Trim() ?? string.Empty,
+            MiddleName = MiddleName?.Trim() ?? string.Empty,
+            LastName = LastName?.Trim() ?? string.Empty,
+            PhoneNumber = ContactNumber?.Trim() ?? string.Empty,
+            Birthday = Birthday.Date,
+            HouseNumber = HouseNumber?.Trim() ?? string.Empty,
+            StreetName = StreetName?.Trim() ?? string.Empty,
+            Barangay = SelectedBarangay ?? string.Empty
+        };
+
+        [RelayCommand]
+        private async Task ProceedToStep2()
+        {
+            if (AuthenticationFormPolicy.ResidentError(BuildDraft(), TodayDate) is { } error)
+            {
+                await ShowErrorAsync(error);
+                return;
+            }
+            ErrorMessage = string.Empty;
+            OnPropertyChanged(nameof(HasError));
+            CurrentStep = 2;
+        }
+
+        [RelayCommand]
+        private void BackToStep1() => CurrentStep = 1;
+
         [RelayCommand]
         private async Task CreateAccount()
         {
@@ -131,6 +176,14 @@ namespace RescuAR.App.ViewModels.Authentication
 
             ErrorMessage = string.Empty;
             OnPropertyChanged(nameof(HasError));
+
+            var draft = BuildDraft();
+            if (AuthenticationFormPolicy.ResidentError(draft, TodayDate) is { } residentError)
+            {
+                CurrentStep = 1;
+                await ShowErrorAsync(residentError);
+                return;
+            }
 
             // Validate Fields
             if (string.IsNullOrWhiteSpace(FirstName))
@@ -191,26 +244,28 @@ namespace RescuAR.App.ViewModels.Authentication
             try
             {
                 // Register via Supabase
-                var session = await _authService.SignUpWithEmailAsync(Email.Trim(), Password, FirstName.Trim(), LastName.Trim(), string.IsNullOrWhiteSpace(MiddleName) ? null : MiddleName.Trim(), ContactNumber.Trim());
+                var session = await _authService.SignUpWithEmailAsync(draft.Email, Password, draft.FirstName, draft.LastName, string.IsNullOrWhiteSpace(draft.MiddleName) ? null : draft.MiddleName, draft.PhoneNumber, draft);
 
-                MainThread.BeginInvokeOnMainThread(async () =>
+                if (!string.IsNullOrWhiteSpace(session.AccessToken) && !string.IsNullOrWhiteSpace(session.User?.Id))
                 {
-                    // If email confirmation is disabled in Supabase, the user is logged in immediately
-                    if (session != null && !string.IsNullOrEmpty(session.AccessToken))
+                    if (!string.Equals(session.User.Email, draft.Email, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("The verified email does not match this registration.");
+                    await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider, session.User.Id);
+                }
+                else
+                {
+                    await MainThread.InvokeOnMainThreadAsync(async () =>
                     {
-                        if (Application.Current != null)
+                        if (AuthenticationNavigation.RootPage is NavigationPage navPage)
                         {
-                            AuthenticationNavigation.TrySetRootPage(new AppShell());
+                            var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
+                            var verification = (OtpVerificationViewModel)otpPage.BindingContext;
+                            verification.Email = draft.Email;
+                            verification.Draft = draft;
+                            await navPage.PushAsync(otpPage);
                         }
-                    }
-                    else if (AuthenticationNavigation.RootPage is NavigationPage navPage)
-                    {
-                        var otpPage = _serviceProvider.GetRequiredService<OtpVerificationPage>();
-                        var vm = (OtpVerificationViewModel)otpPage.BindingContext;
-                        vm.Email = Email.Trim();
-                        await navPage.PushAsync(otpPage);
-                    }
-                });
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -227,7 +282,7 @@ namespace RescuAR.App.ViewModels.Authentication
                     }
                     catch { }
                 }
-                
+
                 string finalError = msg ?? "An error occurred during registration. Please try again.";
                 await ShowErrorAsync(finalError);
             }
@@ -237,11 +292,19 @@ namespace RescuAR.App.ViewModels.Authentication
             }
         }
 
+        [RelayCommand]
+        private void GoogleSignUp()
+        {
+            if (IsLoading) return;
+            var googleAuthPage = _serviceProvider.GetRequiredService<GoogleAuthPage>();
+            MainThread.BeginInvokeOnMainThread(() => AuthenticationNavigation.TrySetRootPage(googleAuthPage));
+        }
+
         private async Task ShowErrorAsync(string message)
         {
             ErrorMessage = message;
             OnPropertyChanged(nameof(HasError));
-            
+
             if (AuthenticationNavigation.RootPage != null)
             {
                 await AuthenticationNavigation.RootPage!.DisplayAlert("Registration Error", message, "OK");
@@ -251,6 +314,7 @@ namespace RescuAR.App.ViewModels.Authentication
         [RelayCommand]
         private void Back()
         {
+            if (CurrentStep == 2) { CurrentStep = 1; return; }
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 if (AuthenticationNavigation.RootPage is NavigationPage navPage)

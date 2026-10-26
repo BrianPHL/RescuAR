@@ -39,187 +39,21 @@ namespace RescuAR.App.ViewModels.Profile
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
             {
-                SelectedAdvisory = newAdvisory;
-                IsPopupVisible = true;
+                if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+                {
+                    SelectedAdvisory = newAdvisory;
+                    IsPopupVisible = true;
+                }
             };
+            RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+            {
+                if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                    !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                    MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+            });
         }
 
-        private async Task LoadUserProfileAsync()
-        {
-            try
-            {
-                var client = RescuAR.Services.SupabaseService.Instance.Client;
-                if (client != null && client.Auth.CurrentSession != null)
-                {
-                    var authUser = client.Auth.CurrentSession.User;
-                    var authUserId = authUser?.Id;
-                    if (authUser == null || string.IsNullOrWhiteSpace(authUserId))
-                    {
-                        return;
-                    }
-
-                    Models.User? dbUser = null;
-
-                    try
-                    {
-                        // Try to get the user from the custom User table
-                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUserId).Single();
-                    }
-                    catch { } // Ignore if not found, we will use Auth metadata
-
-                    if (dbUser != null)
-                    {
-                        CurrentUser = dbUser;
-                    }
-                    else
-                    {
-                        // Fallback to extracting from the Auth session metadata
-                        var user = new Models.User
-                        {
-                            Id = authUserId,
-                            Email = authUser.Email ?? string.Empty
-                        };
-
-                        if (authUser.UserMetadata != null)
-                        {
-                            if (authUser.UserMetadata.TryGetValue("first_name", out var fn))
-                                user.FirstName = fn?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("last_name", out var ln))
-                                user.LastName = ln?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("phone", out var ph))
-                                user.PhoneNumber = ph?.ToString() ?? string.Empty;
-                        }
-
-                        // If it's still completely empty, apply some defaults
-                        if (string.IsNullOrWhiteSpace(user.FirstName))
-                            user.FirstName = "RescuAR";
-                        if (string.IsNullOrWhiteSpace(user.LastName))
-                            user.LastName = "User";
-
-                        // Try to get custom user row one more time, or just insert/update it later
-                        CurrentUser = user;
-                    }
-                    
-                    // Explicitly update Observable properties for reliable MAUI binding
-                    if (!string.IsNullOrWhiteSpace(CurrentUser.Username))
-                    {
-                        FullName = CurrentUser.Username.Trim();
-                    }
-                    else
-                    {
-                        FullName = $"{CurrentUser.FirstName} {CurrentUser.LastName}".Trim();
-                    }
-                    AvatarUrl = CurrentUser.AvatarUrl;
-                    
-                    // Force complete reference refresh for nested bindings
-                    var temp = CurrentUser;
-                    CurrentUser = new User();
-                    CurrentUser = temp;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error loading user: {ex.Message}");
-            }
-        }
-
-        [RelayCommand]
-        private async Task ChangeAvatarAsync()
-        {
-            try
-            {
-                if (Shell.Current == null) return;
-                
-                string action = await Shell.Current.DisplayActionSheet("Update Profile Picture", "Cancel", null, "Take a Picture", "Choose from Gallery");
-                if (string.IsNullOrEmpty(action) || action == "Cancel") return;
-
-                FileResult? result = null;
-
-                if (action == "Take a Picture")
-                {
-                    var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
-                    if (status != PermissionStatus.Granted)
-                    {
-                        status = await Permissions.RequestAsync<Permissions.Camera>();
-                        if (status != PermissionStatus.Granted)
-                        {
-                            await Shell.Current.DisplayAlert("Permission Denied", "Camera permission is required to take a picture.", "OK");
-                            return;
-                        }
-                    }
-                    if (MediaPicker.Default.IsCaptureSupported)
-                    {
-                        result = await MediaPicker.Default.CapturePhotoAsync();
-                    }
-                }
-                else if (action == "Choose from Gallery")
-                {
-                    // Android's system photo picker does not require broad
-                    // storage/photo-library permission for this operation.
-                    result = await MediaPicker.Default.PickPhotoAsync();
-                }
-
-                if (result != null)
-                {
-                    bool confirm = await Shell.Current.DisplayAlert("Confirm Upload", "Do you want to use this image as your profile picture?", "Yes", "No");
-                    if (!confirm) return;
-
-                    var client = RescuAR.Services.SupabaseService.Instance.Client;
-                    if (client != null && client.Auth.CurrentSession != null)
-                    {
-                        var stream = await result.OpenReadAsync();
-                        using var memoryStream = new MemoryStream();
-                        await stream.CopyToAsync(memoryStream);
-                        var bytes = memoryStream.ToArray();
-
-                        var currentUserId = client.Auth.CurrentSession.User?.Id;
-                        if (string.IsNullOrWhiteSpace(currentUserId))
-                        {
-                            throw new InvalidOperationException("The authenticated Supabase user is unavailable.");
-                        }
-
-                        var fileName = $"{currentUserId}-{Guid.NewGuid()}.jpg";
-                        
-                        // Save locally first so the UI works even if Supabase Storage fails
-                        var localPath = Path.Combine(FileSystem.AppDataDirectory, fileName);
-                        File.WriteAllBytes(localPath, bytes);
-                        
-                        AvatarUrl = localPath;
-                        CurrentUser.AvatarUrl = localPath;
-                        
-                        try
-                        {
-                            await client.Storage.From("avatars").Upload(bytes, fileName, new Supabase.Storage.FileOptions { Upsert = true });
-                            var publicUrl = client.Storage.From("avatars").GetPublicUrl(fileName);
-                            AvatarUrl = publicUrl;
-                            CurrentUser.AvatarUrl = publicUrl;
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Supabase storage upload failed, using local cache: {ex.Message}");
-                        }
-                        
-                        // Re-trigger bindings
-                        var tempUser = CurrentUser;
-                        CurrentUser = new User();
-                        CurrentUser = tempUser;
-                        
-                        // Try to save to DB
-                        try {
-                            await client.From<User>().Upsert(CurrentUser);
-                            await Shell.Current.DisplayAlert("Success", "Profile picture updated successfully!", "OK");
-                        } catch { }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                if (Shell.Current != null)
-                {
-                    await Shell.Current.DisplayAlert("Error", $"Could not update avatar: {ex.Message}", "OK");
-                }
-            }
-        }
+        private Task LoadUserProfileAsync() => RefreshProfileAsync();
 
         [RelayCommand]
         private async Task SaveProfileAsync()
@@ -273,7 +107,7 @@ namespace RescuAR.App.ViewModels.Profile
         private async Task ShareInviteLinkAsync()
         {
             if (CurrentCircle == null) return;
-            
+
             await Clipboard.Default.SetTextAsync(CurrentCircle.InviteLink);
             if (Shell.Current != null)
             {

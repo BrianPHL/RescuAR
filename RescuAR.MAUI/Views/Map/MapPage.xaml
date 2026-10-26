@@ -9,7 +9,7 @@
     Shell.NavBarIsVisible="False"
     BackgroundColor="#F2F2F7">
 
-    <Grid RowDefinitions="Auto, *">
+    <Grid RowDefinitions="Auto, Auto, *">
         <!-- Top Custom Header -->
         <Border Grid.Row="0" 
                 BackgroundColor="#0F8068" 
@@ -22,7 +22,7 @@
                            TextColor="#FFFFFF" 
                            FontSize="18" 
                            FontAttributes="Bold" />
-                    <Label Text="Real-time safe zones &amp; active shelters" 
+                    <Label Text="Roads, points and packaged map detail"
                            TextColor="#B2DFDB" 
                            FontSize="11" />
                 </VerticalStackLayout>
@@ -30,18 +30,20 @@
                 <!-- Active Indicator -->
                 <HorizontalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="6">
                     <Ellipse WidthRequest="8" HeightRequest="8" Fill="#22C55E" />
-                    <Label Text="OFFLINE READY" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                    <Label Text="GENERAL MAP" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
                 </HorizontalStackLayout>
             </Grid>
         </Border>
 
+        <Label Grid.Row="1" Text="{Binding OfflineMapStatus}" TextColor="#334155" FontSize="11" Padding="12,6" BackgroundColor="#F1F5F9" />
+
         <!-- Mapsui Native Map -->
-        <mapsui:MapControl x:Name="MapControl" Grid.Row="1" 
+        <mapsui:MapControl x:Name="MapControl" Grid.Row="2"
                            HorizontalOptions="FillAndExpand" 
                            VerticalOptions="FillAndExpand" />
 
         <!-- Floating Chat Button for Safety Circle -->
-        <Border Grid.Row="1"
+        <Border Grid.Row="2"
                 BackgroundColor="#0F8068"
                 StrokeThickness="0"
                 WidthRequest="56"
@@ -66,9 +68,9 @@
         </Border>
                  
         <!-- Subtle shadow/line for TabBar -->
-        <BoxView Grid.RowSpan="2" VerticalOptions="End" HeightRequest="1" BackgroundColor="#D1D1D6" />
+        <BoxView Grid.RowSpan="3" VerticalOptions="End" HeightRequest="1" BackgroundColor="#D1D1D6" />
         <!-- Real-time SweetAlert Emergency Advisory Pop-Up Modal Overlay -->
-        <Grid IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
+        <Grid Grid.RowSpan="3" IsVisible="{Binding IsPopupVisible}" BackgroundColor="#90000000" Padding="20" HorizontalOptions="Fill" VerticalOptions="Fill">
             <Border VerticalOptions="Center" HorizontalOptions="Center" MaximumWidthRequest="380" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="#FFFFFF" Padding="0">
                 <VerticalStackLayout Spacing="0">
                    
@@ -84,7 +86,7 @@
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
                                 </Border.GestureRecognizers>
-                                <Label Text="✕" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                                <Label Text="âœ•" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
                             </Border>
                         </Grid>
                     </Border>

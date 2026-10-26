@@ -1,13 +1,118 @@
 <?xml version="1.0" encoding="utf-8" ?>
-
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Profile"
     x:Class="RescuAR.App.Views.Profile.SystemInformationPage"
-    Title="System Information">
+    x:DataType="vm:SystemInformationViewModel"
+    Shell.NavBarIsVisible="False"
+    BackgroundColor="#F2F2F7">
 
-    <VerticalStackLayout>
-        <Label Text="Placeholder" />
-    </VerticalStackLayout>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="20,15" BackgroundColor="#F2F2F7">
+            <Button
+                Grid.Column="0"
+                Text="&lt; Back"
+                FontSize="15"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                BackgroundColor="Transparent"
+                Padding="0"
+                Command="{Binding BackCommand}" />
 
+            <Label
+                Grid.Column="1"
+                Text="RescuAR"
+                FontSize="16"
+                FontAttributes="Bold"
+                TextColor="#0F172A"
+                HorizontalOptions="Center"
+                VerticalOptions="Center" />
+
+            <ImageButton
+                Grid.Column="2"
+                Source="ic_notification.png"
+                WidthRequest="24"
+                HeightRequest="24"
+                BackgroundColor="Transparent" />
+        </Grid>
+
+        <!-- Main Scrollable Content -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="16" Padding="20,5,20,30">
+                <Label Text="{Binding StatusMessage}" FontSize="12" TextColor="#64748B" />
+                <!-- Breadcrumb & Title -->
+                <VerticalStackLayout Spacing="4" Margin="0,0,0,8">
+                    <Label Text="Profile/" FontSize="14" TextColor="#64748B" />
+                    <Label Text="System Information" FontSize="32" FontAttributes="Bold" TextColor="#0F172A" />
+                </VerticalStackLayout>
+
+                <!-- App Version Card -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="20,16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="App version" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="{Binding AppVersion}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Last Updated Card -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="20,16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="Last updated" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="{Binding LastUpdated}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Permissions Section Header -->
+                <Label Text="Permissions" FontSize="16" FontAttributes="Bold" TextColor="#0F172A" Margin="4,8,0,0" />
+
+                <!-- Permissions Card -->
+                <Border StrokeShape="RoundRectangle 16" Stroke="#E2E8F0" StrokeThickness="1" BackgroundColor="White" Padding="20,14">
+                    <VerticalStackLayout Spacing="14">
+                        <!-- Camera -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="Camera" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding CameraPermission}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                        </Grid>
+
+                        <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                        <!-- Location -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="Location" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding LocationPermission}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                        </Grid>
+
+                        <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                        <!-- Motion -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="Motion" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding MotionPermission}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                        </Grid>
+
+                        <BoxView HeightRequest="1" Color="#F1F5F9" />
+
+                        <!-- Notifications -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="Notifications" FontSize="15" TextColor="#64748B" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding NotificationsPermission}" FontSize="15" FontAttributes="Bold" TextColor="#0F172A" VerticalOptions="Center" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Manage Permissions Link -->
+                <Button
+                    Text="Manage permissions &gt;"
+                    FontSize="15"
+                    FontAttributes="Bold"
+                    TextColor="#0A8491"
+                    BackgroundColor="Transparent"
+                    HorizontalOptions="Start"
+                    Padding="4,0"
+                    Command="{Binding ManagePermissionsCommand}" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

@@ -65,6 +65,8 @@ public partial class AppShell : Shell
             "NotificationsPage",
             typeof(RescuAR.App.Views.Reports.NotificationsPage));
 
+        Routing.RegisterRoute("GeneralMap", typeof(RescuAR.App.Views.Map.MapPage));
+
         // Batch 6: Map / Safety Circle nested routes
         Routing.RegisterRoute(
             "SafetyCirclePage",

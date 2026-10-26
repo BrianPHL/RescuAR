@@ -13,6 +13,8 @@ namespace RescuAR.App.ViewModels.Authentication
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly AuthenticationService _authService;
+        private string? verifiedUserId;
+        public RescuAR.App.Models.ResidentProfileDraft? Draft { get; set; }
 
         [ObservableProperty]
         private string _email = string.Empty;
@@ -72,13 +74,19 @@ namespace RescuAR.App.ViewModels.Authentication
 
             try
             {
-                var client = RescuAR.Services.SupabaseService.Instance.Client;
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync()
+                    ?? throw new InvalidOperationException("Account services are unavailable.");
                 if (client != null)
                 {
                     // Verify the OTP via Supabase
-                    var session = await client.Auth.VerifyOTP(Email, OtpCode, Supabase.Gotrue.Constants.EmailOtpType.Signup);
-                    if (session?.User != null)
+                    var session = verifiedUserId is not null && client.Auth.CurrentUser?.Id == verifiedUserId
+                        ? client.Auth.CurrentSession
+                        : await client.Auth.VerifyOTP(Email, OtpCode, Supabase.Gotrue.Constants.EmailOtpType.Signup);
+                    if (session?.User != null && !string.IsNullOrWhiteSpace(session.AccessToken))
                     {
+                        if (Draft is not null && !string.Equals(session.User.Email, Draft.Email, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("The verified email does not match this registration.");
+                        verifiedUserId = session.User.Id;
                         // Show Custom Styled Popup
                         IsSuccessPopupVisible = true;
                     }
@@ -104,11 +112,12 @@ namespace RescuAR.App.ViewModels.Authentication
         private async Task ContinueToAddressAsync()
         {
             IsSuccessPopupVisible = false;
-            if (AuthenticationNavigation.RootPage is NavigationPage navPage)
+            try
             {
-                var addressPage = _serviceProvider.GetRequiredService<Views.Authentication.AddressInputPage>();
-                await navPage.PushAsync(addressPage);
+                await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider,
+                    verifiedUserId ?? throw new InvalidOperationException("Please verify your code first."));
             }
+            catch (Exception ex) { ErrorMessage = ex.Message; OnPropertyChanged(nameof(HasError)); }
         }
     }
 }

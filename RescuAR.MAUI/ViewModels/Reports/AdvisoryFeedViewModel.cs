@@ -41,6 +41,12 @@ public partial class AdvisoryFeedViewModel : ObservableObject
         // Real-time listener for new admin advisories only
         RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
         RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+        {
+            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+        });
         RealtimeAdvisoryManager.StartRealtimeListener();
     }
 
@@ -48,8 +54,11 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            SelectedAdvisory = newAdvisory;
-            IsPopupVisible = true;
+            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+            {
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
+            }
             _ = LoadAdvisoriesAsync();
         });
     }

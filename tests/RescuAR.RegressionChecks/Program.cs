@@ -17,6 +17,18 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--navigation-feedback"))
+{
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} navigation feedback regression checks passed.");
+    return;
+}
+if (args.Contains("--camera-map"))
+{
+    CameraMapChecks.Run(Check);
+    Console.WriteLine($"{passed} Camera map presentation regression checks passed.");
+    return;
+}
 if (args.Contains("--multi-device-recovery"))
 {
     ARMultiDeviceRecoveryChecks.Run(Check);
@@ -101,6 +113,8 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     Console.WriteLine($"{passed} {(args.Contains("--alignment-recovery") ? "alignment-recovery" : args.Contains("--ar-guidance") ? "AR guidance" : args.Contains("--guidance-recovery") ? "guidance-recovery" : args.Contains("--placement-hazards") ? "placement/hazard" : "field-validation")} regression checks passed.");
     return;
 }
+await NavigationFeedbackChecks.RunAsync(Check);
+CameraMapChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
 VisualRoadAlignmentChecks.Run(Check);
@@ -403,19 +417,19 @@ Check(endpointUrl.Contains("radiuses=20;50") && bypassUrl.Contains("radiuses=20;
 var parseRoutes = typeof(MLDRoutingService).GetMethod("ParseRoutes",
     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 bool endpointUnmatched = false;
-try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD" }); }
+try { parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoSegment\"}","MLD",RouteProvenance.Unreported }); }
 catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is RoutingEndpointUnmatchedException)
 { endpointUnmatched = true; }
 Check(endpointUnmatched, "MLD NoSegment is distinguished from a disconnected NoRoute result");
-Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD" })!).Count == 0,
+Check(((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] { "{\"code\":\"NoRoute\"}","MLD",RouteProvenance.Unreported })!).Count == 0,
     "MLD NoRoute remains an authoritative disconnected result");
 var geometryRoute = ((IReadOnlyList<RouteResult>)parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD" })!)[0];
+    "{\"code\":\"Ok\",\"routes\":[{\"distance\":999,\"geometry\":{\"coordinates\":[[121,14],[121.001,14]]}}]}","MLD",RouteProvenance.Unreported })!)[0];
 Check(Math.Abs(geometryRoute.TotalDistanceMeters - geometryRoute.Points[^1].DistanceFromStartMeters) < 0.01,
     "MLD progress and total distance use the same physical geometry");
 bool invalidGeometryRejected = false;
 try { parseRoutes.Invoke(null,new object[] {
-    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD" }); }
+    "{\"code\":\"Ok\",\"routes\":[{\"geometry\":{\"coordinates\":[[0,0],[0,95],[0.001,0]]}}]}","MLD",RouteProvenance.Unreported }); }
 catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException is InvalidDataException)
 { invalidGeometryRejected = true; }
 Check(invalidGeometryRejected, "MLD invalid interior geometry is an invalid response, not a disconnected route");

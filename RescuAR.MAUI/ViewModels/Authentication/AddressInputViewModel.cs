@@ -18,6 +18,8 @@ namespace RescuAR.App.ViewModels.Authentication
     public partial class AddressInputViewModel : ObservableObject
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly string? addressUserId;
+        private readonly long addressRevision;
 
         [ObservableProperty]
         private string _houseLotBlock = string.Empty;
@@ -41,7 +43,7 @@ namespace RescuAR.App.ViewModels.Authentication
         private bool _isLoading = false;
 
         public bool IsNotLoading => !IsLoading;
-        
+
         [ObservableProperty]
         private string _errorMessage = string.Empty;
 
@@ -53,6 +55,8 @@ namespace RescuAR.App.ViewModels.Authentication
         public AddressInputViewModel(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
+            addressUserId = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser?.Id;
+            addressRevision = RescuAR.Services.SupabaseService.Instance.SessionRevision;
         }
 
         partial void OnIsLoadingChanged(bool value)
@@ -67,13 +71,13 @@ namespace RescuAR.App.ViewModels.Authentication
             try
             {
                 IsLoading = true;
-                
+
                 var location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest
                 {
                     DesiredAccuracy = GeolocationAccuracy.Medium,
                     Timeout = TimeSpan.FromSeconds(10)
                 });
-                
+
                 if (location != null)
                 {
                     // Reverse Geocode using Nominatim API (OpenStreetMap)
@@ -87,11 +91,11 @@ namespace RescuAR.App.ViewModels.Authentication
                         var json = await response.Content.ReadAsStringAsync();
                         using var doc = JsonDocument.Parse(json);
                         var addressNode = doc.RootElement.GetProperty("address");
-                        
+
                         if (addressNode.TryGetProperty("road", out var road)) Street = road.GetString() ?? string.Empty;
                         if (addressNode.TryGetProperty("suburb", out var suburb)) Barangay = suburb.GetString() ?? string.Empty;
                         // Keep City as Marikina City to enforce residency rules
-                        
+
                         if (Shell.Current != null)
                         {
                             await Shell.Current.DisplayAlert("Location Found", "Street and Barangay populated. Please review and ensure you are within Marikina City.", "OK");
@@ -144,83 +148,11 @@ namespace RescuAR.App.ViewModels.Authentication
 
             try
             {
-                var client = RescuAR.Services.SupabaseService.Instance.Client;
-                if (client != null && client.Auth.CurrentSession != null)
-                {
-                    // Build full address string
-                    string fullAddress = $"{HouseLotBlock.Trim()}, {Street.Trim()}, {Barangay.Trim()}, {City}, {Province}, {ZipCode}";
-
-                    // Get or create current user record.
-                    var authUser = client.Auth.CurrentSession.User;
-                    var authUserId = authUser?.Id;
-                    if (authUser == null || string.IsNullOrWhiteSpace(authUserId))
-                    {
-                        throw new InvalidOperationException("The authenticated Supabase user is unavailable.");
-                    }
-
-                    Models.User? dbUser = null;
-
-                    try
-                    {
-                        dbUser = await client.From<Models.User>().Where(x => x.Id == authUserId).Single();
-                    }
-                    catch { }
-
-                    if (dbUser == null)
-                    {
-                        dbUser = new Models.User
-                        {
-                            Id = authUserId,
-                            Email = authUser.Email ?? string.Empty
-                        };
-
-                        if (authUser.UserMetadata != null)
-                        {
-                            if (authUser.UserMetadata.TryGetValue("first_name", out var fn))
-                                dbUser.FirstName = fn?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("last_name", out var ln))
-                                dbUser.LastName = ln?.ToString() ?? string.Empty;
-                            if (authUser.UserMetadata.TryGetValue("phone", out var ph))
-                                dbUser.PhoneNumber = ph?.ToString() ?? string.Empty;
-                        }
-                    }
-
-                    dbUser.Address = fullAddress;
-                    await client.From<Models.User>().Upsert(dbUser);
-
-                    // Navigate to Permissions or Dashboard
-                    MainThread.BeginInvokeOnMainThread(() =>
-                    {
-                        if (Application.Current != null)
-                        {
-                            Preferences.Default.Set("HasSignedUp", true);
-                            Preferences.Default.Set("IsLoggedIn", true);
-                            
-                            bool hasPermissions = Preferences.Default.Get("HasCompletedPermissions", false);
-                            Page targetPage;
-                            if (hasPermissions)
-                            {
-                                targetPage = new AppShell();
-                            }
-                            else
-                            {
-                                targetPage = _serviceProvider.GetRequiredService<PermissionsPage>();
-                            }
-
-                            // Use Windows[0].Page for .NET 8+ MAUI root navigation
-                            if (Application.Current.Windows.Count > 0)
-                            {
-                                Application.Current.Windows[0].Page = targetPage;
-                            }
-                            else
-                            {
-#pragma warning disable CS0618
-                                AuthenticationNavigation.TrySetRootPage(targetPage);
-#pragma warning restore CS0618
-                            }
-                        }
-                    });
-                }
+                if (string.IsNullOrWhiteSpace(addressUserId) || addressRevision != RescuAR.Services.SupabaseService.Instance.SessionRevision)
+                    throw new InvalidOperationException("Your account changed. Reopen the address screen.");
+                string fullAddress = $"{HouseLotBlock.Trim()}, {Street.Trim()}, {Barangay.Trim()}, {City}, {Province}, {ZipCode}";
+                await RescuAR.App.Services.Profile.UserProfileService.Instance.SaveAddressAsync(addressUserId, fullAddress);
+                await AuthenticationNavigation.CompleteSignInAsync(_serviceProvider, addressUserId);
             }
             catch (Exception ex)
             {

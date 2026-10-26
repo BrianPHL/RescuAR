@@ -13,6 +13,7 @@ using Mapsui.Styles;
 using System.Linq;
 using NetTopologySuite.Geometries;
 using RescuAR.Navigation.Data;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Map;
 
@@ -29,19 +30,41 @@ public class SphericalMercatorProjector : NetTopologySuite.Geometries.ICoordinat
 public partial class MapViewModel : ObservableObject
 {
     private bool _realtimeAdvisorySubscribed;
+    private readonly OfflineMapLayerController offlineLayers;
+    private CancellationTokenSource? page;
+    private long generation;
+    private bool initialized;
+    [ObservableProperty] private string offlineMapStatus = "";
 
     [ObservableProperty]
     private Mapsui.Map _map = new();
 
     public MapViewModel()
     {
+        offlineLayers = new(message => OfflineMapStatus = message);
+    }
+
+    public void Stop()
+    {
+        generation++; page?.Cancel(); page?.Dispose(); page = null;
+        offlineLayers.Deactivate();
+        foreach (var layer in Map.Layers) layer.Enabled = false;
     }
 
     public async Task InitializeMapAsync(MapControl mapControl)
     {
+        Stop(); page = new(); var token = page.Token; long current = generation;
+        Mapsui.Map? candidate = null;
         try
         {
-            var map = new Mapsui.Map
+            if (initialized)
+            {
+                foreach (var layer in Map.Layers) layer.Enabled = true;
+                mapControl.Map = Map;
+                await offlineLayers.ActivateAsync(Map);
+                return;
+            }
+            var map = candidate = new Mapsui.Map
             {
                 CRS = "EPSG:3857"
             };
@@ -51,8 +74,7 @@ public partial class MapViewModel : ObservableObject
             var googleMapsLayer = new Mapsui.Tiling.Layers.TileLayer(tileSource) { Name = "BaseMap" };
             map.Layers.Add(googleMapsLayer);
 
-            // We will skip loading 2D_MAP.mbtiles because it contains vector tiles (PBF)
-            // Mapsui 4 TileLayer only supports raster image tiles (PNG/JPG).
+            // Basic display still uses dev's embedded routing datasets. Optional detail has a separate owner.
 
             // Map display and routing share the same embedded datasets.
             foreach (string resourceName in
@@ -85,15 +107,21 @@ public partial class MapViewModel : ObservableObject
             map.Navigator.CenterOn(new MPoint(x, y));
             map.Navigator.ZoomTo(9.5546); // ~Zoom Level 14
 
-            Map = map;
+            token.ThrowIfCancellationRequested();
+            if (current != generation) return;
+            Map = map; initialized = true; candidate = null;
             mapControl.Map = map;
+            await offlineLayers.ActivateAsync(map);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            if (current != generation) return;
             if (Shell.Current != null)
                 await Shell.Current.DisplayAlert("Map Error", $"Base Map failed: {ex.Message}", "OK");
             Console.WriteLine($"Error loading map: {ex.Message}");
         }
+        finally { candidate?.Dispose(); }
     }
 
     private async Task LoadGeoJsonLayerAsync(Mapsui.Map map, string resourceName, string layerName, IStyle style)
@@ -103,15 +131,15 @@ public partial class MapViewModel : ObservableObject
             using var stream = NavigationDataBootstrap.OpenGeoJsonResource(resourceName);
             using var reader = new StreamReader(stream);
             string geoJson = await reader.ReadToEndAsync();
-            
-            var features = await Task.Run(() => 
+
+            var features = await Task.Run(() =>
             {
                 var reader = new GeoJsonReader();
                 var featureCollection = reader.Read<NetTopologySuite.Features.FeatureCollection>(geoJson);
                 if (featureCollection == null) return new List<GeometryFeature>();
 
                 var projector = new SphericalMercatorProjector();
-                return featureCollection.Select(f => 
+                return featureCollection.Select(f =>
                 {
                     var geom = f.Geometry.Copy();
                     geom.Apply(projector);
@@ -141,7 +169,7 @@ public partial class MapViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("SafetyCirclePage");
+            await Shell.Current.GoToAsync("//Map");
         }
     }
 
@@ -179,9 +207,18 @@ public partial class MapViewModel : ObservableObject
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
         {
-            SelectedAdvisory = newAdvisory;
-            IsPopupVisible = true;
+            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+            {
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
+            }
         };
+        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+        {
+            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
+                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
+                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
+        });
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.StartRealtimeListener();
     }
