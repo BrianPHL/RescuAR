@@ -21,14 +21,15 @@
 | A2-01 | Backend initialization and saved sessions | Adopt secure saved sessions and guarded initialization; keep dev server settings | Added secure-storage persistence, ordered writes, project-specific token slots, initialization serialization and stale-client rejection. |
 | A2-02 | Authentication client readiness | Wait for initialization | Email/Google sign-in, registration and sign-out await the shared client; sign-up fields and UI flows are unchanged. |
 | A2-03 | Local cleanup on sign-out | Adopt reliable cleanup, including network failure; preserve stored account data | Flush/remove stored session; mark removed slots signed out; archive legacy account preferences before clearing active aliases. Archives carry ownership hints only and are not automatically restored as verified account data. |
-
-
 | A2-04 | Post-sign-in, OTP/address and permissions routing | Adopt one verified-identity/address/permissions flow | All verified entry paths use the shared coordinator, with account/revision guards before navigation. |
 | A2-05 | Startup source of identity | Use restored identity with explicit offline/error handling | Startup validates remembered identity, retains local offline access, shows retry for service errors, and returns to login for rejected sessions. Saved login flags alone cannot open an account. |
 | A2-06 | Google saved-account choices | Require real Google authentication for every selection | Both selection commands invoke the real provider flow; dev's existing callback handler is preserved and Athena's duplicate is excluded. |
 | A2-07 | Login background profile writes | Preserve fields; create only after a confirmed missing row | Removed the background partial-object write; a successful empty read permits an insert that ignores racing duplicates. Failed reads do not authorize creation. |
 | A2-08 | Address saves | Update only the address | Address saves use one field-specific update, retain dev address formatting and guard against an account change. |
 | A2-09 | Remember Me | Checked remembers login; unchecked requires login after restart | Bound the existing control to secure persistence; an unchecked login leaves no restorable session. |
+| A2-10 | Login screen and password-reset dialog | Adopt Athena's layout and dialog; preserve completed verified sign-in/Remember Me behavior | Athena presentation with correctly separated recovery panels, the dev password policy, a temporary non-persistent recovery client, and cancellation/ownership checks. |
+| A2-11 | Registration fields and two-step layout | Use Athena's two steps; keep optional middle name; defer the age restriction | Resident details then account credentials, dev 10-character password rules, the complete dev barangay catalog and the existing verified account flow. No minimum-age rule. |
+| A2-12 | Legacy local-data restoration | Keep all legacy archives aside; start fresh local preferences | No automatic archive read/restore; archived files/preferences are preserved. Verified cloud profiles and new account-scoped caches remain usable. |
 
 Each further overlapping behavior requires a user decision before modification. Approval of one row does not approve unrelated hunks in the same file.
 
@@ -71,7 +72,7 @@ Obtain the user's next decisions for the shared post-sign-in flow, saved-session
 
 The analysis/inventory/progress records are committed separately after these batches.
 
-## Approved next decisions, not yet implemented
+## Earlier routing decisions (implemented below)
 
 - Use one verified-identity/address/permissions flow after email/Google/OTP sign-in.
 - Replace flag-only startup with restored identity plus explicit offline/error handling, preserving offline access.
@@ -102,6 +103,34 @@ Use a test account and the preserved batch-2 APK. Report actual results before b
 
 Provider, deployed schema/RLS, device lifecycle and offline coverage remain unverified by local checks.
 
+## Earlier form gate (completed below)
+
+The user approved the login/reset UI, two-step registration with optional middle name and no minimum-age rule, and keeping legacy archives aside with fresh active local preferences. The next entries record those decisions and their verification.
+
+
+## Authentication forms completed
+
+- Commit: `bf851f8` — `feat(auth): adopt Athena login and two-step registration`.
+- Adopted Athena's login layout and in-app recovery dialog. Email, recovery-code/password and success panels are mutually exclusive. Closing/leaving the page rejects late callbacks and clears entered secrets.
+- Recovery uses an isolated Supabase client with no shared persistence or refresh worker. Successful recovery clears its temporary token/user values and shuts down listeners; it does not authenticate the main app or claim success after a failed update. No provider messages were sent during verification.
+- Registration now has resident and account steps. Optional middle name and dev's exact 10-character, uppercase, digit and allowed-symbol requirements remain. No age-ten restriction was imported; future birthdays remain invalid. The selector uses dev's complete 16-barangay catalog, including Calumpang.
+- The non-secret registration draft contains resident details only. Birthday/address are sent as signup metadata; verified email/OTP identity still gates profile activation and shared navigation. No public-profile birthday column or database migration was added. The registration Google button uses the already-approved real provider flow.
+- The user explicitly chose **all legacy archives aside, fresh active local preferences**. No automatic archive restoration is implemented. Archives/media are preserved; this policy does not remove verified cloud profiles or new account-scoped caches.
+- **64/64 focused authentication checks passed** (38 earlier storage/routing cases plus 26 form/recovery cases). These use local fakes and do not establish provider, deployed schema/RLS or device behavior.
+- Initial Android compilation found an inaccessible SDK cleanup method. One correction/rebuild used the supported public session properties. That build exposed an unrelated missing registration Google command binding; one correction/rebuild connected the approved flow. Final Android build: **0 warnings, 0 errors**.
+- ARCore declaration consistency, approved source-path preservation and `git diff --check` passed. Dev AR/camera/navigation/native code and Admin remain preserved relative to the pinned baseline. The only routing-parser difference remains the previously approved missing-provenance guard.
+- Preserved debug APK: `artifacts/athena-integration/03-authentication-forms/RescuAR-Batch03-AuthenticationForms.apk` (103,188,724 bytes; SHA-256 `b438a21f61bcea966695f92c1d3b52505dd9013d90c1b76c0c44e352f89b7d7a`).
+- Later dev is now `444cd18`. Its new administrator-provisioning/password-setup changes, in addition to `822ded0` RBAC UI, are deferred to the Admin/final preservation gate. No branch update, merge, push, database migration or deployment was performed.
+
+## Required manual form checks
+
+Use a test account and the preserved forms APK. Report the actual results before behavior-dependent fixes:
+
+1. Open registration, complete resident details and proceed/back between steps. Expect values to persist, middle name to stay optional, the complete barangay list, no minimum-age-ten rejection and dev's 10-character password criteria. Complete email verification; expect the correct address/permission gate for the verified account.
+2. Open password recovery. Expect only the email panel, then only the code/password panel after a successful request, then success only after a confirmed update. Weak passwords and invalid codes must show an error. Sign in with the changed password to check the provider result. The deployed recovery-email template must provide a code compatible with this dialog; that configuration is unverified here.
+3. Close recovery while waiting, reopen it, and return from registration. Expect no old result or secret values in a new dialog and no recovery-based main-app login. Verify Remember Me and Google cancellation still follow the earlier batch's expectations.
+4. Sign out and change accounts. Expect no archived local profile/contact/shortcut/circle customization to be restored automatically. Existing server profile fields should remain intact.
+
 ## Current next gate
 
-Ask before importing Athena's login/reset-password UI, two-step registration fields/layout, profile UI and legacy local-data migration. Keep the later dev `822ded0` RBAC UI changes protected for the Admin/final preservation gate. Commit each completed batch after relevant checks; no branch merge or push is authorized yet.
+Ask separately about profile overview/avatar behavior, personal-information fields/saves and health-information presentation/saves before modifying them. Contacts, support/settings, circle, offline-map and Camera 2D decisions remain later steps. Preserve dev's newer Admin changes at the final reconciliation gate. Commit every finished batch; no branch merge or push is authorized yet.

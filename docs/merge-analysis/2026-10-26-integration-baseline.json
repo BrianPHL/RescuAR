@@ -5000,32 +5000,43 @@
     }
   },
   "approved_changed_paths": [
+    "RescuAR.MAUI/App.xaml",
     "RescuAR.MAUI/App.xaml.cs",
+    "RescuAR.MAUI/Converters/BooleanToStringConverter.cs",
     "RescuAR.MAUI/MauiProgram.cs",
+    "RescuAR.MAUI/Models/ResidentProfileDraft.cs",
     "RescuAR.MAUI/RescuAR.MAUI.csproj",
     "RescuAR.MAUI/Resources/Images/rescuar_logo_banner.png",
     "RescuAR.MAUI/Resources/Splash/splash.svg",
     "RescuAR.MAUI/Services/Authentication/AuthenticationFlowCoordinator.cs",
+    "RescuAR.MAUI/Services/Authentication/AuthenticationFormPolicy.cs",
     "RescuAR.MAUI/Services/Authentication/AuthenticationIdentity.cs",
     "RescuAR.MAUI/Services/Authentication/AuthenticationNavigation.cs",
     "RescuAR.MAUI/Services/Authentication/AuthenticationService.cs",
     "RescuAR.MAUI/Services/Authentication/MauiAuthenticationFlowSource.cs",
     "RescuAR.MAUI/Services/Authentication/MauiAuthenticationStores.cs",
+    "RescuAR.MAUI/Services/Authentication/MauiPasswordRecoveryFactory.cs",
+    "RescuAR.MAUI/Services/Authentication/PasswordRecoveryFlow.cs",
     "RescuAR.MAUI/Services/Authentication/SecureSessionPersistence.cs",
     "RescuAR.MAUI/Services/Cloud/SupabaseService.cs",
     "RescuAR.MAUI/Services/Profile/UserProfileService.cs",
     "RescuAR.MAUI/ViewModels/Authentication/AddressInputViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/GoogleAuthViewModel.cs",
+    "RescuAR.MAUI/ViewModels/Authentication/LoginViewModel.PasswordRecovery.cs",
     "RescuAR.MAUI/ViewModels/Authentication/LoginViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/OtpVerificationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/PermissionsViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/RegistrationViewModel.cs",
     "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
+    "RescuAR.MAUI/Views/Authentication/AuthenticationFormControls.cs",
     "RescuAR.MAUI/Views/Authentication/LoginPage.xaml",
+    "RescuAR.MAUI/Views/Authentication/LoginPage.xaml.cs",
+    "RescuAR.MAUI/Views/Authentication/RegistrationPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml",
     "RescuAR.MAUI/Views/Authentication/SplashPage.xaml.cs",
     "RescuAR/Navigation/Routing/MLDRoutingService.cs",
     "tests/RescuAR.AuthenticationChecks/AuthenticationFlowChecks.cs",
+    "tests/RescuAR.AuthenticationChecks/AuthenticationFormChecks.cs",
     "tests/RescuAR.AuthenticationChecks/Program.cs",
     "tests/RescuAR.AuthenticationChecks/RescuAR.AuthenticationChecks.csproj",
     "tests/RescuAR.RegressionChecks/Program.cs"
@@ -5049,7 +5060,7 @@
     "unit_checks_passed": 16,
     "android_build": "passed; 0 warnings; 0 errors",
     "live_provider_validation": "not performed",
-    "account_flow_wiring": "pending user decisions"
+    "account_flow_wiring": "completed; see authentication_flow_validation"
   },
   "completed_batch_commits": [
     {
@@ -5067,10 +5078,14 @@
     {
       "commit": "28e302ca60045a0534130e7efa61c7d2fc1b620d",
       "subject": "feat(auth): unify verified sign-in and offline startup"
+    },
+    {
+      "commit": "bf851f8ec8a74905c1f5e39b6b4a1de3f35855c1",
+      "subject": "feat(auth): adopt Athena login and two-step registration"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
-  "observed_later_dev": "822ded0885b877586f7171344bb5a04722209589",
+  "observed_later_dev": "444cd183e5e7df766c36064b6f6d3fa9f6a75287",
   "next_approved_decisions": [],
   "authentication_flow_validation": {
     "unit_checks_passed": 38,
@@ -5084,10 +5099,29 @@
     "legacy_login_note": "An initial online sign-in is required when an old dev installation has no secure saved session."
   },
   "pending_scope": [
-    "Athena authentication screen layouts/reset UI",
-    "registration fields/layout",
-    "profile UI",
-    "legacy cache ownership/migration",
-    "later dev Admin RBAC UI reconciliation"
-  ]
+    "profile, contacts and support UI; field-specific saves",
+    "settings UI and consumers",
+    "circle membership, map and chat",
+    "shared offline display extensions",
+    "camera 2D experience retaining dev AR/navigation",
+    "later dev Admin RBAC/provisioning preservation review",
+    "final per-module preservation review; no branch merge or push authorized"
+  ],
+  "authentication_forms_validation": {
+    "unit_checks_passed": 64,
+    "android_build": "passed; 0 warnings; 0 errors",
+    "build_corrections": [
+      "SDK cleanup: replace inaccessible DestroySession with clearing the isolated session's public token/user properties and shutting down listeners; one fix/rebuild",
+      "XamlC binding warning: connect registration GoogleSignUpCommand to the existing verified flow; one fix/rebuild"
+    ],
+    "arcore_declarations": "passed",
+    "protected_source_review": "passed; all source deltas are within the approved list; dev AR/camera/navigation/native code and Admin preserved relative to the pinned baseline",
+    "legacy_archives": "preserved aside; no automatic restoration; fresh active local preferences after sign-in",
+    "provider_database_device_validation": "not performed",
+    "apk": "C:\\Users\\brian\\.codex\\worktrees\\dev-athena-merge-analysis\\RescuAR\\artifacts\\athena-integration\\03-authentication-forms\\RescuAR-Batch03-AuthenticationForms.apk",
+    "apk_bytes": 103188724,
+    "apk_sha256": "b438a21f61bcea966695f92c1d3b52505dd9013d90c1b76c0c44e352f89b7d7a",
+    "observed_later_dev": "444cd183e5e7df766c36064b6f6d3fa9f6a75287"
+  },
+  "legacy_local_data_policy": "User chose to preserve all archives aside and start fresh active local preferences. No automatic archive restoration. Verified cloud profiles and new account-scoped caches remain usable."
 }
