@@ -56,7 +56,7 @@ public partial class SafetyCircleViewModel : ObservableObject
     [ObservableProperty] private string selectedCircleName = "Select a Circle";
     [ObservableProperty] private bool isCircleDropdownOpen;
     [ObservableProperty] private bool isSharingEnabled;
-    [ObservableProperty] private bool isBusy;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanOpenCircleAction), nameof(CanShowInlineInvite))] private bool isBusy;
     [ObservableProperty] private string statusMessage = "";
     [ObservableProperty] private string sharingStatus = "Sharing Off.";
 
@@ -110,6 +110,7 @@ public partial class SafetyCircleViewModel : ObservableObject
         sharingRequest++; enablingSharing = false;
         IsBusy = false; polling = false; selectedId = ""; centered = false; IsCircleDropdownOpen = false;
         localReading = null; locating = localPermissionChecked = localPermissionGranted = false;
+        ResetInlineCircleActions();
         IsPeopleSheetOpen = IsMapDetailsOpen = false; LocalLocationStatus = "Your device position is unavailable.";
         SelectedCircleName = "Select a Circle"; StatusMessage = ""; SharingStatus = "Sharing Off. No new positions are uploaded.";
         MyCircles.Clear(); CircleMembers.Clear(); avatarBytes.Clear(); placeNames.Clear();
@@ -146,7 +147,7 @@ public partial class SafetyCircleViewModel : ObservableObject
 
     private async Task PollAsync()
     {
-        if (polling || owner is not { } scope || page is null) return;
+        if (polling || IsCircleActionBusy || IsCreateCircleOpen || IsJoinCircleOpen || owner is not { } scope || page is null) return;
         long request = version; var token = page.Token;
         polling = true; IsBusy = true;
         try
@@ -156,6 +157,8 @@ public partial class SafetyCircleViewModel : ObservableObject
             if (snapshot is null) return;
             MyCircles.Clear(); foreach (var circle in snapshot.Memberships.Circles) MyCircles.Add(circle);
             selectedId = snapshot.Memberships.SelectedId;
+            inlineMembershipsCached = snapshot.Memberships.IsCached;
+            IsInlineInviteAvailable = MyCircles.Any(circle => circle.Id == selectedId);
             SelectedCircleName = MyCircles.FirstOrDefault(circle => circle.Id == selectedId)?.Name ?? "No Circles joined";
             StatusMessage = snapshot.Memberships.CacheSaved ? snapshot.Notice : snapshot.Memberships.Notice + " " + snapshot.Notice;
             if (snapshot.Memberships.IsCached) StatusMessage += " Circle list is cached / offline.";
@@ -172,7 +175,7 @@ public partial class SafetyCircleViewModel : ObservableObject
         {
             if (request == version)
             {
-                ResetSharing(); MyCircles.Clear(); CircleMembers.Clear(); selectedId = ""; SelectedCircleName = "Membership not confirmed"; UpdateMapMarkers();
+                ResetSharing(); MyCircles.Clear(); CircleMembers.Clear(); IsInlineInviteAvailable = false; selectedId = ""; SelectedCircleName = "Membership not confirmed"; UpdateMapMarkers();
                 StatusMessage = "Circle access or member readings could not be confirmed. Refresh before continuing.";
                 SharingStatus = "Sharing Off. No new positions are uploaded.";
             }
@@ -290,8 +293,8 @@ public partial class SafetyCircleViewModel : ObservableObject
         catch { if (request == version) { IsBusy = false; StatusMessage = "Circle selection could not be confirmed. Refresh and try again."; } }
     }
     [RelayCommand] private async Task Refresh() { coordinator.RefreshMemberships(); await PollAsync(); }
-    [RelayCommand] private Task CreateCircle() => Navigate("SafetyCircleSettingsPage");
-    [RelayCommand] private Task JoinCircle() => Navigate("SafetyCircleSettingsPage");
+    [RelayCommand] private void CreateCircle() => OpenInlineCircleAction(true);
+    [RelayCommand] private void JoinCircle() => OpenInlineCircleAction(false);
     [RelayCommand] private Task ManageCircles() => Navigate("SafetyCircleSettingsPage");
     [RelayCommand] private Task OpenGeneralMap() => Navigate("GeneralMap");
     [RelayCommand] private Task OpenNotifications() => Navigate("NotificationsPage");
