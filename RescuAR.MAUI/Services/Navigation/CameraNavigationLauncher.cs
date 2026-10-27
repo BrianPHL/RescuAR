@@ -234,8 +234,23 @@ public static class CameraNavigationLauncher
         return true;
     }
 
+    public static async Task<bool> Open2DAsync(string name, double latitude, double longitude)
+    {
+        if (string.IsNullOrWhiteSpace(name) || !TryCreateCoordinate(latitude, longitude, out var coordinate, out _)) return false;
+        NavigationDestinationBridge.Set(name.Trim(), coordinate);
+        return await OpenCameraAsync(name.Trim(), CameraPresentationView.Map2D);
+    }
+
+    public static async Task<bool> OpenMapAsync()
+    {
+        if (Shell.Current is not { } shell) return false;
+        long request = CameraViewHandoff.Current.Request(NavigationDestinationBridge.Current.Version, CameraPresentationView.Map2D);
+        try { await shell.GoToAsync("//Camera"); return true; }
+        catch { CameraViewHandoff.Current.Cancel(request); return false; }
+    }
+
     private static async Task<bool> OpenCameraAsync(
-        string destinationName)
+        string destinationName, CameraPresentationView view = CameraPresentationView.Ar)
     {
         Shell? shell =
             Shell.Current;
@@ -258,6 +273,7 @@ public static class CameraNavigationLauncher
             $"Opening Camera tab for destination '{DiagnosticPrivacyPolicy.FormatRouteLabel(destinationName)}'.");
 #endif
 
+        long viewRequest = CameraViewHandoff.Current.Request(NavigationDestinationBridge.Current.Version, view);
         try
         {
             try
@@ -291,6 +307,7 @@ public static class CameraNavigationLauncher
         }
         catch (Exception exception)
         {
+            CameraViewHandoff.Current.Cancel(viewRequest);
 #if ANDROID
             Log.Error(
                 LogTag,

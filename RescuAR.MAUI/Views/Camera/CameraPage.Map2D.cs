@@ -74,15 +74,16 @@ public partial class CameraPage
 
     private void ObserveCameraMapWindow()
     {
-        if (cameraMapWindow == Window) { ObserveNavigationFeedbackSettings(); return; }
+        if (cameraMapWindow == Window) { ObserveNavigationFeedbackSettings(); ObserveCameraViewRequests(); return; }
         UnobserveCameraMapWindow(); cameraMapWindow = Window; cameraMapWindowStopped = false;
-        ObserveNavigationFeedbackSettings();
+        ObserveNavigationFeedbackSettings(); ObserveCameraViewRequests();
         if (cameraMapWindow is null) return;
         cameraMapWindow.Stopped += CameraMapWindowStopped;
         cameraMapWindow.Resumed += CameraMapWindowResumed;
     }
     private void UnobserveCameraMapWindow()
     {
+        UnobserveCameraViewRequests();
         StopNavigationFeedback(unsubscribe: true);
         if (cameraMapWindow is null) return;
         cameraMapWindow.Stopped -= CameraMapWindowStopped;
@@ -90,7 +91,7 @@ public partial class CameraPage
         cameraMapWindow = null;
     }
     private void CameraMapWindowStopped(object? sender, EventArgs args) { cameraMapWindowStopped = true; StopCameraMapDisplay(); StopNavigationFeedback(unsubscribe: false); }
-    private void CameraMapWindowResumed(object? sender, EventArgs args) { cameraMapWindowStopped = false; RefreshCameraMapPresentation(); }
+    private void CameraMapWindowResumed(object? sender, EventArgs args) { cameraMapWindowStopped = false; ApplyPendingCameraViewRequest(); RefreshCameraMapPresentation(); }
 
     private void StopCameraMapDisplay()
     {

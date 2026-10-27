@@ -19,6 +19,13 @@ if (args.Contains("--evacuation-directory"))
     return;
 }
 
+if (args.Contains("--camera-view-handoff"))
+{
+    CameraViewHandoffChecks.Run(Check);
+    Console.WriteLine($"{passed} Camera presentation handoff checks passed.");
+    return;
+}
+
 Session Token(string value) => new() { AccessToken = value, RefreshToken = "test-refresh" };
 var store = new FakeSecureStore();
 var persistence = new SecureSessionPersistence("https://project-a.supabase.co", store);

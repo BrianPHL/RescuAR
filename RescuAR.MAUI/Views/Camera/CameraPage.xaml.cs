@@ -3982,8 +3982,7 @@ namespace RescuAR.App.Views.Camera
         {
             if (Shell.Current is not null)
             {
-                await Shell.Current.GoToAsync(
-                    "//Map");
+                await CameraNavigationLauncher.OpenMapAsync();
             }
         }
 
