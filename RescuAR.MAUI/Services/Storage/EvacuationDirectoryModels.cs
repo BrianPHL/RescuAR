@@ -42,4 +42,3 @@ public class EvacuationCenterCacheEnvelope
     public List<CachedEvacuationCenterItem> Centers { get; set; } = new();
     public List<CachedEmergencyHotlineItem> Hotlines { get; set; } = new();
 }
-
