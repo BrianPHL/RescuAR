@@ -74,7 +74,9 @@ public sealed class EvacuationDirectory
                 if (received.Count > centers.Count) notice += $" · {received.Count - centers.Count} invalid/duplicate records omitted";
                 try { source.Save(key, centers, updatedAt); }
                 catch { notice += " · offline copy could not be updated"; }
-                token.ThrowIfCancellationRequested(); RequireSource(key);
+                // Once the public snapshot is saved, leaving one page must not leave memory behind the saved copy.
+                // Each view still checks its own lifetime before attaching data.
+                RequireSource(key);
                 return Publish(new(key, 0, centers, DirectoryOrigin.Live, updatedAt, notice), key);
             }
             catch (OperationCanceledException) { throw; }
