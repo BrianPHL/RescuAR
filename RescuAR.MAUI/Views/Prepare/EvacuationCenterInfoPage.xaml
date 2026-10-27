@@ -158,6 +158,14 @@
                                 <VerticalStackLayout Spacing="12" Margin="0,2,0,0">
                                     <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
                                         <HorizontalStackLayout.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding ViewModel.NavigateTo2DMapCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}" CommandParameter="{Binding .}" />
+                                        </HorizontalStackLayout.GestureRecognizers>
+                                        <Label Text="Start 2D Map Guidance (Journey)" TextColor="#0284C7" FontSize="14" FontAttributes="Bold" />
+                                        <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0284C7" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
+                                    </HorizontalStackLayout>
+
+                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
+                                        <HorizontalStackLayout.GestureRecognizers>
                                             <TapGestureRecognizer 
                                                 Command="{Binding ViewModel.NavigateToCameraCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
                                                 CommandParameter="{Binding .}" />
@@ -369,6 +377,9 @@
 
                     <!-- Row 2: Fixed Bottom Action Buttons -->
                     <VerticalStackLayout Grid.Row="2" Spacing="8" Margin="0,4,0,0">
+                        <Button Text="Start 2D Map Guidance (Journey)" TextColor="White" BackgroundColor="#0284C7"
+                                CornerRadius="14" HeightRequest="46" FontSize="14" FontAttributes="Bold"
+                                Command="{Binding Start2DNavigationCommand}" />
                         <Button Text="Start AR Evacuation Guidance" 
                                 TextColor="#FFFFFF" 
                                 BackgroundColor="#0A8491" 

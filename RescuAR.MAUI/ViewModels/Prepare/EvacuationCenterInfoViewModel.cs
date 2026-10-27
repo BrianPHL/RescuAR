@@ -842,7 +842,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         await StartNavigationToCenterAsync(center, closeDetailsPopup: true);
     }
 
-    private async Task StartNavigationToCenterAsync(EvacuationCenterItem center, bool closeDetailsPopup)
+    private async Task StartNavigationToCenterAsync(EvacuationCenterItem center, bool closeDetailsPopup, bool map2D = false)
     {
         if (IsStartingNavigation) return;
         var current = directory.ResolveSelected(center.Id, center.Latitude, center.Longitude);
@@ -869,15 +869,14 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 CloseDetailsPopup();
             }
 
-            bool opened = await CameraNavigationLauncher.OpenAsync(
-                center.Name,
-                center.Latitude,
-                center.Longitude);
+            bool opened = map2D
+                ? await CameraNavigationLauncher.Open2DAsync(center.Name, center.Latitude, center.Longitude)
+                : await CameraNavigationLauncher.OpenAsync(center.Name, center.Latitude, center.Longitude);
 
             if (!opened && Shell.Current is not null)
             {
                 await Shell.Current.DisplayAlert(
-                    "AR Navigation",
+                    map2D ? "2D Navigation" : "AR Navigation",
                     "This evacuation center could not be used as a navigation destination.",
                     "OK");
             }
@@ -891,7 +890,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             if (Shell.Current is not null)
             {
                 await Shell.Current.DisplayAlert(
-                    "AR Navigation",
+                    map2D ? "2D Navigation" : "AR Navigation",
                     "Unable to start AR navigation.",
                     "OK");
             }
@@ -903,11 +902,21 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task NavigateTo2DMapAsync(EvacuationCenterItem? center)
+    {
+        if (center is not null) await StartNavigationToCenterAsync(center, closeDetailsPopup: false, map2D: true);
+    }
+
+    [RelayCommand]
+    private async Task Start2DNavigationAsync()
+    {
+        if (SelectedCenter is { } center) await StartNavigationToCenterAsync(center, closeDetailsPopup: true, map2D: true);
+    }
+
+    [RelayCommand]
     private async Task NavigateToMapAsync()
     {
-        if (Shell.Current != null)
-        {
-            await Shell.Current.GoToAsync("//Map");
-        }
+        if (!await CameraNavigationLauncher.OpenMapAsync() && Shell.Current is { } shell)
+            await shell.DisplayAlert("2D Map", "The map could not be opened. Please try again.", "OK");
     }
 }
