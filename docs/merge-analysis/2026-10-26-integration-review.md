@@ -14,10 +14,10 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 | Contacts/Quick Actions/system/help/policies | Athena cards/import, confirmed contact saves, shortcut sync, real app/permission details and FAQ/layouts | Import fills the form; Save confirms. Dev dashboard layout and unrelated shortcuts remain. Existing Hotlines directory and shared feature-matched policy text retained. |
 | Settings/advisories | Functional optional popups, automatic advisory sound, shared vibration/voice controls and scoped map clearing | Dev feed/camera emergency warnings and manual siren remain; no general cache/account/media/message sweep. |
 | Circle membership/management | Athena controls on confirmed account/server-scoped create/join/selection/roster | Labelled confirmed offline cache; member Leave separate from creator Rename/Delete; failures cannot claim cloud success. |
-| Circle map | Athena main Map tab, people sheet, avatars, phone controls and shared offline detail | General/Offline Map entry retained. Collapsible People sheet; fresh local self pin independent of uploads. Dated/unknown member readings; sharing defaults Off and uploads only with visible/qualified/confirmed context. |
-| Circle chat/media/photos | Athena layout, one stable message identity, Pending/Failed/Sent/retry, attachment preview then Send | Account/circle cache; old unscoped files stay aside; failed drafts retained. Group photo is labelled device-local. Quick chips fill the composer for review. |
+| Circle map | Athena main Map tab, people sheet, avatars, phone controls, inline create/join/invite and shared offline detail | General/Offline Map entry retained. Collapsible People sheet; fresh local self pin independent of uploads. Dated/unknown member readings; sharing defaults Off and uploads only with visible/qualified/confirmed context. |
+| Circle chat/media/photos | Athena layout, keyed message updates/retained reading position, truthful count, stable message identity, Pending/Failed/Sent/retry and attachment preview | Account/circle cache; old unscoped files stay aside; failed drafts retained. Group photo is labelled device-local. Quick chips fill the composer for review. |
 | Shared offline display | Converted 3,555-tile archive plus buildings/parks/water across General, Circle and Camera maps | Detail defaults On. General Map retains dev basic roads/points; Circle/Camera focus on members or shelters/user/active route. Routing datasets retained. Actual Mapsui local-source contract repaired; both unused conversion inputs excluded. |
-| Camera 2D | Athena AR/2D/Flood tabs, real map, search/planner, overview/directions, Recenter/Overview | One dev accepted destination/route/progress/hazard flow. Current validated GPS only. Pan/zoom retained after initial route framing. Existing AR/flood/recovery implementation preserved. |
+| Camera 2D | Athena AR/2D/Flood tabs, real map, shared directory/search/pins, restored directory 2D entry, overview/directions, Recenter/Overview | One dev accepted destination/route/progress/hazard flow. Current validated GPS only. Pan/zoom retained after initial route framing. Existing AR/flood/recovery implementation preserved. |
 | Turns/arrival/voice/haptics | Dev classifier/arrival rules; qualified cancellable speech, default Off; one short qualified near-turn pulse under the shared haptic preference | No separate route calculation, guessed current position, 15m arrival shortcut or automatic chip/send behavior. Overview destination-ahead is not confirmed arrival. |
 | Dev AR/routing/report/assessment | Latest approved dev recovery, road alignment, progress/ribbon and feed/assessment changes | Required AR/native controls retained. Reports use verified account, stable ID, actual selected point and confirmed server acceptance; failed draft/media retained. |
 | Admin/audit/database/flood/data | Complete Admin tracked tree exactly dev `004ed20`, including newer role/provisioning/password-setup source | Athena's conflicting Admin/audit/schema rewrite, inundation-client/data experiments and georeferenced-file deletions kept aside. No database/function/patch script executed. |
@@ -25,9 +25,9 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 
 ## Preservation evidence
 
-- All **861 dev paths** are accounted for: **784 unchanged**, **76 approved adaptations**, **one approved archive deletion**. No unapproved differences remain.
+- All **861 dev paths** are accounted for: **778 unchanged**, **82 approved adaptations**, **one approved archive deletion**. No unapproved differences remain.
 - Shared AR/native/routing datasets, desktop/editor/content and workflow/build sources retain dev. The shared router has only the approved provenance guard; every original regression check remains alongside the four parser fixes and new Camera/feedback entries.
-- Camera's original dev body restores exactly by reversing five recorded display/feedback/lifecycle hook sites. All 32 other pinned AR/navigation/check/history source hashes remain exact.
+- Camera's original dev body restores exactly by reversing six approved hook sites (five earlier display/feedback/lifecycle sites and the low-light Camera 2D shortcut). All 32 other pinned AR/navigation/check/history source hashes remain exact.
 - The native project restores to dev after reversing only the approved splash attributes and conversion-input exclusions. Existing manifest semantics remain, with approved contacts/vibration and Android speech-engine visibility additions.
 - The complete Admin subtree hash equals dev: `036fd835eb4077192b04b4d9a48d39da3ba58cf4`. Both source branches remain unchanged. No merge commits were created by this integration.
 
@@ -35,7 +35,7 @@ The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Ath
 
 | Check | Result |
 | --- | --- |
-| Local auth/profile/settings/Circle/report/offline policies | 421 passed; includes six new current-local-position cases, fake services and isolated fixtures, and all 3,555 packaged entries. |
+| Local auth/profile/settings/Circle/report/offline policies | 467 passed on final repair source; includes the shared directory/cache, view handoff, chat presentation and prior local policies/fixtures, including all 3,555 packaged entries. |
 | Actual map tile contract | 12 passed using installed Mapsui/BruTile and the production adapter/real PNG; no network/UI. |
 | Camera presentation/directions | 41 passed; GPS quality/expiry, trip ownership, geometry, viewport and shared-classifier cases. |
 | Navigation feedback | 32 passed; fake speech/vibration, cancellation, deduplication, serialization and fallback. |
@@ -78,4 +78,8 @@ No branch merge, push, deployment, database operation, running-app/browser/devic
 
 ## 27 October preservation audit
 
-The source-only recheck found remaining losses: Athena's directory-cache repository was left as dev's three static centers; its two directory-to-2D actions were removed and View Map opens Circles; marker invalidation does not track directory updates; chat rebuilds unchanged history every five seconds; and its verified numeric member count was removed. These application issues remain unfixed in this analysis-only pass. The earlier tile-interface defect existed in Athena too, so its origin is corrected above. See [pinned evidence, intentional differences and recommended repair order](2026-10-27-athena-regression-audit.md).
+The source-only recheck found remaining losses: Athena's directory-cache repository was left as dev's three static centers; its two directory-to-2D actions were removed and View Map opens Circles; marker invalidation does not track directory updates; chat rebuilds unchanged history every five seconds; and its verified numeric member count was removed. They were unfixed at that analysis checkpoint and are now addressed by the approved 28 October repairs. The earlier tile-interface defect existed in Athena too, so its origin is corrected above. See [pinned evidence, intentional differences and recommended repair order](2026-10-27-athena-regression-audit.md).
+
+## Completed 28 October repairs
+
+The shared directory/empty-result/cache path, selected-center 2D entry, directory-driven markers, stable chat rows/count and inline Circle controls are committed in both checkouts. Final verification: **467 combined local checks**, **41 Camera checks**, actual Release XamlC **0 warnings/errors**, and static ARCore compatibility checks. All 31 changed source/test paths match; core/native/assets/Admin remain preserved. No APK or device/backend run. See [commit table, precise limits and manual cases](2026-10-28-athena-regression-repairs.md).

@@ -1,5 +1,7 @@
 # Athena preservation audit — 27 October 2026
 
+**Resolution:** The user-approved repairs are now committed. See [completed batches, verification and device checks](2026-10-28-athena-regression-repairs.md). The pinned findings below describe the earlier audit checkpoint.
+
 Compared these exact local Git sources, without changing application behavior:
 
 - Athena: `migration/athena-modules` / `fa777da153a492268ace76162a80389e0d904534`.

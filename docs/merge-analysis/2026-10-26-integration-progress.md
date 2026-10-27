@@ -546,3 +546,13 @@ Source preparation is complete. Use the [integration review](2026-10-26-integrat
 - Found the two lost directory-to-2D journey actions, View Map targeting Circles, directory-independent Camera marker caching, unnecessary full chat resets on unchanged polls, and loss of a truthful numeric chat member count. Circle inline membership controls also moved to management; that presentation needs a choice before alteration.
 - Corrected source attribution: Athena itself used the incompatible local tile interface. Its repair remains valid, but it was inherited rather than merge-introduced. Low-light Open 2D Map targeting Circles and missing profile notification placeholders are also inherited.
 - Only analysis documents updated. No new build/unit suite, device/browser/app/backend operation, APK, merge/push, deployment or application fix. Evidence and proposed sequence: [Athena regression audit](2026-10-27-athena-regression-audit.md).
+
+## 28 October — approved Athena regression repairs completed
+
+- Shared directory and map revisions committed: `269bd0b` / build checkout `9bf9e7c`. Preserves real string IDs/metadata/time; nine labelled historical locations only before live/saved data; confirmed empty results persist, failures retain earlier data; main list/search/pins use one snapshot.
+- Restored selected-center 2D actions and directory/low-light Camera 2D entry: `db5bc9c` / `6f8d327`. A one-use trip-owned view request preserves shared dev routing/GPS/arrival and explicit AR entry; browsing never picks the first center.
+- Keyed chat rows/reading position and truthful confirmed/cached member count: `f9e82f3` / `5704858`. Pending-to-Sent/retry and local photos retain their approved behavior.
+- Athena-style inline create/join/invite: `48d6d53` / `fa4387e`, using the existing account-scoped confirmed membership service and creator-only management. Form failures remain failures; upload consent remains explicit.
+- Directory disk/memory consistency across page exit: `1b535a8` / `2d9a0c1`; whitespace-only model cleanup `fcbf10b` / `ffff1fc`.
+- Final: 467 combined local checks passed; targeted Camera 41, handoff 7, chat 61 and membership/map 125 also passed (overlapping groups, not a sum). Actual Release XamlC 0 warnings/errors; static ARCore declarations passed. 31 changed paths match across checkouts; 32 pinned AR sources exact plus the approved extra low-light UI hook. All 861 dev paths: 778 exact, 82 approved adaptations, one approved archive deletion. Core/native/resources/Admin unchanged.
+- No branch merge/push, APK generation, browser/app/device/backend test, deployment or database operation. See [completed repair report](2026-10-28-athena-regression-repairs.md) for device follow-up and the canonical commit mapping.
