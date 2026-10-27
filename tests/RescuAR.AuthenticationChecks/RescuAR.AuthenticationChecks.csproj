@@ -38,5 +38,10 @@
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineTileArchive.cs" Link="OfflineTileArchive.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapCache.cs" Link="OfflineMapCache.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs" Link="OfflineOverlaySession.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Evacuation/EvacuationDirectory.cs" Link="EvacuationDirectory.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Storage/EvacuationDirectoryModels.cs" Link="EvacuationDirectoryModels.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Storage/CacheService.cs" Link="CacheService.cs" />
+    <Compile Include="../../RescuAR/Navigation/Models/GeoCoordinate.cs" Link="GeoCoordinate.cs" />
+    <Compile Include="../../RescuAR/Navigation/Guidance/BundledEvacuationCenterCatalog.cs" Link="BundledEvacuationCenterCatalog.cs" />
   </ItemGroup>
 </Project>

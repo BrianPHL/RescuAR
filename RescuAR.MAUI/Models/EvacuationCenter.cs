@@ -1,8 +1,8 @@
-﻿namespace RescuAR.App.Models;
+namespace RescuAR.App.Models;
 
 public sealed class EvacuationCenter
 {
-    public int Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     public string Name { get; set; } =
         string.Empty;
