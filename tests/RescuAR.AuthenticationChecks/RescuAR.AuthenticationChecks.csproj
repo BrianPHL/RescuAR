@@ -44,5 +44,6 @@
     <Compile Include="../../RescuAR/Navigation/Models/GeoCoordinate.cs" Link="GeoCoordinate.cs" />
     <Compile Include="../../RescuAR/Navigation/Guidance/BundledEvacuationCenterCatalog.cs" Link="BundledEvacuationCenterCatalog.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/CameraViewHandoff.cs" Link="CameraViewHandoff.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/SafetyCircle/ChatMessageReconciler.cs" Link="ChatMessageReconciler.cs" />
   </ItemGroup>
 </Project>

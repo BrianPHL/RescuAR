@@ -7,6 +7,7 @@ public partial class CircleChatPage : ContentPage
     public CircleChatViewModel ViewModel { get; }
     private Window? observedWindow;
     private bool pageShown;
+    private bool nearMessageEnd = true;
 
     public CircleChatPage(CircleChatViewModel viewModel)
     {
@@ -15,15 +16,22 @@ public partial class CircleChatPage : ContentPage
         BindingContext = ViewModel;
         ViewModel.MessageAdded += MessageAdded;
     }
-    private void MessageAdded(ChatMessageItem item) => MainThread.BeginInvokeOnMainThread(() =>
+    private void MessagesScrolled(object? sender, ItemsViewScrolledEventArgs args) =>
+        nearMessageEnd = args.LastVisibleItemIndex >= ViewModel.Messages.Count - 2;
+    private void MessageAdded(ChatMessageItem item)
     {
-        if (!pageShown || !ViewModel.Messages.Contains(item)) return;
-        try { MessagesCollectionView.ScrollTo(item, position: ScrollToPosition.End, animate: true); }
-        catch { }
-    });
+        bool follow = nearMessageEnd || item.IsMyMessage;
+        if (!follow) return;
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (!pageShown || !ViewModel.Messages.Contains(item)) return;
+            try { MessagesCollectionView.ScrollTo(item, position: ScrollToPosition.End, animate: true); }
+            catch { }
+        });
+    }
     protected override async void OnAppearing()
     {
-        base.OnAppearing(); pageShown = true;
+        base.OnAppearing(); pageShown = true; nearMessageEnd = true;
         observedWindow = Window;
         if (observedWindow is not null) { observedWindow.Stopped += WindowStopped; observedWindow.Resumed += WindowResumed; }
         await ViewModel.StartAsync();

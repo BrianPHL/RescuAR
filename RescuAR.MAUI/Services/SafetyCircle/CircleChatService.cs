@@ -84,7 +84,19 @@ public sealed class CircleChatService(CircleMembershipService memberships, ICirc
         }).ToList();
         merged.AddRange(state.Messages.Where(old => old.Delivery != ChatDelivery.Sent && !merged.Any(item => item.Id == old.Id)));
         merged = merged.OrderBy(message => message.CreatedAt).ToList();
-        return Save(scope, state with { Messages = merged }, false, "Messages checked online. Sent confirms server acceptance, not that another member has read the message.", true);
+        int? memberCount = state.MemberCount; DateTimeOffset? checkedAt = state.MemberCountCheckedAt;
+        bool countConfirmed = false;
+        try
+        {
+            if (await remote.ReadMemberCountAsync(scope, token) is > 0 and var count)
+            { Require(scope, token); memberCount = count; checkedAt = clock(); countConfirmed = true; }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { Require(scope, token); /* Keep a labelled saved count without preventing message delivery/history. */ }
+        Require(scope, token);
+        return Save(scope, state with { Messages = merged, MemberCount = memberCount, MemberCountCheckedAt = checkedAt }, false,
+            "Messages checked online. Sent confirms server acceptance, not that another member has read the message.", true)
+            with { MemberCountConfirmed = countConfirmed };
     });
     private static bool Offline(Exception error) => error is CircleMembershipOfflineException or TimeoutException || error is HttpRequestException { StatusCode: null };
 

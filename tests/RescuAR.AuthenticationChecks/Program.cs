@@ -26,6 +26,14 @@ if (args.Contains("--camera-view-handoff"))
     return;
 }
 
+if (args.Contains("--circle-chat"))
+{
+    await CircleChatChecks.RunAsync(Check);
+    ChatPresentationChecks.Run(Check);
+    Console.WriteLine($"{passed} Circle chat and presentation checks passed.");
+    return;
+}
+
 Session Token(string value) => new() { AccessToken = value, RefreshToken = "test-refresh" };
 var store = new FakeSecureStore();
 var persistence = new SecureSessionPersistence("https://project-a.supabase.co", store);

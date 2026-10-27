@@ -10,6 +10,22 @@ internal static class CircleChatChecks
 
     public static async Task RunAsync(Action<bool, string> check)
     {
+        var counts = new Rig(); var countScope = counts.Chat.Capture("circle-a");
+        var countSnapshot = await counts.Chat.LoadAsync(countScope);
+        check(countSnapshot.State.MemberCount == 4 && countSnapshot.MemberCountConfirmed && countSnapshot.State.MemberCountCheckedAt == Now,
+            "online chat restores the confirmed numeric membership count with its check time");
+        counts.Context.Online = false; int countReads = counts.Remote.CountReads;
+        countSnapshot = await counts.Chat.LoadAsync(countScope);
+        check(countSnapshot.State.MemberCount == 4 && !countSnapshot.MemberCountConfirmed && countSnapshot.IsCached && counts.Remote.CountReads == countReads,
+            "offline chat retains a labelled saved count without claiming live membership or making a count request");
+        counts.Context.Online = true; counts.Remote.FailCount = true;
+        countSnapshot = await counts.Chat.LoadAsync(countScope);
+        check(countSnapshot.State.MemberCount == 4 && !countSnapshot.MemberCountConfirmed && !countSnapshot.IsCached,
+            "count failure retains the saved count while message history remains independently available");
+        var unknownCount = new Rig(); unknownCount.Remote.Count = null;
+        check((await unknownCount.Chat.LoadAsync(unknownCount.Chat.Capture("circle-a"))).State.MemberCount is null,
+            "an unavailable count is not replaced with one, zero or a fabricated Online label");
+
         var rig = new Rig(); var scope = rig.Chat.Capture("circle-a");
         CircleChatSnapshot? queued = null;
         var result = await rig.Chat.SendAsync(scope, " Hello ", null, "Resident", "", snapshot => queued = snapshot);
@@ -185,6 +201,9 @@ internal static class CircleChatChecks
     }
     private sealed class Remote : ICircleChatRemote
     {
+        public int? Count = 4; public int CountReads; public bool FailCount;
+        public Task<int?> ReadMemberCountAsync(CircleChatScope scope, CancellationToken token)
+        { CountReads++; if (FailCount) throw new IOException("count unavailable"); return Task.FromResult(Count); }
         public List<CircleChatMessage> Rows { get; } = new(); public int Sends; public bool FailSend, LoseResponse, WrongResponse;
         public Func<CircleChatScope, CircleChatMessage, CancellationToken, Task<CircleChatMessage>>? Send;
         public Task<List<CircleChatMessage>> ReadAsync(CircleChatScope scope, CancellationToken token) => Task.FromResult(Rows.ToList());
