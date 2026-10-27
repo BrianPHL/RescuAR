@@ -60,6 +60,12 @@ internal static class EvacuationDirectoryChecks
         using var cancel = new CancellationTokenSource(); cancel.Cancel();
         bool cancelled = false; try { await directory.RefreshAsync(true, cancel.Token); } catch (OperationCanceledException) { cancelled = true; }
         check(cancelled, "a cancelled owner cannot start a directory request");
+        using var savedCancellation = new CancellationTokenSource();
+        source.Rows = new[] { Center("committed") }; source.AfterSave = savedCancellation.Cancel;
+        snapshot = await directory.RefreshAsync(true, savedCancellation.Token);
+        check(savedCancellation.IsCancellationRequested && snapshot.Centers.Single().Id == "committed" && directory.Current.Centers.Single().Id == source.Saved!.Centers.Single().Id,
+            "leaving a page during the cache commit cannot leave the shared directory older than its saved copy");
+        source.AfterSave = null;
         source.Pause = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var pending = directory.RefreshAsync(true);
         source.SourceKey = "third-server"; source.Pause.SetResult();
@@ -76,11 +82,11 @@ internal static class EvacuationDirectoryChecks
         public IReadOnlyList<CachedEvacuationCenterItem> Rows { get; set; } = Array.Empty<CachedEvacuationCenterItem>();
         public EvacuationCenterCacheEnvelope? Saved;
         public int Reads; public bool Fail, SaveFails;
-        public TaskCompletionSource? Pause;
+        public TaskCompletionSource? Pause; public Action? AfterSave;
         public EvacuationCenterCacheEnvelope? Load() => Saved;
         public async Task<IReadOnlyList<CachedEvacuationCenterItem>> FetchAsync(CancellationToken token)
         { Reads++; if (Pause is not null) await Pause.Task.WaitAsync(token); if (Fail) throw new IOException(); return Rows; }
         public void Save(string key, IReadOnlyList<CachedEvacuationCenterItem> centers, DateTimeOffset at)
-        { if (SaveFails) throw new IOException(); Saved = new() { SourceKey = key, Centers = centers.Select(EvacuationDirectory.Copy).ToList(), DirectoryConfirmed = true, LastUpdatedUtc = at }; }
+        { if (SaveFails) throw new IOException(); Saved = new() { SourceKey = key, Centers = centers.Select(EvacuationDirectory.Copy).ToList(), DirectoryConfirmed = true, LastUpdatedUtc = at }; AfterSave?.Invoke(); }
     }
 }
