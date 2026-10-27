@@ -59,6 +59,14 @@ internal sealed class SupabaseCircleChatRemote : ICircleChatRemote
     private static CircleChatMessage Convert(SupabaseCircleMessage item) => new(item.Id, item.CircleId, item.UserId,
         string.IsNullOrWhiteSpace(item.SenderName) ? "Member name unavailable" : item.SenderName, CirclePresencePolicy.SafeAvatar(item.SenderAvatarUrl),
         item.MessageText ?? "", item.MediaUrl ?? "", item.MediaType ?? "Text", Utc(item.CreatedAt), ChatDelivery.Sent);
+    public async Task<int?> ReadMemberCountAsync(CircleChatScope scope, CancellationToken token)
+    {
+        var client = await Member(scope, token);
+        int count = await client.From<SupabaseCircleMember>().Where(member => member.CircleId == scope.CircleId)
+            .Count(Supabase.Postgrest.Constants.CountType.Exact, token);
+        Require(scope, token);
+        return count > 0 ? count : null;
+    }
     public async Task<List<CircleChatMessage>> ReadAsync(CircleChatScope scope, CancellationToken token)
     {
         var client = await Member(scope, token);

@@ -45,7 +45,7 @@ public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
     [ObservableProperty] private string inviteCode = "";
     [ObservableProperty] private string memberCountText = "";
     [ObservableProperty] private string groupAvatarUrl = "";
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasNoGroupAvatar))] private bool hasGroupAvatar;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasNoGroupAvatar), nameof(GroupPhotoStatus))] private bool hasGroupAvatar;
     [ObservableProperty] private string newMessageText = "";
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsNotBusy), nameof(CanSend))] private bool isBusy;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanSend))] private bool isReady;
@@ -57,6 +57,7 @@ public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
     [ObservableProperty] private string attachmentPath = "";
     [ObservableProperty] private string attachmentDetails = "";
     public bool HasNoGroupAvatar => !HasGroupAvatar;
+    public string GroupPhotoStatus => HasGroupAvatar ? "Photo on this device" : "No local photo";
     public bool IsNotBusy => !IsBusy;
     public bool CanSend => IsReady && !IsBusy;
     public bool HasExternalInteraction => externalInteraction > 0;
@@ -92,7 +93,7 @@ public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
             scope = chat.Capture(id); requestedId = id;
             foreach (var circle in circles.Circles) MyCircles.Add(circle);
             CircleName = selected.Name; InviteCode = selected.InviteCode;
-            MemberCountText = circles.IsCached ? "Cached Circle · photo is local" : "Circle members · photo is local";
+            MemberCountText = "Member count unavailable";
             NewMessageText = composerDrafts.GetValueOrDefault(scope.Value, "");
             var snapshot = await chat.LoadAsync(scope.Value, network.Token);
             Require(scope.Value, request); Present(snapshot); IsReady = true;
@@ -121,8 +122,11 @@ public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
     {
         if (scope is not { } owner) return;
         chat.Require(owner);
-        string priorLast = Messages.LastOrDefault()?.Id ?? "";
-        Messages.Clear(); foreach (var item in snapshot.State.Messages) Messages.Add(new(item, owner));
+        bool newTail = ChatMessageReconciler.Apply(Messages, snapshot.State.Messages, row => row.Id, message => message.Id,
+            (row, message) => row.Message == message, message => new ChatMessageItem(message, owner));
+        MemberCountText = snapshot.State.MemberCount is > 0 and var count
+            ? $"{count} {(count == 1 ? "member" : "members")}{(snapshot.MemberCountConfirmed ? "" : " · cached")}"
+            : "Member count unavailable";
         attachment = snapshot.State.Attachment; HasAttachment = attachment is not null;
         AttachmentPath = attachment?.Path ?? ""; IsAttachmentImage = attachment?.Kind == "Image"; IsAttachmentVideo = attachment?.Kind == "Video";
         AttachmentDetails = attachment is null ? "" : $"{attachment.Name} · {attachment.Kind} · {attachment.Bytes / 1024.0:F1} KB · not uploaded";
@@ -130,7 +134,7 @@ public partial class CircleChatViewModel : ObservableObject, IQueryAttributable
         HasGroupAvatar = photo is not null && CircleChatRuntime.Files.Owns(owner, photo) && File.Exists(photo.Path);
         GroupAvatarUrl = HasGroupAvatar ? photo!.Path : "";
         StatusMessage = snapshot.Notice;
-        if (Messages.LastOrDefault() is { } last && last.Id != priorLast) MessageAdded?.Invoke(last);
+        if (newTail && Messages.LastOrDefault() is { } last) MessageAdded?.Invoke(last);
     }
     private void Failure(Exception error)
     {
