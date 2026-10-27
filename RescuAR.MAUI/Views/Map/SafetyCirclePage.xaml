@@ -126,7 +126,12 @@
                             </CollectionView.ItemTemplate>
                             <CollectionView.EmptyView><Label Text="No confirmed Circles to display." TextColor="#64748B" Padding="8" /></CollectionView.EmptyView>
                         </CollectionView>
-                        <Button Text="Create, join or manage Circles" Command="{Binding ManageCirclesCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="8" FontSize="12" />
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                            <Button Text="Create" Command="{Binding CreateCircleCommand}" IsEnabled="{Binding CanOpenCircleAction}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="10" FontSize="12" Padding="8,0" />
+                            <Button Grid.Column="1" Text="Join" Command="{Binding JoinCircleCommand}" IsEnabled="{Binding CanOpenCircleAction}" BackgroundColor="#E6F4F2" TextColor="#0A8491" CornerRadius="10" FontSize="12" Padding="8,0" />
+                            <Button Grid.Column="2" Text="Invite code" Command="{Binding ShowInlineInviteCommand}" IsEnabled="{Binding CanShowInlineInvite}" BackgroundColor="#E6F4F2" TextColor="#0A8491" CornerRadius="10" FontSize="11" Padding="6,0" />
+                        </Grid>
+                        <Button Text="Manage memberships" Command="{Binding ManageCirclesCommand}" BackgroundColor="Transparent" TextColor="#64748B" FontSize="12" />
                     </VerticalStackLayout>
                 </Border>
             </ContentView>
@@ -341,5 +346,42 @@
             </Border>
 
         </Grid>
+        <!-- Inline Athena-style create/join/invite cards use the approved membership service. -->
+        <ContentView Grid.RowSpan="3" IsVisible="{Binding IsCircleActionOpen}" BackgroundColor="#70000000" ZIndex="100">
+            <Border HorizontalOptions="Center" VerticalOptions="Center" Margin="24" Padding="22" MaximumWidthRequest="360"
+                    MaximumHeightRequest="520" StrokeThickness="0" StrokeShape="RoundRectangle 24" BackgroundColor="White">
+                <ScrollView>
+                    <VerticalStackLayout Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Label Text="{Binding CircleDialogTitle}" TextColor="#0D5C68" FontSize="20" FontAttributes="Bold" VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="Close" Command="{Binding CloseInlineCircleActionCommand}" IsEnabled="{Binding CanEditCircleAction}" BackgroundColor="Transparent" TextColor="#64748B" Padding="4,0" FontSize="12" />
+                        </Grid>
+                        <VerticalStackLayout IsVisible="{Binding IsCreateCircleOpen}" Spacing="12" IsEnabled="{Binding CanEditCircleAction}">
+                            <Label Text="Create a Circle, then share its invite code with the people you choose." TextColor="#64748B" FontSize="13" />
+                            <Border Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" Padding="12,2">
+                                <Entry Text="{Binding NewCircleName}" Placeholder="Circle name" MaxLength="60" TextColor="#0F172A" />
+                            </Border>
+                            <Button Text="Create Circle" Command="{Binding SubmitInlineCreateCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="12" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout IsVisible="{Binding IsJoinCircleOpen}" Spacing="12" IsEnabled="{Binding CanEditCircleAction}">
+                            <Label Text="Enter the six-character invite code. A connection is required to confirm membership." TextColor="#64748B" FontSize="13" />
+                            <Border Stroke="#CBD5E1" StrokeShape="RoundRectangle 12" BackgroundColor="#F8FAFC" Padding="12,2">
+                                <Entry Text="{Binding JoinInviteCode}" Placeholder="Invite code" MaxLength="6" CharacterSpacing="4" TextColor="#0F172A" />
+                            </Border>
+                            <Button Text="Join Circle" Command="{Binding SubmitInlineJoinCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="12" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout IsVisible="{Binding IsCircleInviteOpen}" Spacing="12">
+                            <Label Text="{Binding CircleActionName}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                            <Border BackgroundColor="#E6F4F2" StrokeThickness="0" StrokeShape="RoundRectangle 16" Padding="16">
+                                <Label Text="{Binding CircleInviteDisplay}" TextColor="#0A8491" FontSize="26" FontAttributes="Bold" CharacterSpacing="4" HorizontalTextAlignment="Center" />
+                            </Border>
+                            <Button Text="Copy invite code" IsVisible="{Binding HasCircleInviteCode}" Command="{Binding CopyInlineInviteCommand}" BackgroundColor="#0A8491" TextColor="White" CornerRadius="12" />
+                        </VerticalStackLayout>
+                        <ActivityIndicator IsRunning="{Binding IsCircleActionBusy}" IsVisible="{Binding IsCircleActionBusy}" Color="#0A8491" />
+                        <Label Text="{Binding CircleActionStatus}" TextColor="#475569" FontSize="12" LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </ScrollView>
+            </Border>
+        </ContentView>
     </Grid>
 </ContentPage>

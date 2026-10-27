@@ -34,6 +34,14 @@ if (args.Contains("--circle-chat"))
     return;
 }
 
+if (args.Contains("--circle-membership"))
+{
+    await CircleMembershipChecks.RunAsync(Check);
+    await CircleMapChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} Circle membership/map policy checks passed.");
+    return;
+}
+
 Session Token(string value) => new() { AccessToken = value, RefreshToken = "test-refresh" };
 var store = new FakeSecureStore();
 var persistence = new SecureSessionPersistence("https://project-a.supabase.co", store);
@@ -119,6 +127,10 @@ SettingsChecks.Run(Check);
 await CircleMembershipChecks.RunAsync(Check);
 await CircleMapChecks.RunAsync(Check);
 await CircleChatChecks.RunAsync(Check);
+ChatPresentationChecks.Run(Check);
+await EvacuationDirectoryChecks.RunAsync(Check);
+DirectoryCacheChecks.Run(Check);
+CameraViewHandoffChecks.Run(Check);
 await ResidentReportChecks.RunAsync(Check);
 await OfflineMapChecks.RunAsync(Check);
 Console.WriteLine($"{passed} authentication, profile, settings, Circle, report and offline-map checks passed.");
