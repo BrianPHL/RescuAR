@@ -1,31 +1,12 @@
-﻿using RescuAR.App.Models;
+using RescuAR.App.Models;
+using RescuAR.App.Services.Evacuation;
 
 public static class EvacuationCenterRepository
 {
-    public static List<EvacuationCenter> GetEvacuationCenters()
-    {
-        return
-        [
-            new()
-            {
-                Name = "Marikina Sports Center",
-                Latitude = 14.6358,
-                Longitude = 121.0965
-            },
-
-            new()
-            {
-                Name = "Marikina City Hall",
-                Latitude = 14.6507,
-                Longitude = 121.1029
-            },
-
-            new()
-            {
-                Name = "Riverbanks Center",
-                Latitude = 14.6350,
-                Longitude = 121.0824
-            }
-        ];
-    }
+    public static List<EvacuationCenter> GetEvacuationCenters(EvacuationDirectorySnapshot? snapshot = null) =>
+        (snapshot ?? EvacuationDirectoryRuntime.Current.Current).Centers.Select(center => new EvacuationCenter
+        {
+            Id = center.Id, Name = center.Name, Latitude = center.Latitude, Longitude = center.Longitude,
+            Capacity = center.Capacity, Occupancy = center.CurrentEvacuees, Status = center.Status
+        }).ToList();
 }

@@ -11,6 +11,14 @@ void Check(bool condition, string name)
     Console.WriteLine($"PASS: {name}");
 }
 
+if (args.Contains("--evacuation-directory"))
+{
+    await EvacuationDirectoryChecks.RunAsync(Check);
+    DirectoryCacheChecks.Run(Check);
+    Console.WriteLine($"{passed} evacuation-directory and production-cache checks passed.");
+    return;
+}
+
 Session Token(string value) => new() { AccessToken = value, RefreshToken = "test-refresh" };
 var store = new FakeSecureStore();
 var persistence = new SecureSessionPersistence("https://project-a.supabase.co", store);

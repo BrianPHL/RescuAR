@@ -439,16 +439,22 @@
                         </Grid>
 
                         <!-- Section Title -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
-                            <Label Text="Evacuation-center directory" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
-                            <Label x:Name="mapSearchOrderLabel" Grid.Column="1" Text="By name · distance unknown" TextColor="#94A3B8" FontSize="10.5" />
-                        </Grid>
+                        <VerticalStackLayout Grid.Row="1" Spacing="4" Margin="4,0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="Evacuation-center directory" TextColor="#64748B" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                <Button Grid.Column="1" Text="Refresh" Clicked="OnCameraDirectoryRefreshClicked" BackgroundColor="Transparent" TextColor="#0A8491" FontSize="11" Padding="8,0" />
+                            </Grid>
+                            <Label x:Name="mapSearchOrderLabel" Text="Loading directory…" TextColor="#64748B" FontSize="10.5" />
+                        </VerticalStackLayout>
 
                         <!-- Search Results CollectionView -->
                         <CollectionView
                             Grid.Row="2"
                             x:Name="centerSearchResultsView"
                             SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Label x:Name="cameraDirectoryEmptyLabel" Text="No evacuation centers listed." TextColor="#64748B" Padding="12" />
+                            </CollectionView.EmptyView>
                             <CollectionView.ItemTemplate>
                                 <DataTemplate x:DataType="camera:ShelterSearchDisplayItem">
                                     <Border Margin="0,4" Padding="12,10" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
