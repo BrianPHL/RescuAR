@@ -59,7 +59,7 @@ Earlier compile-only C#/XAML claims were too broad: Android's Compile target ena
 
 ## Map regression correction
 
-The map review found a real integration defect: the packaged source implemented only `ITileSource` although Mapsui 5.1 requires `ILocalTileSource` to fetch local bytes. The supplied archive was present and valid inside the user's earlier APK. The adapter is corrected, the app-specific online tile identifier restored, and the actual Mapsui fetch conversion now tested. The reported 403 still needs device/network confirmation.
+The map review found a real rendering defect inherited from Athena: the packaged source implemented only `ITileSource` although Mapsui 5.1 requires `ILocalTileSource` to fetch local bytes. The supplied archive was present and valid inside the user's earlier APK. The adapter is corrected, the app-specific online tile identifier restored, and the actual Mapsui fetch conversion now tested. The reported 403 still needs device/network confirmation.
 
 The user also approved removing raw routing-graph overlays from Circle/Camera, restoring a fresh local self pin independent of sharing, and a map-first/collapsible People presentation. General Map and dev routing/AR remain intact. See [findings, commits and device checks](2026-10-26-map-restoration.md). No APK was created for these fixes.
 
@@ -75,3 +75,7 @@ APK packaging remains deferred. Earlier APK artifacts are earlier checkpoints an
 6. With controlled Admin accounts, verify deployed permissions, first-login password setup, provisioning, audit/report moderation, SMS and flood/data workflows. No live operation is implied by the local tests.
 
 No branch merge, push, deployment, database operation, running-app/browser/device test or final-branch APK is included in this preparation. Those remain separate user-controlled actions.
+
+## 27 October preservation audit
+
+The source-only recheck found remaining losses: Athena's directory-cache repository was left as dev's three static centers; its two directory-to-2D actions were removed and View Map opens Circles; marker invalidation does not track directory updates; chat rebuilds unchanged history every five seconds; and its verified numeric member count was removed. These application issues remain unfixed in this analysis-only pass. The earlier tile-interface defect existed in Athena too, so its origin is corrected above. See [pinned evidence, intentional differences and recommended repair order](2026-10-27-athena-regression-audit.md).

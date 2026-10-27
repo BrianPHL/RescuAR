@@ -6324,6 +6324,38 @@
     "online_source": "canonical OSM endpoint, truthful existing RescuAR identifier, attribution, seven-day replaceable cache; no provider fetch during checks",
     "apk_inspected": "existing user-built 154490777-byte APK; packaged archive hash matches; APK predates these fixes",
     "report": "docs/merge-analysis/2026-10-26-map-restoration.md",
-    "limits": "actual Android rendering/permissions/lifecycle/network/backend behavior unverified; no APK packaging or branch merge"
+    "limits": "actual Android rendering/permissions/lifecycle/network/backend behavior unverified; no APK packaging or branch merge",
+    "tile_interface_origin_correction": "2026-10-27 comparison confirms Athena fa777da also implemented ITileSource only. This fixed rendering defect was inherited, not introduced by integration. See the new regression audit."
+  },
+  "athena_regression_audit_2026_10_27": {
+    "date": "2026-10-27",
+    "athena": "fa777da153a492268ace76162a80389e0d904534",
+    "integration": "9fc746878dde90080f69562e6a2f008058818076",
+    "dev": "004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9",
+    "athena_fallback_count": 16,
+    "integration_static_count": 3,
+    "athena_repository_uses_directory_cache": true,
+    "integration_repository_uses_directory_cache": false,
+    "main_directory_cloud_and_cache_implemented": true,
+    "removed_2d_entry_actions": 2,
+    "view_map_now_targets_circle_tab": true,
+    "marker_revision_tracks_destination_only": true,
+    "chat_rebuilds_unchanged_poll_results": true,
+    "chat_verified_numeric_count_removed": true,
+    "tile_interface_defect_inherited_from_athena": true,
+    "xml_pages_compared": 12,
+    "application_changes": false,
+    "new_build_or_tests": false,
+    "device_or_backend_calls": false,
+    "report": "docs/merge-analysis/2026-10-27-athena-regression-audit.md",
+    "findings": [
+      "P1: shared evacuation-directory cache connection lost; 16 fallback entries replaced by dev static three",
+      "P1: two main-directory 2D journey actions removed; View Map targets Circle tab",
+      "P2: Camera marker revision tied to trip only, not directory updates",
+      "P2: unchanged chat snapshots clear/recreate the full message collection every five seconds; visible scroll risk untested",
+      "P3: actual chat member count removed together with unsupported Online label"
+    ],
+    "pending_presentation_choice": "central Circle management versus Athena inline map membership controls",
+    "repair_status": "analysis only; application fixes not applied in this pass"
   }
 }

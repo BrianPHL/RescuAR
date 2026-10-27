@@ -539,3 +539,10 @@ Source preparation is complete. Use the [integration review](2026-10-26-integrat
 - Code commits: integration `b0ee28c`, `18d7f47`; built checkout `51cac46`, `53c5bc8`. All 11 affected source paths match across checkouts; all 33 approved AR source references and the exact dev Admin tree remain unchanged.
 - Passed: 12 actual-library local tile-contract checks, 421 local policy checks (six new local-position cases), 41 Camera-map checks, and final Release compilation with actual XamlC, 0 warnings/errors. No APK generated, app/device/browser/backend interaction, branch merge, push, deployment or database operation.
 - Current display choices supersede earlier statements that raw roads/points must appear in every map or that Sharing Off prevents device-local GPS acquisition. Earlier archive-only checks did not exercise the Mapsui tile contract. See [comparison and device follow-up](2026-10-26-map-restoration.md).
+
+## 27 October — source-only Athena regression recheck
+
+- Compared Athena `fa777da` with integration `9fc7468`; application code was not changed. Main directory Supabase/cache loading is implemented, but Camera uses dev's static three-entry repository instead of Athena's cache-connected repository/16-entry fallback. The previous restoration missed this.
+- Found the two lost directory-to-2D journey actions, View Map targeting Circles, directory-independent Camera marker caching, unnecessary full chat resets on unchanged polls, and loss of a truthful numeric chat member count. Circle inline membership controls also moved to management; that presentation needs a choice before alteration.
+- Corrected source attribution: Athena itself used the incompatible local tile interface. Its repair remains valid, but it was inherited rather than merge-introduced. Low-light Open 2D Map targeting Circles and missing profile notification placeholders are also inherited.
+- Only analysis documents updated. No new build/unit suite, device/browser/app/backend operation, APK, merge/push, deployment or application fix. Evidence and proposed sequence: [Athena regression audit](2026-10-27-athena-regression-audit.md).
