@@ -7,6 +7,7 @@ namespace RescuAR.App.Views.Camera;
 
 public partial class CameraPage
 {
+    private readonly CameraStartupState cameraStartupState = new();
     private IDispatcherTimer? cameraStartupTimer;
     private long? cameraStartupWaitingSince;
 
@@ -21,9 +22,12 @@ public partial class CameraPage
         string? failure = lifecycle.State == ArCoreLifecycleState.Faulted || cameraPipelineTerminalFailureVisible
             ? (string.IsNullOrWhiteSpace(lifecycle.Failure.Message) ? "The camera could not start. Check camera access or switch to 2D Map." : lifecycle.Failure.Message)
             : null;
-        var presentation = CameraStartupPresentation.Resolve(active,
+        var texture = ARCameraTextureBridge.Current;
+        var generation = ARRenderGenerationBridge.Current;
+        var presentation = cameraStartupState.Update(active,
             lifecycle.State == ArCoreLifecycleState.Running && !_arCoreService.IsSessionPaused,
-            ARCameraTextureBridge.Current.Texture is not null,
+            texture.Texture is not null && texture.Generation == generation,
+            new CameraStartupRun(generation.SessionGeneration, generation.GraphicsGeneration),
             TimeSpan.FromMilliseconds(cameraStartupWaitingSince.HasValue ? Math.Max(0, now - cameraStartupWaitingSince.Value) : 0), failure);
 
         cameraStartupOverlay.IsVisible = presentation.Visible;
