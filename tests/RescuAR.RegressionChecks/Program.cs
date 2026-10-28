@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--surface-resize"))
+{
+    SurfaceResizeChecks.Run(Check);
+    Console.WriteLine($"{passed} frame-start surface resize checks passed.");
+    return;
+}
 if (args.Contains("--navigation-feedback"))
 {
     await NavigationFeedbackChecks.RunAsync(Check);
@@ -115,6 +121,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
 }
 await NavigationFeedbackChecks.RunAsync(Check);
 CameraMapChecks.Run(Check);
+SurfaceResizeChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
 VisualRoadAlignmentChecks.Run(Check);

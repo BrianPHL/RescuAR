@@ -68,7 +68,30 @@ try {
             Assert-Contract ($calls.Count -eq 1) "$($method.Name) keeps one app-owned $name call"
         }
     }
-    Write-Output "8 compiled camera-image ownership checks passed. Device/driver behavior still requires field validation."
+    $handler = $app.MainModule.GetType("RescuAR.MAUI.Evergine.EvergineViewHandler")
+    $draw = @($handler.Methods | Where-Object Name -eq "DrawOnSurfaceOwner")[0]
+    $resizeOffset = @($draw.Body.Instructions | Where-Object {
+        $_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq "ProcessPendingSurfaceResize"
+    })[0].Offset
+    $updateOffset = @($draw.Body.Instructions | Where-Object {
+        $_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq "UpdateFrame"
+    })[0].Offset
+    Assert-Contract ($null -ne $resizeOffset -and $null -ne $updateOffset -and $resizeOffset -lt $updateOffset) `
+        "compiled Android handler processes surface changes before scene UpdateFrame"
+    $resize = @($handler.Methods | Where-Object Name -eq "ProcessPendingSurfaceResize")[0]
+    $boundaryCalls = @($resize.Body.Instructions | Where-Object {
+        $_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -eq "ApplySurfaceChangesAtFrameStart"
+    })
+    $directResizes = @($resize.Body.Instructions | Where-Object {
+        $_.Operand -is [Mono.Cecil.MethodReference] -and $_.Operand.Name -in @("ResizeSwapChain", "RefreshSurfaceInfo")
+    })
+    Assert-Contract ($boundaryCalls.Count -eq 1 -and $directResizes.Count -eq 0) `
+        "compiled Android handler uses the single Display resize owner"
+    $display = $app.MainModule.GetType("RescuAR.MAUI.Evergine.FrameBoundaryDisplay")
+    $prepare = @($display.Methods | Where-Object Name -eq "Prepare")[0]
+    $lateCalls = @($prepare.Body.Instructions | Where-Object { $_.Operand -is [Mono.Cecil.MethodReference] })
+    Assert-Contract ($lateCalls.Count -eq 0) "compiled engine Prepare override cannot rebuild buffers after scene preparation"
+    Write-Output "11 compiled camera ownership and frame-start wiring checks passed. Device/driver behavior still requires field validation."
 }
 finally {
     $app.Dispose()

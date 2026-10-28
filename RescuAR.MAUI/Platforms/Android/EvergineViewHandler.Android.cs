@@ -27,6 +27,7 @@ namespace RescuAR.MAUI.Evergine
         private AndroidSurface? androidSurface;
         private AndroidWindowsSystem? windowsSystem;
         private SwapChain? swapChain;
+        private FrameBoundaryDisplay? frameBoundaryDisplay;
         private VKGraphicsContext? graphicsContext;
         private readonly object graphicsDrawSync = new();
         private long graphicsGeneration;
@@ -35,8 +36,6 @@ namespace RescuAR.MAUI.Evergine
         private int surfaceRecreationPending;
         private int surfaceResizePending;
         private int forceSurfaceRefresh;
-        private uint lastSwapChainWidth;
-        private uint lastSwapChainHeight;
         private volatile bool surfaceResizeFailed;
         private volatile bool handlerConnected;
         private volatile bool renderingEnabled =
@@ -303,10 +302,9 @@ namespace RescuAR.MAUI.Evergine
 
                 arCoreService = null;
                 graphicsContext = null;
+                frameBoundaryDisplay = null;
                 graphicsGeneration = 0;
                 graphicsOwnerThreadId = 0;
-                lastSwapChainWidth = 0;
-                lastSwapChainHeight = 0;
                 Interlocked.Exchange(ref forceSurfaceRefresh, 0);
                 Interlocked.Exchange(ref surfaceRecreationPending, 0);
                 Interlocked.Exchange(ref surfaceResizePending, 0);
@@ -423,7 +421,7 @@ namespace RescuAR.MAUI.Evergine
                 Volatile.Read(ref surfaceRecreationPending) != 0 ||
                 Environment.CurrentManagedThreadId != graphicsOwnerThreadId ||
                 androidSurface is not { } surface ||
-                swapChain is not { } currentSwapChain ||
+                frameBoundaryDisplay is not { } currentDisplay ||
                 surface.Width <= 0 ||
                 surface.Height <= 0)
             {
@@ -435,35 +433,22 @@ namespace RescuAR.MAUI.Evergine
                 return;
             }
 
-            // SurfaceView can deliver the initial surface notification after
-            // CreateSwapChain. Rebuilding that very same swap chain on its
-            // first draw needlessly invalidates images already in use.
-            if (Volatile.Read(ref forceSurfaceRefresh) == 0 &&
-                lastSwapChainWidth == surface.Width &&
-                lastSwapChainHeight == surface.Height)
-            {
-                Log.Info(VulkanTag, "ARCORE_DUPLICATE_SURFACE_RESIZE_SKIPPED");
-                return;
-            }
-
             try
             {
-                if (Volatile.Read(ref forceSurfaceRefresh) != 0)
-                    currentSwapChain.RefreshSurfaceInfo(surface.SurfaceInfo);
-                if (lastSwapChainWidth != surface.Width ||
-                    lastSwapChainHeight != surface.Height)
+                // Let the engine replace its swapchain AND publish the matching
+                // Display framebuffer once, before UpdateFrame prepares cameras.
+                // Native callbacks only update the next frame's snapshot.
+                bool changed = currentDisplay.ApplySurfaceChangesAtFrameStart(
+                    Volatile.Read(ref forceSurfaceRefresh) != 0);
+                if (!changed)
                 {
-                    EvergineArCameraFrameImporter.WaitForGraphicsDeviceIdle(
-                        graphicsContext ?? throw new InvalidOperationException(
-                            "Graphics context is unavailable."));
-                    currentSwapChain.ResizeSwapChain(surface.Width, surface.Height);
+                    Log.Info(VulkanTag, "ARCORE_DUPLICATE_SURFACE_RESIZE_SKIPPED");
+                    return;
                 }
-                lastSwapChainWidth = surface.Width;
-                lastSwapChainHeight = surface.Height;
                 Interlocked.Exchange(ref forceSurfaceRefresh, 0);
                 Log.Info(VulkanTag,
-                    $"ARCORE_SURFACE_RESIZED width={surface.Width}, " +
-                    $"height={surface.Height}.");
+                    $"ARCORE_SURFACE_RESIZED width={currentDisplay.Width}, " +
+                    $"height={currentDisplay.Height}; owner=FRAME_START_DISPLAY.");
                 surfaceResizeFailed = false;
                 renderingEnabled = true;
                 arCoreService?.NotifyGraphicsSurfaceReady();
@@ -633,9 +618,6 @@ namespace RescuAR.MAUI.Evergine
                 createdGraphicsContext.CreateSwapChain(
                     swapChainDescription);
 
-            lastSwapChainWidth = surface.Width;
-            lastSwapChainHeight = surface.Height;
-
             swapChain.VerticalSync =
                 true;
 
@@ -643,10 +625,13 @@ namespace RescuAR.MAUI.Evergine
                 application.Container
                     .Resolve<GraphicsPresenter>();
 
-            var firstDisplay =
-                new global::Evergine.Framework.Graphics.Display(
+            frameBoundaryDisplay =
+                new FrameBoundaryDisplay(
                     surface,
-                    swapChain);
+                    swapChain,
+                    () => EvergineArCameraFrameImporter.WaitForGraphicsDeviceIdle(
+                        createdGraphicsContext));
+            var firstDisplay = frameBoundaryDisplay;
 
             graphicsPresenter.AddDisplay(
                 "DefaultDisplay",
