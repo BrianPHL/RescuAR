@@ -5031,6 +5031,7 @@
     "RescuAR.MAUI/AppShell.xaml.cs",
     "RescuAR.MAUI/Converters/BooleanToStringConverter.cs",
     "RescuAR.MAUI/Data/EvacuationCenterRepository.cs",
+    "RescuAR.MAUI/Evergine/FrameBoundaryDisplay.cs",
     "RescuAR.MAUI/MauiProgram.cs",
     "RescuAR.MAUI/Models/CommunityReport.cs",
     "RescuAR.MAUI/Models/DisasterAdvisory.cs",
@@ -5038,6 +5039,7 @@
     "RescuAR.MAUI/Models/InformationSection.cs",
     "RescuAR.MAUI/Models/ResidentProfileDraft.cs",
     "RescuAR.MAUI/Platforms/Android/AndroidManifest.xml",
+    "RescuAR.MAUI/Platforms/Android/EvergineViewHandler.Android.cs",
     "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.RoadSurface.cs",
     "RescuAR.MAUI/Platforms/Android/Services/ArCoreService.cs",
     "RescuAR.MAUI/Platforms/Android/Vulkan/ARCore/VulkanRgbaTarget.cs",
@@ -5234,6 +5236,7 @@
     "tests/RescuAR.RegressionChecks/NavigationPipelineChecks.cs",
     "tests/RescuAR.RegressionChecks/Program.cs",
     "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj",
+    "tests/RescuAR.RegressionChecks/SurfaceResizeChecks.cs",
     "tests/RescuAR.RegressionChecks/VisualRoadAlignmentChecks.cs"
   ],
   "retained_startup_path": "RescuAR.MAUI/ViewModels/Authentication/SplashViewModel.cs",
@@ -5407,6 +5410,11 @@
       "commit": "8746146294dd2ea3619d4ed1bb289c67394c3a70",
       "build_checkout_commit": "e79fb197c920c3333664ac7f68fe8a935c0724bb",
       "subject": "fix(camera): avoid freeing the Vulkan camera image twice"
+    },
+    {
+      "commit": "119d35dcf6a2c789d50df27d5799dde15ad44c4d",
+      "build_checkout_commit": "a482bef6153594d608fd8fa1f7ef9c44e095dd0d",
+      "subject": "fix(camera): apply surface resizing once before frame preparation"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -6691,6 +6699,38 @@
       "device_retest": "pending"
     },
     "preservation": "Only eight code/test/check paths differ from the prior completed worktree checkpoint. No core routing, flood algorithm, dependency pin, native bridge binary, Admin or map presentation changes.",
-    "manual": "Sign in with Remember Me checked, force-close/reopen; repeat with Off. Repeatedly switch AR/2D/Flood tabs and rotate the phone; verify camera and flood simulation remain usable without crash."
+    "manual": "Sign in with Remember Me checked, force-close/reopen; repeat with Off. Repeatedly switch AR/2D/Flood tabs and rotate the phone; verify camera and flood simulation remain usable without crash.",
+    "device_retest_result": "Later capture 20261028_114543 confirms previous fixed build still crashes: SIGSEGV in render-pass setup after Flood-to-AR resize. Follow-up repair below; device acceptance remains pending."
+  },
+  "flood_tab_resize_followup_2026_10_28": {
+    "report": "docs/merge-analysis/2026-10-28-flood-tab-resize-followup.md",
+    "capture": "RescuAR_FieldTest_20261028_114543.zip",
+    "capture_sha256": "49fddcdf0f5cf2bc809e9ac8f737d0512bd6473fa95e81a52208f5355c9dfdaf",
+    "installed_source_revision": "adfede614b5c033b2bf6fb7fbf04b2d88e389522",
+    "observed_failure": "11:47:30.879 Flood selection; 11:47:33.766 AR selection; 1080x1650 resize; 11:47:33.891 SIGSEGV; Mali vkCmdBeginRenderPass backtrace. Prior invalid-deallocation signature is absent in this capture.",
+    "reproduction": "Pinned Evergine Display plus fake native-free Surface/SwapChain reproduces two framebuffer replacements for one event and stale Display framebuffer under the former direct-resize path.",
+    "decisions": [
+      "reserve 38 units for tab controls so hiding the speaker does not resize the camera",
+      "one frame-start Display owns size and native-surface changes before UpdateFrame; later engine Prepare cannot resize"
+    ],
+    "source_paths": [
+      "RescuAR.MAUI/Evergine/FrameBoundaryDisplay.cs",
+      "RescuAR.MAUI/Platforms/Android/EvergineViewHandler.Android.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.xaml",
+      "tests/RescuAR.RegressionChecks/SurfaceResizeChecks.cs",
+      "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj",
+      "tests/RescuAR.RegressionChecks/Program.cs",
+      "build/Verify-VulkanCameraTextureOwnership.ps1"
+    ],
+    "validation": {
+      "focused_resize_checks": 20,
+      "compiled_ownership_and_wiring_checks": 11,
+      "release_source_xaml_compile": "passed, 0 warnings/errors; actual XamlC, diagnostic build false",
+      "arcore_declarations": "passed",
+      "device_retest": "pending",
+      "apk": "not built"
+    },
+    "preservation": "Previous camera ownership fix, dev routing/GPS/arrival/flood algorithms, native bridge, dependency versions, authentication, Admin and map data unchanged.",
+    "manual": "Repeat AR to Flood to AR and 2D to Flood; rotate the phone and background/resume. Expected no crash or frozen/misaligned camera; confirm on device before claiming resolution."
   }
 }

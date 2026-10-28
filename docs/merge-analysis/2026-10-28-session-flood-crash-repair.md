@@ -6,6 +6,10 @@ The sign-in checkbox and all session/email persistence reads defaulted Remember 
 
 The capture does not establish a failure when Remember Me is checked: the user was unsure of its state, and the log contains no session-persistence diagnostics. Verified identity checks, invalid-session handling, secure storage and sign-out cleanup remain intact.
 
+## Retest status
+
+The later `RescuAR_FieldTest_20261028_114543.zip` identifies the repaired build `adfede6` but confirms another native crash after Flood → AR. The original ownership change remains; it was insufficient to resolve the complete tab-switching failure. See [frame-start resize follow-up](2026-10-28-flood-tab-resize-followup.md) for the new trace, source reproduction and repair. Device acceptance remains pending.
+
 ## Confirmed flood-tab crash
 
 Evidence: `Logs/RescuAR_FieldTest_20261028_110715.zip`, `logcat-001.txt`. Its installed artifact manifest identifies source revision `c774243d98fd940384fe74e8c8a705cd7cc3a907`, Samsung SM-A546E, Android 14.
