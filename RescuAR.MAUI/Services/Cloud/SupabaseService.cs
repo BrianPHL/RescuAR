@@ -27,7 +27,7 @@ public class SupabaseService
 
     internal async Task<Supabase.Gotrue.Session?> ReadSavedSessionAsync()
     {
-        if (IsMockMode || !Preferences.Default.Get("RememberMe", false)) return null;
+        if (IsMockMode || !Preferences.Default.Get("RememberMe", true)) return null;
         await initializationGate.WaitAsync();
         try
         {
@@ -139,7 +139,7 @@ public class SupabaseService
                 try { await old.FlushAsync(); } catch { }
             }
             var saved = new SecureSessionPersistence(SupabaseUrl, new MauiSecureSessionStore())
-            { Enabled = Preferences.Default.Get("RememberMe", false) };
+            { Enabled = Preferences.Default.Get("RememberMe", true) };
             persistence = saved;
             await saved.ReadAsync();
             RequireCurrentClient(client, revision);

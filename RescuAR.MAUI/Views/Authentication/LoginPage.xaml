@@ -93,7 +93,7 @@
                 </VerticalStackLayout>
 
                 <!-- Remember me / Forgot Password -->
-                <Grid ColumnDefinitions="Auto, *" Margin="0, 0, 0, 10">
+                <Grid ColumnDefinitions="Auto, *" RowDefinitions="Auto,Auto" RowSpacing="4" Margin="0, 0, 0, 10">
                     <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
                         <CheckBox Color="#00848E" IsChecked="{Binding IsRememberMe}" VerticalOptions="Center" WidthRequest="24" HeightRequest="24" />
                         <Label Text="Remember me" FontSize="13" FontFamily="OpenSansSemibold" TextColor="#1E1E1E" VerticalOptions="Center">
@@ -108,6 +108,9 @@
                             <TapGestureRecognizer Command="{Binding OpenResetPasswordModalCommand}" />
                         </Label.GestureRecognizers>
                     </Label>
+                    <Label Grid.Row="1" Grid.ColumnSpan="2"
+                           Text="Keep checked to stay signed in after closing the app."
+                           FontSize="11" TextColor="#64748B" LineBreakMode="WordWrap" />
                 </Grid>
 
                 <!-- Log In Button -->

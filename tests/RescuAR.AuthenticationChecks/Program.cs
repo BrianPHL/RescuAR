@@ -120,6 +120,11 @@ try { AuthenticationIdentity.ClearActive(failingArchive, null); } catch (IOExcep
 Check(archiveFailed && !failingArchive.SignedIn && failingArchive.Values["UserPhone"] == "preserve-me",
     "failed archiving signs out without discarding the original saved details");
 await AuthenticationFlowChecks.RunAsync(Check);
+if (args.Contains("--session-startup"))
+{
+    Console.WriteLine($"{passed} session-persistence, identity and startup checks passed.");
+    return;
+}
 await AuthenticationFormChecks.RunAsync(Check);
 await ProfileEditingChecks.RunAsync(Check);
 await ContactShortcutChecks.RunAsync(Check);

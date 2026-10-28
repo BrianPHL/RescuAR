@@ -27,7 +27,7 @@ namespace RescuAR.App.ViewModels.Authentication
         private bool _isPasswordVisible = false;
 
         [ObservableProperty]
-        private bool _isRememberMe;
+        private bool _isRememberMe = true;
 
         [ObservableProperty]
         private bool _isLoading = false;
@@ -62,7 +62,7 @@ namespace RescuAR.App.ViewModels.Authentication
         {
             _serviceProvider = serviceProvider;
             _authService = authService;
-            _isRememberMe = Preferences.Default.Get("RememberMe", false);
+            _isRememberMe = Preferences.Default.Get("RememberMe", true);
             if (_isRememberMe) _email = Preferences.Default.Get("SavedLoginEmail", string.Empty);
         }
 

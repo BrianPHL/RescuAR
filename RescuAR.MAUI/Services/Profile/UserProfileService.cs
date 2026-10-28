@@ -174,7 +174,7 @@ public sealed class UserProfileService
         Preferences.Default.Set("CurrentUserId", id);
         Preferences.Default.Set("current_user_id", id);
         Preferences.Default.Set("UserEmail", email);
-        if (Preferences.Default.Get("RememberMe", false)) Preferences.Default.Set("SavedLoginEmail", email);
+        if (Preferences.Default.Get("RememberMe", true)) Preferences.Default.Set("SavedLoginEmail", email);
         else Preferences.Default.Remove("SavedLoginEmail");
         if (metadata?.Id == id && metadata.UserMetadata?.TryGetValue("birthday", out var birthday) == true)
             Preferences.Default.Set(Root(id) + "Birthday", birthday?.ToString() ?? string.Empty);

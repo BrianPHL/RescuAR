@@ -27,7 +27,7 @@ internal static class AuthenticationNavigation
     {
         if (string.IsNullOrWhiteSpace(expectedUserId)) throw new InvalidOperationException("Please sign in again.");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        await RescuAR.Services.SupabaseService.Instance.SetSessionPersistenceAsync(Preferences.Default.Get("RememberMe", false), expectedUserId);
+        await RescuAR.Services.SupabaseService.Instance.SetSessionPersistenceAsync(Preferences.Default.Get("RememberMe", true), expectedUserId);
         var flow = services.GetRequiredService<AuthenticationFlowCoordinator>();
         var decision = await flow.CompleteSignInAsync(expectedUserId, timeout.Token);
         await ApplyDecisionAsync(services, decision);
