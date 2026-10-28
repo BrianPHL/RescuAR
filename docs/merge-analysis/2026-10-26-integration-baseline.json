@@ -5068,6 +5068,7 @@
     "RescuAR.MAUI/Services/Navigation/ArHeadingAlignmentService.cs",
     "RescuAR.MAUI/Services/Navigation/CameraMapPresentationPolicy.cs",
     "RescuAR.MAUI/Services/Navigation/CameraNavigationLauncher.cs",
+    "RescuAR.MAUI/Services/Navigation/CameraStartupPresentation.cs",
     "RescuAR.MAUI/Services/Navigation/CameraViewHandoff.cs",
     "RescuAR.MAUI/Services/Navigation/DetailedOfflineMapService.cs",
     "RescuAR.MAUI/Services/Navigation/MapBaseLayer.cs",
@@ -5156,6 +5157,7 @@
     "RescuAR.MAUI/Views/Authentication/TermsAndConditionsPage.xaml",
     "RescuAR.MAUI/Views/Authentication/TermsAndConditionsPage.xaml.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.FieldDiagnostics.cs",
+    "RescuAR.MAUI/Views/Camera/CameraPage.Loading.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.Map2D.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.MldGuidance.cs",
     "RescuAR.MAUI/Views/Camera/CameraPage.NavigationFeedback.cs",
@@ -5201,6 +5203,7 @@
     "RescuAR/AR/RoadSurfaceAlignment.cs",
     "RescuAR/AR/SemanticImageCoordinates.cs",
     "RescuAR/AR/SemanticRoadBoundaries.cs",
+    "RescuAR/MyScene.cs",
     "RescuAR/Navigation/Progress/GpsPdrFusionPolicy.cs",
     "RescuAR/Navigation/Progress/HeadingContinuityPolicy.cs",
     "RescuAR/Navigation/Progress/RouteDisplayProgressPolicy.cs",
@@ -5230,6 +5233,7 @@
     "tests/RescuAR.RegressionChecks/ARHeadingRecoveryChecks.cs",
     "tests/RescuAR.RegressionChecks/ARRegistrationChecks.cs",
     "tests/RescuAR.RegressionChecks/CameraMapChecks.cs",
+    "tests/RescuAR.RegressionChecks/CameraStartupChecks.cs",
     "tests/RescuAR.RegressionChecks/MldRibbonRegistrationChecks.cs",
     "tests/RescuAR.RegressionChecks/MldWindowContinuityChecks.cs",
     "tests/RescuAR.RegressionChecks/NavigationFeedbackChecks.cs",
@@ -5415,6 +5419,11 @@
       "commit": "119d35dcf6a2c789d50df27d5799dde15ad44c4d",
       "build_checkout_commit": "a482bef6153594d608fd8fa1f7ef9c44e095dd0d",
       "subject": "fix(camera): apply surface resizing once before frame preparation"
+    },
+    {
+      "commit": "d778c99e7eb971a9c437e99473c98c84e989c7b9",
+      "build_checkout_commit": "6c4e5133eb8c184bb3c6fa1ef876d580ed666975",
+      "subject": "feat(camera): add startup status and hide ground placeholder"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -6731,6 +6740,42 @@
       "apk": "not built"
     },
     "preservation": "Previous camera ownership fix, dev routing/GPS/arrival/flood algorithms, native bridge, dependency versions, authentication, Admin and map data unchanged.",
-    "manual": "Repeat AR to Flood to AR and 2D to Flood; rotate the phone and background/resume. Expected no crash or frozen/misaligned camera; confirm on device before claiming resolution."
+    "manual": "Repeat AR to Flood to AR and 2D to Flood; rotate the phone and background/resume. Expected no crash or frozen/misaligned camera; confirm on device before claiming resolution.",
+    "device_retest_result": {
+      "user_report": "Fixed",
+      "capture": "RescuAR_FieldTest_20261028_120931.zip",
+      "installed_source_revision": "4256adaed82aa3a326bfcce645bed5c1be6820ec",
+      "capture_complete": true,
+      "fatal_matches": 0,
+      "scope": "Captured repeated AR/Flood/2D transitions; not universal device or field acceptance."
+    }
+  },
+  "camera_presentation_2026_10_28": {
+    "report": "docs/merge-analysis/2026-10-28-camera-presentation.md",
+    "source_paths": [
+      "RescuAR/MyScene.cs",
+      "RescuAR.MAUI/Services/Navigation/CameraStartupPresentation.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.Loading.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.Map2D.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.xaml",
+      "tests/RescuAR.RegressionChecks/CameraStartupChecks.cs",
+      "tests/RescuAR.RegressionChecks/Program.cs",
+      "tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj"
+    ],
+    "prior_fix_capture_sha256": "50ff3348d37ebca8716ee35b72e08f27aafbcf3ae937b082d7730b0b8d94093e",
+    "placeholder": "Disable only the existing capsule MeshRenderer in MyScene.CreateScene. Retain entity, transform, material template, ground tracking and metric flood placement, including diagnostic builds.",
+    "loading": "Opaque workspace overlay while active AR/Flood lacks a fresh current-generation camera texture or running session. No ground/route requirement. Preserve native surface visibility and stable tab dimensions; stop startup timer on hide/ready/background/2D.",
+    "error_behavior": "Known camera faults show a non-busy message; after 20 seconds pending startup shows delayed status and 2D option. Late live texture still clears cover. Existing native/lifecycle decisions remain authoritative.",
+    "validation": {
+      "camera_startup_checks": 12,
+      "existing_ground_flood_checks": 18,
+      "existing_startup_scene_checks": 3,
+      "compiled_camera_ownership_wiring_checks": 11,
+      "arcore_declarations": "passed",
+      "release_core_and_xaml_compile": "passed, 0 warnings/errors; rebuilt core, actual XamlC, diagnosticBuild=false",
+      "new_ui_device_check": "pending",
+      "apk": "not built"
+    },
+    "preservation": "AR spatial/flood/navigation algorithms, serialized scene assets, native crash repairs, dependency pins, authentication and map content unchanged; the core MyScene change only disables one renderer."
   }
 }

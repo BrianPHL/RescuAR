@@ -32,7 +32,11 @@ The source mechanism matches the captured timing; the native GPU crash itself wa
 - ARCore declarations passed. Seven changed application/check/test files match between both checkouts. Original dev/Athena branches remain untouched.
 - No application/device/browser interaction, APK build, merge, push, deployment or database operation was performed.
 
-## Device retest still required
+## Device retest received
+
+The user reported “Fixed” and supplied `RescuAR_FieldTest_20261028_120931.zip`. Its installed manifest identifies `4256adaed82aa3a326bfcce645bed5c1be6820ec`; capture completion is confirmed, repeated AR/Flood/2D transitions are present, and no fatal signal/exception/abort entries were found. This supports the reported fix for the captured scenario; it is not general device/field acceptance. The later requested cone/loading presentation changes are documented in [camera presentation](2026-10-28-camera-presentation.md) and still need their own UI check.
+
+## Original device retest instructions
 
 After the next user-built installation, repeat AR → Flood → AR and 2D → Flood several times. Rotate the phone and background/resume. Expected: no crash; the camera stays live, correctly sized and aligned, and floor-qualified flood simulation remains usable. Collect and report actual results before further behavior-dependent repairs. Successful local checks do not establish device resolution.
 
