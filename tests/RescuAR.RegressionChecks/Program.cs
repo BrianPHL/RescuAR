@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--camera-startup"))
+{
+    CameraStartupChecks.Run(Check);
+    Console.WriteLine($"{passed} camera startup presentation checks passed.");
+    return;
+}
 if (args.Contains("--surface-resize"))
 {
     SurfaceResizeChecks.Run(Check);
@@ -121,6 +127,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
 }
 await NavigationFeedbackChecks.RunAsync(Check);
 CameraMapChecks.Run(Check);
+CameraStartupChecks.Run(Check);
 SurfaceResizeChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);

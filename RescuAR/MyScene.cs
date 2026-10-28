@@ -51,6 +51,11 @@ namespace RescuAR
                     "The scene does not contain an entity named 'capsule'.");
             }
 
+            // Keep its ground-reference transform and material template; only
+            // the placeholder mesh is hidden, including diagnostic builds.
+            MeshRenderer? groundMarkerRenderer = capsuleEntity.FindComponent<MeshRenderer>();
+            if (groundMarkerRenderer is not null) groundMarkerRenderer.IsEnabled = false;
+
             MaterialComponent? capsuleMaterialComponent =
                 capsuleEntity.FindComponent<MaterialComponent>();
 

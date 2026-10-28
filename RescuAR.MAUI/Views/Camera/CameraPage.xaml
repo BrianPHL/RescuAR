@@ -486,6 +486,23 @@
                 </Border>
             </Grid>
 
+            <!-- Keep the native surface running beneath an opaque startup cover. -->
+            <Grid x:Name="cameraStartupOverlay" ZIndex="70" BackgroundColor="#0B132B"
+                  HorizontalOptions="Fill" VerticalOptions="Fill">
+                <VerticalStackLayout Padding="28" Spacing="12" MaximumWidthRequest="360"
+                                     HorizontalOptions="Center" VerticalOptions="Center">
+                    <ActivityIndicator x:Name="cameraStartupSpinner" IsRunning="True" Color="#5ED4D8"
+                                       WidthRequest="42" HeightRequest="42" HorizontalOptions="Center" />
+                    <Label x:Name="cameraStartupTitle" Text="Starting AR camera…" TextColor="White"
+                           FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                    <Label x:Name="cameraStartupMessage"
+                           Text="The live view will appear as soon as the camera is ready."
+                           TextColor="#CBD5E1" FontSize="13" HorizontalTextAlignment="Center" />
+                    <Label Text="You can switch to 2D Map at any time." TextColor="#94A3B8"
+                           FontSize="12" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Grid>
+
             <!-- Route Calculation Loading Screen Overlay -->
             <Grid
                 x:Name="routeCalculatingOverlay"

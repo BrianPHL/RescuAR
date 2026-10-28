@@ -95,6 +95,7 @@ public partial class CameraPage
 
     private void StopCameraMapDisplay()
     {
+        RefreshCameraStartupPresentation();
         cameraMapGeneration++;
         if (cameraDirectorySubscribed)
         {
@@ -155,6 +156,7 @@ public partial class CameraPage
     {
         if (cameraMapDetails is null) return;
         if (Dispatcher.IsDispatchRequired) { Dispatcher.Dispatch(RefreshCameraMapPresentation); return; }
+        RefreshCameraStartupPresentation();
         RefreshNavigationFeedback();
         bool mapMode = currentCameraModuleView == CameraModuleViewMode.Map2D;
         SetCameraSubTab(subTabArButton, subTabArLabel, currentCameraModuleView == CameraModuleViewMode.ArCamera);

@@ -25,5 +25,6 @@
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationHapticGuidanceService.cs" Link="NavigationHapticGuidanceService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationFeedbackController.cs" Link="NavigationFeedbackController.cs" />
     <Compile Include="../../RescuAR.MAUI/Evergine/FrameBoundaryDisplay.cs" Link="FrameBoundaryDisplay.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Navigation/CameraStartupPresentation.cs" Link="CameraStartupPresentation.cs" />
   </ItemGroup>
 </Project>
