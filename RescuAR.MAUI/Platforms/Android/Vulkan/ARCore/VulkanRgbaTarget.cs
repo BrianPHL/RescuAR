@@ -116,10 +116,15 @@ internal unsafe sealed class VulkanRgbaTarget : IDisposable
                     height,
                     PixelFormat.R8G8B8A8_UNorm_SRgb);
 
+            // The generic factory gives VKTexture ownership of this image.
+            // VulkanRgbaTarget already owns and frees it, so use a borrowing
+            // wrapper to avoid destroying the same VkImage twice on resize.
             texture =
-                resourceFactory.GetTextureFromNativePointer(
-                    (nint)image.Handle,
-                    ref textureDescription);
+                VKTexture.FromVulkanImage(
+                    graphicsContext,
+                    ref textureDescription,
+                    image,
+                    ownResources: false);
 
             if (texture is null)
             {
