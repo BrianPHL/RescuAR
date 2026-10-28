@@ -5424,6 +5424,11 @@
       "commit": "d778c99e7eb971a9c437e99473c98c84e989c7b9",
       "build_checkout_commit": "6c4e5133eb8c184bb3c6fa1ef876d580ed666975",
       "subject": "feat(camera): add startup status and hide ground placeholder"
+    },
+    {
+      "commit": "bee5e75157d57aa40e30ebe44e032e02fa345ff2",
+      "build_checkout_commit": "309b0340cfc4f696f027ecf12a563a22667f3c0b",
+      "subject": "fix(camera): keep startup cover dismissed after camera readiness"
     }
   ],
   "commit_policy": "Commit every finished change after relevant checks; explicit user request includes existing completed work.",
@@ -6777,5 +6782,30 @@
       "apk": "not built"
     },
     "preservation": "AR spatial/flood/navigation algorithms, serialized scene assets, native crash repairs, dependency pins, authentication and map content unchanged; the core MyScene change only disables one renderer."
+  },
+  "camera_loading_flicker_2026_10_28": {
+    "report": "docs/merge-analysis/2026-10-28-camera-loading-flicker.md",
+    "capture": "RescuAR_FieldTest_20261028_123152.zip",
+    "capture_sha256": "5643b3ec89cdcbffea20201772d5dd2c821abea2e17fc8bc03f6947a1ad72f9c",
+    "installed_source_revision": "613ee05ccecd5cb49b8f5b3d196a40d07019eae0",
+    "video": "xBhnmWxq.mp4",
+    "video_sha256": "50f39fb21e43b3b7aec72a8f9e6a6ee2035d9a9820d6ad713e033759f51a37b1",
+    "evidence": "Completed log capture, no fatal entries. Recorded video inspected offline: Preparing camera view flashes over a previously visible feed, including samples near 24.0 and 74.35 seconds. Logs alternate coherent/unavailable texture readings while the session remains Running.",
+    "cause": "Stateless startup UI reused the rendering texture freshness signal on every refresh. Pending conversion can legitimately clear that bridge momentarily, causing a startup cover flash.",
+    "change": "Latch first qualified camera texture for the active session/graphics run. Keep readiness over transient frame gaps and AR/Flood switches. Reset on inactive/2D/background, actual pause, session/context replacement, generation invalidation or confirmed failure.",
+    "validation": {
+      "startup_presentation_checks": 35,
+      "compiled_ownership_resize_wiring_checks": 11,
+      "arcore_declarations": "passed",
+      "release_source_xaml_compile": "passed, 0 warnings/errors; actual XamlC, diagnosticBuild=false",
+      "device_retest": "pending",
+      "apk": "not built"
+    },
+    "preservation": "Only three existing application/test paths changed. Core/native frame freshness, spatial/route/flood safeguards, ground marker removal, camera geometry/layout, authentication, map behavior and dependencies remain unchanged.",
+    "source_paths": [
+      "RescuAR.MAUI/Services/Navigation/CameraStartupPresentation.cs",
+      "RescuAR.MAUI/Views/Camera/CameraPage.Loading.cs",
+      "tests/RescuAR.RegressionChecks/CameraStartupChecks.cs"
+    ]
   }
 }

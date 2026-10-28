@@ -16,6 +16,10 @@ The user confirmed that the resize crash is fixed. The new completed capture `Re
 - Eight focused application/test paths match between checkouts. AR spatial/ground/flood/routing algorithms, serialized assets, fixed native resizing, dependency pins, authentication and map data are unchanged.
 - No APK build, merge, push, deployment, database operation, running-app interaction or device UI check was performed.
 
+## Loading follow-up
+
+The next recorded test exposed intermittent cover flashes after startup. The [loading-state correction](2026-10-28-camera-loading-flicker.md) now remembers the first qualified texture for each active session/graphics run, while resetting on actual lifecycle changes or failures. Brief conversion gaps no longer restart the startup cover. The earlier ground-placeholder change and native resize repairs remain intact. Updated loading checks passed; device verification of this correction remains pending.
+
 ## Device UI check
 
 On the next user-built installation, enter Camera from a cold launch: expect the loading status instead of the skybox, then the live feed. Check that the cone stays hidden after floor detection while the route and selected flood depth remain usable. Recheck 2D/AR/Flood switching and background/resume; report any mismatch. Permission denial or slow startup should show a clear status, with the main 2D tab still available.
