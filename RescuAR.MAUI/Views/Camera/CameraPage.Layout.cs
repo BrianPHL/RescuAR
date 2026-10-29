@@ -7,9 +7,6 @@ public partial class CameraPage
     private void ConfigureCompactArLayout()
     {
         cameraWorkspace.SizeChanged += (_, _) => ArrangeArOverlays();
-        foreach (var view in new VisualElement[] { cameraModeStatusBanner, arTrackingStatusBanner,
-            lowLightFallbackBanner, turnGuidancePanel, routeLocatorPanel })
-            view.SizeChanged += (_, _) => ArrangeArOverlays();
     }
 
     private void ArrangeArOverlays()
@@ -21,15 +18,17 @@ public partial class CameraPage
             double width = cameraWorkspace.Width;
             bool landscape = width > cameraWorkspace.Height;
             double cardWidth = landscape ? Math.Min(360, width * .48) : Math.Min(480, width - 16);
-            double top = 8;
+            // Natural layout follows wrapped text and visibility in one pass.
+            // Measured heights from the previous frame must not set absolute tops.
+            arNavigationOverlays.WidthRequest = cardWidth;
+            arNavigationOverlays.HorizontalOptions = landscape ? LayoutOptions.Start : LayoutOptions.Center;
             foreach (var card in new Border[] { cameraModeStatusBanner, lowLightFallbackBanner,
                 arTrackingStatusBanner, turnGuidancePanel, routeLocatorPanel })
             {
                 card.MaximumWidthRequest = cardWidth;
-                card.HorizontalOptions = landscape ? LayoutOptions.Start : LayoutOptions.Center;
+                card.HorizontalOptions = LayoutOptions.Fill;
                 card.VerticalOptions = LayoutOptions.Start;
-                card.Margin = new Thickness(8, top, 8, 0);
-                if (card.IsVisible) top += Math.Max(card.Height, card == turnGuidancePanel ? 64 : 34) + 6;
+                card.Margin = 0;
             }
             double buttonWidth = Math.Clamp(width - 144, 120, 204);
             foreach (var button in new Button[] { exploreSafeZonesButton, endNavigationButton, floodSimulationButton })

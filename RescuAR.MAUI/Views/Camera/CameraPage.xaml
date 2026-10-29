@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
     x:Class="RescuAR.App.Views.Camera.CameraPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
@@ -535,236 +535,246 @@
             <!-- ========================================================= -->
             <!-- AR CAMERA STATUS + TURN GUIDANCE                          -->
             <!-- ========================================================= -->
-            <Border
-                x:Name="cameraModeStatusBanner"
-                ZIndex="20"
+            <VerticalStackLayout
+                x:Name="arNavigationOverlays"
+                ZIndex="23"
                 Margin="8,8,8,0"
-                Padding="8,4"
-                MinimumHeightRequest="34"
+                Spacing="6"
+                HorizontalOptions="Center"
                 VerticalOptions="Start"
-                BackgroundColor="#DDF7E8"
-                Stroke="#BDE9D0"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 5">
-                <Grid>
-                    <!-- Compatibility field retained; status-dot is not part of Figma. -->
-                    <Border
-                        x:Name="cameraModeStatusDot"
-                        IsVisible="False"
-                        WidthRequest="1"
-                        HeightRequest="1"
-                        StrokeThickness="0" />
-                    <VerticalStackLayout
-                        Spacing="0"
-                        HorizontalOptions="Fill"
-                        VerticalOptions="Center">
+                InputTransparent="True"
+                CascadeInputTransparent="False">
+                <Border
+                    x:Name="cameraModeStatusBanner"
+                    ZIndex="20"
+                    Margin="0"
+                    Padding="8,4"
+                    MinimumHeightRequest="34"
+                    VerticalOptions="Start"
+                    BackgroundColor="#DDF7E8"
+                    Stroke="#BDE9D0"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 5">
+                    <Grid>
+                        <!-- Compatibility field retained; status-dot is not part of Figma. -->
+                        <Border
+                            x:Name="cameraModeStatusDot"
+                            IsVisible="False"
+                            WidthRequest="1"
+                            HeightRequest="1"
+                            StrokeThickness="0" />
+                        <VerticalStackLayout
+                            Spacing="0"
+                            HorizontalOptions="Fill"
+                            VerticalOptions="Center">
+                            <Label
+                                x:Name="cameraModeStatusTitleLabel"
+                                Text="No Emergency"
+                                TextColor="#07814D"
+                                FontSize="10"
+                                FontAttributes="Bold"
+                                HorizontalTextAlignment="Center" />
+                            <Label
+                                x:Name="cameraModeStatusSubtitleLabel"
+                                Text="You will be notified if an emergency is detected nearby."
+                                TextColor="#16815A"
+                                FontSize="8.5"
+                                HorizontalTextAlignment="Center"
+                                LineBreakMode="TailTruncation" />
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+
+                <Border
+                    x:Name="arTrackingStatusBanner"
+                    IsVisible="False"
+                    InputTransparent="True"
+                    ZIndex="22"
+                    Margin="0"
+                    Padding="8,6"
+                    VerticalOptions="Start"
+                    BackgroundColor="#FFF3CD"
+                    Stroke="#E6B800"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 4">
+                    <Label
+                        x:Name="arTrackingStatusLabel"
+                        Text="Preparing trustworthy AR guidance…"
+                        TextColor="#7A5700"
+                        FontSize="10"
+                        FontAttributes="Bold"
+                        HorizontalTextAlignment="Center"
+                        LineBreakMode="WordWrap" />
+                </Border>
+
+                <Border
+                    x:Name="lowLightFallbackBanner"
+                    IsVisible="False"
+                    ZIndex="23"
+                    Margin="0"
+                    Padding="10,8"
+                    VerticalOptions="Start"
+                    BackgroundColor="#FBE1E3"
+                    Stroke="#F2B4BA"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 5">
+                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
                         <Label
-                            x:Name="cameraModeStatusTitleLabel"
-                            Text="No Emergency"
-                            TextColor="#07814D"
-                            FontSize="10"
+                            x:Name="lowLightFallbackTitleLabel"
+                            Text="Low light—ground route unavailable"
+                            TextColor="#B4232B"
+                            FontSize="11"
                             FontAttributes="Bold"
                             HorizontalTextAlignment="Center" />
                         <Label
-                            x:Name="cameraModeStatusSubtitleLabel"
-                            Text="You will be notified if an emergency is detected nearby."
-                            TextColor="#16815A"
-                            FontSize="8.5"
+                            x:Name="lowLightFallbackMessageLabel"
+                            Grid.Row="1"
+                            Text="Text guidance remains active. Open the 2D map or use the flashlight when safe."
+                            TextColor="#7A252B"
+                            FontSize="9.5"
                             HorizontalTextAlignment="Center"
-                            LineBreakMode="TailTruncation" />
-                    </VerticalStackLayout>
-                </Grid>
-            </Border>
-
-            <Border
-                x:Name="arTrackingStatusBanner"
-                IsVisible="False"
-                InputTransparent="True"
-                ZIndex="22"
-                Margin="8,48,8,0"
-                Padding="8,6"
-                VerticalOptions="Start"
-                BackgroundColor="#FFF3CD"
-                Stroke="#E6B800"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 4">
-                <Label
-                    x:Name="arTrackingStatusLabel"
-                    Text="Preparing trustworthy AR guidance…"
-                    TextColor="#7A5700"
-                    FontSize="10"
-                    FontAttributes="Bold"
-                    HorizontalTextAlignment="Center"
-                    LineBreakMode="WordWrap" />
-            </Border>
-
-            <Border
-                x:Name="lowLightFallbackBanner"
-                IsVisible="False"
-                ZIndex="23"
-                Margin="8,48,8,0"
-                Padding="10,8"
-                VerticalOptions="Start"
-                BackgroundColor="#FBE1E3"
-                Stroke="#F2B4BA"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 5">
-                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
-                    <Label
-                        x:Name="lowLightFallbackTitleLabel"
-                        Text="Low light—ground route unavailable"
-                        TextColor="#B4232B"
-                        FontSize="11"
-                        FontAttributes="Bold"
-                        HorizontalTextAlignment="Center" />
-                    <Label
-                        x:Name="lowLightFallbackMessageLabel"
-                        Grid.Row="1"
-                        Text="Text guidance remains active. Open the 2D map or use the flashlight when safe."
-                        TextColor="#7A252B"
-                        FontSize="9.5"
-                        HorizontalTextAlignment="Center"
-                        LineBreakMode="WordWrap" />
-                    <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
-                        <Button
-                            x:Name="lowLightMapButton"
-                            Grid.Column="0"
-                            Text="Open 2D Map"
-                            HeightRequest="34"
-                            Padding="8,0"
-                            BackgroundColor="#0A929C"
-                            TextColor="White"
-                            FontSize="10"
-                            FontAttributes="Bold"
-                            CornerRadius="5"
-                            Clicked="OnLowLightMapClicked" />
-                        <Button
-                            x:Name="lowLightFlashlightButton"
-                            Grid.Column="1"
-                            Text="Turn On Flashlight"
-                            HeightRequest="34"
-                            Padding="8,0"
-                            BackgroundColor="#FFFFFF"
-                            BorderColor="#B4232B"
-                            BorderWidth="1"
-                            TextColor="#B4232B"
-                            FontSize="10"
-                            FontAttributes="Bold"
-                            CornerRadius="5"
-                            Clicked="OnLowLightFlashlightClicked" />
+                            LineBreakMode="WordWrap" />
+                        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Button
+                                x:Name="lowLightMapButton"
+                                Grid.Column="0"
+                                Text="Open 2D Map"
+                                HeightRequest="34"
+                                Padding="8,0"
+                                BackgroundColor="#0A929C"
+                                TextColor="White"
+                                FontSize="10"
+                                FontAttributes="Bold"
+                                CornerRadius="5"
+                                Clicked="OnLowLightMapClicked" />
+                            <Button
+                                x:Name="lowLightFlashlightButton"
+                                Grid.Column="1"
+                                Text="Turn On Flashlight"
+                                HeightRequest="34"
+                                Padding="8,0"
+                                BackgroundColor="#FFFFFF"
+                                BorderColor="#B4232B"
+                                BorderWidth="1"
+                                TextColor="#B4232B"
+                                FontSize="10"
+                                FontAttributes="Bold"
+                                CornerRadius="5"
+                                Clicked="OnLowLightFlashlightClicked" />
+                        </Grid>
                     </Grid>
-                </Grid>
-            </Border>
+                </Border>
 
-            <Border
-                x:Name="turnGuidancePanel"
-                IsVisible="False"
-                InputTransparent="False"
-                ZIndex="21"
-                Margin="8,48,8,0"
-                Padding="10,7"
-                MinimumHeightRequest="64"
-                VerticalOptions="Start"
-                BackgroundColor="#E8FFFFFF"
-                Stroke="#D7DADD"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 6">
-                <Border.Shadow>
-                    <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
-                </Border.Shadow>
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnTurnGuidancePanelClicked" />
-                </Border.GestureRecognizers>
-                <Grid
-                    ColumnDefinitions="32,*,0"
-                    ColumnSpacing="8"
-                    RowSpacing="4">
+                <Border
+                    x:Name="turnGuidancePanel"
+                    IsVisible="False"
+                    InputTransparent="False"
+                    ZIndex="21"
+                    Margin="0"
+                    Padding="10,7"
+                    MinimumHeightRequest="64"
+                    VerticalOptions="Start"
+                    BackgroundColor="#E8FFFFFF"
+                    Stroke="#D7DADD"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 6">
+                    <Border.Shadow>
+                        <Shadow Brush="#26000000" Offset="0,2" Radius="6" Opacity="0.22" />
+                    </Border.Shadow>
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnTurnGuidancePanelClicked" />
+                    </Border.GestureRecognizers>
+                    <Grid
+                        ColumnDefinitions="32,*,0"
+                        ColumnSpacing="8"
+                        RowSpacing="4">
 
-                    <Image
-                        x:Name="turnDirectionIconLabel"
-                        Grid.Row="0"
-                        Source="lucide_arrow_up_teal.png"
-                        WidthRequest="28"
-                        HeightRequest="28"
-                        HorizontalOptions="Center"
-                        VerticalOptions="Center" />
+                        <Image
+                            x:Name="turnDirectionIconLabel"
+                            Grid.Row="0"
+                            Source="lucide_arrow_up_teal.png"
+                            WidthRequest="28"
+                            HeightRequest="28"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
 
-                    <VerticalStackLayout
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        Spacing="2"
-                        VerticalOptions="Center">
+                        <VerticalStackLayout
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Spacing="2"
+                            VerticalOptions="Center">
+                            <Label
+                                x:Name="turnInstructionLabel"
+                                Text="Proceed straight for 120 meters"
+                                TextColor="#151515"
+                                FontSize="16"
+                                FontAttributes="Bold"
+                                LineBreakMode="WordWrap"
+                                LineHeight="1.0" />
+                            <Label
+                                x:Name="turnDistanceLabel"
+                                Text="877 meters away from the nearest evacuation center"
+                                TextColor="#3B3B3B"
+                                FontSize="11"
+                                LineBreakMode="WordWrap"
+                                LineHeight="1.08" />
+                        </VerticalStackLayout>
+
+                        <Image
+                            x:Name="turnChevronImage"
+                            IsVisible="False"
+                            Grid.Row="0"
+                            Grid.Column="2"
+                            Source="lucide_chevron_down_black.png"
+                            WidthRequest="16"
+                            HeightRequest="16"
+                            HorizontalOptions="Center"
+                            VerticalOptions="Center" />
+                    </Grid>
+                </Border>
+
+                <!--
+                    Camera-direction locator for a valid cyan route that currently
+                    lies outside the phone's view. This overlay never rotates or
+                    changes route geometry; it only helps the user find the route
+                    already placed in AR space.
+                -->
+                <Border
+                    x:Name="routeLocatorPanel"
+                    IsVisible="False"
+                    InputTransparent="True"
+                    ZIndex="23"
+                    Margin="0"
+                    Padding="10,7"
+                    HorizontalOptions="Fill"
+                    VerticalOptions="Start"
+                    BackgroundColor="#E8FFFFFF"
+                    Stroke="#70C9D2"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 18">
+                    <Border.Shadow>
+                        <Shadow Brush="#30000000" Offset="0,2" Radius="7" Opacity="0.25" />
+                    </Border.Shadow>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                        <Image
+                            x:Name="routeLocatorIcon"
+                            Source="lucide_arrow_up_left_teal.png"
+                            WidthRequest="24"
+                            HeightRequest="24"
+                            VerticalOptions="Center" />
                         <Label
-                            x:Name="turnInstructionLabel"
-                            Text="Proceed straight for 120 meters"
-                            TextColor="#151515"
-                            FontSize="16"
+                            x:Name="routeLocatorLabel"
+                            Grid.Column="1"
+                            Text="Look left to find the cyan route"
+                            TextColor="#075D66"
+                            FontSize="12"
                             FontAttributes="Bold"
                             LineBreakMode="WordWrap"
-                            LineHeight="1.0" />
-                        <Label
-                            x:Name="turnDistanceLabel"
-                            Text="877 meters away from the nearest evacuation center"
-                            TextColor="#3B3B3B"
-                            FontSize="11"
-                            LineBreakMode="WordWrap"
-                            LineHeight="1.08" />
-                    </VerticalStackLayout>
-
-                    <Image
-                        x:Name="turnChevronImage"
-                        IsVisible="False"
-                        Grid.Row="0"
-                        Grid.Column="2"
-                        Source="lucide_chevron_down_black.png"
-                        WidthRequest="16"
-                        HeightRequest="16"
-                        HorizontalOptions="Center"
-                        VerticalOptions="Center" />
-                </Grid>
-            </Border>
-
-            <!--
-                Camera-direction locator for a valid cyan route that currently
-                lies outside the phone's view. This overlay never rotates or
-                changes route geometry; it only helps the user find the route
-                already placed in AR space.
-            -->
-            <Border
-                x:Name="routeLocatorPanel"
-                IsVisible="False"
-                InputTransparent="True"
-                ZIndex="23"
-                Margin="8,8,8,0"
-                Padding="10,7"
-                HorizontalOptions="Fill"
-                VerticalOptions="Start"
-                BackgroundColor="#E8FFFFFF"
-                Stroke="#70C9D2"
-                StrokeThickness="1"
-                StrokeShape="RoundRectangle 18">
-                <Border.Shadow>
-                    <Shadow Brush="#30000000" Offset="0,2" Radius="7" Opacity="0.25" />
-                </Border.Shadow>
-                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                    <Image
-                        x:Name="routeLocatorIcon"
-                        Source="lucide_arrow_up_left_teal.png"
-                        WidthRequest="24"
-                        HeightRequest="24"
-                        VerticalOptions="Center" />
-                    <Label
-                        x:Name="routeLocatorLabel"
-                        Grid.Column="1"
-                        Text="Look left to find the cyan route"
-                        TextColor="#075D66"
-                        FontSize="12"
-                        FontAttributes="Bold"
-                        LineBreakMode="WordWrap"
-                        HorizontalOptions="Fill"
-                        VerticalTextAlignment="Center" />
-                </Grid>
-            </Border>
+                            HorizontalOptions="Fill"
+                            VerticalTextAlignment="Center" />
+                    </Grid>
+                </Border>
+            </VerticalStackLayout>
 
             <!-- ========================================================= -->
             <!-- FLOOD DEPTH SUB-TAB                                      -->

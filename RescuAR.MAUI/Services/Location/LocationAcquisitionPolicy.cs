@@ -7,6 +7,11 @@ public static class LocationAcquisitionPolicy
     public static readonly TimeSpan CollectionWindow = TimeSpan.FromSeconds(2);
     public const double DesiredAccuracyMeters = 8;
 
+    // Re-reading one native fix is not another observation or a loss of quality.
+    // Keep its original timestamp; downstream expiry still applies normally.
+    public static bool IsNewObservation(LocationReading reading, DateTimeOffset? consumedAt) =>
+        !consumedAt.HasValue || reading.Timestamp > consumedAt.Value;
+
     public static bool IsCurrent(LocationReading? reading, DateTimeOffset now) =>
         reading is not null && reading.Coordinate.IsValid &&
         reading.AccuracyMeters is { } accuracy && double.IsFinite(accuracy) && accuracy > 0 &&

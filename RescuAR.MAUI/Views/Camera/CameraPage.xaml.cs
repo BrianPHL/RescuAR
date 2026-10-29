@@ -816,10 +816,7 @@ namespace RescuAR.App.Views.Camera
                              !cameraPipelineTerminalFailureVisible &&
                              lastTurnGuidance.IsAvailable)
                     {
-                        ApplyPrototypeTurnGuidance(
-                            lastTurnGuidance);
-
-                        SetTurnGuidanceVisible(true);
+                        RefreshTurnGuidancePanelForCurrentState();
                     }
 
                     RefreshEmergencyStatusBanner();
@@ -2319,6 +2316,15 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            PedestrianTurnGuidanceService.TurnGuidanceSnapshot currentGuidance;
+            lock (turnGuidanceSync) currentGuidance = lastTurnGuidance;
+            if (currentGuidance.IsAvailable && lastArGuidanceConfidence.AllowsRouteGeometry &&
+                HasCurrentGuidancePosition(progress, DateTimeOffset.UtcNow))
+            {
+                ApplyPrototypeTurnGuidance(currentGuidance);
+                SetTurnGuidanceVisible(true);
+                return;
+            }
             if (!TryShowGeographicRecoveryGuidance(acceptedRoute, progress))
                 SetTurnGuidanceVisible(false);
         }
@@ -2334,13 +2340,14 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
-            cameraModeStatusBanner.IsVisible =
-                !safeZoneConfirmed;
-
             DisasterAdvisory? advisory =
                 lastEmergencyAdvisoryForStatus;
 
-            if (advisory is null && ApplyRouteHazardStatusBanner()) return;
+            if (advisory is null && ApplyRouteHazardStatusBanner())
+            {
+                cameraModeStatusBanner.IsVisible = !safeZoneConfirmed;
+                return;
+            }
 
             if (advisory is null)
             {
@@ -2368,6 +2375,7 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            cameraModeStatusBanner.IsVisible = !safeZoneConfirmed;
             bool moderate =
                 IsModerateSeverityAdvisory(
                     advisory);
@@ -3534,8 +3542,6 @@ namespace RescuAR.App.Views.Camera
 
             routeRequestInProgress =
                 true;
-            routeStartupGpsRetryPending = false;
-
             routeStartupStartedAt = DateTimeOffset.UtcNow;
             routeStartupFirstVisibleLogged = false;
             routeStartupPublishedVersion = -1;
@@ -3588,7 +3594,7 @@ namespace RescuAR.App.Views.Camera
                     routeStartupRetryDestination = destination.Coordinate;
                     nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(3);
                     routeStartupFailureMessage =
-                        "Waiting for a recent accurate GPS fix — use the 2D map";
+                        "Waiting for accurate GPS — the route will start automatically";
                     Log.Error(
                         RoutingLogTag,
                         "navigation route NOT requested: current GPS location is unavailable.");
@@ -3596,6 +3602,7 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
+                routeStartupGpsRetryPending = false;
                 Log.Info(
                     RoutingLogTag,
                     "navigation route-start location selected: " +
@@ -4686,6 +4693,7 @@ namespace RescuAR.App.Views.Camera
             CancellationToken cancellationToken)
         {
             var tripDestination = NavigationDestinationBridge.Current;
+            DateTimeOffset? consumedLocationAt = latestRouteStartupReading?.Timestamp;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -4789,8 +4797,11 @@ namespace RescuAR.App.Views.Camera
                     bool publishedRealProgress =
                         false;
 
-                    if (reading is not null)
+                    bool newObservation = reading is not null &&
+                        LocationAcquisitionPolicy.IsNewObservation(reading, consumedLocationAt);
+                    if (newObservation && reading is not null)
                     {
+                        consumedLocationAt = reading.Timestamp;
                         lock (routeProgressFusionSync)
                         {
                             latestRouteStartupReading = reading;
@@ -5272,7 +5283,7 @@ namespace RescuAR.App.Views.Camera
                         }
 #endif
                     }
-                    else
+                    else if (reading is null)
                     {
                         lock (routeProgressFusionSync)
                             navigationStability.Observe(route, default, null, DateTimeOffset.UtcNow,
@@ -6436,10 +6447,7 @@ namespace RescuAR.App.Views.Camera
                                 !emergencyAdvisoryVisible &&
                                 !safeZoneConfirmed)
                             {
-                                ApplyPrototypeTurnGuidance(
-                                    lastTurnGuidance);
-
-                                SetTurnGuidanceVisible(true);
+                                RefreshTurnGuidancePanelForCurrentState();
                             }
                         });
                 }
@@ -6687,10 +6695,9 @@ namespace RescuAR.App.Views.Camera
                         return;
                     }
 
-                    ApplyPrototypeTurnGuidance(
-                        guidance);
-
-                    SetTurnGuidanceVisible(true);
+                    // The status refresh uses this same presentation decision;
+                    // do not alternate raw/consolidated and recovery writers.
+                    RefreshTurnGuidancePanelForCurrentState();
                 });
         }
 
@@ -9140,10 +9147,7 @@ namespace RescuAR.App.Views.Camera
                         return;
                     }
 
-                    ApplyPrototypeTurnGuidance(
-                        lastTurnGuidance);
-
-                    SetTurnGuidanceVisible(true);
+                    RefreshTurnGuidancePanelForCurrentState();
 
                     RefreshEmergencyStatusBanner();
                 });
@@ -10908,8 +10912,10 @@ namespace RescuAR.App.Views.Camera
             }
             if ((routeStartupGpsRetryPending || pendingInitialRoute is not null) &&
                 activeRoute is null && !routeRequestInProgress && pageIsVisible &&
-                currentCameraModuleView == CameraModuleViewMode.ArCamera &&
-                _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused &&
+                RouteStartupRetryPolicy.CanRetryInView(routeStartupGpsRetryPending,
+                    currentCameraModuleView == CameraModuleViewMode.Map2D,
+                    currentCameraModuleView == CameraModuleViewMode.ArCamera,
+                    _arCoreService.IsInitialized && !_arCoreService.IsSessionPaused) &&
                 NavigationDestinationBridge.Current.IsAvailable &&
                 NavigationDestinationBridge.Current.Coordinate ==
                     (routeStartupGpsRetryPending ? routeStartupRetryDestination : pendingInitialDestination) &&

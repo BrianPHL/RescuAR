@@ -12,6 +12,15 @@ internal static class LocationAcquisitionChecks
         check(!LocationAcquisitionPolicy.CanComplete(first, at, TimeSpan.Zero),
             "acquisition: the recorded 11m first result does not end Best acquisition immediately");
         var precise = Fix("gps", 4);
+        check(LocationAcquisitionPolicy.IsNewObservation(precise, null) &&
+            !LocationAcquisitionPolicy.IsNewObservation(precise, precise.Timestamp),
+            "navigation input: the recorded two-second reread cannot become a second positioning assessment");
+        check(!LocationAcquisitionPolicy.IsNewObservation(precise with { Timestamp = at.AddSeconds(-1) }, at),
+            "navigation input: delayed older fixes cannot roll back the consumed observation watermark");
+        check(LocationAcquisitionPolicy.IsNewObservation(precise with { Timestamp = at.AddSeconds(10) }, at),
+            "navigation input: a new acquisition at identical stationary coordinates remains independent evidence");
+        check(!LocationAcquisitionPolicy.IsCurrent(precise, at.AddSeconds(4)) && precise.Timestamp == at,
+            "navigation input: ignoring a duplicate never refreshes GPS lifetime or AR placement support");
         check(ReferenceEquals(LocationAcquisitionPolicy.Select(precise, first, at), precise) &&
             LocationAcquisitionPolicy.CanComplete(precise, at, TimeSpan.FromMilliseconds(400)),
             "acquisition: a later precise GPS result wins without waiting for the full timeout");

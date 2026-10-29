@@ -213,11 +213,11 @@ public partial class CameraPage
         mapRouteSearchCard.IsVisible = !emergencyAdvisoryVisible && !safeZoneConfirmed && (cameraMapPlannerOpen || !hasTrip);
         mapRouteSummaryPanel.IsVisible = !emergencyAdvisoryVisible && hasTrip && !cameraMapPlannerOpen;
         mapReturnToRouteButton.IsVisible = hasTrip && cameraMapPlannerOpen;
-        routeCalculatingOverlay.IsVisible = routeRequestInProgress && !emergencyAdvisoryVisible && !safeZoneConfirmed;
+        routeCalculatingOverlay.IsVisible = routeRequestInProgress && !routeStartupGpsRetryPending && !emergencyAdvisoryVisible && !safeZoneConfirmed;
         mapCardStartRoutingButton.IsEnabled = !routeRequestInProgress;
         mapRetryRouteButton.IsVisible = hasTrip && route is null && !routeRequestInProgress;
         mapRouteDestinationNameLabel.Text = "To: " + destination.Name;
-        mapRouteStatsLabel.Text = route is null ? (routeRequestInProgress ? "Preparing route…" : routeStartupFailureMessage ?? "No accepted route. Check GPS/connection, then Retry route.") :
+        mapRouteStatsLabel.Text = route is null ? (routeStartupGpsRetryPending ? "Waiting for accurate GPS · route starts automatically" : routeRequestInProgress ? "Preparing route…" : routeStartupFailureMessage ?? "No accepted route. Check GPS/connection, then Retry route.") :
             $"{route.TotalDistanceMeters:0} m route · {CameraMapPresentationPolicy.WalkEstimate(route.TotalDistanceMeters)}";
 
         if (destination.Version != cameraMapPlacesTrip || cameraDirectory.Revision != cameraMapDirectoryRevision)
@@ -324,11 +324,13 @@ public partial class CameraPage
             return new Coordinate(x, y);
         }).ToArray();
         var geometry = new LineString(coordinates);
+        var halo = new GeometryFeature(geometry.Copy());
+        halo.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.White, 12) });
         var casing = new GeometryFeature(geometry);
-        casing.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#1557B0"), 9) });
+        casing.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#075D66"), 9) });
         var line = new GeometryFeature(geometry.Copy());
-        line.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#1A73E8"), 6) });
-        return new[] { casing, line, CameraMapPin(route.Points[0].Coordinate, "Route start", MapColor.Gray, 0.6) };
+        line.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#00D9E6"), 6) });
+        return new[] { halo, casing, line, CameraMapPin(route.Points[0].Coordinate, "Route start", MapColor.Gray, 0.6) };
     }
     private void FrameCameraMapRoute(RouteResult route)
     {

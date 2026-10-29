@@ -379,6 +379,12 @@ public partial class CameraPage
         return true;
     }
 
+    private bool HasCurrentGuidancePosition(RouteProgressTracker.ProgressSnapshot progress, DateTimeOffset now) =>
+        !progress.IsOffRoute && !lastOffRouteCandidate && !positionObservationHeld &&
+        !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
+        lastGpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+        latestGpsTimestampForRouting is { } gpsAt && now >= gpsAt && now - gpsAt <= TimeSpan.FromSeconds(5);
+
     private bool TryShowGeographicRecoveryGuidance(RouteResult? route,
         RouteProgressTracker.ProgressSnapshot progress)
     {
@@ -393,11 +399,7 @@ public partial class CameraPage
                     out var position)) return false;
             guidance = _turnGuidanceService.Evaluate(route, position.ProgressMeters, position.SegmentIndex)
                 with { RemainingRouteMeters = progress.RemainingMeters };
-            bool currentPosition = !progress.IsOffRoute && !lastOffRouteCandidate &&
-                !positionObservationHeld && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
-                lastGpsConfidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
-                latestGpsTimestampForRouting is { } gpsAt && DateTimeOffset.UtcNow >= gpsAt &&
-                DateTimeOffset.UtcNow - gpsAt <= TimeSpan.FromSeconds(5);
+            bool currentPosition = HasCurrentGuidancePosition(progress, DateTimeOffset.UtcNow);
             positionStatus = currentPosition ? "Distance is approximate" : "Position uncertain · distance held";
         }
         if (!guidance.IsAvailable) return false;

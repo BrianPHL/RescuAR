@@ -24,6 +24,14 @@ if (args.Contains("--pdr-map-matching"))
     Console.WriteLine($"{passed} PDR/map-matching checks passed.");
     return;
 }
+if (args.Contains("--navigation-presentation"))
+{
+    NavigationPresentationChecks.Run(Check);
+    LocationAcquisitionChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    Console.WriteLine($"{passed} navigation presentation checks passed.");
+    return;
+}
 if (args.Contains("--camera-startup"))
 {
     CameraStartupChecks.Run(Check);

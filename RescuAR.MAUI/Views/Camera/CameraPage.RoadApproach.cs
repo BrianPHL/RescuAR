@@ -262,7 +262,7 @@ public partial class CameraPage
                 ? $"Mapped route nearby (~{distance:0} m). Check walking access."
                 : "Mapped road nearby. Route connection pending.";
             routeLocatorPanel.IsVisible = true;
-            if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
+            if (activeRoute is null)
                 SetTurnGuidanceVisible(false);
             return true;
         }
@@ -306,7 +306,7 @@ public partial class CameraPage
                 ? $"Approach mapped route (~{distance:0} m). Check access."
                 : $"Nearest mapped road (~{distance:0} m). Route connection pending.";
         routeLocatorPanel.IsVisible = true;
-        if (!approachRoutePreviewPublished || !lastArGuidanceConfidence.AllowsRouteGeometry)
+        if (activeRoute is null)
             SetTurnGuidanceVisible(false);
         return true;
     }
