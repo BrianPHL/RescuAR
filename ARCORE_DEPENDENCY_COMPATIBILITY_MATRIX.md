@@ -31,4 +31,13 @@ Finding 38 remains **STILL OPEN — EXCLUDED BY OWNER DECISION**. The production
 
 ## Change-control rule
 
+The 2026-10-29 crash candidate selects `MONO_GC_PARAMS=bridge-implementation=new`
+through an AndroidEnvironment file. Exact-build symbols for Mono 9.0.20
+(`6bceca0e711d8fb06f6ba715055d597afce5c4b6`) placed the field SIGSEGV in
+`is_opaque_object` / `sgen-tarjan-bridge.c`. The pinned runtime supports `new`
+as an alternative to its default Tarjan bridge. No framework, MAUI, ARCore or
+native-bridge version changes. This is a mitigation requiring crash and
+responsiveness checks on the physical devices; source/build validation does
+not establish that the underlying memory fault is eliminated.
+
 Change only one dependency layer at a time. Record the APK hash, native-library hash, build configuration, tool versions, device/GPU, Depth mode, and field result before accepting the candidate profile.

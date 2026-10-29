@@ -55,6 +55,38 @@ var otherProject = new SecureSessionPersistence("https://project-b.supabase.co",
 await otherProject.ReadAsync();
 Check(otherProject.LoadSession() is null, "one project's session cannot restore into another project");
 
+// Exercise the actual pinned SDK locally; no server or HTTP handler is used.
+var offlineStore = new FakeSecureStore();
+var offlinePersistence = new SecureSessionPersistence("https://offline.example.test", offlineStore);
+var expiredSaved = new Session
+{
+    AccessToken = "local-test-access", RefreshToken = "local-test-refresh", ExpiresIn = 3600,
+    CreatedAt = DateTime.UtcNow.AddHours(-2), User = new Supabase.Gotrue.User { Id = "remembered-user", Email = "remembered@example.test" }
+};
+offlinePersistence.SaveSession(expiredSaved);
+await offlinePersistence.FlushAsync();
+var offlineReload = new SecureSessionPersistence("https://offline.example.test", offlineStore);
+await offlineReload.ReadAsync();
+var offlineClient = new Supabase.Gotrue.Client(new ClientOptions { AutoRefreshToken = true }) { Online = false };
+int offlineSignOuts = 0;
+offlineClient.AddStateChangedListener((_, state) => { if (state == Constants.AuthState.SignedOut) offlineSignOuts++; });
+offlineReload.RestoreLocally(offlineClient);
+Check(offlineClient.CurrentUser?.Id == "remembered-user" && offlineClient.CurrentSession!.Expired(),
+    "offline startup loads the remembered SDK identity without promoting its expired token to online access");
+offlineClient.NotifyAuthStateChange(Constants.AuthState.UserUpdated);
+await offlineReload.FlushAsync();
+Check(offlineSignOuts == 0 && offlineReload.LoadSession()?.RefreshToken == "local-test-refresh",
+    "local restoration of an expired session cannot let the SDK refresh timer emit sign-out and erase the saved account");
+SecureSessionPersistence.ResumeAutoRefresh(offlineClient);
+Check(offlineSignOuts == 0, "offline expired credentials cannot restart online auto-refresh");
+offlineReload.Enabled = false;
+offlineReload.DestroySession();
+await offlineReload.FlushAsync();
+var signedOutReload = new SecureSessionPersistence("https://offline.example.test", offlineStore);
+await signedOutReload.ReadAsync();
+Check(signedOutReload.LoadSession() is null, "explicit sign-out still removes remembered offline access");
+offlineClient.Shutdown();
+
 store.BlockWrites = new(TaskCreationOptions.RunContinuationsAsynchronously);
 persistence.SaveSession(Token("queued"));
 persistence.Enabled = false;

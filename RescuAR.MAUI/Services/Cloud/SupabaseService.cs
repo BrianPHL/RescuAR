@@ -28,18 +28,8 @@ public class SupabaseService
     internal async Task<Supabase.Gotrue.Session?> ReadSavedSessionAsync()
     {
         if (IsMockMode || !Preferences.Default.Get("RememberMe", true)) return null;
-        await initializationGate.WaitAsync();
-        try
-        {
-            try { await previousPersistence; } catch { }
-            if (persistence is { } active) { try { await active.FlushAsync(); } catch { } }
-            var saved = new SecureSessionPersistence(SupabaseUrl, new MauiSecureSessionStore());
-            long revision = SessionRevision;
-            await saved.ReadAsync();
-            if (revision != SessionRevision) throw new OperationCanceledException("Account settings changed during startup.");
-            return saved.LoadSession();
-        }
-        finally { initializationGate.Release(); }
+        var client = await GetClientAsync();
+        return client?.Auth.CurrentSession;
     }
 
     public async Task SetSessionPersistenceAsync(bool enabled, string? expectedUserId = null)
@@ -88,6 +78,31 @@ public class SupabaseService
     {
         LoadKeys();
         InitializeClient();
+        Connectivity.Current.ConnectivityChanged += (_, _) => UpdateClientConnectivity();
+    }
+
+    private bool IsOnline => Connectivity.Current.NetworkAccess == NetworkAccess.Internet;
+
+    private void UpdateClientConnectivity()
+    {
+        var client = Client;
+        if (client is null) return;
+        client.Auth.Online = IsOnline;
+        if (IsOnline) SecureSessionPersistence.ResumeAutoRefresh(client.Auth);
+        else SecureSessionPersistence.SuspendAutoRefresh(client.Auth);
+        if (initialized && IsOnline) _ = ConnectRealtimeAsync(client);
+    }
+
+    private Task? realtimeConnection;
+    private async Task ConnectRealtimeAsync(Client client)
+    {
+        if (realtimeConnection is { IsCompleted: false }) return;
+        try
+        {
+            realtimeConnection = client.Realtime.ConnectAsync();
+            await realtimeConnection;
+        }
+        catch { System.Diagnostics.Debug.WriteLine("Realtime unavailable; local account access retained."); }
     }
 
     public void LoadKeys()
@@ -128,7 +143,15 @@ public class SupabaseService
         try
         {
             if (IsMockMode) return null;
-            if (initialized) return Client;
+            if (initialized)
+            {
+                if (Client is { } ready)
+                {
+                    ready.Auth.Online = IsOnline;
+                    if (!IsOnline) SecureSessionPersistence.SuspendAutoRefresh(ready.Auth);
+                }
+                return Client;
+            }
             if (Client is null) InitializeClient();
             var client = Client ?? throw new InvalidOperationException("Supabase configuration is unavailable.");
             long revision = Volatile.Read(ref clientRevision);
@@ -143,11 +166,14 @@ public class SupabaseService
             persistence = saved;
             await saved.ReadAsync();
             RequireCurrentClient(client, revision);
-            client.Auth.SetPersistence(saved);
-            client.Auth.LoadSession();
-            await client.InitializeAsync();
+            client.Auth.Online = IsOnline;
+            saved.RestoreLocally(client.Auth);
+            // InitializeAsync calls RetrieveSessionAsync, which destroys a
+            // remembered session on expiry or a swallowed network failure in
+            // the pinned SDK. Online verification owns refresh separately.
             RequireCurrentClient(client, revision);
             initialized = true;
+            if (IsOnline) _ = ConnectRealtimeAsync(client);
             return client;
         }
         catch
@@ -167,6 +193,7 @@ public class SupabaseService
     public void InitializeClient()
     {
         initialized = false;
+        realtimeConnection = null;
         Interlocked.Increment(ref clientRevision);
         if (persistence is { } previous)
         {

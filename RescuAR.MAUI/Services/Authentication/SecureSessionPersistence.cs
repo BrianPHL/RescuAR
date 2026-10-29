@@ -45,6 +45,31 @@ internal sealed class SecureSessionPersistence(string projectUrl, ISecureSession
 
     public Session? LoadSession() { lock (gate) return enabled ? session : null; }
 
+    // Load the remembered identity into the SDK without token refresh or HTTP.
+    // An expired access token may identify local cached data; it does not
+    // authorize cloud requests or establish a verified online session.
+    public void RestoreLocally(IGotrueClient<User, Session> client)
+    {
+        SuspendAutoRefresh(client);
+        client.SetPersistence(this);
+        client.LoadSession();
+    }
+
+    public static void SuspendAutoRefresh(IGotrueClient<User, Session> client)
+    {
+        if (client is not Client { TokenRefresh: { } refresh }) return;
+        client.RemoveStateChangedListener(refresh.ManageAutoRefresh);
+        refresh.ManageAutoRefresh(client, Constants.AuthState.Shutdown);
+    }
+
+    public static void ResumeAutoRefresh(IGotrueClient<User, Session> client)
+    {
+        if (!client.Online || client.CurrentSession is not { } current || current.Expired() ||
+            client is not Client { TokenRefresh: { } refresh }) return;
+        client.AddStateChangedListener(refresh.ManageAutoRefresh);
+        refresh.ManageAutoRefresh(client, Constants.AuthState.UserUpdated);
+    }
+
     public void SaveSession(Session value)
     {
         lock (gate)

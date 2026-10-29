@@ -9,6 +9,7 @@ internal sealed class MauiAuthenticationFlowSource : IAuthenticationFlowSource
 {
     private readonly UserProfileService profiles = UserProfileService.Instance;
     private User? savedUser;
+    private static readonly TimeSpan RestoreNetworkTimeout = TimeSpan.FromSeconds(8);
     public bool IsOnline => Microsoft.Maui.Networking.Connectivity.Current.NetworkAccess == Microsoft.Maui.Networking.NetworkAccess.Internet;
     public bool HasSignedUp => Preferences.Default.Get("HasSignedUp", false);
     public bool HasCompletedPermissions => Preferences.Default.Get("HasCompletedPermissions", false);
@@ -33,18 +34,22 @@ internal sealed class MauiAuthenticationFlowSource : IAuthenticationFlowSource
         {
             var client = await SupabaseService.Instance.GetClientAsync().WaitAsync(token)
                 ?? throw new AuthenticationFlowException(AuthenticationFailureKind.Unavailable, "Account services are not configured.");
-            if (restoring) await client.Auth.RetrieveSessionAsync().WaitAsync(token);
+            if (restoring && client.Auth.CurrentSession is { RefreshToken.Length: > 0 })
+                // RefreshToken preserves the current session on transport
+                // failure and exposes explicit server rejection to Classify.
+                await client.Auth.RefreshToken().WaitAsync(RestoreNetworkTimeout, token);
             var session = client.Auth.CurrentSession;
             var identity = Identity(session);
             if (identity is null || session!.Expired())
                 throw new AuthenticationFlowException(AuthenticationFailureKind.InvalidSession, "Please sign in again.");
             if (restoring)
             {
-                var verified = await client.Auth.GetUser(session.AccessToken!).WaitAsync(token);
+                var verified = await client.Auth.GetUser(session.AccessToken!).WaitAsync(RestoreNetworkTimeout, token);
                 if (verified?.Id != identity.Id)
                     throw new AuthenticationFlowException(AuthenticationFailureKind.InvalidSession, "Please sign in again.");
             }
             savedUser = session.User;
+            SecureSessionPersistence.ResumeAutoRefresh(client.Auth);
             return identity;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
@@ -56,7 +61,7 @@ internal sealed class MauiAuthenticationFlowSource : IAuthenticationFlowSource
     {
         try
         {
-            var user = await profiles.LoadAsync(token, identity.Id);
+            var user = await profiles.LoadAsync(token, identity.Id).WaitAsync(RestoreNetworkTimeout, token);
             return new(user.Id, !string.IsNullOrWhiteSpace(user.Address));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }

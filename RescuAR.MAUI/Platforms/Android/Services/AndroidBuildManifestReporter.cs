@@ -196,6 +196,7 @@ internal static class AndroidBuildManifestReporter
                 $"nativeBytes={nativeLibraryBytes}; " +
                 $"nativeSha256={nativeLibrarySha256}; " +
                 $"maui={mauiVersion}; " +
+                $"monoGcParams='{Environment.GetEnvironmentVariable("MONO_GC_PARAMS") ?? "unavailable"}'; " +
                 $"evergine={evergineVersion}; " +
                 $"arCoreBinding={arCoreBindingVersion}; " +
                 $"ndk={ndkVersion}; " +

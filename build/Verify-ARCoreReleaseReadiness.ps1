@@ -222,4 +222,13 @@ foreach ($matrixToken in @(
     }
 }
 
-Write-Host "ARCore manifest and compatibility declarations are internally consistent." -ForegroundColor Green
+$runtimeEnvironment = Join-Path $resolvedRoot "RescuAR.MAUI/Platforms/Android/runtime-environment.txt"
+$environmentItems = @($project.SelectNodes("/Project/ItemGroup/AndroidEnvironment") | Where-Object {
+    $_.GetAttribute("Include").Replace('\', '/') -eq "Platforms/Android/runtime-environment.txt"
+})
+if ($environmentItems.Count -ne 1 -or
+    (Get-Content -Raw -LiteralPath $runtimeEnvironment).Trim() -cne "MONO_GC_PARAMS=bridge-implementation=new") {
+    throw "The crash-mitigation candidate must package exactly one supported 'new' Mono GC bridge environment setting."
+}
+
+Write-Host "ARCore manifest, compatibility declarations and Mono GC bridge setting are internally consistent." -ForegroundColor Green

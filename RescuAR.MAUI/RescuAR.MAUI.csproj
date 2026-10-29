@@ -170,6 +170,7 @@
 		<AndroidAsset Include="$(IntermediateOutputPath)rescuar-build-profile.txt" Link="rescuar-build-profile.txt" />
 		<_RescuArBuildProfileLine Include="diagnosticBuild=$(RescuArDiagnosticBuild)" />
 		<_RescuArBuildProfileLine Include="diagnosticRouteOverride=false" />
+		<_RescuArBuildProfileLine Include="monoGcBridge=new" />
 		<_RescuArBuildProfileLine Include="correctiveBatch=$(RescuArCorrectiveBatch)" />
 		<_RescuArBuildProfileLine Include="validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1" />
 	</ItemGroup>
@@ -195,6 +196,9 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0-android'">
+		<!-- Matched 2026-10-29 SIGSEGV is in the default Tarjan GC bridge.
+		     Use the alternative supported by the pinned Mono runtime. -->
+		<AndroidEnvironment Include="Platforms\Android\runtime-environment.txt" />
 		<EmbeddedResource Include="Platforms\Android\Vulkan\Shaders\CameraFullscreen.vert.spv" />
 		<EmbeddedResource Include="Platforms\Android\Vulkan\Shaders\CameraExternal.frag.spv" />
 	</ItemGroup>
