@@ -51,6 +51,21 @@ internal static class NavigationStabilityChecks
             check(!Observe(20, 5, 40).Reliable && !Observe(22, 5, 44).Reliable && Observe(24, 5, 48).Reliable,
                 $"{algorithm}: recovery from a long outage requires three spaced plausible reliable fixes");
 
+            policy.Reset(); Observe(0, 5, 0);
+            void Timeout(int second) => policy.Observe(route, default, null,
+                at.AddSeconds(second), at.AddSeconds(second), null, observationHeld: true);
+            NavigationStabilityPolicy.Decision Delivered(int acquired, int received) => policy.Observe(route,
+                C(0), 5, at.AddSeconds(acquired), at.AddSeconds(received), null, observationHeld: false);
+            Timeout(18);
+            check(!Delivered(17, 19).Reliable, $"{algorithm}: first real recovery fix still requires corroboration after an empty poll");
+            Timeout(22);
+            check(!Delivered(21, 23).Reliable, $"{algorithm}: second real recovery fix is counted without bypassing confirmation");
+            Timeout(26);
+            check(Delivered(25, 27).Reliable,
+                $"{algorithm}: empty poll timestamps cannot permanently exclude fresh acquired GPS from three-fix recovery");
+            check(!Delivered(25, 27).Reliable,
+                $"{algorithm}: a duplicate real GPS timestamp cannot supply additional recovery evidence");
+
             var tracker = new RouteProgressTracker(); tracker.SetRoute(route);
             var matched = tracker.Update(C(12), 5, observeOnly: true);
             check(matched.IsAccepted && !tracker.Current.HasProgress,

@@ -13,6 +13,13 @@ internal static class CameraMapChecks
         check(CameraMapPresentationPolicy.CanShowCurrent(fix, now, false), "Camera map accepts a current GPS fix under dev planning accuracy rules");
         check(!CameraMapPresentationPolicy.CanShowCurrent(null, now, false), "Camera map cannot invent a user location when no fix exists");
         check(!CameraMapPresentationPolicy.CanShowCurrent(fix, now, true), "dev's held position cannot become a live Camera map pin");
+        check(CameraMapPresentationPolicy.CanShowObservation(fix, now) &&
+            !CameraMapPresentationPolicy.CanShowCurrent(fix, now, true),
+            "fresh measured GPS remains displayable separately from held accepted route progress");
+        check(!CameraMapPresentationPolicy.CanShowObservation(fix with { Timestamp = now.AddSeconds(-6) }, now) &&
+            !CameraMapPresentationPolicy.CanShowObservation(fix with { AccuracyMeters = 31 }, now) &&
+            !CameraMapPresentationPolicy.CanShowObservation(null, now),
+            "uncertainty display cannot revive stale, inaccurate or missing GPS");
         check(!CameraMapPresentationPolicy.CanShowCurrent(fix with { Timestamp = now.AddSeconds(-6) }, now, false), "an old fix cannot remain Current Location or supply nearby distances");
         check(!CameraMapPresentationPolicy.CanShowCurrent(fix with { Timestamp = now.AddSeconds(3) }, now, false), "future-dated GPS outside dev's clock tolerance remains unavailable");
         check(!CameraMapPresentationPolicy.CanShowCurrent(fix with { AccuracyMeters = null }, now, false), "unknown GPS accuracy cannot supply a current Camera map pin");

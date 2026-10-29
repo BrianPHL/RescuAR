@@ -2833,6 +2833,12 @@ namespace RescuAR.App.Views.Camera
             pageIsVisible =
                 true;
             RefreshForegroundLocationOwnership();
+
+            // Reconcile the trip before a pending view request can synchronously
+            // resume ARCore and start routing for that same trip.
+            SubscribeDestinationChanged();
+            if (NavigationDestinationBridge.Current.Version != observedDestinationVersion)
+                OnNavigationDestinationChanged(this, EventArgs.Empty);
             ObserveCameraMapWindow();
 
             if (NavigationDestinationBridge.Current.IsAvailable)
@@ -2868,11 +2874,6 @@ namespace RescuAR.App.Views.Camera
             }
 #endif
 
-            SubscribeDestinationChanged();
-            // Shell retains Camera while other tabs can select or clear a trip.
-            // Reconcile missed events before reusing a route or arrival latch.
-            if (NavigationDestinationBridge.Current.Version != observedDestinationVersion)
-                OnNavigationDestinationChanged(this, EventArgs.Empty);
             SubscribeEmergencyAdvisories();
             SubscribeConnectivityChanges();
             _arCoreService.LifecycleChanged -=
@@ -3802,7 +3803,7 @@ namespace RescuAR.App.Views.Camera
                     _routeProgressTracker.Update(
                         origin,
                         locationReading.AccuracyMeters,
-                        locationReading.CourseDegrees,
+                        locationReading.QualifiedCourseDegrees,
                         locationReading.SpeedMetersPerSecond);
                 var initialFusion = _gpsPdrFusionPolicy.EvaluateGps(
                     0.0, false, initialMatch);
@@ -3925,7 +3926,7 @@ namespace RescuAR.App.Views.Camera
 
                 return true;
             }
-            catch (OperationCanceledException)
+            catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
                 LogDetailedDebug(
                     RoutingLogTag,
@@ -3949,7 +3950,9 @@ namespace RescuAR.App.Views.Camera
                     false;
                 if (pageIsVisible && !safeZoneConfirmed &&
                     NavigationDestinationBridge.Current is { IsAvailable: true } nextDestination &&
-                    nextDestination.Version != destination.Version)
+                    (nextDestination.Version != destination.Version || cancellationToken.IsCancellationRequested))
+                    // A quick re-entry may still find the old cancelled request
+                    // busy. Release it before restarting even for the same trip.
                     Dispatcher.Dispatch(StartRouteRequestIfPossible);
                 else if (activeDestinationCoordinate.HasValue &&
                     routeProgressTask is null && pageIsVisible && !safeZoneConfirmed)
@@ -4150,6 +4153,14 @@ namespace RescuAR.App.Views.Camera
         {
             if (!pageIsVisible)
             {
+                return;
+            }
+
+            // View/lifecycle callbacks can arrive before the queued destination
+            // event. Its reset must precede the first request, never cancel it.
+            if (NavigationDestinationBridge.Current.Version != observedDestinationVersion)
+            {
+                OnNavigationDestinationChanged(this, EventArgs.Empty);
                 return;
             }
 
@@ -4728,7 +4739,13 @@ namespace RescuAR.App.Views.Camera
                                     activeDestinationCoordinate.Value),
                                 destinationVersion: tripDestination.Version);
                             HandleSafeZoneDecision(arrival);
-                            lock (routeProgressFusionSync) latestRouteStartupReading = arrivalReading;
+                            lock (routeProgressFusionSync)
+                            {
+                                latestRouteStartupReading = arrivalReading;
+                                latestGpsCoordinateForRouting = arrivalReading.Coordinate;
+                                latestGpsAccuracyForRouting = arrivalReading.AccuracyMeters;
+                                latestGpsTimestampForRouting = arrivalReading.Timestamp;
+                            }
                             if (!arrival.IsCandidate && !arrival.IsConfirmed)
                             {
                                 if (arrivalGraph is not null)

@@ -22,6 +22,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
     private bool listening;
     private bool suspended;
     private int foregroundOwners, activeRequests;
+    private long gpsSamples, networkSamples, rejectedSamples;
     private LocationReading? gps, network;
 
     public AndroidNavigationLocationSource() => Platform.ActivityStateChanged += OnActivityStateChanged;
@@ -79,7 +80,14 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
                     TimeSpan.FromMilliseconds(Environment.TickCount64 - started))) return best;
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
             }
-            lock (sync) return LocationAcquisitionPolicy.Select(gps, network, DateTimeOffset.UtcNow);
+            lock (sync)
+            {
+                var result = LocationAcquisitionPolicy.Select(gps, network, DateTimeOffset.UtcNow);
+                AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_POLL timeout=True; selected={result?.Provider ?? "none"}; " +
+                    $"gpsCallbacks={gpsSamples}; networkCallbacks={networkSamples}; rejectedCallbacks={rejectedSamples}; " +
+                    $"gpsAt={gps?.Timestamp:O}; networkAt={network?.Timestamp:O}; owners={foregroundOwners}.");
+                return result;
+            }
         }
         finally
         {
@@ -146,16 +154,24 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
                 ? location.BearingAccuracyDegrees : null,
             AcquisitionElapsedRealtimeNanoseconds = location.ElapsedRealtimeNanos
         };
-        if (!LocationAcquisitionPolicy.IsCurrent(reading, DateTimeOffset.UtcNow)) return;
         lock (sync)
         {
             if (!listening) return;
+            if (!LocationAcquisitionPolicy.IsCurrent(reading, DateTimeOffset.UtcNow))
+            {
+                rejectedSamples++;
+                return;
+            }
             if (reading.Provider == LocationManager.GpsProvider)
             {
+                gpsSamples++;
                 if (gps is null || reading.Timestamp > gps.Timestamp) gps = reading;
             }
-            else if (reading.Provider == LocationManager.NetworkProvider &&
-                (network is null || reading.Timestamp > network.Timestamp)) network = reading;
+            else if (reading.Provider == LocationManager.NetworkProvider)
+            {
+                networkSamples++;
+                if (network is null || reading.Timestamp > network.Timestamp) network = reading;
+            }
         }
     }
 

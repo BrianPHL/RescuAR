@@ -199,10 +199,13 @@ public partial class CameraPage
         var now = DateTimeOffset.UtcNow;
         // Browsing acquisition never writes route origins/progress. A trip uses only dev's canonical location stream.
         if (!destination.IsAvailable) reading = cameraMapBrowsingReading;
+        var mapObservation = CameraMapPresentationPolicy.CanShowObservation(reading, now) ? reading : null;
         if (!CameraMapPresentationPolicy.CanShowCurrent(reading, now, held)) reading = null;
         mapFromLocationLabel.FormattedText = null;
-        mapFromLocationLabel.Text = reading is null ? "Current location unknown" : $"Current GPS · ±{reading.AccuracyMeters:0} m";
-        mapLocationNoticeLabel.Text = reading is null ? (held ? "Navigation position is held; location and nearby distances are unknown." : cameraMapLocationNotice) : "Current validated GPS; shelter distances are straight-line estimates.";
+        mapFromLocationLabel.Text = mapObservation is null ? "Current location unknown" : $"GPS observation · ±{mapObservation.AccuracyMeters:0} m";
+        mapLocationNoticeLabel.Text = reading is null ? (held
+            ? mapObservation is null ? "Route progress is held; no recent GPS observation." : "GPS shown with uncertainty; route progress and turn distances are held."
+            : cameraMapLocationNotice) : "Current GPS; shelter distances are straight-line estimates.";
         mapDestinationSelectedLabel.Text = cameraMapSelectedShelter is null ? "Select evacuation center…" :
             cameraMapSelectedShelter.Name + " · " + CameraMapPresentationPolicy.DistanceTo(new(cameraMapSelectedShelter.Latitude, cameraMapSelectedShelter.Longitude), reading, now);
 
@@ -232,10 +235,10 @@ public partial class CameraPage
             if (route is not null && cameraMapViewport.ShouldFrameRoute(destination.Version, route)) FrameCameraMapRoute(route);
             if (routeDirectionsSheet.IsVisible) PopulateCameraDirections();
         }
-        if (reading != cameraMapRenderedLocation)
+        if (mapObservation != cameraMapRenderedLocation)
         {
-            cameraMapRenderedLocation = reading;
-            cameraMapUserLayer.Features = reading is null ? Array.Empty<GeometryFeature>() : new[] { CameraMapPin(reading.Coordinate, "Current validated GPS", MapColor.FromString("#1A73E8"), 0.8) };
+            cameraMapRenderedLocation = mapObservation;
+            cameraMapUserLayer.Features = mapObservation is null ? Array.Empty<GeometryFeature>() : BuildCameraMapObservation(mapObservation);
             cameraMapUserLayer.DataHasChanged();
         }
         if (mapCenterSearchOverlay.IsVisible && ((reading is null) != (cameraMapSearchLocation is null) ||
@@ -290,6 +293,20 @@ public partial class CameraPage
         feature.Styles.Add(new Mapsui.Styles.SymbolStyle { SymbolType = Mapsui.Styles.SymbolType.Ellipse, SymbolScale = size, Fill = new MapBrush(color), Outline = new MapPen(MapColor.White, 2) });
         feature.Styles.Add(new Mapsui.Styles.LabelStyle { Text = label, ForeColor = MapColor.FromString("#0F172A"), BackColor = new MapBrush(MapColor.White), Offset = new Mapsui.Styles.Offset(0, -18) });
         return feature;
+    }
+
+    private static GeometryFeature[] BuildCameraMapObservation(LocationReading reading)
+    {
+        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(reading.Coordinate.Longitude, reading.Coordinate.Latitude);
+        // EPSG:3857 lengths expand by latitude; retain the reported ground radius.
+        double radius = reading.AccuracyMeters!.Value / Math.Cos(reading.Coordinate.Latitude * Math.PI / 180);
+        var area = new GeometryFeature(new NetTopologySuite.Geometries.Point(x, y).Buffer(radius));
+        area.Styles.Add(new Mapsui.Styles.VectorStyle
+        {
+            Fill = new MapBrush(new MapColor(26, 115, 232, 40)),
+            Outline = new MapPen(MapColor.FromString("#1A73E8"), 1)
+        });
+        return new[] { area, CameraMapPin(reading.Coordinate, $"GPS observation · ±{reading.AccuracyMeters:0} m", MapColor.FromString("#1A73E8"), 0.8) };
     }
     private static GeometryFeature[] BuildCameraMapPlaces(NavigationDestinationBridge.DestinationSnapshot destination, EvacuationDirectorySnapshot directory)
     {

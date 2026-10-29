@@ -313,7 +313,9 @@ public partial class CameraPage
 
     private bool TryShowNavigationFallback()
     {
-        if (activeRoute is { } computed && IsMldRoute(computed)) return false;
+        // An accepted geographic route owns persistent instructions for either
+        // algorithm while independent AR placement is recovering.
+        if (activeRoute is not null || routeRequestInProgress) return false;
         var destination = NavigationDestinationBridge.Current;
         if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible || routeHazardBlocksGuidance ||
             currentCameraModuleView != CameraModuleViewMode.ArCamera ||

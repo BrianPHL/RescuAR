@@ -15,6 +15,11 @@ public static class CameraMapPresentationPolicy
         !held && reading is not null && CanProject(reading.Coordinate) &&
         RouteStartupLocationPolicy.CanPlan(reading.Coordinate, reading.AccuracyMeters, reading.Timestamp, now, cached: false);
 
+    // A measured GPS observation can be displayed with its uncertainty even
+    // when matching it to this route is held. It is not accepted route progress.
+    public static bool CanShowObservation(LocationReading? reading, DateTimeOffset now) =>
+        CanShowCurrent(reading, now, held: false);
+
     public static RouteResult? ForTrip(RouteResult? route, long routeTrip, long destinationTrip, bool hasDestination)
     {
         if (!hasDestination || destinationTrip <= 0 || routeTrip != destinationTrip || route is null ||

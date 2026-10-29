@@ -64,10 +64,12 @@ public sealed class NavigationStabilityPolicy
         bool observationHeld)
     {
         if (!ReferenceEquals(route, activeRoute)) { Reset(); route = activeRoute; }
-        bool unique = !lastObservation.HasValue || at > lastObservation;
-        bool qualified = unique && coordinate.IsValid && !observationHeld && now >= at &&
-            now - at <= Options.MaximumFixAge && accuracy is double a && double.IsFinite(a) &&
-            a >= 0 && a <= Options.MaximumReliableAccuracyMeters;
+        // A timeout is not a device observation. Advancing this watermark with
+        // the poll clock rejects real fixes acquired just before that timeout.
+        bool hasObservation = coordinate.IsValid && accuracy is double a && double.IsFinite(a) && a >= 0;
+        bool unique = hasObservation && (!lastObservation.HasValue || at > lastObservation);
+        bool qualified = unique && !observationHeld && now >= at &&
+            now - at <= Options.MaximumFixAge && accuracy <= Options.MaximumReliableAccuracyMeters;
         if (unique) lastObservation = at;
         if (qualified && lastReliable is { } previous && at > previous &&
             at - previous <= Options.RecoveryLifetime)
