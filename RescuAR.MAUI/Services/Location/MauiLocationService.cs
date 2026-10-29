@@ -11,15 +11,27 @@ using RescuAR.Navigation.Models;
 namespace RescuAR.MAUI.Services.Location;
 
 /// <summary>
-/// Foreground location provider based on the built-in .NET MAUI geolocation
-/// APIs. No additional NuGet package is required.
+/// Foreground location adapter. Android collects GPS/network observations
+/// directly so MAUI's first-within-50m completion cannot end acquisition early.
+/// No additional NuGet package is required.
 ///
 /// Continuous location in the current moving-window milestone is implemented
 /// as a foreground polling loop owned by CameraPage. This service remains the
 /// single adapter that converts MAUI Location into RescuAR LocationReading.
 /// </summary>
-public sealed class MauiLocationService : ILocationService
+public sealed class MauiLocationService : ILocationService, IForegroundLocationSource
 {
+#if ANDROID
+    private readonly AndroidNavigationLocationSource navigationLocations = new();
+#endif
+    public IDisposable? AcquireForegroundUpdates()
+    {
+#if ANDROID
+        return navigationLocations.AcquireForegroundUpdates();
+#else
+        return null;
+#endif
+    }
     private readonly ReliableLocationCache reliableLocations = new();
     private const string LogTag =
         "RescuAR-GPS";
@@ -121,13 +133,25 @@ public sealed class MauiLocationService : ILocationService
             return null;
         }
 
+#if !ANDROID
         GeolocationRequest request =
             new(
                 GeolocationAccuracy.Best,
                 CurrentLocationTimeout);
+#endif
 
         try
         {
+#if ANDROID
+            var reading = await navigationLocations.GetCurrentAsync(CurrentLocationTimeout, cancellationToken);
+            if (reading is not null)
+            {
+                reliableLocations.Observe(reading);
+                WriteLog($"CURRENT: provider={reading.Provider}; accuracy={FormatNullable(reading.AccuracyMeters)} m; " +
+                    $"courseAccuracy={FormatNullable(reading.CourseAccuracyDegrees)} deg; timestamp={reading.Timestamp:O}; acquisitionTimePreserved=True.");
+            }
+            return reading;
+#else
             Microsoft.Maui.Devices.Sensors.Location? location =
                 await Geolocation.Default.GetLocationAsync(
                     request,
@@ -136,6 +160,7 @@ public sealed class MauiLocationService : ILocationService
             return ToReadingAndLog(
                 "CURRENT",
                 location);
+#endif
         }
         catch (FeatureNotEnabledException)
         {
@@ -151,6 +176,13 @@ public sealed class MauiLocationService : ILocationService
 
             return null;
         }
+#if ANDROID
+        catch (Java.Lang.SecurityException)
+        {
+            WriteLog("Location permission changed during Android acquisition.");
+            return null;
+        }
+#endif
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested)
         {

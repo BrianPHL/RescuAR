@@ -19,6 +19,7 @@ void Check(bool condition, string name)
 }
 if (args.Contains("--pdr-map-matching"))
 {
+    LocationAcquisitionChecks.Run(Check);
     PdrMapMatchingChecks.Run(Check);
     Console.WriteLine($"{passed} PDR/map-matching checks passed.");
     return;
@@ -107,6 +108,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
         MldRibbonRegistrationChecks.Run(Check);
         MldWindowContinuityChecks.Run(Check);
         PdrMapMatchingChecks.Run(Check);
+        LocationAcquisitionChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);

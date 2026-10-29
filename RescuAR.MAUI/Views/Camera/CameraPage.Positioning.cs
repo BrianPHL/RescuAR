@@ -3,12 +3,23 @@ using RescuAR.MAUI.Services.Location;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Guidance;
+using RescuAR.Navigation.State;
 using RescuAR.Diagnostics;
 
 namespace RescuAR.App.Views.Camera;
 
 public partial class CameraPage
 {
+    private IDisposable? foregroundLocationLease;
+
+    private void RefreshForegroundLocationOwnership()
+    {
+        if (pageIsVisible && NavigationDestinationBridge.Current.IsAvailable)
+            foregroundLocationLease ??= (_locationService as IForegroundLocationSource)?.AcquireForegroundUpdates();
+        else
+            Interlocked.Exchange(ref foregroundLocationLease, null)?.Dispose();
+    }
+
     // Physical display references are separate from monotonic trip progress.
     // They never become routing origins, device locations or arrival evidence.
     private VerifiedPosition? verifiedPosition;

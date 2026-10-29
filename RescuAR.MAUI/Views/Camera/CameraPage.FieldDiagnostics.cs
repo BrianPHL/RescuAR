@@ -138,7 +138,7 @@ public partial class CameraPage
         AndroidLog.Info(ProgressLogTag, $"NAV_POSITION_PIPELINE sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
             $"trip={activeDestinationVersion}; geoRef={navigationTraceOwner}/{geographicTraceVersion}; geometry={route.GeometryFingerprint}; " +
             $"gpsEN={trace.Point(reading.Coordinate)}; accuracy={reading.AccuracyMeters:F2}m; " +
-            $"ageMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; provider=unavailable; courseAccuracy=unavailable; " +
+            $"ageMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; provider={reading.Provider}; courseAccuracy={reading.CourseAccuracyDegrees:F1}; " +
             $"accepted={matched.IsAccepted}; held={positionObservationHeld}; match={matched.MatchConfidence}; " +
             $"rawProgress={matched.RawProgressMeters:F3}; fusedProgress={fused.CommittedProgressMeters:F3}; " +
             $"roadEN={(roadReady ? trace.Point(road.RoadCoordinate) : "unavailable")}; " +
@@ -170,7 +170,7 @@ public partial class CameraPage
             $"accuracy={previous.Accuracy:F1}/{reading.AccuracyMeters:F1}m; " +
             $"gpsEN=({east:F2},{north:F2})m; gpsAR=({projected.X:F2},{projected.Z:F2})m; " +
             $"trackedAR=({arX:F2},{arZ:F2})m; residual=({arX - projected.X:F2},{arZ - projected.Z:F2})m; " +
-            $"yaw={to.YawDegrees:F2}; provider=unavailable; bearingAccuracy=unavailable.");
+            $"yaw={to.YawDegrees:F2}; provider={reading.Provider}; bearingAccuracy={reading.CourseAccuracyDegrees:F1}.");
     }
 
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]

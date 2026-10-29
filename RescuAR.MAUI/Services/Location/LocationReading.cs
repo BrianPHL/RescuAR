@@ -15,4 +15,13 @@ public sealed record LocationReading(
     double? AltitudeMeters,
     double? SpeedMetersPerSecond,
     double? CourseDegrees,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp)
+{
+    public string Provider { get; init; } = "unavailable";
+    public double? CourseAccuracyDegrees { get; init; }
+    public long? AcquisitionElapsedRealtimeNanoseconds { get; init; }
+
+    // A reported inaccurate course must not select a different road branch.
+    public double? QualifiedCourseDegrees => CourseAccuracyDegrees is { } error &&
+        (!double.IsFinite(error) || error < 0 || error > 30) ? null : CourseDegrees;
+}

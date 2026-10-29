@@ -2832,6 +2832,7 @@ namespace RescuAR.App.Views.Camera
 
             pageIsVisible =
                 true;
+            RefreshForegroundLocationOwnership();
             ObserveCameraMapWindow();
 
             if (NavigationDestinationBridge.Current.IsAvailable)
@@ -2914,6 +2915,7 @@ namespace RescuAR.App.Views.Camera
 #endif
             pageIsVisible =
                 false;
+            RefreshForegroundLocationOwnership();
             StopCameraMapDisplay();
             UnobserveCameraMapWindow();
 
@@ -4326,6 +4328,7 @@ namespace RescuAR.App.Views.Camera
             NavigationDestinationBridge.DestinationSnapshot destination =
                 NavigationDestinationBridge.Current;
             if (destination.Version == observedDestinationVersion) return;
+            RefreshForegroundLocationOwnership();
             observedDestinationVersion = destination.Version;
 
 #if ANDROID
@@ -4817,7 +4820,7 @@ namespace RescuAR.App.Views.Camera
                             if (headingObservedForRecovery)
                             {
                                 var recoveryMatch = _routeProgressTracker.Update(reading.Coordinate,
-                                    reading.AccuracyMeters, reading.CourseDegrees, reading.SpeedMetersPerSecond,
+                                    reading.AccuracyMeters, reading.QualifiedCourseDegrees, reading.SpeedMetersPerSecond,
                                     observeOnly: true);
                                 headingPublishedForRecovery = TryApplyHeadingRevalidation(route, reading, recoveryMatch);
                             }
@@ -4851,7 +4854,7 @@ namespace RescuAR.App.Views.Camera
                                 positionObservationHeld ? HeldGpsObservation(beforeGps, reading) : _routeProgressTracker.Update(
                                     reading.Coordinate,
                                     reading.AccuracyMeters,
-                                    reading.CourseDegrees,
+                                    reading.QualifiedCourseDegrees,
                                     reading.SpeedMetersPerSecond);
 
                             /*
@@ -9462,7 +9465,7 @@ namespace RescuAR.App.Views.Camera
                     reading.Coordinate,
                     reading.AccuracyMeters,
                     reading.SpeedMetersPerSecond,
-                    reading.CourseDegrees,
+                    reading.QualifiedCourseDegrees,
                     update.MatchConfidence,
                     routeTangentBearingDegrees,
                     observedFrame.Pose.PositionX,

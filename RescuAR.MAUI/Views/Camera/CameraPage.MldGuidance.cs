@@ -83,7 +83,7 @@ public partial class CameraPage
             // sample. Existing acquisition pairing, age, precision, registration,
             // access, tracking and hazard gates still own publication eligibility.
             var match = _routeProgressTracker.Update(reading.Coordinate, reading.AccuracyMeters,
-                reading.CourseDegrees, reading.SpeedMetersPerSecond, observeOnly: true);
+                reading.QualifiedCourseDegrees, reading.SpeedMetersPerSecond, observeOnly: true);
             long previousWindow = ARRouteBridge.Current.Version;
             bool published = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong
                 ? TryPublishMovingRouteWindow(route, match, reason)
