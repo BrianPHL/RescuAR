@@ -259,12 +259,10 @@ public partial class CameraPage
         var placed = route.Placement;
         if (activeRoute is { } mldRoute && IsMldRoute(mldRoute))
         {
-            var motion = GetTrackedRouteMotion(requireTrustedHeading: false);
             AndroidLog.Info(RouteLogTag, $"NAV_ALIGNMENT trip={activeDestinationVersion}; route={route.Version}; " +
-                $"registration='{placed.AlignmentSource}'; visual={HasVisualRoadRegistration()}; " +
-                $"contradicted={(motion.HasValue && _routeDisplayProgressPolicy.HasContradictedVisualReference(mldRoute, motion.Value))}; " +
+                $"registration='{placed.AlignmentSource}'; machineLearning=False; " +
                 $"style=SOLID_RIBBON; width={ARRouteVisualPolicy.GetRouteWidthMeters(0):F2}m; " +
-                $"displaySource={(HasVisualRoadRegistration() ? "VISUAL_AR" : "ACCEPTED_GPS_PDR")}; rawGpsProgress={progress.RawProgressMeters:F2}; " +
+                $"displaySource=REGISTERED_GPS_PDR; rawGpsProgress={progress.RawProgressMeters:F2}; " +
                 $"gpsMovementAction={lastGpsFusionAction}; " +
                 $"acceptedProgress={progress.CommittedProgressMeters:F2}; displayProgress={route.NavigationState.WindowStartProgressMeters:F2}; " +
                 $"window={(route.Points.Count > 0 ? route.Points[^1].DistanceFromWindowStartMeters : 0):F2}; " +

@@ -59,22 +59,5 @@ internal static class NavigationPipelineChecks
                 $"{algorithm}: geographic text remains available without an AR window");
         }
 
-        const int width = 12, height = 8, stride = 16;
-        byte[] labels = new byte[stride * height], confidence = new byte[stride * height];
-        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
-        { labels[y * stride + x] = (byte)(1 + x + 16 * y); confidence[y * stride + x] = 251; }
-        float[] rotated = { 1, 0, 1, 1, 0, 0, 0, 1 };
-        check(SemanticImageCoordinates.TryReproject(labels, confidence, width, height, stride, stride,
-            2, 3, rotated, out var view), "semantic texture: landscape data maps into a portrait viewport");
-        check(view.Labels[0] == 12 && view.Labels[view.Width - 1] == 124 &&
-            view.Labels[^view.Width] == 1 && view.Labels[^1] == 113 && view.Confidence.All(v => v == 251),
-            "semantic texture: rotation preserves matching labels/confidence and padded source rows");
-        float[] cropped = { .25f, .25f, .75f, .25f, .25f, .75f, .75f, .75f };
-        check(SemanticImageCoordinates.TryReproject(labels, confidence, width, height, stride, stride,
-            2, 3, cropped, out var crop) && crop.Labels[0] == 36 && crop.Labels[^1] == 89,
-            "semantic texture: SDK viewport crop is applied before ground projection");
-        float[] invalid = { float.NaN, 0, 1, 0, 0, 1, 1, 1 };
-        check(!SemanticImageCoordinates.TryReproject(labels, confidence, width, height, stride, stride,
-            2, 3, invalid, out _), "semantic texture: invalid transforms cannot certify a road");
     }
 }

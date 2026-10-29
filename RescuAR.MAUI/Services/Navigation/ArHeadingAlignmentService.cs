@@ -645,32 +645,6 @@ public sealed class ArHeadingAlignmentService : IDisposable
         return true;
     }
 
-    /// <summary>Accepts a coherent local-road reference without requiring pedestrian movement.</summary>
-    public bool TryApplyVisualRoadYaw(double yaw, ARRoadSurfaceBridge.Observation proof,
-        ARCameraPoseBridge.SpatialSnapshot frame, out HeadingAlignmentResult corrected)
-    {
-        corrected = default;
-        if (!double.IsFinite(yaw) || proof.Evidence < 3 || !proof.IsFor(frame)) return false;
-        lock (sessionCalibrationSync)
-        {
-            var currentFrame = ARCameraPoseBridge.CurrentFrame;
-            if (sessionCalibration is not { } previous ||
-                previous.SessionGeneration != frame.Generation.SessionGeneration ||
-                currentFrame.Generation.SessionGeneration != frame.Generation.SessionGeneration ||
-                currentFrame.TrackingEpoch != frame.TrackingEpoch || currentFrame.WorldFrame != frame.WorldFrame ||
-                ARCameraSpatialController.WorldFrameGeneration != frame.WorldFrame ||
-                !currentFrame.IsFresh || !currentFrame.IsTracking) return false;
-            corrected = previous with { MapToArYawDegrees = NormalizeSignedDegrees(yaw),
-                Source = "VISUAL_ROAD", RequiresMovementValidation = false, IsStable = true,
-                TrackingEpoch = frame.TrackingEpoch, WorldFrame = frame.WorldFrame,
-                SpatialVersion = frame.Version, Timestamp = DateTimeOffset.UtcNow,
-                SampleCount = proof.Evidence };
-            sessionCalibration = corrected;
-            calibrationRevision++;
-            return true;
-        }
-    }
-
     /// <summary>Independent sensor observation for diagnosis; never changes calibration.</summary>
     public bool TryGetIndependentObservation(GeoCoordinate location, double? altitudeMeters,
         out HeadingAlignmentResult observation) => TryCreateSample(location, altitudeMeters, out observation, out _);
@@ -683,9 +657,6 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             if (sessionCalibration is not { } retained || retained.SessionGeneration != sample.SessionGeneration)
                 return false;
-            // A qualified physical-road reference owns this yaw. An unrelated
-            // magnetic change must not undo it when the phone rotates.
-            if (retained.Source == "VISUAL_ROAD") return false;
             var verdict = continuity.Observe(retained.MapToArYawDegrees, sample.MapToArYawDegrees,
                 sample.OrientationObservedAt, sample.SessionGeneration, sample.TrackingEpoch,
                 sample.WorldFrame, calibrationRevision);

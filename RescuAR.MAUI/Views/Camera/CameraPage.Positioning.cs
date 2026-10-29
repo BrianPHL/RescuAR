@@ -36,7 +36,6 @@ public partial class CameraPage
             progressMotionPolicy.Reset();
             verifiedPosition = null;
             acceptedGpsPosition = null;
-            ResetVisualRoadAlignmentState();
             lastRegisteredPublication = null;
             lastRegistrationRejection = null;
             Interlocked.Exchange(ref routeWindowPublishedCount, 0);
@@ -181,14 +180,7 @@ public partial class CameraPage
                     boundedRecovery ? navigationStability.Options.RecoveryLifetime : null))
                 return RejectRegisteredWindow("registration unsupported or context changed", source);
             double window = GetCurrentArRouteVisualWindowMeters();
-            if (reference.Source == "VISUAL_ROAD_CORRIDOR")
-            {
-                window = _routeDisplayProgressPolicy.ConstrainVisualWindow(route, position.ProgressMeters, window);
-                if (window < .5) return RejectRegisteredWindow("visible corridor does not establish the upcoming turn", source);
-            }
-            else if (IsMldRoute(route))
-                // Approximate GPS/compass placement must not extrapolate the
-                // full 40 m corridor. The nearby ribbon advances with AR motion.
+            if (IsMldRoute(route))
                 window = Math.Min(window, RescuAR.Navigation.Projection.LocalArNavigationPolicy.ApproachWindowMeters);
             if (routeHazardBlocksGuidance)
             {
@@ -300,6 +292,7 @@ public partial class CameraPage
             safeZoneConfirmed || dynamicRerouteInProgress || positionObservationHeld ||
             _gpsPdrFusionPolicy.IsRouteIdentitySuspended || routeHazardBlocksGuidance ||
             verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route)) return false;
+        if (verified.At != latestGpsTimestampForRouting) return false;
         var preview = ARRouteBridge.Current;
         var owner = MldGuidanceBridge.Current;
         var frame = ARCameraPoseBridge.CurrentFrame;
@@ -332,8 +325,8 @@ public partial class CameraPage
 
             double dx = to.X - from.X, dz = to.Z - from.Z;
             if (dx * dx + dz * dz > MaximumPdrRouteWindowAdvanceMeters * MaximumPdrRouteWindowAdvanceMeters ||
-                !(IsMldRoute(route) && HasVisualRoadRegistration()
-                    ? _routeDisplayProgressPolicy.TryGetVisualDisplayPosition(route, now, to, out position)
+                !(IsMldRoute(route)
+                    ? _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, now, to, out position)
                     : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
                 return false;
             accuracy = previous.Accuracy;

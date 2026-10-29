@@ -17,6 +17,12 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--pdr-map-matching"))
+{
+    PdrMapMatchingChecks.Run(Check);
+    Console.WriteLine($"{passed} PDR/map-matching checks passed.");
+    return;
+}
 if (args.Contains("--camera-startup"))
 {
     CameraStartupChecks.Run(Check);
@@ -56,7 +62,6 @@ if (args.Contains("--navigation-pipeline"))
 if (args.Contains("--mld-ribbon"))
 {
     MldRibbonRegistrationChecks.Run(Check);
-    VisualRoadAlignmentChecks.Run(Check);
     Console.WriteLine($"{passed} MLD ribbon/registration regression checks passed.");
     return;
 }
@@ -78,12 +83,6 @@ if (args.Contains("--registration-only"))
     Console.WriteLine($"{passed} registration regression checks passed.");
     return;
 }
-if (args.Contains("--road-surface"))
-{
-    VisualRoadAlignmentChecks.Run(Check);
-    Console.WriteLine($"{passed} visual road alignment regression checks passed.");
-    return;
-}
 if (args.Contains("--startup-scene"))
 {
     StartupSceneChecks.Run(Check);
@@ -101,13 +100,13 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     if (args.Contains("--alignment-recovery") || args.Contains("--ar-guidance"))
     {
         await MldGuidanceOwnershipChecks.RunAsync(Check);
-        VisualRoadAlignmentChecks.Run(Check);
         ARRegistrationChecks.Run(Check);
         ARMultiDeviceRecoveryChecks.Run(Check);
         NavigationStabilityChecks.Run(Check);
         NavigationPipelineChecks.Run(Check);
         MldRibbonRegistrationChecks.Run(Check);
         MldWindowContinuityChecks.Run(Check);
+        PdrMapMatchingChecks.Run(Check);
         await ARHeadingRecoveryChecks.RunAsync(Check);
     }
     await ARRecoveryContinuityChecks.RunAsync(Check);
@@ -131,7 +130,6 @@ CameraStartupChecks.Run(Check);
 SurfaceResizeChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
-VisualRoadAlignmentChecks.Run(Check);
 ARMultiDeviceRecoveryChecks.Run(Check);
 NavigationStabilityChecks.Run(Check);
 await ARHeadingRecoveryChecks.RunAsync(Check);

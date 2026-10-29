@@ -56,6 +56,12 @@ internal static class MldRibbonRegistrationChecks
             check(policy.TryGetRegisteredDisplayPosition(route, at.AddSeconds(4), M(5) with { GroundReference = 9 }, out var floor) &&
                 Math.Abs(floor.ProgressMeters - walked.ProgressMeters) < .001,
                 $"{algorithm}/{yaw}: a floor handoff in the same camera world does not jump display progress");
+            check(!policy.TryGetRegisteredDisplayPosition(route, at.AddSeconds(4), M(90, 17), out _),
+                $"{algorithm}/{yaw}: a discontinuous camera jump cannot select a distant route leg");
+            for (int east = 10; east <= 90; east += 5)
+                policy.TryGetRegisteredDisplayPosition(route, at.AddSeconds(4), M(east), out _);
+            for (int north = 4; north <= 16; north += 4)
+                policy.TryGetRegisteredDisplayPosition(route, at.AddSeconds(4), M(90, north), out _);
             check(policy.TryGetRegisteredDisplayPosition(route, at.AddSeconds(4), M(90, 17), out var bend) &&
                 Math.Abs(bend.ProgressMeters - 120) < .03,
                 $"{algorithm}/{yaw}: projection preserves the mapped corner instead of creating a direct destination arrow");

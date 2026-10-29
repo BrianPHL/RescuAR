@@ -5,8 +5,8 @@ namespace RescuAR.Navigation.Progress;
 
 /// <summary>
 /// Estimates pedestrian direction from a short rolling ARCore motion window.
-/// Camera-forward direction remains a secondary signal so one phone rotation
-/// cannot immediately reject an otherwise route-consistent walking step.
+/// A qualified walking vector owns step direction independently of phone yaw.
+/// Camera direction is diagnostic fallback while displacement accumulates.
 /// </summary>
 public sealed class PdrHeadingSmoother
 {
@@ -33,13 +33,6 @@ public sealed class PdrHeadingSmoother
 
     private const double MinimumMotionCoherence =
         0.55;
-
-    private const double WalkingVectorWeight =
-        0.75;
-
-    private const double CameraVectorWeight =
-        1.0 -
-        WalkingVectorWeight;
 
     private readonly List<MotionSample> samples =
         new();
@@ -149,17 +142,8 @@ public sealed class PdrHeadingSmoother
 
         if (walkingVectorAvailable)
         {
-            fusedX =
-                walkingX *
-                    WalkingVectorWeight +
-                cameraX *
-                    CameraVectorWeight;
-
-            fusedZ =
-                walkingZ *
-                    WalkingVectorWeight +
-                cameraZ *
-                    CameraVectorWeight;
+            fusedX = walkingX;
+            fusedZ = walkingZ;
         }
 
         double fusedMagnitude =
@@ -201,7 +185,7 @@ public sealed class PdrHeadingSmoother
             accumulatedMotionMeters,
             samples.Count,
             walkingVectorAvailable
-                ? "rolling ARCore walking vector blended with smoothed camera direction"
+                ? "rolling ARCore walking vector independent of phone direction"
                 : "smoothed camera direction while walking motion accumulates");
         }
     }

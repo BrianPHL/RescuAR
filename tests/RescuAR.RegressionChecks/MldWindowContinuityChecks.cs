@@ -53,8 +53,8 @@ internal static class MldWindowContinuityChecks
                 Math.Abs(position.ProgressMeters - corrected.ProgressMeters) < .01,
                 $"held display: {action} does not let uncommitted GPS jitter move the window independently");
         check(policy.TryGetNavigationDisplayPosition(route, nextAt, to,
-            GpsPdrFusionPolicy.GpsFusionAction.AcceptForward, out var accepted) && accepted.ProgressMeters > 10.7,
-            "accepted display: an accepted forward observation preserves normal GPS-backed behavior");
+            GpsPdrFusionPolicy.GpsFusionAction.AcceptForward, out var accepted) && accepted.ProgressMeters < .01,
+            "accepted display: GPS progress and tracked geometry share the retained transform instead of separate moving windows");
         check(Math.Abs(tracker.Current.CommittedProgressMeters - .595) < .001,
             "display correction does not create trip progress, a location observation or arrival evidence");
         check(!policy.TryGetNavigationDisplayPosition(route, nextAt, to with { TrackingEpoch = 4 },

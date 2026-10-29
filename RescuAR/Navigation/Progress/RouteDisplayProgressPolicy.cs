@@ -7,8 +7,8 @@ using System.Numerics;
 namespace RescuAR.Navigation.Progress;
 
 /// <summary>
-/// Places the mapped road at the observed GPS match independently of smoothed
-/// trip progress. PDR advances only from that display anchor between GPS fixes.
+/// Retains one GPS-to-AR transform and matches tracked movement to its route.
+/// PDR trip progress and rendering do not independently move the geographic origin.
 /// This affects rendering references, never routing origins or arrival evidence.
 /// </summary>
 public sealed class RouteDisplayProgressPolicy
@@ -25,10 +25,9 @@ public sealed class RouteDisplayProgressPolicy
     private DateTimeOffset? registrationSupportedAt;
     private DateTimeOffset? lastRegistrationObservation;
     private int registrationConfirmations;
-    private VisualRegistration? visualRegistration;
-    private sealed record VisualRegistration(GeoCoordinate Coordinate, Vector2 WorldPoint,
-        RouteBacktrackingPolicy.TrackedMotion Motion, DateTimeOffset At, DateTimeOffset SupportedAt,
-        float ObservedSpan, double AlongRouteUncertainty, bool Contradicted = false);
+    private readonly GpsRegistrationCorrectionPolicy registrationCorrections = new();
+    private double? trackedDisplayProgress;
+    private RouteBacktrackingPolicy.TrackedMotion? lastDisplayMotion;
     public RegistrationDecision LastRegistrationDecision { get; private set; }
 
     private readonly record struct RegistrationObservation(GeoCoordinate Coordinate,
@@ -59,7 +58,9 @@ public sealed class RouteDisplayProgressPolicy
         registration = pendingRegistration = null;
         registrationSupportedAt = lastRegistrationObservation = null;
         registrationConfirmations = 0;
-        visualRegistration = null;
+        registrationCorrections.Reset();
+        trackedDisplayProgress = null;
+        lastDisplayMotion = null;
         LastRegistrationDecision = default;
     }
 
@@ -110,13 +111,9 @@ public sealed class RouteDisplayProgressPolicy
         RouteBacktrackingPolicy.TrackedMotion motion, GpsPdrFusionPolicy.GpsFusionAction action,
         out DisplayPosition position)
     {
-        if (HasContradictedVisualReference(route, motion)) { position = default; return false; }
-        if (TryGetVisualDisplayPosition(route, now, motion, out position)) return true;
-        if (action is GpsPdrFusionPolicy.GpsFusionAction.HoldStationary or
-            GpsPdrFusionPolicy.GpsFusionAction.KeepPdrLead or
-            GpsPdrFusionPolicy.GpsFusionAction.WaitForBackwardConfirmation)
-            return TryGetRegisteredDisplayPosition(route, now, motion, out position);
-        return TryGetObservedPosition(route, now, out position);
+        // One retained transform owns MLD geometry. GPS updates its support and
+        // bounded origin estimate; raw matched progress cannot independently drag it.
+        return TryGetRegisteredDisplayPosition(route, now, motion, out position);
     }
 
     /// <summary>GPS eligibility and permission to move the world registration are separate decisions.</summary>
@@ -138,12 +135,18 @@ public sealed class RouteDisplayProgressPolicy
         if (registration is null)
         {
             registration = next;
+            registrationCorrections.Reset();
+            trackedDisplayProgress = gpsPosition.ProgressMeters;
+            lastDisplayMotion = motion;
             pendingRegistration = null;
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("ACQUISITION_SEEDED", 0, true);
         }
         if (!sameFrame)
         {
+            registrationCorrections.Reset();
+            trackedDisplayProgress = null;
+            lastDisplayMotion = null;
             // New frame/calibration ownership needs separate, spaced evidence.
             if (pendingRegistration is not { } seed || !SameFrame(seed.Motion, motion) ||
                 // Three fresh fixes at the observed five-second cadence span
@@ -162,6 +165,8 @@ public sealed class RouteDisplayProgressPolicy
                 return LastRegistrationDecision = new("FRAME_REQUALIFICATION_PENDING", double.NaN, false,
                     EvidenceCount: registrationConfirmations);
             registration = next;
+            trackedDisplayProgress = gpsPosition.ProgressMeters;
+            lastDisplayMotion = motion;
             pendingRegistration = null;
             registrationConfirmations = 0;
             registrationSupportedAt = at;
@@ -171,6 +176,7 @@ public sealed class RouteDisplayProgressPolicy
         double innovation = RegistrationResidual(registration!.Value, next);
         if (innovation <= RoutePositionObservationPolicy.MotionAllowanceMeters)
         {
+            registrationCorrections.ClearEvidence();
             // Keep the same transform. A fresh consistent fix renews support,
             // rather than attaching a stationary road to the current camera.
             pendingRegistration = null;
@@ -195,6 +201,7 @@ public sealed class RouteDisplayProgressPolicy
                 RoutePositionObservationPolicy.MotionAllowanceMeters;
         if (correctionConfirmed)
         {
+            registrationCorrections.Reset();
             var retained = registration!.Value;
             var offset = Offset(retained.Coordinate, next.Coordinate, motion.YawDegrees);
             double dx = motion.X - retained.Motion.X - offset.X, dz = motion.Z - retained.Motion.Z - offset.Z;
@@ -207,6 +214,21 @@ public sealed class RouteDisplayProgressPolicy
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("PRECISION_VALIDATED_BOUNDED_CORRECTION", innovation, true,
                 dx * weight, dz * weight, 3);
+        }
+
+        var anchor = registration.Value;
+        var projected = Offset(anchor.Coordinate, next.Coordinate, motion.YawDegrees);
+        var residual = new Vector2(motion.X - anchor.Motion.X - (float)projected.X,
+            motion.Z - anchor.Motion.Z - (float)projected.Z);
+        if (registrationCorrections.Observe(residual, anchor.Accuracy, next.Accuracy, at, out var correction))
+        {
+            registration = anchor with { Motion = anchor.Motion with {
+                X = anchor.Motion.X + correction.X, Z = anchor.Motion.Z + correction.Y } };
+            pendingRegistration = null;
+            registrationConfirmations = 0;
+            registrationSupportedAt = at;
+            return LastRegistrationDecision = new("GPS_FILTERED_BOUNDED_CORRECTION", innovation, true,
+                correction.X, correction.Y, 3);
         }
 
         // An uncertainty-overlapping fix supports retaining the old reference,
@@ -222,10 +244,6 @@ public sealed class RouteDisplayProgressPolicy
         TimeSpan? maximumSupportAge = null)
     {
         reference = default;
-        if (TryGetVisualReference(route, coordinate, now, current, out reference)) return true;
-        // Physical evidence contradicting this frame cannot be bypassed by
-        // falling back to the less precise GPS transform in that same frame.
-        if (HasContradictedVisualReference(route, current)) return false;
         if (!ReferenceEquals(currentRoute, route) || registration is not { } retained ||
             !coordinate.IsValid || !SameFrame(retained.Motion, current) || !registrationSupportedAt.HasValue ||
             now < registrationSupportedAt.Value ||
@@ -238,100 +256,6 @@ public sealed class RouteDisplayProgressPolicy
         return true;
     }
 
-    public bool TrySetVisualReference(RouteResult route, GeoCoordinate mapPoint, Vector2 worldPoint,
-        RouteBacktrackingPolicy.TrackedMotion correctedMotion, ARRoadSurfaceBridge.Observation proof,
-        ARCameraPoseBridge.SpatialSnapshot frame, DateTimeOffset now)
-    {
-        if (!ReferenceEquals(currentRoute, route) || !mapPoint.IsValid || !correctedMotion.IsValid ||
-            proof.Owner.Geometry != route.GeometryFingerprint || proof.Evidence < 3 || !proof.IsFor(frame) ||
-            now < proof.ObservedAt || now - proof.ObservedAt > TimeSpan.FromSeconds(3) ||
-            correctedMotion.Session != frame.Generation.SessionGeneration || correctedMotion.TrackingEpoch != frame.TrackingEpoch ||
-            correctedMotion.WorldFrame != frame.WorldFrame || !float.IsFinite(worldPoint.X + worldPoint.Y)) return false;
-        visualRegistration = new(mapPoint, worldPoint, correctedMotion, proof.ObservedAt, proof.ObservedAt,
-            proof.Line.Span, registration?.Accuracy ?? 20);
-        return true;
-    }
-
-    public bool TryGetVisualReference(RouteResult route, GeoCoordinate coordinate, DateTimeOffset now,
-        RouteBacktrackingPolicy.TrackedMotion current, out RegisteredReference reference, bool allowContradicted = false)
-    {
-        reference = default;
-        if (!ReferenceEquals(currentRoute, route) || visualRegistration is not { } visual ||
-            !coordinate.IsValid || !SameFrame(visual.Motion, current) || now < visual.At ||
-            visual.Contradicted && !allowContradicted) return false;
-        var offset = Offset(visual.Coordinate, coordinate, visual.Motion.YawDegrees);
-        reference = new(coordinate, visual.WorldPoint.X + (float)offset.X, visual.WorldPoint.Y + (float)offset.Z,
-            current.Session, current.TrackingEpoch, current.WorldFrame, visual.Motion.YawDegrees,
-            // A physical reference is retained by continuous live AR tracking,
-            // not by continued visibility of the road. The caller first
-            // qualifies the current pose/session/epoch/world. This timestamp
-            // denotes that pose support; it does not refresh acquisition time.
-            visual.At, now, "VISUAL_ROAD_CORRIDOR");
-        return float.IsFinite(reference.WorldX + reference.WorldZ);
-    }
-
-    public bool HasContradictedVisualReference(RouteResult route, RouteBacktrackingPolicy.TrackedMotion motion) =>
-        ReferenceEquals(currentRoute, route) && visualRegistration is { Contradicted: true } visual &&
-        SameFrame(visual.Motion, motion);
-
-    public bool RenewVisualSupport(RouteResult route, ARRoadSurfaceBridge.Observation proof,
-        ARCameraPoseBridge.SpatialSnapshot frame, GeoCoordinate mapPoint, Vector2 mapDirection,
-        DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion motion)
-    {
-        if (proof.Evidence < 3 || proof.Owner.Geometry != route.GeometryFingerprint || !proof.IsFor(frame) ||
-            now < proof.ObservedAt || now - proof.ObservedAt > TimeSpan.FromSeconds(3)) return false;
-        if (!TryGetVisualReference(route, mapPoint, now, motion, out var existing, allowContradicted: true)) return false;
-        var observed = proof.Line;
-        var rotated = MapToArCoordinates.Rotate(mapDirection.X, mapDirection.Y, motion.YawDegrees);
-        var expected = new RoadSurfaceAlignment.RoadLine(new(existing.WorldX, existing.WorldZ),
-            Vector2.Normalize(new((float)rotated.X, (float)rotated.Z)), observed.Width,
-            observed.Span, 0, observed.Sections);
-        if (!RoadSurfaceAlignment.Agrees(expected, observed))
-        {
-            visualRegistration = visualRegistration! with { Contradicted = true };
-            return false;
-        }
-        var supportedAt = proof.ObservedAt;
-        visualRegistration = visualRegistration! with { Contradicted = false,
-            SupportedAt = supportedAt > visualRegistration.SupportedAt ? supportedAt : visualRegistration.SupportedAt,
-            ObservedSpan = Math.Max(visualRegistration.ObservedSpan, observed.Span) };
-        return true;
-    }
-
-    public double ConstrainVisualWindow(RouteResult route, double progress, double requested)
-    {
-        if (!ReferenceEquals(currentRoute, route) || visualRegistration is not { Contradicted: false } visual ||
-            !TryAtDistance(route, progress, out var position)) return 0;
-        double window = Math.Min(requested, visual.ObservedSpan);
-        var a = route.Points[position.SegmentIndex].Coordinate;
-        var b = route.Points[position.SegmentIndex + 1].Coordinate;
-        var initial = Offset(a, b, 0);
-        double heading = Math.Atan2(initial.Z, initial.X);
-        for (int i = position.SegmentIndex + 1; i < route.Points.Count - 1; i++)
-        {
-            if (route.Points[i].DistanceFromStartMeters > progress + window + visual.AlongRouteUncertainty) break;
-            var next = Offset(route.Points[i].Coordinate, route.Points[i + 1].Coordinate, 0);
-            if (Math.Abs(Math.IEEERemainder(Math.Atan2(next.Z, next.X) - heading, 2 * Math.PI)) <= Math.PI / 18) continue;
-            // A straight visible corridor does not identify an intersection's
-            // absolute position. Preserve the GPS uncertainty before the turn.
-            window = Math.Min(window, route.Points[i].DistanceFromStartMeters - progress - visual.AlongRouteUncertainty);
-            break;
-        }
-        return Math.Max(0, window);
-    }
-
-    /// <summary>Local visual display progress only. Never routing-origin, GPS,
-    /// rerouting or arrival evidence. Phone turns cannot manufacture steps.</summary>
-    public bool TryGetVisualDisplayPosition(RouteResult route, DateTimeOffset now,
-        RouteBacktrackingPolicy.TrackedMotion motion, out DisplayPosition position)
-    {
-        position = default;
-        if (visualRegistration is not { } visual ||
-            !TryGetVisualReference(route, visual.Coordinate, now, motion, out _)) return false;
-        return TryProjectTrackedDisplayPosition(route, visual.Coordinate, visual.WorldPoint.X,
-            visual.WorldPoint.Y, motion, out position);
-    }
-
     /// <summary>Slides the visible window using tracked displacement inside one
     /// qualified transform. GPS may support registration, but cannot drag its geometry.</summary>
     public bool TryGetRegisteredDisplayPosition(RouteResult route, DateTimeOffset now,
@@ -340,12 +264,19 @@ public sealed class RouteDisplayProgressPolicy
         position = default;
         if (route.Points.Count < 2 || !TryGetRegisteredReference(route, route.Points[0].Coordinate,
             now, motion, out var reference)) return false;
-        return TryProjectTrackedDisplayPosition(route, reference.Coordinate, reference.WorldX,
-            reference.WorldZ, motion, out position);
+        if (lastDisplayMotion is { } previous &&
+            Math.Sqrt(Math.Pow(motion.X - previous.X, 2) + Math.Pow(motion.Z - previous.Z, 2)) > MaximumPdrAdvanceMeters)
+            return false;
+        if (!TryProjectTrackedDisplayPosition(route, reference.Coordinate, reference.WorldX,
+                reference.WorldZ, motion, trackedDisplayProgress ?? gpsPosition.ProgressMeters, out position)) return false;
+        trackedDisplayProgress = position.ProgressMeters;
+        lastDisplayMotion = motion;
+        return true;
     }
 
     private static bool TryProjectTrackedDisplayPosition(RouteResult route, GeoCoordinate mapPoint,
-        float worldX, float worldZ, RouteBacktrackingPolicy.TrackedMotion motion, out DisplayPosition position)
+        float worldX, float worldZ, RouteBacktrackingPolicy.TrackedMotion motion, double previousProgress,
+        out DisplayPosition position)
     {
         position = default;
         double dx = motion.X - worldX, dz = motion.Z - worldZ;
@@ -358,10 +289,16 @@ public sealed class RouteDisplayProgressPolicy
         for (int i = 0; i < route.Points.Count - 1; i++)
         {
             var a = route.Points[i]; var b = route.Points[i + 1];
+            double span = b.DistanceFromStartMeters - a.DistanceFromStartMeters;
+            // Match a continuous subsection, rather than another nearby leg of a loop.
+            double lower = Math.Max(a.DistanceFromStartMeters, previousProgress - MaximumPdrAdvanceMeters);
+            double upper = Math.Min(b.DistanceFromStartMeters, previousProgress + MaximumPdrAdvanceMeters);
+            if (span <= .0001 || upper < lower) continue;
             var start = Offset(estimated, a.Coordinate, 0); var end = Offset(estimated, b.Coordinate, 0);
             double x = end.X - start.X, z = end.Z - start.Z, length = x * x + z * z;
             if (length < .0001) continue;
-            double t = Math.Clamp(-(start.X * x + start.Z * z) / length, 0, 1);
+            double t = Math.Clamp(-(start.X * x + start.Z * z) / length,
+                (lower - a.DistanceFromStartMeters) / span, (upper - a.DistanceFromStartMeters) / span);
             double error = Math.Pow(start.X + t * x, 2) + Math.Pow(start.Z + t * z, 2);
             if (error >= best) continue;
             best = error; progress = a.DistanceFromStartMeters + t * (b.DistanceFromStartMeters - a.DistanceFromStartMeters);

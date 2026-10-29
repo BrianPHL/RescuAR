@@ -12,33 +12,14 @@ public partial class CameraPage
         ARCameraPoseBridge.SpatialSnapshot frame)
     {
         if (activeRoute is not { } route || !IsMldRoute(route)) return confidence;
-        bool visual = HasVisualRoadRegistration();
-        bool contradicted = GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion &&
-            _routeDisplayProgressPolicy.HasContradictedVisualReference(route, motion);
-        // Road classification refines an already qualified GPS/AR placement.
-        // Its availability must not veto the shared navigation confidence decision.
-        if (contradicted)
-            confidence = confidence with { AllowsRouteGeometry = false,
-                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
-                DisplayMessage = "Checking road alignment — follow text guidance" };
-        else if (!visual && positionObservationHeld)
+        if (positionObservationHeld)
             confidence = confidence with { AllowsRouteGeometry = false,
                 State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
                 DisplayMessage = "Position uncertain — follow text guidance" };
-        else if (!visual && confidence.AllowsRouteGeometry)
+        else if (confidence.AllowsRouteGeometry)
             confidence = confidence with {
                 State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
                 DisplayMessage = "Approximate route placement — GPS accuracy applies" };
-        else if (visual && !routeHazardBlocksGuidance && !dynamicRerouteInProgress && !lowLightFallbackActive &&
-            !_gpsPdrFusionPolicy.IsRouteIdentitySuspended && HasCurrentRouteHeading() &&
-            frame.IsFresh && frame.IsTracking && frame.Anchor.IsVerified && window.Placement.IsFor(frame) &&
-            window.Placement.AlignmentSource == "VISUAL_ROAD_CORRIDOR" &&
-            ARCameraSpatialController.CurrentSpatialContinuity.State == ARCameraSpatialController.SpatialContinuityState.Live &&
-            ARRouteBridge.GeometryQuality.IsCurrentFor(window) &&
-            ARRouteBridge.GeometryQuality.State is not (RouteGeometryQualityState.Pending or RouteGeometryQualityState.Rejected))
-            confidence = confidence with { AllowsRouteGeometry = true,
-                State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Degraded,
-                DisplayMessage = "Following the mapped road — distance is approximate" };
         var decision = MldGuidanceBridge.Publish(route, activeDestinationVersion,
             _headingAlignmentService.CalibrationRevision, window, frame, confidence.AllowsRouteGeometry &&
                 pageIsVisible && currentCameraModuleView == CameraModuleViewMode.ArCamera,
@@ -77,17 +58,15 @@ public partial class CameraPage
         if (!IsMldRoute(route)) return;
         lock (routeProgressFusionSync)
         {
-            bool visual = HasVisualRoadRegistration();
             var accepted = acceptedGpsPosition;
             if (!ReferenceEquals(activeRoute, route) || safeZoneConfirmed || dynamicRerouteInProgress ||
-                positionObservationHeld && !visual || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
+                positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
-                !visual && (accepted is null || !ReferenceEquals(accepted.Route, route) ||
+                (accepted is null || !ReferenceEquals(accepted.Route, route) ||
                     accepted.Reading.Timestamp != reading.Timestamp || latestGpsTimestampForRouting != reading.Timestamp) ||
-                !visual &&
                     (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35))
                 return;
-            if (!visual && accepted is not null)
+            if (accepted is not null)
             {
                 if (verifiedPosition?.Motion is { } old && GetTrackedRouteMotion() is { } current &&
                     (!old.IsContinuousWith(current) ||
