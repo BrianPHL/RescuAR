@@ -65,6 +65,29 @@ internal static class PdrMapMatchingChecks
         filter.Observe(new(0, 10), 11, 8, at, out _);
         check(!filter.Observe(new(0, 10), 11, 8, at.AddSeconds(10), out _),
             "GPS registration: duplicate timestamps cannot manufacture three confirmations");
+        foreach (double cadence in new[] { .2, 1, 2, 5 })
+        {
+            filter.Reset();
+            bool corrected = false;
+            for (int i = 0; i <= (int)Math.Ceiling(10 / cadence); i++)
+            {
+                double seconds = i * cadence;
+                if (!filter.Observe(new(0, 6), 12, 7, at.AddSeconds(seconds), out var correction)) continue;
+                check(seconds >= 8 && Math.Abs(correction.Length() - 2) < .001,
+                    $"GPS registration: {cadence}s readings require sustained evidence and retain the 2m correction limit");
+                corrected = true;
+            }
+            check(corrected, $"GPS registration: {cadence}s update cadence cannot starve origin correction");
+        }
+        filter.Reset();
+        filter.Observe(new(0, 6), 12, 7, at, out _);
+        filter.Observe(new(0, 6), 12, 7, at.AddSeconds(2), out _);
+        check(!filter.Observe(new(0, 6), 12, 7, at.AddSeconds(33), out _),
+            "GPS registration: a long observation gap cannot reuse expired correction evidence");
+        filter.Reset();
+        foreach (int seconds in Enumerable.Range(0, 12))
+            check(!filter.Observe(new(0, 6), 7, 7, at.AddSeconds(seconds), out _),
+                "GPS registration: repeated fixes without improved accuracy cannot move the origin");
     }
 
     private static void CapturedRegistration(Action<bool, string> check, string algorithm, DateTimeOffset at)

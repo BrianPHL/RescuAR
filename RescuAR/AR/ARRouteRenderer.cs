@@ -162,7 +162,8 @@ public static class ARRouteRenderer
         ARRoutePlacement Placement = default, float RootX = 0, float RootZ = 0,
         float CameraX = 0, float CameraZ = 0,
         ViewportBounds RibbonBounds = default, ViewportBounds ArrowBounds = default,
-        int ArrowDepthHidden = 0, int ArrowPrefixHidden = 0);
+        int ArrowDepthHidden = 0, int ArrowPrefixHidden = 0,
+        float RootY = 0, float CameraY = 0);
 
     /// <summary>Clipped centerline bounds; does not claim raster/UI visibility.</summary>
     public readonly record struct ViewportBounds(int Segments, float Left, float Top, float Right, float Bottom)
@@ -757,7 +758,8 @@ public static class ARRouteRenderer
             prepared, enabled, depthHidden, prefixHidden,
             inFront, viewport, enabledArrows, appliedPlacement,
             rootPosition.X, rootPosition.Z, frame.Pose.PositionX, frame.Pose.PositionZ,
-            ribbonBounds, arrowBounds, arrowDepthHidden, arrowPrefixHidden);
+            ribbonBounds, arrowBounds, arrowDepthHidden, arrowPrefixHidden,
+            rootPosition.Y, frame.Pose.PositionY);
     }
 
     /// <summary>

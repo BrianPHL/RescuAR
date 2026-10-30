@@ -228,7 +228,7 @@ public sealed class RouteDisplayProgressPolicy
             registrationConfirmations = 0;
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("GPS_FILTERED_BOUNDED_CORRECTION", innovation, true,
-                correction.X, correction.Y, 3);
+                correction.X, correction.Y, registrationCorrections.LastCorrectionSampleCount);
         }
 
         // An uncertainty-overlapping fix supports retaining the old reference,

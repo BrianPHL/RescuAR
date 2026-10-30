@@ -291,6 +291,8 @@ public partial class CameraPage
                 $"first=({first.X:F2},{first.Z:F2}); final=({final.X:F2},{final.Z:F2}); " +
                 $"drawRoute={rendered.RouteVersion}; drawGround={rendered.Placement.GroundReference}; " +
                 $"drawOrigin=({rendered.RootX:F2},{rendered.RootZ:F2}); " +
+                $"drawGroundY={rendered.RootY:F3}; drawCameraY={rendered.CameraY:F3}; " +
+                $"drawCameraHeight={rendered.CameraY - rendered.RootY:F3}; " +
                 $"drawCamera=({rendered.CameraX:F2},{rendered.CameraZ:F2}).");
         }
     }

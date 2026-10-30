@@ -43,6 +43,8 @@ internal static class ARRegistrationChecks
             {
                 FieldPair(check, provider);
                 LatestFieldPlacement(check, provider);
+                FrequentGpsCorrection(check, provider);
+                October30MapGeometry(check, provider);
                 CorrectionAndOwnership(check, provider);
                 Arrival(check, provider);
             }
@@ -52,6 +54,76 @@ internal static class ARRegistrationChecks
             ARRouteBridge.Clear();
             if (accepting) ARRenderGenerationBridge.Activate(previous); else ARRenderGenerationBridge.Invalidate();
         }
+    }
+
+    private static void October30MapGeometry(Action<bool, string> check, string provider)
+    {
+        // Local EN observations from the supplied capture, not surveyed road
+        // coordinates. Check the real publisher against the measured placement.
+        bool mld = provider.StartsWith("MLD");
+        var east = mld ? new[] { .108, -89.401, -105.754, -189.130, -230.012, -258.844 }
+            : new[] { .190, -78.460, -94.834, -178.200, -219.124, -247.872 };
+        var north = mld ? new[] { 1.323, 9.552, 11.108, 18.781, 22.561, 25.230 }
+            : new[] { 2.059, 9.329, 10.842, 18.558, 22.339, 24.994 };
+        var distance = mld ? new[] { 0.0, 89.886, 106.313, 190.041, 231.097, 260.052 }
+            : new[] { 0.0, 78.986, 95.429, 179.151, 220.250, 249.120 };
+        var route = new RouteResult(east.Select((e, i) => new RoutePoint(C(e, north[i]), distance[i])).ToArray(),
+            distance[^1], provider);
+        var originalPoints = route.Points.ToArray();
+        var gps = Fix(route, mld ? C(2.085, -3.600) : C(.602, -2.591), mld ? 10.5 : 11.51);
+        var pose = mld ? Motion(-3.925f, .534f, -.956) : Motion(.126f, .336f, -56.581);
+        var at = DateTimeOffset.UtcNow;
+        var policy = new RouteDisplayProgressPolicy();
+        Observe(policy, route, gps, at, pose);
+        check(policy.TryGetRegisteredReference(route, route.Points[0].Coordinate, at, pose, out var reference) &&
+            Math.Abs(reference.WorldX - (mld ? -5.820 : 3.780)) < .015 &&
+            Math.Abs(reference.WorldZ - (mld ? -4.421 : -2.570)) < .015,
+            $"{provider}: October 30 logged placement is reproduced from the map route and acquisition pose");
+        var publisher = new MLDARIntegrationService(new UnusedRouter());
+        foreach (var anchor in new[] { (X: -4f, Z: -1f, Ground: 82L), (X: 2f, Z: 3f, Ground: 83L) })
+        {
+            var placement = new ARRoutePlacement(new(1, 1, 1), anchor.Ground, 1, Environment.TickCount64,
+                anchor.X, anchor.Z, pose.X, pose.Z, at, "GPS", pose.YawDegrees,
+                TrackingEpoch: 7, WorldFrame: 0);
+            check(publisher.PublishProgressWindow(route, 0, route.Points[0].Coordinate, pose.YawDegrees,
+                pose.X - anchor.X, pose.Z - anchor.Z, arWindowMeters: 40, userCoordinate: gps.GpsCoordinate,
+                placement: placement, registeredReference: reference),
+                $"{provider}: the unchanged map route publishes through the shared AR pipeline");
+            var drawn = ARRouteBridge.Current;
+            var start = drawn.Points[0]; var end = drawn.Points[^1];
+            double dx = end.X - start.X, dz = end.Z - start.Z;
+            double length = Math.Sqrt(dx * dx + dz * dz);
+            // Geographic compass bearings increase clockwise; AR azimuth here
+            // uses atan2(+X,+Z). A westbound street is about 275.25 degrees.
+            double geographicBearing = Math.Atan2(east[1] - east[0], north[1] - north[0]) * 180 / Math.PI;
+            double expectedAzimuth = 180 + pose.YawDegrees - geographicBearing;
+            double actualAzimuth = Math.Atan2(dx, dz) * 180 / Math.PI;
+            check(Math.Abs(start.X + anchor.X - reference.WorldX) < .01 &&
+                Math.Abs(start.Z + anchor.Z - reference.WorldZ) < .01 && Math.Abs(length - 40) < .02 &&
+                Math.Abs(Math.IEEERemainder(actualAzimuth - expectedAzimuth, 360)) < .02 &&
+                route.Points.SequenceEqual(originalPoints),
+                $"{provider}: nonzero ground origins preserve the mapped bearing and metre scale without a double offset");
+        }
+    }
+
+    private static void FrequentGpsCorrection(Action<bool, string> check, string provider)
+    {
+        var route = Road(provider);
+        var points = route.Points.ToArray();
+        var at = DateTimeOffset.UtcNow;
+        var policy = new RouteDisplayProgressPolicy();
+        var pose = Motion(1, -2, -56.581);
+        Observe(policy, route, Fix(route, C(0, -8), 12), at, pose);
+        policy.TryGetRegisteredReference(route, C(0), at, pose, out var before);
+        for (int seconds = 2; seconds <= 10; seconds += 2)
+            Observe(policy, route, Fix(route, C(0, -2), 7), at.AddSeconds(seconds), pose);
+        check(policy.LastRegistrationDecision is { State: "GPS_FILTERED_BOUNDED_CORRECTION", Changed: true } &&
+            policy.TryGetRegisteredReference(route, C(0), at.AddSeconds(10), pose, out var after) &&
+            Math.Abs(Math.Sqrt(Math.Pow(after.WorldX - before.WorldX, 2) +
+                Math.Pow(after.WorldZ - before.WorldZ, 2)) - 2) < .01 &&
+            policy.RegistrationAccuracyMeters == 12 && after.YawDegrees == before.YawDegrees &&
+            route.Points.SequenceEqual(points),
+            $"{provider}: frequent improved GPS corrects retained AR translation without changing map geometry, heading or reported precision");
     }
 
     private static void FieldPair(Action<bool, string> check, string provider)

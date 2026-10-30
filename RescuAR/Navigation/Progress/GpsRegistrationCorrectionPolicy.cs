@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace RescuAR.Navigation.Progress;
@@ -10,15 +11,18 @@ public sealed class GpsRegistrationCorrectionPolicy
 {
     private readonly Queue<(Vector2 Residual, double Accuracy, DateTimeOffset At)> samples = new();
     private DateTimeOffset? lastAt;
+    private DateTimeOffset? lastEvidenceAt;
     private Vector2 applied;
+    public int LastCorrectionSampleCount { get; private set; }
 
-    public void Reset() { ClearEvidence(); lastAt = null; applied = default; }
-    public void ClearEvidence() => samples.Clear();
+    public void Reset() { ClearEvidence(); lastAt = null; applied = default; LastCorrectionSampleCount = 0; }
+    public void ClearEvidence() { samples.Clear(); lastEvidenceAt = null; }
 
     public bool Observe(Vector2 residual, double seedAccuracy, double accuracy, DateTimeOffset at,
         out Vector2 correction)
     {
         correction = default;
+        LastCorrectionSampleCount = 0;
         if (!float.IsFinite(residual.X + residual.Y) || !double.IsFinite(seedAccuracy + accuracy) ||
             seedAccuracy <= 0 || accuracy <= 0 || accuracy > 20 ||
             lastAt is { } previous && at <= previous) return false;
@@ -27,8 +31,18 @@ public sealed class GpsRegistrationCorrectionPolicy
         if (residual.Length() > seedAccuracy + accuracy + RoutePositionObservationPolicy.MotionAllowanceMeters)
             return false;
         while (samples.TryPeek(out var first) && at - first.At > TimeSpan.FromSeconds(30)) samples.Dequeue();
+        // Keep time coverage, not just the last three readings: at 1-2s GPS
+        // cadence three readings never span the required eight seconds. Limit
+        // evidence to one sample per second so the 30s window stays bounded
+        // even if a provider delivers a burst of correlated observations.
+        if (lastEvidenceAt is { } queuedAt && at - queuedAt < TimeSpan.FromSeconds(1))
+            return false;
         samples.Enqueue((residual, accuracy, at));
-        while (samples.Count > 3) samples.Dequeue();
+        lastEvidenceAt = at;
+        // Use the most recent qualifying interval. An older contradictory fix
+        // must not poison a later stable group for the entire 30s lifetime.
+        while (samples.Count > 3 && at - samples.ElementAt(1).At >= TimeSpan.FromSeconds(8))
+            samples.Dequeue();
         if (samples.Count < 3 || at - samples.Peek().At < TimeSpan.FromSeconds(8) ||
             accuracy > seedAccuracy * .85) return false;
 
@@ -50,6 +64,7 @@ public sealed class GpsRegistrationCorrectionPolicy
         // Keep all filtered corrections inside the seed's stated uncertainty.
         if ((applied + correction).Length() > seedAccuracy) { correction = default; return false; }
         applied += correction;
+        LastCorrectionSampleCount = samples.Count;
         ClearEvidence();
         return true;
     }
