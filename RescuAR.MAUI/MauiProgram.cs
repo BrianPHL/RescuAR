@@ -112,6 +112,8 @@ public static class MauiProgram
         builder.Services.AddTransient<AreaStatusOverviewPage>();
         builder.Services.AddTransient<AreaStatusOverviewViewModel>();
         builder.Services.AddTransient<AdvisoriesActivePage>();
+        builder.Services.AddTransient<RescuAR.App.ViewModels.Dashboard.AdvisoryFeedViewModel>();
+        builder.Services.AddTransient<RescuAR.App.Views.Dashboard.AdvisoryFeedPage>();
         builder.Services.AddTransient<CommunityReportsOverviewPage>();
         builder.Services.AddTransient<CommunityReportsOverviewViewModel>();
         builder.Services.AddTransient<DisasterInformationPage>();
