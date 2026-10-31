@@ -601,7 +601,7 @@ public static class ARRouteRenderer
 
         bool arrowVisible = false;
         if (ARRouteVisualPolicy.ShouldRenderForwardArrow(snapshot.NavigationState.VisualKind))
-            arrowVisible = ApplyForwardArrow(arrows, renderPoints);
+            arrowVisible = ApplyForwardArrow(arrows, renderPoints, snapshot.NavigationState.VisualKind);
         else
             DisableAll(arrows);
 
@@ -1293,55 +1293,12 @@ public static class ARRouteRenderer
 
     private static bool ApplyForwardArrow(
         SegmentSlot[] arrows,
-        System.Collections.Generic.IReadOnlyList<ArHorizontalRoutePoint> points)
+        System.Collections.Generic.IReadOnlyList<ArHorizontalRoutePoint> points,
+        RouteVisualKind kind)
     {
         if (arrows.Length <
                 ArrowWingCount ||
-            points.Count <
-                2)
-        {
-            DisableAll(
-                arrows);
-
-            return false;
-        }
-
-        ArHorizontalRoutePoint end =
-            points[^1];
-
-        ArHorizontalRoutePoint? previous =
-            null;
-
-        for (int i = points.Count -
-                     2;
-             i >=
-             0;
-             i--)
-        {
-            float deltaX =
-                end.X -
-                points[i].X;
-
-            float deltaZ =
-                end.Z -
-                points[i].Z;
-
-            float length =
-                MathF.Sqrt(
-                    deltaX * deltaX +
-                    deltaZ * deltaZ);
-
-            if (length >
-                0.01f)
-            {
-                previous =
-                    points[i];
-
-                break;
-            }
-        }
-
-        if (!previous.HasValue)
+            !ARRouteVisualPolicy.TryGetForwardArrowLeg(points, kind, out var previous, out var end))
         {
             DisableAll(
                 arrows);
@@ -1351,11 +1308,11 @@ public static class ARRouteRenderer
 
         float routeDeltaX =
             end.X -
-            previous.Value.X;
+            previous.X;
 
         float routeDeltaZ =
             end.Z -
-            previous.Value.Z;
+            previous.Z;
 
         float routeLength =
             MathF.Sqrt(
@@ -1385,34 +1342,38 @@ public static class ARRouteRenderer
         float perpendicularZ =
             directionX;
 
+        // Keep the base on this leg, including a short final or corner span.
+        float wingLength = MathF.Min(ArrowWingLengthMeters, routeLength * .75f);
+        float halfWidth = ArrowHalfWidthMeters * wingLength / ArrowWingLengthMeters;
+
         float arrowBaseX =
             end.X -
             directionX *
-            ArrowWingLengthMeters;
+            wingLength;
 
         float arrowBaseZ =
             end.Z -
             directionZ *
-            ArrowWingLengthMeters;
+            wingLength;
 
         ArHorizontalRoutePoint leftWing =
             new(
                 arrowBaseX +
                     perpendicularX *
-                    ArrowHalfWidthMeters,
+                    halfWidth,
                 arrowBaseZ +
                     perpendicularZ *
-                    ArrowHalfWidthMeters,
+                    halfWidth,
                 end.DistanceFromWindowStartMeters);
 
         ArHorizontalRoutePoint rightWing =
             new(
                 arrowBaseX -
                     perpendicularX *
-                    ArrowHalfWidthMeters,
+                    halfWidth,
                 arrowBaseZ -
                     perpendicularZ *
-                    ArrowHalfWidthMeters,
+                    halfWidth,
                 end.DistanceFromWindowStartMeters);
 
         bool leftVisible =

@@ -9,10 +9,10 @@ namespace RescuAR.Navigation.Guidance;
 /// </summary>
 public static class UserArrivalConfirmationPolicy
 {
-    public const double MaximumDistanceMeters = 75;
-    public const double MaximumAccuracyMeters = 50;
-    public static readonly TimeSpan MaximumFixAge = TimeSpan.FromMinutes(2);
-    public static readonly TimeSpan MaximumNoticeFixAge = TimeSpan.FromSeconds(10);
+    public const double MaximumDistanceMeters = 15;
+    public const double MaximumAccuracyMeters = 15;
+    public static readonly TimeSpan MaximumFixAge = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan MaximumNoticeFixAge = MaximumFixAge;
 
     public static bool CanShowNotice(GeoCoordinate position, GeoCoordinate destination,
         double? accuracyMeters, DateTimeOffset observedAt, DateTimeOffset now) =>
@@ -20,10 +20,11 @@ public static class UserArrivalConfirmationPolicy
         now - observedAt <= MaximumNoticeFixAge;
 
     public static bool CanOffer(GeoCoordinate position, GeoCoordinate destination,
-        double? accuracyMeters, DateTimeOffset observedAt, DateTimeOffset now)
+        double? accuracyMeters, DateTimeOffset observedAt, DateTimeOffset now,
+        bool majorRoadBarrier = false, bool observationHeld = false)
     {
         TimeSpan age = now - observedAt;
-        return position.IsValid && destination.IsValid &&
+        return !majorRoadBarrier && !observationHeld && position.IsValid && destination.IsValid &&
             accuracyMeters is double accuracy && double.IsFinite(accuracy) &&
             accuracy >= 0 && accuracy <= MaximumAccuracyMeters &&
             age >= TimeSpan.FromSeconds(-2) && age <= MaximumFixAge &&

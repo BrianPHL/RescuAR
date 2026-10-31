@@ -20,7 +20,48 @@ public static class ARRouteVisualPolicy
 
     private const float RouteWidthMeters = 0.25f;
 
-    public static bool ShouldRenderForwardArrow(RouteVisualKind kind) => kind == RouteVisualKind.ApproachConnector;
+    public static bool ShouldRenderForwardArrow(RouteVisualKind kind) =>
+        kind is RouteVisualKind.RouteWindow or RouteVisualKind.ApproachConnector;
+
+    /// <summary>Use the mapped leg about six metres ahead, rather than the end
+    /// of a long window. The arrow never aims directly at a destination or
+    /// changes the registered road geometry.</summary>
+    public static bool TryGetForwardArrowLeg(IReadOnlyList<ArHorizontalRoutePoint> points,
+        RouteVisualKind kind, out ArHorizontalRoutePoint start, out ArHorizontalRoutePoint tip)
+    {
+        start = tip = default;
+        if (!ShouldRenderForwardArrow(kind) || points.Count < 2) return false;
+        for (int i = 0; i < points.Count; i++)
+        {
+            var point = points[i];
+            if (!float.IsFinite(point.X) || !float.IsFinite(point.Z) ||
+                !double.IsFinite(point.DistanceFromWindowStartMeters) ||
+                i > 0 && point.DistanceFromWindowStartMeters < points[i - 1].DistanceFromWindowStartMeters)
+                return false;
+        }
+        double target = kind == RouteVisualKind.RouteWindow
+            ? Math.Min(points[^1].DistanceFromWindowStartMeters, points[0].DistanceFromWindowStartMeters + 6)
+            : points[^1].DistanceFromWindowStartMeters;
+        for (int i = 1; i < points.Count; i++)
+        {
+            var a = points[i - 1]; var b = points[i];
+            double span = b.DistanceFromWindowStartMeters - a.DistanceFromWindowStartMeters;
+            if (span < 0) return false;
+            if (span <= .0001 || target > b.DistanceFromWindowStartMeters) continue;
+            double t = Math.Clamp((target - a.DistanceFromWindowStartMeters) / span, 0, 1);
+            start = a;
+            tip = new((float)(a.X + (b.X - a.X) * t), (float)(a.Z + (b.Z - a.Z) * t), target);
+            // Immediately after a corner, show the incoming mapped leg rather
+            // than a disappearing tiny arrow or a diagonal across the bend.
+            if (i > 1 && Math.Sqrt(Math.Pow(tip.X - start.X, 2) + Math.Pow(tip.Z - start.Z, 2)) < .25)
+            {
+                start = points[i - 2];
+                tip = a;
+            }
+            return Math.Sqrt(Math.Pow(tip.X - start.X, 2) + Math.Pow(tip.Z - start.Z, 2)) >= .25;
+        }
+        return false;
+    }
 
     private const float OcclusionClearanceMeters =
         0.30f;

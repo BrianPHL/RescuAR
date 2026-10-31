@@ -37,7 +37,9 @@ public partial class CameraPage
             activeDestinationCoordinate == destination.Coordinate &&
             reading is not null && UserArrivalConfirmationPolicy.CanOffer(
                 reading.Coordinate, destination.Coordinate, reading.AccuracyMeters,
-                reading.Timestamp, DateTimeOffset.UtcNow);
+                reading.Timestamp, DateTimeOffset.UtcNow,
+                majorRoadBarrier: arrivalRoadGraph is null || arrivalRoadGraph.AccessCrossesMajorRoad(
+                    reading.Coordinate, destination.Coordinate), observationHeld: positionObservationHeld);
     }
 
     private async void OnConfirmUserArrivalClicked(object? sender, EventArgs e)

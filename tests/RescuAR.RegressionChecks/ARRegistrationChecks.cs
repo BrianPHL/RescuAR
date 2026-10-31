@@ -284,11 +284,11 @@ internal static class ARRegistrationChecks
             $"{provider}: the MLD field sequence never fabricates automatic arrival from weak or conflicting positions");
         check(Evaluate(27.9, 6.5, 30, 2).ConfirmationCount == 1 && Evaluate(23.5, 6.5, 33.723, 2).IsConfirmed,
             $"{provider}: the captured AStar qualifying pair confirms vicinity under the same arrival rules");
-        check(UserArrivalConfirmationPolicy.CanShowNotice(C(17.6), C(0), 30.3, at, at) &&
+        check(!UserArrivalConfirmationPolicy.CanShowNotice(C(17.6), C(0), 30.3, at, at) &&
             !UserArrivalConfirmationPolicy.CanShowNotice(C(94), C(0), 6.5, at, at) &&
-            !UserArrivalConfirmationPolicy.CanShowNotice(C(17.6), C(0), 6.5, at, at.AddSeconds(11)) &&
-            UserArrivalConfirmationPolicy.CanOffer(C(17.6), C(0), 6.5, at, at.AddSeconds(11)),
-            $"{provider}: near-text eligibility and its freshness do not relax automatic or manual arrival evidence");
+            !UserArrivalConfirmationPolicy.CanOffer(C(10), C(0), 6.5, at, at.AddSeconds(11)) &&
+            UserArrivalConfirmationPolicy.CanOffer(C(10), C(0), 6.5, at, at.AddSeconds(2)),
+            $"{provider}: manual arrival and its notice require a current precise fix in the final 15 metres");
     }
 
     private sealed class UnusedRouter : IRoutingService

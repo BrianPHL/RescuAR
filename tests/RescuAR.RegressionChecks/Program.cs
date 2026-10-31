@@ -24,6 +24,16 @@ if (args.Contains("--pdr-map-matching"))
     Console.WriteLine($"{passed} PDR/map-matching checks passed.");
     return;
 }
+if (args.Contains("--arrival-arrows"))
+{
+    ArrivalArrowChecks.Run(Check);
+    ARRegistrationChecks.Run(Check);
+    MldRibbonRegistrationChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} arrival/arrow regression checks passed.");
+    return;
+}
 if (args.Contains("--navigation-presentation"))
 {
     NavigationPresentationChecks.Run(Check);
@@ -135,6 +145,7 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     return;
 }
 await NavigationFeedbackChecks.RunAsync(Check);
+ArrivalArrowChecks.Run(Check);
 CameraMapChecks.Run(Check);
 CameraStartupChecks.Run(Check);
 SurfaceResizeChecks.Run(Check);
@@ -1153,8 +1164,9 @@ Check(RouteAnchorRecoveryPolicy.Evaluate(false,false,true) == RouteAnchorRecover
     RouteAnchorRecoveryPolicy.Evaluate(false,true,false) == RouteAnchorRecoveryAction.WaitForFloor,
     "stale tracking or mismatched ground generation cannot complete an approach anchor handoff");
 
-Check(UserArrivalConfirmationPolicy.CanOffer(C(0),C(29.8),27,now,now),
-    "the indoor screenshot's nearby uncertain fix can offer user-reported arrival");
+Check(!UserArrivalConfirmationPolicy.CanOffer(C(0),C(29.8),27,now,now) &&
+    UserArrivalConfirmationPolicy.CanOffer(C(0),C(10),6,now,now),
+    "a coarse nearby fix cannot expose the manual action before a current precise near-destination fix");
 arrival.Reset();
 Check(!ObserveArrival(0,distance:29.8,accuracy:27).IsConfirmed &&
     !ObserveArrival(8,distance:29.8,accuracy:27).IsConfirmed,

@@ -11,9 +11,9 @@ internal static class MldRibbonRegistrationChecks
 
     public static void Run(Action<bool, string> check)
     {
-        check(!ARRouteVisualPolicy.ShouldRenderForwardArrow(RouteVisualKind.RouteWindow) &&
+        check(ARRouteVisualPolicy.ShouldRenderForwardArrow(RouteVisualKind.RouteWindow) &&
             !ARRouteVisualPolicy.ShouldRenderForwardArrow(RouteVisualKind.Unavailable),
-            "solid route: mapped route windows have a continuous ribbon without an endpoint arrowhead");
+            "solid route: qualified mapped windows retain their ribbon and a forward arrowhead");
         check(ARRouteVisualPolicy.ShouldRenderForwardArrow(RouteVisualKind.ApproachConnector),
             "solid route: a verified access connector retains its directional arrow");
         check(ARRouteVisualPolicy.GetRouteWidthMeters(0) == .25f &&
