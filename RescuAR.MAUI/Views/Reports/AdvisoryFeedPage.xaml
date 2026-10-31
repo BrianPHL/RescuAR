@@ -244,7 +244,7 @@
                                         </Border.Shadow>
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ShowAdvisoryDetailCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                Command="{Binding Source={x:Reference AdvisoryPageRoot}, Path=ViewModel.ShowAdvisoryDetailCommand, x:DataType=local:AdvisoryFeedPage}"
                                                 CommandParameter="{Binding .}" />
                                         </Border.GestureRecognizers>
                                         
@@ -255,7 +255,7 @@
                                                 <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
                                                     <Border BackgroundColor="{Binding AlertBadgeBg}" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="10,4" HorizontalOptions="Start">
                                                         <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                                            <Path Data="{Binding CategoryIconData, TargetNullValue='M12,3.25C12,3.25 6,10 6,14A6,6 0 0,0 12,20A6,6 0 0,0 18,14C18,10 12,3.25 12,3.25Z', FallbackValue='M12,3.25C12,3.25 6,10 6,14A6,6 0 0,0 12,20A6,6 0 0,0 18,14C18,10 12,3.25 12,3.25Z'}" Fill="{Binding AlertBadgeText}" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
+                                                            <Path Data="{Binding CategoryGeometry}" Fill="{Binding AlertBadgeText}" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
                                                             <Label Text="{Binding DisplayAlertLevelText}" TextColor="{Binding AlertBadgeText}" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
                                                         </HorizontalStackLayout>
                                                     </Border>
@@ -318,7 +318,7 @@
 
                                                     <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
                                                         <HorizontalStackLayout.GestureRecognizers>
-                                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=NavigateToEvacuationCentersCommand, x:DataType=vm:AdvisoryFeedViewModel}" />
+                                                            <TapGestureRecognizer Command="{Binding Source={x:Reference AdvisoryPageRoot}, Path=ViewModel.NavigateToEvacuationCentersCommand, x:DataType=local:AdvisoryFeedPage}" />
                                                         </HorizontalStackLayout.GestureRecognizers>
                                                         <Label Text="View Safe Evacuation Hubs &amp; Route" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" VerticalOptions="Center" />
                                                         <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0A8491" WidthRequest="12" HeightRequest="12" Aspect="Uniform" VerticalOptions="Center" />
@@ -343,16 +343,19 @@
                 <VerticalStackLayout Spacing="0">
                    
                     <!-- Pop-up Header Banner -->
-                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg, FallbackValue='#0A8491', TargetNullValue='#0A8491'}" StrokeThickness="0" StrokeShape="RoundRectangle 24,24,0,0" Padding="16,14">
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg, FallbackValue='#0A8491', TargetNullValue='#0A8491'}" StrokeThickness="0" Padding="16,14">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="24,24,0,0" />
+                        </Border.StrokeShape>
                         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalOptions="Center">
-                            <Path Data="{Binding SelectedAdvisory.CategoryIconData, TargetNullValue='M12,3.25C12,3.25 6,10 6,14A6,6 0 0,0 12,20A6,6 0 0,0 18,14C18,10 12,3.25 12,3.25Z', FallbackValue='M12,3.25C12,3.25 6,10 6,14A6,6 0 0,0 12,20A6,6 0 0,0 18,14C18,10 12,3.25 12,3.25Z'}" Fill="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#FFFFFF', TargetNullValue='#FFFFFF'}" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
+                            <Path Data="{Binding SelectedAdvisory.CategoryGeometry}" Fill="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#FFFFFF', TargetNullValue='#FFFFFF'}" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
                             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
                                 <Label Text="{Binding SelectedAdvisory.HeaderTagText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#FFFFFF', TargetNullValue='#FFFFFF'}" FontSize="10" FontAttributes="Bold" />
                                 <Label Text="{Binding SelectedAdvisory.DisplayAlertLevelText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#FFFFFF', TargetNullValue='#FFFFFF'}" FontSize="15" FontAttributes="Bold" />
                             </VerticalStackLayout>
 
                             <!-- Language Translation Button -->
-                            <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="{Binding SelectedAdvisory.AlertBadgeText, FallbackValue='#0A8491', TargetNullValue='#0A8491'}" StrokeShape="RoundRectangle 12" Padding="10,5" VerticalOptions="Center">
+                            <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="1" Stroke="#0A8491" StrokeShape="RoundRectangle 12" Padding="10,5" VerticalOptions="Center">
                                 <Border.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding OpenTranslationMenuCommand}" />
                                 </Border.GestureRecognizers>
