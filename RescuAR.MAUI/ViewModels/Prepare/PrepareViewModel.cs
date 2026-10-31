@@ -64,7 +64,14 @@ public partial class PrepareViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("..");
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
         }
     }
 
