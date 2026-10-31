@@ -367,4 +367,20 @@ public partial class PreparednessGuideViewModel : ObservableObject
         sb.AppendLine("Emergency Hotlines: Dial 161 | 7116-5532 | 0928-5593341");
         return sb.ToString();
     }
+
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
+        }
+    }
 }
