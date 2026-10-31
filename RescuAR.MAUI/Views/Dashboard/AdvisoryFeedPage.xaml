@@ -2,9 +2,11 @@
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:RescuAR.App.Views.Dashboard"
     xmlns:vm="clr-namespace:RescuAR.App.ViewModels.Dashboard"
     xmlns:models="clr-namespace:RescuAR.App.Models"
     x:Class="RescuAR.App.Views.Dashboard.AdvisoryFeedPage"
+    x:Name="DashboardAdvisoryPageRoot"
     x:DataType="vm:AdvisoryFeedViewModel"
     Title="Updates"
     BackgroundColor="#F8FAFC"
@@ -152,7 +154,7 @@
                                             Padding="16,8">
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectCategoryCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                Command="{Binding Source={x:Reference DashboardAdvisoryPageRoot}, Path=ViewModel.SelectCategoryCommand, x:DataType=local:AdvisoryFeedPage}"
                                                 CommandParameter="{Binding Name}" />
                                         </Border.GestureRecognizers>
                                         <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
@@ -177,7 +179,7 @@
                                             Padding="16,8">
                                         <Border.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=SelectStatusCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                Command="{Binding Source={x:Reference DashboardAdvisoryPageRoot}, Path=ViewModel.SelectStatusCommand, x:DataType=local:AdvisoryFeedPage}"
                                                 CommandParameter="{Binding Name}" />
                                         </Border.GestureRecognizers>
                                         <Label Text="{Binding Name}" TextColor="{Binding TextColor}" FontSize="13" FontAttributes="Bold" />
@@ -246,7 +248,7 @@
                                     <HorizontalStackLayout Spacing="4" Margin="0,4,0,0">
                                         <HorizontalStackLayout.GestureRecognizers>
                                             <TapGestureRecognizer 
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ViewDetailsCommand, x:DataType=vm:AdvisoryFeedViewModel}"
+                                                Command="{Binding Source={x:Reference DashboardAdvisoryPageRoot}, Path=ViewModel.ViewDetailsCommand, x:DataType=local:AdvisoryFeedPage}"
                                                 CommandParameter="{Binding .}" />
                                         </HorizontalStackLayout.GestureRecognizers>
                                         <Label Text="View details  ❯" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
