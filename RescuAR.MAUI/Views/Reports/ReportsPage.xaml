@@ -1031,7 +1031,7 @@
                             StrokeShape="RoundRectangle 24,24,0,0"
                             Padding="16,14">
                         <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
-                            <Path Grid.Column="0" Data="{Binding SelectedAdvisory.CategoryIconData}" Fill="{Binding SelectedAdvisory.AlertBadgeText}" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                            <Path Grid.Column="0" Data="{Binding SelectedAdvisory.CategoryGeometry}" Fill="{Binding SelectedAdvisory.AlertBadgeText}" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
                             <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
                                 <Label Text="DISASTER ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="10" FontAttributes="Bold" CharacterSpacing="0.8" />
                                 <Label Text="{Binding SelectedAdvisory.DisplayAlertLevelText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="15" FontAttributes="Bold" />
