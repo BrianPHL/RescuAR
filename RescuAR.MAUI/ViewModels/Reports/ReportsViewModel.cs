@@ -17,19 +17,6 @@ namespace RescuAR.App.ViewModels.Reports
     {
         private readonly CommunityReportService _reportService;
         private readonly IOsmGeocodingService _osmService;
-        private ResidentReportScope? _reportOwner;
-        private IncidentPoint? _reportPoint;
-        private System.Threading.CancellationTokenSource? _reportCancellation;
-        private readonly ResidentReportMediaDraft _reportMedia = new(ResidentReportRuntime.Context);
-        private string _reportId = "";
-        private string _reportSelectedMediaKey = "";
-        private DateTime _reportCreatedAt;
-        private long _reportDraftVersion, _reportLocationVersion;
-        [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditReport))] private bool isReportSubmitting;
-        [ObservableProperty] private string reportSubmissionStatus = "";
-        [ObservableProperty] private string reportLocationStatus = "Choose a GPS or map point for the incident.";
-        public bool CanEditReport => !IsReportSubmitting;
-
 
         private readonly HashSet<string> _seenReportIds = new();
         [ObservableProperty]
@@ -127,13 +114,13 @@ namespace RescuAR.App.ViewModels.Reports
         };
 
         [ObservableProperty]
-        private string newReportAddress = string.Empty;
+        private string newReportAddress = "41 C. Benitez St., MBLA Court, Malanday, Marikina City";
 
         [ObservableProperty]
-        private double newReportLatitude = double.NaN;
+        private double newReportLatitude = 14.6585;
 
         [ObservableProperty]
-        private double newReportLongitude = double.NaN;
+        private double newReportLongitude = 121.0955;
 
         [ObservableProperty]
         private string newReportMediaUrl = string.Empty;
@@ -186,34 +173,43 @@ namespace RescuAR.App.ViewModels.Reports
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
-            RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
-            {
-                if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
-                    !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
-                    MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
-            });
         }
 
         private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
-                {
-                    SelectedAdvisory = newAdvisory;
-                    IsPopupVisible = true;
-                }
+                SelectedAdvisory = newAdvisory;
+                IsPopupVisible = true;
             });
         }
 
+        private bool _isLoadingReports;
+        private CancellationTokenSource? _searchCts;
+
         partial void OnSearchQueryChanged(string value)
         {
-            _ = LoadReportsAsync();
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            var token = _searchCts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(250, token);
+                    if (!token.IsCancellationRequested)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() => LoadReportsInternalAsync(false));
+                    }
+                }
+                catch (TaskCanceledException) { }
+            });
         }
 
         partial void OnSelectedFilterChanged(string value)
         {
-            _ = LoadReportsAsync();
+            _ = LoadReportsInternalAsync(false);
         }
 
         partial void OnMapSearchQueryChanged(string value)
@@ -247,57 +243,62 @@ namespace RescuAR.App.ViewModels.Reports
         }
 
         [RelayCommand]
-        public async Task LoadReportsAsync()
+        public Task LoadReportsAsync() => LoadReportsInternalAsync(true);
+
+        private async Task LoadReportsInternalAsync(bool fetchLocation = false)
         {
+            if (_isLoadingReports) return;
+            _isLoadingReports = true;
             IsRefreshing = true;
+
             try
             {
-                // Attempt to fetch current user location for vicinity distance monitoring
-                try
+                // Fast non-blocking location check
+                if (fetchLocation && !IsUserLocationLoaded)
                 {
-                    var location = await Geolocation.Default.GetLastKnownLocationAsync();
-                    if (location == null)
+                    try
                     {
-                        location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Low, TimeSpan.FromSeconds(2)));
-                    }
-
-                    if (location != null)
-                    {
-                        UserLatitude = location.Latitude;
-                        UserLongitude = location.Longitude;
-                        IsUserLocationLoaded = true;
-                    }
-                }
-                catch (Exception locEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Vicinity location fetch warning: {locEx.Message}");
-                }
-
-                var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter, UserLatitude, UserLongitude);
-
-                foreach (var report in list)
-                {
-                    if (!_seenReportIds.Contains(report.Id))
-                    {
-                        var notification = new ReportNotification
+                        var location = await Geolocation.Default.GetLastKnownLocationAsync();
+                        if (location != null)
                         {
-                            Title = report.PostedBy,
-                            Message = $"reports all about {report.Title}",
-                            Timestamp = report.CreatedAt
-                        };
-                        Notifications.Insert(0, notification);
-                        UnreadNotificationsCount++;
+                            UserLatitude = location.Latitude;
+                            UserLongitude = location.Longitude;
+                            IsUserLocationLoaded = true;
+                        }
+                    }
+                    catch (Exception locEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Vicinity location fetch warning: {locEx.Message}");
                     }
                 }
 
-                foreach (var report in list)
-                {
-                    _seenReportIds.Add(report.Id);
-                }
-                Reports = new ObservableCollection<CommunityReport>(list);
+                var list = await Task.Run(() => _reportService.GetReportsAsync(SearchQuery, SelectedFilter, UserLatitude, UserLongitude));
 
-                // Update real-time Vicinity Hazard Monitoring Alerts
-                UpdateVicinityHazardAlerts(list);
+                await MainThread.InvokeOnMainThreadAsync(() =>
+                {
+                    foreach (var report in list)
+                    {
+                        if (!_seenReportIds.Contains(report.Id))
+                        {
+                            var notification = new ReportNotification
+                            {
+                                Title = report.PostedBy,
+                                Message = $"reports all about {report.Title}",
+                                Timestamp = report.CreatedAt
+                            };
+                            Notifications.Insert(0, notification);
+                            UnreadNotificationsCount++;
+                        }
+                    }
+
+                    foreach (var report in list)
+                    {
+                        _seenReportIds.Add(report.Id);
+                    }
+
+                    Reports = new ObservableCollection<CommunityReport>(list);
+                    UpdateVicinityHazardAlerts(list);
+                });
             }
             catch (Exception ex)
             {
@@ -305,6 +306,7 @@ namespace RescuAR.App.ViewModels.Reports
             }
             finally
             {
+                _isLoadingReports = false;
                 IsRefreshing = false;
             }
         }
@@ -347,21 +349,21 @@ namespace RescuAR.App.ViewModels.Reports
                 }
             }
 
-            VicinityAffectedAreas = areaList.Count > 0
-                ? $"Affected Areas: {string.Join(" • ", areaList.Take(3))}"
+            VicinityAffectedAreas = areaList.Count > 0 
+                ? $"Affected Areas: {string.Join(" • ", areaList.Take(3))}" 
                 : "Affected Areas: Barangay Malanday • Concepcion Uno";
 
             // Determine highest severity
-            bool hasRescueOrFlood = nearbyHazards.Any(r =>
-                (r.Category != null && r.Category.Equals("Rescue Request", StringComparison.OrdinalIgnoreCase)) ||
+            bool hasRescueOrFlood = nearbyHazards.Any(r => 
+                (r.Category != null && r.Category.Equals("Rescue Request", StringComparison.OrdinalIgnoreCase)) || 
                 (r.Category != null && r.Category.Equals("Flood Warning", StringComparison.OrdinalIgnoreCase)));
-
+            
             if (hasRescueOrFlood || (nearest != null && nearest.DistanceKm <= 1.0))
             {
                 VicinityAlertSeverity = "High";
                 VicinityStatusTitle = $"⚠️ Vicinity Hazard Alert ({nearest?.DistanceText ?? "Nearby"})";
-                VicinityStatusSubtitle = nearest != null
-                    ? $"Nearest: {nearest.Category} - {nearest.Title}"
+                VicinityStatusSubtitle = nearest != null 
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
                     : $"{count} disaster hazard reports within your vicinity.";
                 VicinityAlertBadgeColor = "#FEF2F2";
                 VicinityAlertTextColor = "#991B1B";
@@ -372,8 +374,8 @@ namespace RescuAR.App.ViewModels.Reports
             {
                 VicinityAlertSeverity = "Medium";
                 VicinityStatusTitle = $"⚡ Vicinity Caution ({nearest?.DistanceText ?? "Nearby"})";
-                VicinityStatusSubtitle = nearest != null
-                    ? $"Nearest: {nearest.Category} - {nearest.Title}"
+                VicinityStatusSubtitle = nearest != null 
+                    ? $"Nearest: {nearest.Category} - {nearest.Title}" 
                     : $"{count} active reports nearby.";
                 VicinityAlertBadgeColor = "#FFFBEB";
                 VicinityAlertTextColor = "#92400E";
@@ -389,108 +391,78 @@ namespace RescuAR.App.ViewModels.Reports
             await LoadReportsAsync();
         }
 
-        private void RequireReportDraft(ResidentReportScope owner, long request, System.Threading.CancellationToken token = default)
-        {
-            ResidentReportRuntime.Context.Require(owner, token);
-            if (_reportOwner != owner || request != _reportDraftVersion || !IsCreateModalVisible)
-                throw new OperationCanceledException("The report form changed.", token);
-        }
-
-        public void PauseReportWork()
-        {
-            _reportCancellation?.Cancel();
-            _reportDraftVersion++; _reportLocationVersion++;
-            IsReportSubmitting = false; IsFetchingLocation = false; IsSuccessModalVisible = false;
-        }
-
-        public void ResumeReportWork()
-        {
-            if (_reportOwner is not { } owner) return;
-            try
-            {
-                ResidentReportRuntime.Context.Require(owner);
-                if (_reportCancellation?.IsCancellationRequested != false)
-                { _reportCancellation?.Dispose(); _reportCancellation = new(); }
-            }
-            catch
-            {
-                PauseReportWork(); IsCreateModalVisible = IsMapPickerVisible = false;
-                NewReportTitle = NewReportDescription = NewReportAddress = NewReportMediaUrl = "";
-                NewReportHasMedia = false; _selectedMediaFile = null; _reportOwner = null; _reportPoint = null; _reportId = ""; _reportMedia.Reset();
-            }
-        }
-
         [RelayCommand]
         private async Task OpenCreateModalAsync()
         {
-            PauseReportWork();
-            _reportCancellation?.Dispose(); _reportCancellation = new();
-            _reportOwner = null; _reportPoint = null; _reportId = Guid.NewGuid().ToString(); _reportCreatedAt = default;
-            _reportMedia.Reset(); _reportSelectedMediaKey = ""; _selectedMediaFile = null;
-            NewReportTitle = NewReportDescription = NewReportAddress = NewReportMediaUrl = "";
-            NewReportLatitude = NewReportLongitude = double.NaN;
-            NewReportCategory = "Flood Warning"; NewReportHasMedia = false; NewReportAllowComments = true;
-            ReportSubmissionStatus = ""; ReportLocationStatus = "Choose a GPS or map point for the incident.";
+            // Reset fields
+            NewReportTitle = string.Empty;
+            NewReportDescription = string.Empty;
+            NewReportCategory = "Flood Warning";
+            NewReportMediaUrl = string.Empty;
+            NewReportHasMedia = false;
+            NewReportAllowComments = true;
             IsCreateModalVisible = true;
-            try
-            {
-                _reportOwner = ResidentReportRuntime.Context.Capture();
-                await FetchUserLocationAsync();
-            }
-            catch { ReportSubmissionStatus = "Sign in with a verified account before submitting a report."; }
+
+            // Automatically attempt to fetch current GPS location
+            await FetchUserLocationAsync();
         }
 
         [RelayCommand]
         private void CloseCreateModal()
         {
-            PauseReportWork(); IsCreateModalVisible = false; IsMapPickerVisible = false;
-        }
-
-        private void SetIncidentPoint(IncidentPoint point)
-        {
-            _reportPoint = point;
-            NewReportLatitude = point.Latitude; NewReportLongitude = point.Longitude;
-            ReportLocationStatus = $"{(point.Source == IncidentPointSource.Gps ? "GPS" : "Map")} point selected: {point.Latitude:F5}, {point.Longitude:F5}. Review the incident location before submitting.";
+            IsCreateModalVisible = false;
         }
 
         [RelayCommand]
         private async Task FetchUserLocationAsync()
         {
-            if (!IsCreateModalVisible || _reportOwner is not { } owner || _reportCancellation is null) return;
-            long request = _reportDraftVersion, locationRequest = ++_reportLocationVersion;
-            var token = _reportCancellation.Token;
             IsFetchingLocation = true;
             try
             {
-                RequireReportDraft(owner, request, token);
-                var location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(5)), token);
-                RequireReportDraft(owner, request, token);
-                if (locationRequest != _reportLocationVersion) return;
-                if (location is null) throw new ResidentReportInputException("GPS is unavailable. Choose the incident point on the map.");
-                var point = IncidentPointPolicy.FromGps(location.Latitude, location.Longitude, location.Accuracy, location.Timestamp, location.IsFromMockProvider, DateTimeOffset.UtcNow);
-                SetIncidentPoint(point); NewReportAddress = $"{point.Latitude:F5}, {point.Longitude:F5}";
-                try
+                var location = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(5)));
+                if (location != null)
                 {
-                    var placemarks = await Geocoding.Default.GetPlacemarksAsync(location).WaitAsync(TimeSpan.FromSeconds(4), token);
-                    RequireReportDraft(owner, request, token);
-                    if (locationRequest != _reportLocationVersion) return;
-                    var place = placemarks?.FirstOrDefault();
-                    if (place is not null)
+                    NewReportLatitude = location.Latitude;
+                    NewReportLongitude = location.Longitude;
+
+                    var placemarks = await Geocoding.Default.GetPlacemarksAsync(location);
+                    var placemark = placemarks?.FirstOrDefault();
+                    if (placemark != null)
                     {
-                        var parts = new[] { place.FeatureName, place.Thoroughfare, place.SubLocality, place.Locality }.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
-                        if (parts.Count > 0) NewReportAddress = string.Join(", ", parts);
+                        var parts = new List<string>();
+                        if (!string.IsNullOrWhiteSpace(placemark.FeatureName)) parts.Add(placemark.FeatureName);
+                        if (!string.IsNullOrWhiteSpace(placemark.Thoroughfare)) parts.Add(placemark.Thoroughfare);
+                        if (!string.IsNullOrWhiteSpace(placemark.SubLocality)) parts.Add(placemark.SubLocality);
+                        if (!string.IsNullOrWhiteSpace(placemark.Locality)) parts.Add(placemark.Locality);
+
+                        if (parts.Count > 0)
+                        {
+                            NewReportAddress = string.Join(", ", parts);
+                        }
                     }
                 }
-                catch (OperationCanceledException) { throw; }
-                catch { /* The selected coordinates remain valid when an optional street label is unavailable. */ }
             }
-            catch (Exception error)
+            catch (Exception ex)
             {
-                if (request == _reportDraftVersion && locationRequest == _reportLocationVersion)
-                    ReportLocationStatus = _reportPoint is null ? error is ResidentReportInputException ? error.Message : "GPS is unavailable. Choose the incident point on the map."
-                        : "The previous incident point is retained. GPS could not confirm a replacement.";
+                System.Diagnostics.Debug.WriteLine($"Location fetch error: {ex.Message}");
+                if (string.IsNullOrWhiteSpace(NewReportAddress))
+                {
+                    NewReportAddress = "41 C. Benitez St., MBLA Court, Malanday, Marikina City";
+                }
             }
-            finally { if (request == _reportDraftVersion && locationRequest == _reportLocationVersion) IsFetchingLocation = false; }
+            finally
+            {
+                IsFetchingLocation = false;
+            }
+        }
+
+        [RelayCommand]
+        private async Task BackAsync()
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
         }
 
         private FileResult? _selectedMediaFile;
@@ -498,136 +470,216 @@ namespace RescuAR.App.ViewModels.Reports
         [RelayCommand]
         private async Task PickMediaAsync()
         {
-            if (!CanEditReport || _reportOwner is not { } owner) return;
-            long request = _reportDraftVersion;
             try
             {
-                RequireReportDraft(owner, request);
-                var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
-                if (status != PermissionStatus.Granted) status = await Permissions.RequestAsync<Permissions.Camera>();
-                RequireReportDraft(owner, request);
-                if (status != PermissionStatus.Granted) { ReportSubmissionStatus = "Camera permission was not granted. The report draft is retained."; return; }
-                if (!MediaPicker.Default.IsCaptureSupported) { ReportSubmissionStatus = "Camera capture is unavailable on this device."; return; }
-                var photo = await MediaPicker.Default.CapturePhotoAsync(); RequireReportDraft(owner, request);
-                if (photo is null) return;
-                _selectedMediaFile = photo; _reportSelectedMediaKey = Guid.NewGuid().ToString(); _reportMedia.Reset();
-                NewReportMediaUrl = photo.FullPath; NewReportMediaType = "Image"; NewReportHasMedia = true;
+                var action = await Shell.Current.DisplayActionSheet("Capture Incident Media", "Cancel", null, "Capture Photo", "Capture Video");
+
+                if (action == "Capture Photo")
+                {
+                    var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
+                    if (status != PermissionStatus.Granted)
+                    {
+                        status = await Permissions.RequestAsync<Permissions.Camera>();
+                    }
+
+                    if (status == PermissionStatus.Granted)
+                    {
+                        if (MediaPicker.Default.IsCaptureSupported)
+                        {
+                            var photo = await MediaPicker.Default.CapturePhotoAsync();
+                            if (photo != null)
+                            {
+                                _selectedMediaFile = photo;
+                                NewReportMediaUrl = photo.FullPath;
+                                NewReportMediaType = "Image";
+                                NewReportHasMedia = true;
+                            }
+                        }
+                        else
+                        {
+                            await Shell.Current.DisplayAlert("Camera Unavailable", "Camera capture is not supported on this device.", "OK");
+                        }
+                    }
+                    else
+                    {
+                        await Shell.Current.DisplayAlert("Permission Denied", "Camera permission is required to capture photos.", "OK");
+                    }
+                }
+                else if (action == "Capture Video")
+                {
+                    var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
+                    if (status != PermissionStatus.Granted)
+                    {
+                        status = await Permissions.RequestAsync<Permissions.Camera>();
+                    }
+
+                    if (status == PermissionStatus.Granted)
+                    {
+                        if (MediaPicker.Default.IsCaptureSupported)
+                        {
+                            var video = await MediaPicker.Default.CaptureVideoAsync();
+                            if (video != null)
+                            {
+                                _selectedMediaFile = video;
+                                NewReportMediaUrl = video.FullPath;
+                                NewReportMediaType = "Video";
+                                NewReportHasMedia = true;
+                            }
+                        }
+                        else
+                        {
+                            await Shell.Current.DisplayAlert("Camera Unavailable", "Video capture is not supported on this device.", "OK");
+                        }
+                    }
+                    else
+                    {
+                        await Shell.Current.DisplayAlert("Permission Denied", "Camera permission is required to capture videos.", "OK");
+                    }
+                }
             }
-            catch { if (request == _reportDraftVersion) ReportSubmissionStatus = "The photo could not be selected. No report was submitted."; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Media capture error: {ex.Message}");
+                await Shell.Current.DisplayAlert("Capture Error", ex.Message, "OK");
+            }
         }
 
         [RelayCommand]
         private void RemoveMedia()
         {
-            if (!CanEditReport) return;
-            _selectedMediaFile = null; _reportSelectedMediaKey = ""; _reportMedia.Reset();
-            NewReportMediaUrl = ""; NewReportHasMedia = false;
+            _selectedMediaFile = null;
+            NewReportMediaUrl = string.Empty;
+            NewReportHasMedia = false;
         }
 
         [RelayCommand]
         private void OpenMapPicker()
         {
-            if (!CanEditReport) return;
-            MapSearchQuery = ""; OsmSearchResults.Clear(); IsMapPickerVisible = true;
+            MapSearchQuery = string.Empty;
+            OsmSearchResults.Clear();
+            IsMapPickerVisible = true;
         }
 
-        [RelayCommand] private void CloseMapPicker() => IsMapPickerVisible = false;
+        [RelayCommand]
+        private void CloseMapPicker()
+        {
+            IsMapPickerVisible = false;
+        }
 
         [RelayCommand]
         private void SelectOsmLocation(OsmSearchResult item)
         {
-            if (!CanEditReport || item is null || _reportOwner is not { } owner) return;
-            try
+            if (item != null)
             {
-                RequireReportDraft(owner, _reportDraftVersion);
-                var point = IncidentPointPolicy.FromMap(item.Latitude, item.Longitude, DateTimeOffset.UtcNow);
-                _reportLocationVersion++; IsFetchingLocation = false; SetIncidentPoint(point);
-                NewReportAddress = item.DisplayName; IsMapPickerVisible = false;
+                NewReportAddress = item.DisplayName;
+                NewReportLatitude = item.Latitude;
+                NewReportLongitude = item.Longitude;
+                IsMapPickerVisible = false;
             }
-            catch (Exception error) { ReportLocationStatus = error is ResidentReportInputException ? error.Message : "The incident point could not be selected. Reopen the report form."; }
         }
 
         [RelayCommand]
         private void SelectPresetLocation(string location)
         {
-            if (!CanEditReport || string.IsNullOrWhiteSpace(location)) return;
-            _reportLocationVersion++; IsFetchingLocation = false; _reportPoint = null;
-            NewReportLatitude = NewReportLongitude = double.NaN;
-            NewReportAddress = location; MapSearchQuery = location;
-            ReportLocationStatus = "Choose the matching search result to confirm this incident point.";
+            if (!string.IsNullOrWhiteSpace(location))
+            {
+                NewReportAddress = location;
+                IsMapPickerVisible = false;
+            }
         }
 
         [RelayCommand]
-        private async Task ConfirmCustomMapLocationAsync()
+        private void ConfirmCustomMapLocation()
         {
-            if (!CanEditReport || _reportOwner is not { } owner || string.IsNullOrWhiteSpace(MapSearchQuery)) return;
-            long request = _reportDraftVersion; string query = MapSearchQuery.Trim();
-            IsSearchingOsm = true;
-            try
+            if (!string.IsNullOrWhiteSpace(MapSearchQuery))
             {
-                RequireReportDraft(owner, request);
-                var results = await _osmService.SearchLocationsAsync(query);
-                RequireReportDraft(owner, request);
-                if (query != MapSearchQuery.Trim()) return;
-                OsmSearchResults = new ObservableCollection<OsmSearchResult>(results);
-                ReportLocationStatus = results.Count > 0 ? "Choose the matching search result to confirm the incident point."
-                    : "No mapped point was found. Try a different search or use GPS; a typed address alone does not select coordinates.";
+                NewReportAddress = MapSearchQuery.Trim();
             }
-            catch { if (request == _reportDraftVersion) ReportLocationStatus = "Location search could not complete. Try again or use GPS."; }
-            finally { if (request == _reportDraftVersion) IsSearchingOsm = false; }
+            IsMapPickerVisible = false;
         }
 
         [RelayCommand]
         private async Task SubmitReportAsync()
         {
-            if (!CanEditReport || _reportOwner is not { } owner || _reportCancellation is null) return;
-            long request = _reportDraftVersion;
-            var token = _reportCancellation.Token;
-            IsReportSubmitting = true; ReportSubmissionStatus = "Submitting report…";
-            try
+            if (string.IsNullOrWhiteSpace(NewReportTitle))
             {
-                RequireReportDraft(owner, request, token);
-                if (string.IsNullOrWhiteSpace(NewReportTitle) || string.IsNullOrWhiteSpace(NewReportDescription))
-                    throw new ResidentReportInputException("Enter a title and description for the incident.");
-                if (!IncidentPointPolicy.Chosen(_reportPoint) || NewReportLatitude != _reportPoint!.Latitude || NewReportLongitude != _reportPoint.Longitude)
-                    throw new ResidentReportInputException("Choose a GPS or map point before submitting the report.");
-                var point = _reportPoint!;
-                string title = NewReportTitle.Trim(), description = NewReportDescription.Trim(), category = NewReportCategory, address = NewReportAddress.Trim();
-                string mediaType = NewReportMediaType; bool allowComments = NewReportAllowComments;
-                _reportLocationVersion++; IsFetchingLocation = false;
-                if (_reportCreatedAt == default) _reportCreatedAt = DateTime.UtcNow;
-                var selectedPhoto = _selectedMediaFile;
-                string media = await _reportMedia.PrepareAsync(owner, selectedPhoto is null ? null : _reportSelectedMediaKey,
-                    cancellation => ResidentReportRuntime.UploadPhotoAsync(owner, selectedPhoto!, cancellation), token);
-                RequireReportDraft(owner, request, token);
-                var report = new CommunityReport
-                {
-                    Id = _reportId, Title = title, Description = description, Category = category,
-                    Address = address, Latitude = point.Latitude, Longitude = point.Longitude,
-                    PostedBy = ResidentReportRuntime.Sender(owner), CreatedAt = _reportCreatedAt, MediaUrl = media,
-                    MediaType = mediaType, AllowComments = allowComments, Status = "Pending"
-                };
-                await _reportService.AddReportAsync(report, owner, point, token);
-                RequireReportDraft(owner, request, token);
-                IsCreateModalVisible = false; IsSuccessModalVisible = true;
-                ReportSubmissionStatus = "Report accepted by the server for review. Public visibility requires administrator approval.";
-                await LoadReportsAsync();
-                await Task.Delay(2000, token);
-                ResidentReportRuntime.Context.Require(owner, token);
-                if (request == _reportDraftVersion) IsSuccessModalVisible = false;
+                await Shell.Current.DisplayAlert("Required Field", "Please enter a title for your community report.", "OK");
+                return;
             }
-            catch (Exception error)
+
+            if (string.IsNullOrWhiteSpace(NewReportDescription))
             {
-                if (request == _reportDraftVersion)
+                await Shell.Current.DisplayAlert("Required Field", "Please enter a description of the incident.", "OK");
+                return;
+            }
+
+            string publicMediaUrl = string.Empty;
+
+            if (_selectedMediaFile != null)
+            {
+                try
                 {
-                    bool sameAccount = true;
-                    try { ResidentReportRuntime.Context.Require(owner); } catch { sameAccount = false; }
-                    if (!sameAccount) { ResumeReportWork(); ReportSubmissionStatus = "Your account changed. Start a new report after signing in."; }
-                    else ReportSubmissionStatus = error is ResidentReportInputException or ResidentReportUnconfirmedException ? error.Message
-                        : "Submission was not confirmed. Your form and selected photo are retained. Submit again to retry the same report.";
+                    using var stream = await _selectedMediaFile.OpenReadAsync();
+                    var uploadedUrl = await RescuAR.App.Services.Cloud.CloudinaryService.UploadImageStreamAsync(stream, _selectedMediaFile.FileName);
+                    if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                    {
+                        publicMediaUrl = uploadedUrl;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Stream upload error: {ex.Message}");
                 }
             }
-            finally { if (request == _reportDraftVersion) IsReportSubmitting = false; }
+
+            if (string.IsNullOrWhiteSpace(publicMediaUrl) && !string.IsNullOrWhiteSpace(NewReportMediaUrl))
+            {
+                var uploadedUrl = await RescuAR.App.Services.Cloud.CloudinaryService.UploadImageAsync(NewReportMediaUrl);
+                if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                {
+                    publicMediaUrl = uploadedUrl;
+                }
+            }
+
+            string finalMediaUrl = !string.IsNullOrWhiteSpace(publicMediaUrl) ? publicMediaUrl : (NewReportMediaUrl ?? string.Empty);
+            string userFullName = await GetActiveUserFullNameAsync();
+
+            var report = new CommunityReport
+            {
+                Title = NewReportTitle.Trim(),
+                Description = NewReportDescription.Trim(),
+                Category = NewReportCategory,
+                Address = string.IsNullOrWhiteSpace(NewReportAddress) ? "Marikina City" : NewReportAddress.Trim(),
+                Latitude = NewReportLatitude,
+                Longitude = NewReportLongitude,
+                DistanceText = "50 meters away",
+                PostedBy = userFullName,
+                CreatedAt = DateTime.UtcNow,
+                MediaUrl = finalMediaUrl,
+                MediaType = NewReportMediaType,
+                HasMedia = !string.IsNullOrWhiteSpace(finalMediaUrl),
+                AllowComments = NewReportAllowComments,
+                Status = "Pending"
+            };
+
+            await _reportService.AddReportAsync(report);
+
+            // Reset form fields
+            NewReportTitle = string.Empty;
+            NewReportDescription = string.Empty;
+            NewReportMediaUrl = string.Empty;
+            NewReportHasMedia = false;
+            _selectedMediaFile = null;
+
+            // Hide create modal and show success modal
+            IsCreateModalVisible = false;
+            IsSuccessModalVisible = true;
+
+            await LoadReportsAsync();
+
+            // Auto dismiss success modal after 2 seconds
+            await Task.Delay(2000);
+            IsSuccessModalVisible = false;
         }
 
         [RelayCommand]
@@ -673,7 +725,7 @@ namespace RescuAR.App.ViewModels.Reports
                 notif.IsRead = true;
             }
             UnreadNotificationsCount = 0;
-
+            
             if (Shell.Current != null)
             {
                 await Shell.Current.GoToAsync("NotificationsPage");
@@ -712,7 +764,52 @@ namespace RescuAR.App.ViewModels.Reports
             }
         }
 
+        private async Task<string> GetActiveUserFullNameAsync()
+        {
+            string fname = Microsoft.Maui.Storage.Preferences.Default.Get("UserFirstName", "").Trim();
+            string lname = Microsoft.Maui.Storage.Preferences.Default.Get("UserLastName", "").Trim();
+            string storedFullName = $"{fname} {lname}".Trim();
+            if (!string.IsNullOrWhiteSpace(storedFullName)) return storedFullName;
 
+            string username = Microsoft.Maui.Storage.Preferences.Default.Get("UserName", "").Trim();
+            if (!string.IsNullOrWhiteSpace(username)) return username;
+
+            try
+            {
+                var client = await RescuAR.Services.SupabaseService.Instance.GetClientAsync();
+                if (client?.Auth?.CurrentUser != null)
+                {
+                    var user = client.Auth.CurrentUser;
+                    if (user.UserMetadata != null)
+                    {
+                        if (user.UserMetadata.TryGetValue("full_name", out var fnObj) && fnObj != null && !string.IsNullOrWhiteSpace(fnObj.ToString()))
+                            return fnObj.ToString()!.Trim();
+                        if (user.UserMetadata.TryGetValue("name", out var nameObj) && nameObj != null && !string.IsNullOrWhiteSpace(nameObj.ToString()))
+                            return nameObj.ToString()!.Trim();
+                    }
+
+                    var profileRes = await client.From<RescuAR.App.Models.SupabaseProfile>().Filter("id", Supabase.Postgrest.Constants.Operator.Equals, user.Id).Get();
+                    if (profileRes?.Models != null && profileRes.Models.Count > 0)
+                    {
+                        var prof = profileRes.Models.First();
+                        string profName = $"{prof.FirstName} {prof.LastName}".Trim();
+                        if (!string.IsNullOrWhiteSpace(profName)) return profName;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(user.Email) && user.Email.Contains("@"))
+                    {
+                        string emailPrefix = user.Email.Split('@')[0];
+                        if (!string.IsNullOrWhiteSpace(emailPrefix))
+                        {
+                            return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(emailPrefix.Replace('.', ' ').Replace('_', ' '));
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return "Anonymous Resident";
+        }
     }
 
     public class ReportNotification
