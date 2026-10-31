@@ -7,50 +7,93 @@
     x:Name="PageRoot"
     x:DataType="vm:PreparednessGuideViewModel"
     Title="Disaster Safety Guide"
+    Shell.NavBarIsVisible="False"
     BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto,*">
 
-        <!-- 1. TOP HEADER BANNER & CLEAN ACTION BUTTONS -->
+        <!-- Top Custom Header Bar with Back Button and Title Banner (RescuAR Teal Brand Palette) -->
         <Border Grid.Row="0"
                 BackgroundColor="#0A8491"
                 StrokeThickness="0"
-                Padding="20,18">
-            <VerticalStackLayout Spacing="14">
-                <VerticalStackLayout Spacing="2">
-                    <Label Text="OFFICIAL DRRMO PROTOCOL" TextColor="#E0F2FE" FontSize="11" FontAttributes="Bold" CharacterSpacing="1" />
-                    <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="22" FontAttributes="Bold" />
-                    <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="13" />
-                </VerticalStackLayout>
+                Padding="16,11">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                <!-- Back Button Pill with Professional Triangle Back Arrow (same as Community Reports) -->
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="16"
+                          HeightRequest="16"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Border>
 
-                <!-- Clean Action Buttons (No Eye Emoji) -->
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                    <Button Grid.Column="0"
-                            Text="Download PDF"
-                            Command="{Binding DownloadPdfDocumentCommand}"
-                            BackgroundColor="#FFFFFF"
-                            TextColor="#0A8491"
-                            FontAttributes="Bold"
-                            FontSize="13"
-                            CornerRadius="12"
-                            HeightRequest="44" />
+                <!-- Title Banner -->
+                <Label Grid.Column="1"
+                       Text="Disaster Safety Guide"
+                       TextColor="#FFFFFF"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1" />
 
-                    <Button Grid.Column="1"
-                            Text="View PDF"
-                            Command="{Binding ViewPdfCommand}"
-                            BackgroundColor="#065F69"
-                            TextColor="#FFFFFF"
-                            FontAttributes="Bold"
-                            FontSize="13"
-                            CornerRadius="12"
-                            HeightRequest="44" />
-                </Grid>
-            </VerticalStackLayout>
+                <!-- Spacer to ensure title remains perfectly centered -->
+                <BoxView Grid.Column="2" WidthRequest="36" HeightRequest="36" Color="Transparent" />
+            </Grid>
         </Border>
 
         <!-- 2. MAIN SCROLLABLE CLEAN DISASTER PROTOCOL GUIDE -->
-        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never" Padding="16,20">
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never" Padding="16,16,16,24">
             <VerticalStackLayout Spacing="20">
+
+                <!-- Official DRRMO Protocol Hero Card -->
+                <Border BackgroundColor="#0A8491"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 16"
+                        Padding="20,18">
+                    <VerticalStackLayout Spacing="14">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="OFFICIAL DRRMO PROTOCOL" TextColor="#E0F2FE" FontSize="11" FontAttributes="Bold" CharacterSpacing="1" />
+                            <Label Text="{Binding Title}" TextColor="#FFFFFF" FontSize="20" FontAttributes="Bold" />
+                            <Label Text="{Binding Subtitle}" TextColor="#E0F2FE" FontSize="13" />
+                        </VerticalStackLayout>
+
+                        <!-- Clean Action Buttons (No Eye Emoji) -->
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <Button Grid.Column="0"
+                                    Text="Download PDF"
+                                    Command="{Binding DownloadPdfDocumentCommand}"
+                                    BackgroundColor="#FFFFFF"
+                                    TextColor="#0A8491"
+                                    FontAttributes="Bold"
+                                    FontSize="13"
+                                    CornerRadius="12"
+                                    HeightRequest="44" />
+
+                            <Button Grid.Column="1"
+                                    Text="View PDF"
+                                    Command="{Binding ViewPdfCommand}"
+                                    BackgroundColor="#065F69"
+                                    TextColor="#FFFFFF"
+                                    FontAttributes="Bold"
+                                    FontSize="13"
+                                    CornerRadius="12"
+                                    HeightRequest="44" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
 
                 <!-- Protocol Cards List (No AI Images, No Page Tabs) -->
                 <VerticalStackLayout BindableLayout.ItemsSource="{Binding ProtocolPages}" Spacing="16">
