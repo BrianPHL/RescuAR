@@ -114,6 +114,12 @@ namespace RescuAR.App.ViewModels.Dashboard
             await LoadAdvisoriesAsync();
         }
 
+        [ObservableProperty]
+        private int unreadNotificationsCount = 0;
+
+        [RelayCommand]
+        private async Task BackAsync() => await GoBackAsync();
+
         [RelayCommand]
         private async Task GoBackAsync()
         {
