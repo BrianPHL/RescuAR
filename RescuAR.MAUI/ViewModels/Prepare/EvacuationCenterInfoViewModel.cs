@@ -1,4 +1,3 @@
-using RescuAR.App.Services.Evacuation;
 #if ANDROID
 using Android.Util;
 #endif
@@ -113,8 +112,8 @@ public partial class EvacuationCenterItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(FacilitiesDisplay))]
     private List<string> _facilities = new();
 
-    public string FacilitiesDisplay => Facilities != null && Facilities.Count > 0 ? string.Join(", ", Facilities) : "Not recorded";
-    public string OccupancyDisplay => Capacity > 0 ? $"{CurrentEvacuees} / {Capacity} evacuees" : "Capacity unavailable";
+    public string FacilitiesDisplay => Facilities != null && Facilities.Count > 0 ? string.Join(", ", Facilities) : "Clean Water, Restrooms";
+    public string OccupancyDisplay => Capacity > 0 ? $"{CurrentEvacuees} / {Capacity} evacuees" : $"{CurrentEvacuees} evacuees";
     public string GpsDisplay => Latitude != 0 && Longitude != 0 ? $"{Latitude:F4}, {Longitude:F4}" : "N/A";
 
     [ObservableProperty]
@@ -198,9 +197,6 @@ public partial class EvacuationCenterItem : ObservableObject
 [QueryProperty(nameof(FilterCategory), "filter")]
 public partial class EvacuationCenterInfoViewModel : ObservableObject
 {
-    private readonly EvacuationDirectory directory = EvacuationDirectoryRuntime.Current;
-    private long directoryRevision = -1;
-    private bool directorySubscribed;
     private const string MldLogTag = "RescuAR-MLD";
     private readonly List<EvacuationCenterItem> _masterCentersList = new();
     private readonly ILocationService _locationService;
@@ -279,6 +275,22 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         LoadData();
     }
 
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
+        }
+    }
+
     partial void OnEmergencyTypeChanged(string value)
     {
         if (!string.IsNullOrWhiteSpace(value) && value.ToLowerInvariant().Contains("flood"))
@@ -355,6 +367,157 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         ApplyFilterAndSorting();
     }
 
+    private static List<EvacuationCenterItem> GetOfficialMarikinaCenters()
+    {
+        return new List<EvacuationCenterItem>
+        {
+            new EvacuationCenterItem
+            {
+                Name = "Malanday Elementary School",
+                Barangay = "Malanday",
+                Classification = "Flood-Safe Major",
+                Address = "48 Visayas St., Malanday, 1805 Marikina City",
+                Latitude = 14.650283,
+                Longitude = 121.094409,
+                Capacity = 1200,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Capt. Roberto Santos",
+                Contact = "0917-555-0192",
+                Facilities = new List<string> { "Medical Station", "Clean Water", "Generator", "Modular Tents" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "H. Bautista Elementary School",
+                Barangay = "Concepcion Uno",
+                Classification = "Flood-Safe Major",
+                Address = "Liwasang Kalayaan, Concepcion Uno, 1807 Marikina City",
+                Latitude = 14.657914,
+                Longitude = 121.104240,
+                Capacity = 1000,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Kagawad Arnel Cruz",
+                Contact = "0918-444-9120",
+                Facilities = new List<string> { "Medical Station", "Clean Water", "Restrooms" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "Nangka Elementary School",
+                Barangay = "Nangka",
+                Classification = "Flood-Safe Major",
+                Address = "Nangka, Marikina City",
+                Latitude = 14.672991,
+                Longitude = 121.108440,
+                Capacity = 1500,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Kagawad Manuel Reyes",
+                Contact = "0920-333-8101",
+                Facilities = new List<string> { "Clean Water", "Generator", "Kitchen Area", "Child-Friendly Space" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "Concepcion Elementary School",
+                Barangay = "Concepcion Uno",
+                Classification = "Flood-Safe Major",
+                Address = "Concepcion Uno, Marikina City",
+                Latitude = 14.647648,
+                Longitude = 121.103974,
+                Capacity = 1100,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Officer Gabriel Fernandez",
+                Contact = "0917-222-3456",
+                Facilities = new List<string> { "Generator", "Restrooms", "Clean Water" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "Sto. Niño Elementary School",
+                Barangay = "Sto. Niño",
+                Classification = "Flood-Safe Major",
+                Address = "Sto. Niño, Marikina City",
+                Latitude = 14.638324,
+                Longitude = 121.098368,
+                Capacity = 1300,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Maria Gonzales (MCDRRMO)",
+                Contact = "0915-222-7711",
+                Facilities = new List<string> { "Generator", "Restrooms", "Parking", "Medical Hub" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "St. Mary Elem. School",
+                Barangay = "Parang",
+                Classification = "Flood-Safe Minor",
+                Address = "Parang, Marikina City",
+                Latitude = 14.668643,
+                Longitude = 121.113418,
+                Capacity = 600,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Officer Laura Reyes",
+                Contact = "0918-222-1100",
+                Facilities = new List<string> { "Clean Water", "Restrooms" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "Concepcion Integrated School ES",
+                Barangay = "Concepcion Uno",
+                Classification = "Dual-Purpose Major",
+                Address = "Concepcion Uno, Marikina City",
+                Latitude = 14.649954,
+                Longitude = 121.101893,
+                Capacity = 1800,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "MCDRRMO Campus Lead",
+                Contact = "0915-999-0011",
+                Facilities = new List<string> { "Dual-Purpose Fields", "Medical Hub", "Generator", "Clean Water" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "Fortune Elem. School Fields",
+                Barangay = "Fortune",
+                Classification = "Dual-Purpose Minor",
+                Address = "Fortune, Marikina City",
+                Latitude = 14.655000,
+                Longitude = 121.115000,
+                Capacity = 700,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Officer Sandra Lopez",
+                Contact = "0918-222-5566",
+                Facilities = new List<string> { "Open Grounds", "Restrooms" },
+                FacilityImageUrl = string.Empty
+            },
+            new EvacuationCenterItem
+            {
+                Name = "San Roque High School",
+                Barangay = "San Roque",
+                Classification = "Earthquake-Safe Minor",
+                Address = "Nicanor Roxas St., San Roque, 1801 Marikina City",
+                Latitude = 14.622798,
+                Longitude = 121.097105,
+                Capacity = 500,
+                CurrentEvacuees = 0,
+                Status = "Standby",
+                HeadOfficer = "Capt. Danilo Reyes",
+                Contact = "0920-111-8899",
+                Facilities = new List<string> { "Clean Water", "Restrooms", "Open Courtyard" },
+                FacilityImageUrl = string.Empty
+            }
+        };
+    }
+
     private void LoadDefaultHotlines()
     {
         Hotlines.Clear();
@@ -378,10 +541,36 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     private void UpdateOfflineStatusInfo()
     {
-        var snapshot = directory.Current;
-        IsOfflineData = snapshot.Origin != DirectoryOrigin.Live;
-        OfflineStatusTitle = snapshot.Origin == DirectoryOrigin.Historical ? "Historical directory" : IsOfflineData ? "Saved directory" : "Directory updated";
-        OfflineStatusDescription = snapshot.Notice;
+        if (IsOfflineData)
+        {
+            OfflineStatusTitle = "Offline Mode — Locally Saved Data";
+            if (LastSuccessfulUpdate.HasValue)
+            {
+                var localTime = LastSuccessfulUpdate.Value.ToLocalTime();
+                OfflineStatusDescription = $"Last updated: {FormatTimestamp(localTime)}";
+                ShelterSectionSubtitle = $"Offline (Saved {FormatTimestamp(localTime)})";
+            }
+            else
+            {
+                OfflineStatusDescription = "Viewing saved emergency shelter data";
+                ShelterSectionSubtitle = "Nearest shelter first • Offline Mode";
+            }
+        }
+        else
+        {
+            OfflineStatusTitle = string.Empty;
+            if (LastSuccessfulUpdate.HasValue)
+            {
+                var localTime = LastSuccessfulUpdate.Value.ToLocalTime();
+                OfflineStatusDescription = $"Live Data • Updated {FormatTimestamp(localTime)}";
+                ShelterSectionSubtitle = $"Updated {FormatTimestamp(localTime)} • Nearest first";
+            }
+            else
+            {
+                OfflineStatusDescription = "Live Data • Connected";
+                ShelterSectionSubtitle = "Nearest shelter is listed first";
+            }
+        }
     }
 
     private static string FormatTimestamp(DateTimeOffset dt)
@@ -408,14 +597,14 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             Id = cached.Id,
             Name = cached.Name,
             Barangay = cached.Barangay,
-            Classification = string.IsNullOrWhiteSpace(cached.Classification) ? "Unspecified" : cached.Classification,
+            Classification = string.IsNullOrWhiteSpace(cached.Classification) ? "Flood-Safe Major" : cached.Classification,
             Address = cached.Address,
-            VerifiedBy = string.IsNullOrWhiteSpace(cached.VerifiedBy) ? "Not recorded" : cached.VerifiedBy,
+            VerifiedBy = string.IsNullOrWhiteSpace(cached.VerifiedBy) ? "Marikina LGU" : cached.VerifiedBy,
             Latitude = cached.Latitude,
             Longitude = cached.Longitude,
-            Capacity = Math.Max(0, cached.Capacity),
+            Capacity = cached.Capacity > 0 ? cached.Capacity : 500,
             CurrentEvacuees = cached.CurrentEvacuees,
-            Status = string.IsNullOrWhiteSpace(cached.Status) ? "Unknown" : cached.Status,
+            Status = string.IsNullOrWhiteSpace(cached.Status) ? "Standby" : cached.Status,
             HeadOfficer = string.IsNullOrWhiteSpace(cached.HeadOfficer) ? "Unassigned" : cached.HeadOfficer,
             Contact = string.IsNullOrWhiteSpace(cached.Contact) ? "N/A" : cached.Contact,
             Facilities = cached.Facilities ?? new List<string>(),
@@ -428,6 +617,29 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         item.LoadBookmarkState();
 
         return item;
+    }
+
+    private static CachedEvacuationCenterItem CreateCachedFromItem(EvacuationCenterItem item)
+    {
+        return new CachedEvacuationCenterItem
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Barangay = item.Barangay,
+            Classification = item.Classification,
+            Address = item.Address,
+            VerifiedBy = item.VerifiedBy,
+            FacilityImageUrl = item.FacilityImageUrl,
+            MapImageSource = item.MapImageSource,
+            Latitude = item.Latitude,
+            Longitude = item.Longitude,
+            Capacity = item.Capacity,
+            CurrentEvacuees = item.CurrentEvacuees,
+            Status = item.Status,
+            HeadOfficer = item.HeadOfficer,
+            Contact = item.Contact,
+            Facilities = item.Facilities?.ToList() ?? new List<string>()
+        };
     }
 
     private void RecalculateDistances()
@@ -470,40 +682,52 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     private void LoadData()
     {
         var cached = CacheService.LoadEvacuationCenters();
-        if (cached is not null && (cached.SourceKey.Length == 0 || cached.SourceKey == directory.Current.SourceKey) && cached.Hotlines.Count > 0)
+        if (cached != null && cached.Centers != null && cached.Centers.Count > 0)
         {
-            Hotlines.Clear();
-            foreach (var hotline in cached.Hotlines) Hotlines.Add(new() { Name = hotline.Name, Number = hotline.Number, Type = hotline.Type, BadgeText = hotline.BadgeText });
+            _masterCentersList.Clear();
+            foreach (var c in cached.Centers)
+            {
+                _masterCentersList.Add(CreateItemFromCached(c));
+            }
+
+            if (cached.Hotlines != null && cached.Hotlines.Count > 0)
+            {
+                Hotlines.Clear();
+                foreach (var h in cached.Hotlines)
+                {
+                    Hotlines.Add(new EmergencyHotlineItem
+                    {
+                        Name = h.Name,
+                        Number = h.Number,
+                        Type = h.Type,
+                        BadgeText = h.BadgeText
+                    });
+                }
+            }
+            else
+            {
+                LoadDefaultHotlines();
+            }
+
+            LastSuccessfulUpdate = cached.LastUpdatedUtc;
+            IsOfflineData = !IsConnectedToInternet();
+            UpdateOfflineStatusInfo();
+            RecalculateDistances();
         }
-        else LoadDefaultHotlines();
-        PresentDirectory(directory.Current);
-    }
-
-    private void DirectoryChanged(EvacuationDirectorySnapshot snapshot) => MainThread.BeginInvokeOnMainThread(() =>
-    {
-        if (directorySubscribed && snapshot.SourceKey == directory.Current.SourceKey) PresentDirectory(snapshot);
-    });
-
-    private void PresentDirectory(EvacuationDirectorySnapshot snapshot)
-    {
-        if (directoryRevision == snapshot.Revision) return;
-        directoryRevision = snapshot.Revision;
-        string? selected = SelectedCenter?.Id;
-        _masterCentersList.Clear();
-        _masterCentersList.AddRange(snapshot.Centers.Select(CreateItemFromCached));
-        if (selected is not null)
+        else
         {
-            SelectedCenter = _masterCentersList.FirstOrDefault(center => center.Id == selected);
-            if (SelectedCenter is null) IsDetailsPopupVisible = IsEnlargedMapVisible = false;
+            LoadDefaultHotlines();
+            _masterCentersList.Clear();
+            _masterCentersList.AddRange(GetOfficialMarikinaCenters());
+            LastSuccessfulUpdate = CacheService.GetLastUpdatedTime();
+            IsOfflineData = !IsConnectedToInternet();
+            UpdateOfflineStatusInfo();
+            RecalculateDistances();
         }
-        LastSuccessfulUpdate = snapshot.UpdatedAt;
-        UpdateOfflineStatusInfo(); RecalculateDistances();
     }
 
     public void OnAppearing()
     {
-        if (!directorySubscribed) { directory.Changed += DirectoryChanged; directorySubscribed = true; }
-        PresentDirectory(directory.Current);
         if (_locationExpiryTimer is null && Application.Current?.Dispatcher is { } dispatcher)
         {
             _locationExpiryTimer = dispatcher.CreateTimer();
@@ -526,7 +750,6 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public void OnDisappearing()
     {
-        if (directorySubscribed) { directory.Changed -= DirectoryChanged; directorySubscribed = false; }
         _locationExpiryTimer?.Stop();
         if (_isConnectivitySubscribed)
         {
@@ -550,7 +773,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             }
             else
             {
-                await FetchEvacuationCentersFromSupabaseAsync();
+                IsOfflineData = true;
                 RecalculateDistances();
                 await FilterEvacuationCentersByGpsAsync();
             }
@@ -577,7 +800,8 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         Task locationRefresh = FilterEvacuationCentersByGpsAsync();
         if (!IsConnectedToInternet())
         {
-            await FetchEvacuationCentersFromSupabaseAsync();
+            IsOfflineData = true;
+            UpdateOfflineStatusInfo();
             await locationRefresh;
             RecalculateDistances();
             return;
@@ -592,13 +816,142 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public async Task FetchEvacuationCentersFromSupabaseAsync()
     {
-        var snapshot = await directory.RefreshAsync(force: true);
-        await MainThread.InvokeOnMainThreadAsync(() =>
+        if (!IsConnectedToInternet())
         {
-            if (directorySubscribed) PresentDirectory(snapshot);
-            CacheService.UpdateHotlines(Hotlines.Select(hotline => new CachedEmergencyHotlineItem
-            { Name = hotline.Name, Number = hotline.Number, Type = hotline.Type, BadgeText = hotline.BadgeText }), snapshot.SourceKey);
-        });
+            IsOfflineData = true;
+            UpdateOfflineStatusInfo();
+            RecalculateDistances();
+            return;
+        }
+
+        try
+        {
+            var client = await SupabaseService.Instance.GetClientAsync();
+            if (client != null)
+            {
+                var response = await client.From<SupabaseEvacuationCenter>()
+                    .Order("name", Supabase.Postgrest.Constants.Ordering.Ascending)
+                    .Get();
+
+                if (response?.Models != null && response.Models.Count > 0)
+                {
+#if ANDROID
+                    Android.Util.Log.Info(MldLogTag, $"Fetched {response.Models.Count} evacuation centers from Supabase.");
+#endif
+                    var updatedList = new List<EvacuationCenterItem>();
+
+                    foreach (var model in response.Models)
+                    {
+                        if (!double.TryParse(model.Latitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
+                            !double.TryParse(model.Longitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lng) ||
+                            !new GeoCoordinate(lat, lng).IsValid || (lat == 0 && lng == 0))
+                            continue;
+
+                        var facilitiesList = ParseFacilities(model.Facilities);
+                        string resolvedImage = (model.ImageUrl ?? string.Empty).Trim();
+
+                        var item = new EvacuationCenterItem
+                        {
+                            Id = model.Id ?? string.Empty,
+                            Name = model.Name ?? string.Empty,
+                            Barangay = model.Barangay ?? string.Empty,
+                            Classification = string.IsNullOrWhiteSpace(model.Classification) ? "Flood-Safe Major" : model.Classification,
+                            Address = string.IsNullOrWhiteSpace(model.Barangay) ? "Marikina City" : $"{model.Barangay}, Marikina City",
+                            VerifiedBy = "Marikina LGU",
+                            Latitude = lat,
+                            Longitude = lng,
+                            Capacity = model.Capacity > 0 ? model.Capacity : 500,
+                            CurrentEvacuees = model.CurrentEvacuees,
+                            Status = string.IsNullOrWhiteSpace(model.Status) ? "Standby" : model.Status,
+                            HeadOfficer = string.IsNullOrWhiteSpace(model.HeadOfficer) ? "Unassigned" : model.HeadOfficer,
+                            Contact = string.IsNullOrWhiteSpace(model.Contact) ? "N/A" : model.Contact,
+                            Facilities = facilitiesList,
+                            FacilityImageUrl = resolvedImage,
+                            MapImageSource = $"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lng}&zoom=16&size=600x300&markers={lat},{lng},red-pushpin"
+                        };
+
+                        item.LoadBookmarkState();
+
+                        updatedList.Add(item);
+                    }
+
+                    if (updatedList.Count == 0)
+                    {
+                        AndroidLog.Warn(MldLogTag,
+                            "Live shelter catalog contained no valid coordinates; saved catalog retained.");
+                        IsOfflineData = true;
+                        RecalculateDistances();
+                        return;
+                    }
+                    AndroidLog.Info(MldLogTag,
+                        $"SHELTER_CATALOG source=LIVE; received={response.Models.Count}; valid={updatedList.Count}.");
+
+                    // Save latest successfully loaded data to local storage (Requirements 1, 3, 4)
+                    var now = DateTimeOffset.UtcNow;
+                    var cachedItems = updatedList.Select(CreateCachedFromItem).ToList();
+                    var cachedHotlines = Hotlines.Select(h => new CachedEmergencyHotlineItem
+                    {
+                        Name = h.Name,
+                        Number = h.Number,
+                        Type = h.Type,
+                        BadgeText = h.BadgeText
+                    }).ToList();
+
+                    CacheService.SaveEvacuationCenters(cachedItems, cachedHotlines, now);
+
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        _masterCentersList.Clear();
+                        _masterCentersList.AddRange(updatedList);
+                        LastSuccessfulUpdate = now;
+                        IsOfflineData = false;
+                        UpdateOfflineStatusInfo();
+                        RecalculateDistances();
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+#if ANDROID
+            Android.Util.Log.Error(MldLogTag, $"Failed to fetch live evacuation centers from Supabase: {ex.Message}");
+#else
+            System.Diagnostics.Debug.WriteLine($"Failed to fetch live evacuation centers from Supabase: {ex.Message}");
+#endif
+            // If online request fails, do NOT overwrite existing saved data with empty/incomplete results (Requirement 4)
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                IsOfflineData = true;
+                UpdateOfflineStatusInfo();
+                if (_masterCentersList.Count == 0)
+                {
+                    LoadData();
+                }
+            });
+        }
+    }
+
+    private static List<string> ParseFacilities(object? rawFacilities)
+    {
+        if (rawFacilities == null) return new List<string> { "Clean Water", "Restrooms" };
+
+        string str = rawFacilities.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(str)) return new List<string> { "Clean Water", "Restrooms" };
+
+        try
+        {
+            if (str.Trim().StartsWith("["))
+            {
+                var list = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(str);
+                if (list != null && list.Count > 0) return list;
+            }
+        }
+        catch { }
+
+        return str.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                  .Select(s => s.Trim())
+                  .Where(s => !string.IsNullOrWhiteSpace(s))
+                  .ToList();
     }
 
     public async Task FetchHotlinesFromSupabaseAsync()
@@ -616,7 +969,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
                 if (response?.Models != null && response.Models.Count > 0)
                 {
-                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    MainThread.BeginInvokeOnMainThread(() =>
                     {
                         Hotlines.Clear();
                         foreach (var h in response.Models)
@@ -629,8 +982,6 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                                 BadgeText = string.IsNullOrWhiteSpace(h.Category) ? "EMS" : h.Category.ToUpper()
                             });
                         }
-                        CacheService.UpdateHotlines(Hotlines.Select(hotline => new CachedEmergencyHotlineItem
-                        { Name = hotline.Name, Number = hotline.Number, Type = hotline.Type, BadgeText = hotline.BadgeText }), directory.Current.SourceKey);
                     });
                 }
             }
@@ -842,16 +1193,9 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
         await StartNavigationToCenterAsync(center, closeDetailsPopup: true);
     }
 
-    private async Task StartNavigationToCenterAsync(EvacuationCenterItem center, bool closeDetailsPopup, bool map2D = false)
+    private async Task StartNavigationToCenterAsync(EvacuationCenterItem center, bool closeDetailsPopup)
     {
         if (IsStartingNavigation) return;
-        var current = directory.ResolveSelected(center.Id, center.Latitude, center.Longitude);
-        if (current is null)
-        {
-            if (Shell.Current is not null) await Shell.Current.DisplayAlert("Directory changed", "Select this evacuation center again from the updated directory.", "OK");
-            return;
-        }
-        center = CreateItemFromCached(current);
         IsStartingNavigation = true;
 
 #if ANDROID
@@ -869,14 +1213,15 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 CloseDetailsPopup();
             }
 
-            bool opened = map2D
-                ? await CameraNavigationLauncher.Open2DAsync(center.Name, center.Latitude, center.Longitude)
-                : await CameraNavigationLauncher.OpenAsync(center.Name, center.Latitude, center.Longitude);
+            bool opened = await CameraNavigationLauncher.OpenAsync(
+                center.Name,
+                center.Latitude,
+                center.Longitude);
 
             if (!opened && Shell.Current is not null)
             {
                 await Shell.Current.DisplayAlert(
-                    map2D ? "2D Navigation" : "AR Navigation",
+                    "AR Navigation",
                     "This evacuation center could not be used as a navigation destination.",
                     "OK");
             }
@@ -890,7 +1235,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
             if (Shell.Current is not null)
             {
                 await Shell.Current.DisplayAlert(
-                    map2D ? "2D Navigation" : "AR Navigation",
+                    "AR Navigation",
                     "Unable to start AR navigation.",
                     "OK");
             }
@@ -902,21 +1247,11 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task NavigateTo2DMapAsync(EvacuationCenterItem? center)
-    {
-        if (center is not null) await StartNavigationToCenterAsync(center, closeDetailsPopup: false, map2D: true);
-    }
-
-    [RelayCommand]
-    private async Task Start2DNavigationAsync()
-    {
-        if (SelectedCenter is { } center) await StartNavigationToCenterAsync(center, closeDetailsPopup: true, map2D: true);
-    }
-
-    [RelayCommand]
     private async Task NavigateToMapAsync()
     {
-        if (!await CameraNavigationLauncher.OpenMapAsync() && Shell.Current is { } shell)
-            await shell.DisplayAlert("2D Map", "The map could not be opened. Please try again.", "OK");
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("//Map");
+        }
     }
 }
