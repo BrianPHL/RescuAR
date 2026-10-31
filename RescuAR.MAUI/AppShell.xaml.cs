@@ -54,6 +54,10 @@ public partial class AppShell : Shell
             typeof(RescuAR.App.Views.Reports.AdvisoryFeedPage));
 
         Routing.RegisterRoute(
+            "Dashboard/AdvisoryFeed",
+            typeof(RescuAR.App.Views.Dashboard.AdvisoryFeedPage));
+
+        Routing.RegisterRoute(
             "Reports/AdvisoryFeed",
             typeof(RescuAR.App.Views.Reports.AdvisoryFeedPage));
 
