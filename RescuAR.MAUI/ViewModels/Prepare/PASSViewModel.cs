@@ -248,4 +248,20 @@ public partial class PASSViewModel : ObservableObject
             await Shell.Current.GoToAsync("Prepare/EvacuationCenterInfo");
         }
     }
+
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
+        }
+    }
 }

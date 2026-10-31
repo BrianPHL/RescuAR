@@ -11,55 +11,85 @@
     Shell.NavBarIsVisible="False">
 
     <Grid RowDefinitions="Auto,*">
-        <!-- Top App Bar (Dark Navy Header) -->
+        <!-- Top Custom Header Bar with Back Button and Title Banner (RescuAR Teal Brand Palette #0A8491) -->
         <Border Grid.Row="0"
-                BackgroundColor="#132238"
+                BackgroundColor="#0A8491"
                 StrokeThickness="0"
-                Padding="16,14">
-            <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
-                <!-- Back Button -->
-                <HorizontalStackLayout Grid.Column="0" Spacing="6" VerticalOptions="Center">
-                    <HorizontalStackLayout.GestureRecognizers>
-                        <TapGestureRecognizer Command="{Binding GoBackCommand}" />
-                    </HorizontalStackLayout.GestureRecognizers>
+                Padding="16,11">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                <!-- Back Button Pill with Professional Triangle Back Arrow (same as Community Reports) -->
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
                     <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
                           Fill="#FFFFFF"
-                          WidthRequest="18"
-                          HeightRequest="18"
+                          WidthRequest="16"
+                          HeightRequest="16"
                           Aspect="Uniform"
+                          HorizontalOptions="Center"
                           VerticalOptions="Center" />
-                    <Label Text="Back"
-                           TextColor="#FFFFFF"
-                           FontSize="15"
-                           FontAttributes="Bold"
-                           VerticalOptions="Center" />
-                </HorizontalStackLayout>
+                </Border>
 
-                <!-- App Title -->
+                <!-- Title Banner -->
                 <Label Grid.Column="1"
                        Text="Disaster Updates"
                        TextColor="#FFFFFF"
-                       FontSize="16"
+                       FontSize="18"
                        FontAttributes="Bold"
                        HorizontalOptions="Center"
-                       VerticalOptions="Center" />
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1" />
 
-                <!-- Bell Icon -->
-                <Border Grid.Column="2"
-                        StrokeThickness="0"
-                        BackgroundColor="Transparent"
-                        Padding="4"
-                        VerticalOptions="Center">
-                    <Border.GestureRecognizers>
-                        <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
-                    </Border.GestureRecognizers>
-                    <Path Data="M12,2A2,2 0 0,0 10,4A7,7 0 0,0 3,11V16L1,18V19H23V18L21,16V11A7,7 0 0,0 14,4A2,2 0 0,0 12,2M10,20A2,2 0 0,0 12,22A2,2 0 0,0 14,20H10Z"
-                          Fill="#FFFFFF"
-                          WidthRequest="22"
-                          HeightRequest="22"
-                          Aspect="Uniform"
-                          VerticalOptions="Center" />
-                </Border>
+                <!-- Notification Bell Pill (Self-contained, NO shadow, badge inside, never overlaps) -->
+                <Grid Grid.Column="2" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                    <Border BackgroundColor="#065F69"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 10"
+                            WidthRequest="36"
+                            HeightRequest="36"
+                            VerticalOptions="Center">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                        </Border.GestureRecognizers>
+                        <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                              Fill="#FFFFFF"
+                              WidthRequest="18"
+                              HeightRequest="18"
+                              Aspect="Uniform"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Border>
+                    <!-- Notification Badge -->
+                    <Border BackgroundColor="#EF4444"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 7"
+                            WidthRequest="15"
+                            HeightRequest="15"
+                            HorizontalOptions="End"
+                            VerticalOptions="Start"
+                            Margin="0,1,1,0"
+                            InputTransparent="True">
+                        <Border.Triggers>
+                            <DataTrigger TargetType="Border" Binding="{Binding UnreadNotificationsCount}" Value="0">
+                                <Setter Property="IsVisible" Value="False" />
+                            </DataTrigger>
+                        </Border.Triggers>
+                        <Label Text="{Binding UnreadNotificationsCount}"
+                               TextColor="#FFFFFF"
+                               FontSize="8"
+                               FontAttributes="Bold"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+                    </Border>
+                </Grid>
             </Grid>
         </Border>
 
@@ -70,40 +100,36 @@
                 <!-- Title & Breadcrumbs Section -->
                 <VerticalStackLayout Spacing="4">
                     <Label Text="Home / Updates" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
-                    <Label Text="Disaster Updates" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
+                    <Label Text="Disaster Updates" TextColor="#0F172A" FontSize="26" FontAttributes="Bold" />
                     <Label Text="Official disaster alerts and verified agency advisories." TextColor="#475569" FontSize="14" />
                 </VerticalStackLayout>
 
-                <!-- Active Monitoring Hero Card -->
-                <Border StrokeShape="RoundRectangle 16"
-                        Stroke="#E2E8F0"
-                        StrokeThickness="1"
-                        BackgroundColor="#FFFFFF"
+                <!-- Active Monitoring Hero Card (Unified Teal Brand Palette #0A8491) -->
+                <Border StrokeShape="RoundRectangle 18"
+                        StrokeThickness="0"
+                        BackgroundColor="#0A8491"
                         Padding="18">
-                    <Border.Shadow>
-                        <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
-                    </Border.Shadow>
                     <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                         <VerticalStackLayout Grid.Column="0" Spacing="8">
-                            <Border StrokeShape="RoundRectangle 20"
-                                    BackgroundColor="#DCFCE7"
+                            <Border StrokeShape="RoundRectangle 12"
+                                    BackgroundColor="#065F69"
                                     Padding="10,5"
                                     HorizontalOptions="Start"
                                     StrokeThickness="0">
                                 <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                    <Ellipse WidthRequest="6" HeightRequest="6" Fill="#15803D" VerticalOptions="Center" />
-                                    <Label Text="Active Monitoring" TextColor="#15803D" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                                    <Ellipse WidthRequest="6" HeightRequest="6" Fill="#4ADE80" VerticalOptions="Center" />
+                                    <Label Text="Active Monitoring" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
                                 </HorizontalStackLayout>
                             </Border>
 
-                            <Label Text="Within 5 km of your location." TextColor="#0F172A" FontSize="16" FontAttributes="Bold" />
-                            <Label Text="{Binding LastUpdatedText}" TextColor="#94A3B8" FontSize="12" />
+                            <Label Text="Within 5 km of your location." TextColor="#FFFFFF" FontSize="16" FontAttributes="Bold" />
+                            <Label Text="{Binding LastUpdatedText}" TextColor="#E0F2FE" FontSize="12" />
                         </VerticalStackLayout>
 
                         <!-- Signal Waves Icon -->
                         <Path Grid.Column="1"
                               Data="M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12A9,9 0 0,0 12,3Z"
-                              Fill="#CBD5E1"
+                              Fill="#CCFBF1"
                               WidthRequest="44"
                               HeightRequest="44"
                               Aspect="Uniform"
@@ -223,7 +249,7 @@
                                                 Command="{Binding Source={RelativeSource AncestorType={x:Type vm:AdvisoryFeedViewModel}}, Path=ViewDetailsCommand, x:DataType=vm:AdvisoryFeedViewModel}"
                                                 CommandParameter="{Binding .}" />
                                         </HorizontalStackLayout.GestureRecognizers>
-                                        <Label Text="View details  ❯" TextColor="#008080" FontSize="14" FontAttributes="Bold" />
+                                        <Label Text="View details  ❯" TextColor="#0A8491" FontSize="14" FontAttributes="Bold" />
                                     </HorizontalStackLayout>
                                 </VerticalStackLayout>
                             </Border>

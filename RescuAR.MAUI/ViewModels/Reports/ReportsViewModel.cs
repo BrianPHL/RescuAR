@@ -30,7 +30,6 @@ namespace RescuAR.App.ViewModels.Reports
         [ObservableProperty] private string reportLocationStatus = "Choose a GPS or map point for the incident.";
         public bool CanEditReport => !IsReportSubmitting;
 
-
         private readonly HashSet<string> _seenReportIds = new();
         [ObservableProperty]
         private ObservableCollection<ReportNotification> notifications = new();
@@ -443,7 +442,8 @@ namespace RescuAR.App.ViewModels.Reports
         [RelayCommand]
         private void CloseCreateModal()
         {
-            PauseReportWork(); IsCreateModalVisible = false; IsMapPickerVisible = false;
+            PauseReportWork();
+            IsCreateModalVisible = false;
         }
 
         private void SetIncidentPoint(IncidentPoint point)
@@ -491,6 +491,15 @@ namespace RescuAR.App.ViewModels.Reports
                         : "The previous incident point is retained. GPS could not confirm a replacement.";
             }
             finally { if (request == _reportDraftVersion && locationRequest == _reportLocationVersion) IsFetchingLocation = false; }
+        }
+
+        [RelayCommand]
+        private async Task BackAsync()
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
         }
 
         private FileResult? _selectedMediaFile;
@@ -711,8 +720,6 @@ namespace RescuAR.App.ViewModels.Reports
                 await Shell.Current.GoToAsync("AdvisoryFeedPage");
             }
         }
-
-
     }
 
     public class ReportNotification
@@ -723,5 +730,5 @@ namespace RescuAR.App.ViewModels.Reports
         public DateTime Timestamp { get; set; } = DateTime.Now;
         public bool IsRead { get; set; } = false;
         public string TimestampText => Timestamp.ToString("MMM dd, yyyy - hh:mm tt");
-  }
+    }
 }

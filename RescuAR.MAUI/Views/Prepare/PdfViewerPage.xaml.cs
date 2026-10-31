@@ -31,4 +31,19 @@ public partial class PdfViewerPage : ContentPage, IQueryAttributable
             }
         }
     }
+
+    private async void OnBackTapped(object sender, EventArgs e)
+    {
+        if (Shell.Current != null)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
+        }
+    }
 }

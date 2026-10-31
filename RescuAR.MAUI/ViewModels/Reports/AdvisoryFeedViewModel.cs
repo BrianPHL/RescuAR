@@ -29,9 +29,10 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     [ObservableProperty]
     private string currentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
     [ObservableProperty]
-    private DisasterAdvisory? selectedAdvisory;
+    private DisasterAdvisory? selectedAdvisory = new DisasterAdvisory();
     [ObservableProperty]
     private bool isPopupVisible;
+
     public AdvisoryFeedViewModel()
     {
         _advisoryService = new AdvisoryService();
@@ -39,27 +40,34 @@ public partial class AdvisoryFeedViewModel : ObservableObject
         StartClockTicker();
 
         // Real-time listener for new admin advisories only
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
-        RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
-        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
+        try
         {
-            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
-                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
-                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
-        });
-        RealtimeAdvisoryManager.StartRealtimeListener();
+            RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
+            RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
+            RealtimeAdvisoryManager.StartRealtimeListener();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"AdvisoryFeedViewModel listener init warning: {ex.Message}");
+        }
     }
 
     private void HandleNewAdvisoryPushed(DisasterAdvisory newAdvisory)
     {
+        if (newAdvisory == null) return;
+
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
+            try
             {
                 SelectedAdvisory = newAdvisory;
                 IsPopupVisible = true;
+                _ = LoadAdvisoriesAsync();
             }
-            _ = LoadAdvisoriesAsync();
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"HandleNewAdvisoryPushed error: {ex.Message}");
+            }
         });
     }
 
@@ -67,16 +75,29 @@ public partial class AdvisoryFeedViewModel : ObservableObject
 
     private void StartClockTicker()
     {
-        if (_clockTimer != null) return;
-        _clockTimer = Application.Current?.Dispatcher.CreateTimer();
-        if (_clockTimer != null)
+        try
         {
-            _clockTimer.Interval = TimeSpan.FromSeconds(1);
-            _clockTimer.Tick += (s, e) =>
+            if (_clockTimer != null) return;
+            _clockTimer = Application.Current?.Dispatcher?.CreateTimer();
+            if (_clockTimer != null)
             {
-                CurrentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
-            };
-            _clockTimer.Start();
+                _clockTimer.Interval = TimeSpan.FromSeconds(1);
+                _clockTimer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        CurrentDateTimeText = DateTime.Now.ToString("dddd, MMMM d, yyyy • h:mm:ss tt");
+                    }
+                    catch
+                    {
+                    }
+                };
+                _clockTimer.Start();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"StartClockTicker error: {ex.Message}");
         }
     }
 
@@ -90,8 +111,15 @@ public partial class AdvisoryFeedViewModel : ObservableObject
 
     private async Task LoadAdvisoriesAsync()
     {
-        _allAdvisories = await _advisoryService.GetAdvisoriesAsync();
-        ApplyFilter();
+        try
+        {
+            _allAdvisories = await _advisoryService.GetAdvisoriesAsync() ?? new List<DisasterAdvisory>();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadAdvisoriesAsync error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -103,26 +131,53 @@ public partial class AdvisoryFeedViewModel : ObservableObject
 
     private void ApplyFilter()
     {
-        MainThread.BeginInvokeOnMainThread(() =>
+        try
         {
-            var filtered = SelectedFilter switch
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                "Critical" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Critical", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Warning", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("High", StringComparison.OrdinalIgnoreCase)).ToList(),
-                "Standby" => _allAdvisories.Where(x => x.DisplayAlertLevel.Equals("Standby", StringComparison.OrdinalIgnoreCase) || x.DisplayAlertLevel.Equals("Low", StringComparison.OrdinalIgnoreCase)).ToList(),
-                _ => _allAdvisories.ToList()
-            };
+                try
+                {
+                    if (_allAdvisories == null)
+                    {
+                        Advisories.Clear();
+                        return;
+                    }
 
-            if (Advisories.Count == filtered.Count && Advisories.SequenceEqual(filtered))
-            {
-                return;
-            }
+                    var filtered = SelectedFilter switch
+                    {
+                        "Critical" => _allAdvisories.Where(x => x != null && (
+                            x.DisplayAlertLevel.Equals("Critical", StringComparison.OrdinalIgnoreCase) ||
+                            x.DisplayAlertLevel.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
+                            x.DisplayAlertLevel.Equals("High", StringComparison.OrdinalIgnoreCase)
+                        )).ToList(),
+                        "Standby" => _allAdvisories.Where(x => x != null && (
+                            x.DisplayAlertLevel.Equals("Standby", StringComparison.OrdinalIgnoreCase) ||
+                            x.DisplayAlertLevel.Equals("Low", StringComparison.OrdinalIgnoreCase)
+                        )).ToList(),
+                        _ => _allAdvisories.Where(x => x != null).ToList()
+                    };
 
-            Advisories.Clear();
-            foreach (var item in filtered)
-            {
-                Advisories.Add(item);
-            }
-        });
+                    if (Advisories.Count == filtered.Count && Advisories.SequenceEqual(filtered))
+                    {
+                        return;
+                    }
+
+                    Advisories.Clear();
+                    foreach (var item in filtered)
+                    {
+                        Advisories.Add(item);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ApplyFilter inner error: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"ApplyFilter dispatch error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -139,22 +194,36 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     private void ClosePopup()
     {
         IsPopupVisible = false;
-        RealtimeAdvisoryManager.StopAlarmAudio();
+        try
+        {
+            RealtimeAdvisoryManager.StopAlarmAudio();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"StopAlarmAudio error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
     private async Task OpenTranslationMenuAsync()
     {
-        if (SelectedAdvisory == null || Shell.Current == null) return;
+        try
+        {
+            if (SelectedAdvisory == null || Shell.Current == null) return;
 
-        string result = await Shell.Current.DisplayActionSheet("Translation", "Cancel", null, "English", "Tagalog");
-        if (result == "Tagalog")
-        {
-            SelectedAdvisory.SetLanguage(true);
+            string result = await Shell.Current.DisplayActionSheet("Translation", "Cancel", null, "English", "Tagalog");
+            if (result == "Tagalog")
+            {
+                SelectedAdvisory.SetLanguage(true);
+            }
+            else if (result == "English")
+            {
+                SelectedAdvisory.SetLanguage(false);
+            }
         }
-        else if (result == "English")
+        catch (Exception ex)
         {
-            SelectedAdvisory.SetLanguage(false);
+            System.Diagnostics.Debug.WriteLine($"OpenTranslationMenu error: {ex.Message}");
         }
     }
 
@@ -162,19 +231,33 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     private async Task GoToAdvisoriesFeedAsync()
     {
         IsPopupVisible = false;
-        if (Shell.Current != null)
+        try
         {
-            await Shell.Current.GoToAsync("AdvisoryFeedPage");
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("AdvisoryFeedPage");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"GoToAdvisoriesFeed error: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private async Task NavigateToEvacuationCentersAsync(string? emergencyType = "flood")
     {
-        if (Shell.Current != null)
+        try
         {
-            var param = string.IsNullOrWhiteSpace(emergencyType) ? "flood" : emergencyType;
-            await Shell.Current.GoToAsync($"Prepare/EvacuationCenterInfo?type={Uri.EscapeDataString(param)}");
+            if (Shell.Current != null)
+            {
+                var param = string.IsNullOrWhiteSpace(emergencyType) ? "flood" : emergencyType;
+                await Shell.Current.GoToAsync($"Prepare/EvacuationCenterInfo?type={Uri.EscapeDataString(param)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"NavigateToEvacuationCenters error: {ex.Message}");
         }
     }
 
@@ -184,19 +267,45 @@ public partial class AdvisoryFeedViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenNotificationsAsync()
     {
-        UnreadNotificationsCount = 0;
-        if (Shell.Current != null)
+        try
         {
-            await Shell.Current.GoToAsync("NotificationsPage");
+            UnreadNotificationsCount = 0;
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("NotificationsPage");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"OpenNotifications error: {ex.Message}");
         }
     }
 
     [RelayCommand]
-    private async Task GoBackAsync()
+    private async Task BackAsync()
     {
-        if (Shell.Current != null)
+        try
         {
-            await Shell.Current.GoToAsync("..");
+            if (Shell.Current != null)
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+        }
+        catch
+        {
+            try
+            {
+                if (Shell.Current != null)
+                {
+                    await Shell.Current.GoToAsync("//Home");
+                }
+            }
+            catch
+            {
+            }
         }
     }
+
+    [RelayCommand]
+    private async Task GoBackAsync() => await BackAsync();
 }

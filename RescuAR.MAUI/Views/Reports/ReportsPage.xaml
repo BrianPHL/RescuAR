@@ -10,6 +10,7 @@
     x:Class="RescuAR.App.Views.Reports.ReportsPage"
     x:Name="ReportsPageRoot"
     x:DataType="vm:ReportsViewModel"
+    Title="Community Reports"
     Shell.NavBarIsVisible="False"
     BackgroundColor="#F8FAFC">
 
@@ -20,49 +21,74 @@
     </ContentPage.Resources>
 
     <Grid>
-        <!-- Main Page Layout -->
+        <!-- Main Fixed Page Layout: Fixed Custom Top Bar and Content Area -->
         <Grid RowDefinitions="Auto, *">
 
-            <!-- Top App Bar (Dark Navy Header) -->
+            <!-- 1. TOP CUSTOM HEADER BAR (RescuAR Primary Teal Brand Palette) -->
             <Border Grid.Row="0"
-                    BackgroundColor="#132238"
-                    HeightRequest="56"
+                    BackgroundColor="#0A8491"
                     StrokeThickness="0"
-                    Padding="16,0">
-                <Grid ColumnDefinitions="*, Auto" VerticalOptions="Center">
-                    <Label Grid.Column="0"
-                           Text="RescuAR Community"
+                    Padding="16,11">
+                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="12" VerticalOptions="Center">
+                    <!-- Back Button Pill with Professional Triangle Back Arrow -->
+                    <Border Grid.Column="0"
+                            BackgroundColor="#065F69"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 10"
+                            WidthRequest="36"
+                            HeightRequest="36"
+                            VerticalOptions="Center">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding BackCommand}" />
+                        </Border.GestureRecognizers>
+                        <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                              Fill="#FFFFFF"
+                              WidthRequest="16"
+                              HeightRequest="16"
+                              Aspect="Uniform"
+                              HorizontalOptions="Center"
+                              VerticalOptions="Center" />
+                    </Border>
+
+                    <!-- Page Title (Left-aligned next to back button, ample room, never overlaps bell) -->
+                    <Label Grid.Column="1"
+                           Text="Community Reports"
                            TextColor="#FFFFFF"
                            FontSize="18"
                            FontAttributes="Bold"
-                           HorizontalOptions="Center"
-                           VerticalOptions="Center" />
+                           VerticalOptions="Center"
+                           LineBreakMode="TailTruncation"
+                           MaxLines="1" />
 
-                    <!-- Notification Bell with Badge Count -->
-                    <Grid Grid.Column="1" WidthRequest="32" HeightRequest="32" HorizontalOptions="End" VerticalOptions="Center">
-                        <Grid.GestureRecognizers>
-                            <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
-                        </Grid.GestureRecognizers>
+                    <!-- Notification Bell Pill (Self-contained, NO shadow, badge inside, never overlaps) -->
+                    <Grid Grid.Column="2" WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                        <Border BackgroundColor="#065F69"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 10"
+                                WidthRequest="36"
+                                HeightRequest="36"
+                                VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
+                            </Border.GestureRecognizers>
+                            <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                                  Fill="#FFFFFF"
+                                  WidthRequest="18"
+                                  HeightRequest="18"
+                                  Aspect="Uniform"
+                                  HorizontalOptions="Center"
+                                  VerticalOptions="Center" />
+                        </Border>
 
-                        <!-- Bell Icon -->
-                        <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-                              Fill="#FFFFFF"
-                              WidthRequest="22"
-                              HeightRequest="22"
-                              Aspect="Uniform"
-                              HorizontalOptions="Center"
-                              VerticalOptions="Center"
-                              InputTransparent="True" />
-
-                        <!-- Badge Red Circle (Visible if Count > 0) -->
+                        <!-- Notification Badge (positioned cleanly inside top-right corner of 36x36 grid) -->
                         <Border BackgroundColor="#EF4444"
                                 StrokeThickness="0"
-                                StrokeShape="RoundRectangle 8"
-                                WidthRequest="16"
-                                HeightRequest="16"
+                                StrokeShape="RoundRectangle 7"
+                                WidthRequest="15"
+                                HeightRequest="15"
                                 HorizontalOptions="End"
                                 VerticalOptions="Start"
-                                Margin="0,0,-2,-2"
+                                Margin="0,1,1,0"
                                 InputTransparent="True">
                             <Border.Triggers>
                                 <DataTrigger TargetType="Border" Binding="{Binding UnreadNotificationsCount}" Value="0">
@@ -71,7 +97,7 @@
                             </Border.Triggers>
                             <Label Text="{Binding UnreadNotificationsCount}"
                                    TextColor="#FFFFFF"
-                                   FontSize="9"
+                                   FontSize="8"
                                    FontAttributes="Bold"
                                    HorizontalOptions="Center"
                                    VerticalOptions="Center" />
@@ -80,212 +106,200 @@
                 </Grid>
             </Border>
 
-            <!-- Scrollable Content Feed -->
+            <!-- 2. SCROLLABLE FEED CONTENT -->
             <RefreshView Grid.Row="1"
                          IsRefreshing="{Binding IsRefreshing}"
                          Command="{Binding LoadReportsCommand}">
                 <ScrollView VerticalScrollBarVisibility="Never">
-                    <VerticalStackLayout Spacing="16" Padding="16,16,16,80">
+                    <VerticalStackLayout Spacing="16" Padding="16,14,16,88">
 
-                        <!-- Header Titles & Breadcrumbs -->
-                        <VerticalStackLayout Spacing="4">
-                            <Label Text="Home / Community" TextColor="#64748B" FontSize="13" FontAttributes="Bold" />
-                            <Label Text="Community Reports" TextColor="#0F172A" FontSize="28" FontAttributes="Bold" />
-                            <Label Text="Real-time disaster reports, hazard alerts, and vicinity monitoring." TextColor="#475569" FontSize="14" />
-                        </VerticalStackLayout>
-
-                        <!-- Vicinity Hazard & Affected Area Monitoring Alert Card -->
-                        <Border BackgroundColor="{Binding VicinityAlertBadgeColor}"
-                                Stroke="{Binding VicinityAlertBorderColor}"
-                                StrokeThickness="1.5"
-                                StrokeShape="RoundRectangle 16"
-                                Padding="14"
+                        <!-- HERO VICINITY MONITORING BANNER (No Shadow, Clean Inset Track) -->
+                        <Border BackgroundColor="#0A8491"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 18"
+                                Padding="16,14"
                                 IsVisible="{Binding HasVicinityAlerts}">
-                            <Border.Shadow>
-                                <Shadow Brush="#000000" Offset="0,2" Radius="6" Opacity="0.05" />
-                            </Border.Shadow>
+                            <VerticalStackLayout Spacing="12">
+                                <!-- Top Row: Status Title on Left, Badge on Right -->
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                    <!-- Title & Subtitle Stack -->
+                                    <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                        <Label Text="{Binding VicinityStatusTitle}"
+                                               TextColor="#FFFFFF"
+                                               FontSize="16"
+                                               FontAttributes="Bold"
+                                               LineBreakMode="TailTruncation"
+                                               MaxLines="1" />
+                                        <Label Text="{Binding VicinityStatusSubtitle}"
+                                               TextColor="#E0F2FE"
+                                               FontSize="11"
+                                               LineBreakMode="TailTruncation"
+                                               MaxLines="2" />
+                                    </VerticalStackLayout>
 
-                            <Grid RowDefinitions="Auto, Auto, Auto" RowSpacing="8">
-                                <!-- Top Row: Icon, Title & Live Status Pill -->
-                                <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto, Auto" ColumnSpacing="10" RowSpacing="3">
-                                    <Path Grid.Row="0" Grid.Column="0"
-                                          Data="{Binding VicinityAlertIcon}"
-                                          Fill="{Binding VicinityAlertTextColor}"
-                                          WidthRequest="22"
-                                          HeightRequest="22"
-                                          Aspect="Uniform"
-                                          VerticalOptions="Center" />
-
-                                    <Label Grid.Row="0" Grid.Column="1"
-                                           Text="{Binding VicinityStatusTitle}"
-                                           TextColor="{Binding VicinityAlertTextColor}"
-                                           FontSize="15"
-                                           FontAttributes="Bold"
-                                           LineBreakMode="WordWrap"
-                                           VerticalOptions="Center" />
-
-                                    <!-- Active Hazard Badge Pill -->
-                                    <Border Grid.Row="0" Grid.Column="2"
-                                            BackgroundColor="{Binding VicinityAlertTextColor}"
+                                    <!-- Pill Badge (Right Column) -->
+                                    <Border Grid.Column="1"
+                                            BackgroundColor="#065F69"
                                             StrokeThickness="0"
                                             StrokeShape="RoundRectangle 12"
-                                            Padding="10,4"
-                                            VerticalOptions="Center"
-                                            HorizontalOptions="End">
-                                        <Label Text="{Binding VicinityActiveCountText}"
-                                               TextColor="#FFFFFF"
-                                               FontSize="11"
-                                               FontAttributes="Bold"
-                                               HorizontalTextAlignment="Center" />
+                                            Padding="10,6"
+                                            VerticalOptions="Center">
+                                        <VerticalStackLayout Spacing="1" HorizontalOptions="Center" VerticalOptions="Center">
+                                            <Label Text="{Binding VicinityActiveCountText}"
+                                                   TextColor="#4ADE80"
+                                                   FontSize="12"
+                                                   FontAttributes="Bold"
+                                                   HorizontalOptions="Center" />
+                                            <Label Text="MONITOR"
+                                                   TextColor="#FFFFFF"
+                                                   FontSize="8"
+                                                   FontAttributes="Bold"
+                                                   HorizontalOptions="Center" />
+                                        </VerticalStackLayout>
                                     </Border>
-
-                                    <!-- Subtitle spanning Columns 1 and 2 to allow full width for wrapping -->
-                                    <Label Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                           Text="{Binding VicinityStatusSubtitle}"
-                                           TextColor="{Binding VicinityAlertTextColor}"
-                                           Opacity="0.9"
-                                           FontSize="12"
-                                           LineBreakMode="WordWrap" />
                                 </Grid>
 
-                                <!-- Divider -->
-                                <BoxView Grid.Row="1" HeightRequest="1" BackgroundColor="{Binding VicinityAlertBorderColor}" Opacity="0.6" Margin="0,2" />
-
-                                <!-- Bottom Row: Affected Areas & Refresh Button -->
-                                <Grid Grid.Row="2" ColumnDefinitions="*, Auto" ColumnSpacing="8" VerticalOptions="Center">
-                                    <Grid Grid.Column="0" ColumnDefinitions="Auto, *" ColumnSpacing="6" VerticalOptions="Center">
-                                        <!-- Location Pin Icon -->
+                                <!-- Inset Track Card: Affected Areas & Sync Button -->
+                                <Border BackgroundColor="#065F69"
+                                        StrokeThickness="0"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="10,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalOptions="Center">
                                         <Path Grid.Column="0"
                                               Data="M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5Z"
-                                              Fill="{Binding VicinityAlertTextColor}"
+                                              Fill="#4ADE80"
                                               WidthRequest="14"
                                               HeightRequest="14"
                                               Aspect="Uniform"
-                                              VerticalOptions="Start"
-                                              Margin="0,2,0,0" />
+                                              VerticalOptions="Center" />
                                         <Label Grid.Column="1"
                                                Text="{Binding VicinityAffectedAreas}"
-                                               TextColor="{Binding VicinityAlertTextColor}"
-                                               FontSize="12"
-                                               FontAttributes="Bold"
-                                               LineBreakMode="WordWrap"
-                                               VerticalOptions="Center" />
-                                    </Grid>
-
-                                    <Border Grid.Column="1"
-                                            Stroke="{Binding VicinityAlertTextColor}"
-                                            StrokeThickness="1"
-                                            StrokeShape="RoundRectangle 8"
-                                            BackgroundColor="Transparent"
-                                            Padding="8,4"
-                                            VerticalOptions="Center"
-                                            HorizontalOptions="End">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding RefreshVicinityLocationCommand}" />
-                                        </Border.GestureRecognizers>
-                                        <Label Text="GPS Sync"
-                                               TextColor="{Binding VicinityAlertTextColor}"
+                                               TextColor="#FFFFFF"
                                                FontSize="11"
                                                FontAttributes="Bold"
-                                               HorizontalOptions="Center"
+                                               LineBreakMode="TailTruncation"
+                                               MaxLines="1"
                                                VerticalOptions="Center" />
-                                    </Border>
-                                </Grid>
-                            </Grid>
+                                        <!-- Fixed Sync Button to avoid overlapping text -->
+                                        <Border Grid.Column="2"
+                                                BackgroundColor="#0A8491"
+                                                StrokeThickness="0"
+                                                StrokeShape="RoundRectangle 6"
+                                                Padding="8,4"
+                                                VerticalOptions="Center">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding RefreshVicinityLocationCommand}" />
+                                            </Border.GestureRecognizers>
+                                            <Label Text="Sync GPS ↗"
+                                                   TextColor="#FFFFFF"
+                                                   FontSize="10"
+                                                   FontAttributes="Bold"
+                                                   VerticalOptions="Center" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </VerticalStackLayout>
                         </Border>
 
-                        <!-- Search & Filter Controls Bar -->
-                        <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10" Margin="0,2,0,4">
-                            <!-- Search Entry -->
-                            <Border Grid.Column="0"
-                                    BackgroundColor="#FFFFFF"
-                                    Stroke="#E2E8F0"
-                                    StrokeThickness="1"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="12,0"
-                                    HeightRequest="44">
-                                <Entry Text="{Binding SearchQuery, Mode=TwoWay}"
-                                       Placeholder="Search reports or category..."
-                                       PlaceholderColor="#94A3B8"
-                                       TextColor="#0F172A"
-                                       FontSize="14"
-                                       VerticalOptions="Center" />
-                            </Border>
+                        <!-- SECTION HEADER -->
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="COMMUNITY INCIDENT FEED"
+                                   TextColor="#64748B"
+                                   FontSize="11"
+                                   FontAttributes="Bold"
+                                   CharacterSpacing="0.8"
+                                   Margin="2,0,0,0" />
 
-                            <!-- Filter Picker Dropdown -->
-                            <Border Grid.Column="1"
-                                    BackgroundColor="#FFFFFF"
-                                    Stroke="#E2E8F0"
-                                    StrokeThickness="1"
-                                    StrokeShape="RoundRectangle 12"
-                                    Padding="10,0"
-                                    HeightRequest="44"
-                                    WidthRequest="145">
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                                    <!-- Filter Icon -->
-                                    <Path Grid.Column="0"
-                                          Data="M10,18h4v-2h-4v2zM3,6v2h18V6H3zm3,7h12v-2H6v2z"
-                                          Fill="#64748B"
-                                          WidthRequest="14"
-                                          HeightRequest="14"
-                                          Aspect="Uniform"
-                                          VerticalOptions="Center"
-                                          InputTransparent="True" />
-                                    <!-- Actual Picker -->
-                                    <Picker Grid.Column="1"
-                                            ItemsSource="{Binding FilterOptions}"
-                                            SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
-                                            TextColor="#0F172A"
-                                            TitleColor="#94A3B8"
-                                            FontSize="12"
-                                            FontAttributes="Bold"
-                                            HorizontalOptions="FillAndExpand"
-                                            VerticalOptions="Center" />
-                                    <!-- Dropdown Arrow -->
-                                    <Path Grid.Column="2"
-                                          Data="M7,10L12,15L17,10H7Z"
-                                          Fill="#64748B"
-                                          WidthRequest="10"
-                                          HeightRequest="10"
-                                          Aspect="Uniform"
-                                          HorizontalOptions="End"
-                                          VerticalOptions="Center"
-                                          InputTransparent="True" />
-                                </Grid>
-                            </Border>
-                        </Grid>
+                            <!-- Search & Filter Controls Bar (Clean 2-column structure) -->
+                            <Grid ColumnDefinitions="*, 130" ColumnSpacing="8">
+                                <!-- Search Input -->
+                                <Border Grid.Column="0"
+                                        BackgroundColor="#FFFFFF"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="10,0"
+                                        HeightRequest="44">
+                                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" VerticalOptions="Center">
+                                        <Path Grid.Column="0"
+                                              Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                              Fill="#64748B"
+                                              WidthRequest="15"
+                                              HeightRequest="15"
+                                              Aspect="Uniform"
+                                              VerticalOptions="Center" />
+                                        <Entry Grid.Column="1"
+                                               Text="{Binding SearchQuery, Mode=TwoWay}"
+                                               Placeholder="Search reports..."
+                                               PlaceholderColor="#94A3B8"
+                                               TextColor="#0F172A"
+                                               FontSize="13"
+                                               VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
 
-                        <!-- Reports Collection (Modern Community Feed) -->
+                                <!-- Filter Dropdown (Fixed 130dp width, won't overlap) -->
+                                <Border Grid.Column="1"
+                                        BackgroundColor="#FFFFFF"
+                                        Stroke="#E2E8F0"
+                                        StrokeThickness="1"
+                                        StrokeShape="RoundRectangle 12"
+                                        Padding="8,0"
+                                        HeightRequest="44">
+                                    <Grid ColumnDefinitions="Auto, *" ColumnSpacing="4" VerticalOptions="Center">
+                                        <Path Grid.Column="0"
+                                              Data="M10,18h4v-2h-4v2zM3,6v2h18V6H3zm3,7h12v-2H6v2z"
+                                              Fill="#64748B"
+                                              WidthRequest="13"
+                                              HeightRequest="13"
+                                              Aspect="Uniform"
+                                              VerticalOptions="Center"
+                                              InputTransparent="True" />
+                                        <Picker Grid.Column="1"
+                                                ItemsSource="{Binding FilterOptions}"
+                                                SelectedItem="{Binding SelectedFilter, Mode=TwoWay}"
+                                                TextColor="#0F172A"
+                                                TitleColor="#94A3B8"
+                                                FontSize="11"
+                                                FontAttributes="Bold"
+                                                VerticalOptions="Center" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+
+                        <!-- REPORTS COLLECTION (Improved Report Boxes with Elevated Shadow Effect) -->
                         <CollectionView ItemsSource="{Binding Reports}">
                             <CollectionView.EmptyView>
                                 <VerticalStackLayout Spacing="8" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
-                                    <Label Text="No reports found." TextColor="#94A3B8" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" />
-                                    <Label Text="Be the first to create a community report." TextColor="#64748B" FontSize="13" HorizontalOptions="Center" />
+                                    <Label Text="No reports found" TextColor="#94A3B8" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" />
+                                    <Label Text="Be the first to post a community report." TextColor="#64748B" FontSize="13" HorizontalOptions="Center" />
                                 </VerticalStackLayout>
                             </CollectionView.EmptyView>
 
                             <CollectionView.ItemTemplate>
                                 <DataTemplate x:DataType="models:CommunityReport">
+                                    <!-- Elevated Report Card Box -->
                                     <Border BackgroundColor="#FFFFFF"
                                             Margin="0,0,0,16"
                                             Padding="16"
                                             Stroke="#E2E8F0"
                                             StrokeThickness="1"
-                                            StrokeShape="RoundRectangle 16">
+                                            StrokeShape="RoundRectangle 20">
                                         <Border.Shadow>
-                                            <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.04" />
+                                            <Shadow Brush="#0F172A" Offset="0,4" Radius="12" Opacity="0.08" />
                                         </Border.Shadow>
 
                                         <VerticalStackLayout Spacing="12">
 
-                                            <!-- Author Header & Category Badge -->
-                                            <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
-                                                <!-- Author Initials Avatar Circle -->
+                                            <!-- CARD HEADER: 44dp Avatar + Stacked Name/Date + Stacked Badges -->
+                                            <Grid ColumnDefinitions="44, *, Auto" ColumnSpacing="12" VerticalOptions="Center">
+                                                <!-- Author Avatar (Fixed 44x44) -->
                                                 <Border Grid.Column="0"
-                                                        WidthRequest="40"
-                                                        HeightRequest="40"
-                                                        StrokeShape="RoundRectangle 20"
-                                                        BackgroundColor="#008080"
+                                                        WidthRequest="44"
+                                                        HeightRequest="44"
+                                                        StrokeShape="RoundRectangle 14"
+                                                        BackgroundColor="#0A8491"
                                                         StrokeThickness="0"
                                                         VerticalOptions="Center">
                                                     <Label Text="{Binding AuthorInitials}"
@@ -296,33 +310,39 @@
                                                            VerticalOptions="Center" />
                                                 </Border>
 
-                                                <!-- Author Name & Time -->
+                                                <!-- Author Name & Posted Timestamp (Stacked vertically, never horizontally colliding) -->
                                                 <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                                    <Label Text="{Binding PostedBy}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                                                    <Label Text="{Binding PostedAtText}" TextColor="#64748B" FontSize="12" />
+                                                    <Label Text="{Binding PostedBy}"
+                                                           TextColor="#0F172A"
+                                                           FontSize="15"
+                                                           FontAttributes="Bold"
+                                                           LineBreakMode="TailTruncation"
+                                                           MaxLines="1" />
+                                                    <Label Text="{Binding PostedAtText}"
+                                                           TextColor="#64748B"
+                                                           FontSize="11"
+                                                           LineBreakMode="TailTruncation"
+                                                           MaxLines="1" />
                                                 </VerticalStackLayout>
 
-                                                <!-- Category Badge (No icon, cleanly aligned pill) -->
+                                                <!-- Category Badge (Status badge removed: only approved reports appear on feed) -->
                                                 <Border Grid.Column="2"
                                                         BackgroundColor="{Binding CategoryBadgeColor}"
                                                         StrokeThickness="0"
-                                                        StrokeShape="RoundRectangle 12"
+                                                        StrokeShape="RoundRectangle 8"
                                                         Padding="10,4"
                                                         HorizontalOptions="End"
                                                         VerticalOptions="Center">
                                                     <Label Text="{Binding Category}"
                                                            TextColor="{Binding CategoryTextColor}"
-                                                           FontSize="11"
+                                                           FontSize="10"
                                                            FontAttributes="Bold"
-                                                           HorizontalOptions="Center"
-                                                           VerticalOptions="Center"
-                                                           HorizontalTextAlignment="Center"
-                                                           VerticalTextAlignment="Center" />
+                                                           HorizontalOptions="Center" />
                                                 </Border>
                                             </Grid>
 
-                                            <!-- Media Image / Video Preview -->
-                                            <Border StrokeShape="RoundRectangle 12"
+                                            <!-- Media Preview (Image or Video) -->
+                                            <Border StrokeShape="RoundRectangle 14"
                                                     StrokeThickness="0"
                                                     HeightRequest="190"
                                                     HorizontalOptions="FillAndExpand"
@@ -336,68 +356,92 @@
                                             <!-- Report Title -->
                                             <Label Text="{Binding Title}"
                                                    TextColor="#0F172A"
-                                                   FontSize="18"
+                                                   FontSize="17"
                                                    FontAttributes="Bold"
                                                    LineBreakMode="WordWrap" />
 
-                                            <!-- Description -->
+                                            <!-- Report Description (Clean standard line height to prevent Android vertical overlap) -->
                                             <Label Text="{Binding Description}"
                                                    TextColor="#475569"
-                                                   FontSize="14"
-                                                   LineHeight="1.3"
+                                                   FontSize="13"
                                                    LineBreakMode="WordWrap" />
 
-                                            <!-- Location Address Bar -->
+                                            <!-- Location Bar with Integrated Distance Tag -->
                                             <Border BackgroundColor="#F8FAFC"
                                                     Stroke="#E2E8F0"
                                                     StrokeThickness="1"
                                                     StrokeShape="RoundRectangle 10"
                                                     Padding="10,8">
-                                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" VerticalOptions="Center">
+                                                <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="8" VerticalOptions="Center">
+                                                    <!-- Location Pin -->
                                                     <Path Grid.Column="0"
                                                           Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                                                          Fill="#008080"
-                                                          WidthRequest="16"
-                                                          HeightRequest="16"
+                                                          Fill="#0A8491"
+                                                          WidthRequest="14"
+                                                          HeightRequest="14"
                                                           Aspect="Uniform"
                                                           VerticalOptions="Center" />
+
+                                                    <!-- Address -->
                                                     <Label Grid.Column="1"
                                                            Text="{Binding Address}"
                                                            TextColor="#0F172A"
-                                                           FontSize="13"
+                                                           FontSize="12"
                                                            FontAttributes="Bold"
                                                            VerticalOptions="Center"
-                                                           LineBreakMode="TailTruncation" />
+                                                           LineBreakMode="TailTruncation"
+                                                           MaxLines="1" />
+
+                                                    <!-- Distance Pill -->
+                                                    <Border Grid.Column="2"
+                                                            BackgroundColor="#E0F2FE"
+                                                            StrokeThickness="0"
+                                                            StrokeShape="RoundRectangle 6"
+                                                            Padding="6,2"
+                                                            VerticalOptions="Center">
+                                                        <Label Text="{Binding DistanceText}"
+                                                               TextColor="#0369A1"
+                                                               FontSize="10"
+                                                               FontAttributes="Bold"
+                                                               HorizontalOptions="Center"
+                                                               VerticalOptions="Center" />
+                                                    </Border>
                                                 </Grid>
                                             </Border>
 
-                                            <!-- Bottom Action Bar -->
-                                            <Grid ColumnDefinitions="*, Auto, Auto" ColumnSpacing="8" VerticalOptions="Center" Margin="0,4,0,0">
-                                                <!-- View details button -->
-                                                <Button Grid.Column="0"
-                                                        Text="View report details  ❯"
-                                                        TextColor="#008080"
-                                                        BackgroundColor="Transparent"
-                                                        FontSize="14"
-                                                        FontAttributes="Bold"
-                                                        HorizontalOptions="Start"
-                                                        Padding="0"
-                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ViewReportDetailsCommand, x:DataType=local:ReportsPage}"
-                                                        CommandParameter="{Binding .}" />
+                                            <!-- Bottom Action Bar (Non-overlapping tap elements) -->
+                                            <Grid ColumnDefinitions="*, Auto, Auto" ColumnSpacing="10" VerticalOptions="Center" Margin="0,2,0,0">
+                                                <!-- View Details Link (Tap gesture on label stack to avoid Android button insets) -->
+                                                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                                    <HorizontalStackLayout.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ViewReportDetailsCommand, x:DataType=local:ReportsPage}"
+                                                                              CommandParameter="{Binding .}" />
+                                                    </HorizontalStackLayout.GestureRecognizers>
+                                                    <Label Text="View details"
+                                                           TextColor="#0A8491"
+                                                           FontSize="13"
+                                                           FontAttributes="Bold"
+                                                           VerticalOptions="Center" />
+                                                    <Label Text="➔"
+                                                           TextColor="#0A8491"
+                                                           FontSize="13"
+                                                           FontAttributes="Bold"
+                                                           VerticalOptions="Center" />
+                                                </HorizontalStackLayout>
 
-                                                <!-- Comment Count Badge -->
+                                                <!-- Comment Count Pill -->
                                                 <Border Grid.Column="1"
                                                         BackgroundColor="#F1F5F9"
                                                         StrokeThickness="0"
-                                                        StrokeShape="RoundRectangle 14"
+                                                        StrokeShape="RoundRectangle 12"
                                                         Padding="10,4"
                                                         VerticalOptions="Center"
                                                         IsVisible="{Binding AllowComments}">
                                                     <HorizontalStackLayout Spacing="4" VerticalOptions="Center">
                                                         <Path Data="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"
                                                               Fill="#64748B"
-                                                              WidthRequest="14"
-                                                              HeightRequest="14"
+                                                              WidthRequest="13"
+                                                              HeightRequest="13"
                                                               Aspect="Uniform"
                                                               VerticalOptions="Center" />
                                                         <Label Text="{Binding CommentCount}"
@@ -408,28 +452,50 @@
                                                     </HorizontalStackLayout>
                                                 </Border>
 
-                                                <!-- Like Button -->
-                                                <Button Grid.Column="2"
-                                                        Text="{Binding LikeCount, StringFormat='♥ {0}'}"
-                                                        TextColor="#64748B"
+                                                <!-- Like Button Pill (Border + TapGesture to guarantee compact touch target without overflow) -->
+                                                <Border Grid.Column="2"
                                                         BackgroundColor="#F1F5F9"
-                                                        BorderColor="#E2E8F0"
-                                                        BorderWidth="1"
-                                                        CornerRadius="16"
-                                                        FontSize="12"
-                                                        FontAttributes="Bold"
-                                                        HeightRequest="32"
-                                                        Padding="12,0"
-                                                        Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ToggleLikeCommand, x:DataType=local:ReportsPage}"
-                                                        CommandParameter="{Binding .}">
-                                                    <Button.Triggers>
-                                                        <DataTrigger TargetType="Button" Binding="{Binding IsLikedByCurrentUser}" Value="True">
-                                                            <Setter Property="TextColor" Value="#EF4444" />
+                                                        Stroke="#E2E8F0"
+                                                        StrokeThickness="1"
+                                                        StrokeShape="RoundRectangle 14"
+                                                        HeightRequest="30"
+                                                        Padding="10,0"
+                                                        VerticalOptions="Center">
+                                                    <Border.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.ToggleLikeCommand, x:DataType=local:ReportsPage}"
+                                                                              CommandParameter="{Binding .}" />
+                                                    </Border.GestureRecognizers>
+                                                    <Border.Triggers>
+                                                        <DataTrigger TargetType="Border" Binding="{Binding IsLikedByCurrentUser}" Value="True">
                                                             <Setter Property="BackgroundColor" Value="#FEF2F2" />
-                                                            <Setter Property="BorderColor" Value="#EF4444" />
+                                                            <Setter Property="Stroke" Value="#EF4444" />
                                                         </DataTrigger>
-                                                    </Button.Triggers>
-                                                </Button>
+                                                    </Border.Triggers>
+                                                    <HorizontalStackLayout Spacing="5" VerticalOptions="Center" HorizontalOptions="Center">
+                                                        <Label Text="♥"
+                                                               TextColor="#64748B"
+                                                               FontSize="11"
+                                                               FontAttributes="Bold"
+                                                               VerticalOptions="Center">
+                                                            <Label.Triggers>
+                                                                <DataTrigger TargetType="Label" Binding="{Binding IsLikedByCurrentUser}" Value="True">
+                                                                    <Setter Property="TextColor" Value="#EF4444" />
+                                                                </DataTrigger>
+                                                            </Label.Triggers>
+                                                        </Label>
+                                                        <Label Text="{Binding LikeCount}"
+                                                               TextColor="#64748B"
+                                                               FontSize="11"
+                                                               FontAttributes="Bold"
+                                                               VerticalOptions="Center">
+                                                            <Label.Triggers>
+                                                                <DataTrigger TargetType="Label" Binding="{Binding IsLikedByCurrentUser}" Value="True">
+                                                                    <Setter Property="TextColor" Value="#EF4444" />
+                                                                </DataTrigger>
+                                                            </Label.Triggers>
+                                                        </Label>
+                                                    </HorizontalStackLayout>
+                                                </Border>
                                             </Grid>
 
                                         </VerticalStackLayout>
@@ -442,18 +508,18 @@
                 </ScrollView>
             </RefreshView>
 
-            <!-- Floating Action Button (+), lower right corner -->
+            <!-- 3. FLOATING ACTION BUTTON (+) in Prepare Teal -->
             <Border Grid.Row="1"
                     WidthRequest="56"
                     HeightRequest="56"
                     StrokeShape="RoundRectangle 28"
                     StrokeThickness="0"
-                    BackgroundColor="#008080"
+                    BackgroundColor="#0A8491"
                     HorizontalOptions="End"
                     VerticalOptions="End"
                     Margin="0,0,20,24">
                 <Border.Shadow>
-                    <Shadow Brush="#000000" Offset="0,4" Radius="8" Opacity="0.25" />
+                    <Shadow Brush="#0A8491" Offset="0,6" Radius="12" Opacity="0.38" />
                 </Border.Shadow>
                 <Border.GestureRecognizers>
                     <TapGestureRecognizer Command="{Binding OpenCreateModalCommand}" />
@@ -491,36 +557,67 @@
 
                 <Grid RowDefinitions="Auto, *, Auto" RowSpacing="14">
 
-                    <!-- Modal Header -->
-                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
-                        <Label Grid.Column="0"
-                               Text="Create Community Report"
-                               TextColor="#0F172A"
-                               FontSize="17"
-                               FontAttributes="Bold"
-                               VerticalOptions="Center" />
+                    <!-- Enhanced Modal Header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                        <!-- Icon Pill -->
+                        <Border Grid.Column="0"
+                                BackgroundColor="#E0F2FE"
+                                WidthRequest="38"
+                                HeightRequest="38"
+                                StrokeShape="RoundRectangle 12"
+                                StrokeThickness="0"
+                                VerticalOptions="Center">
+                            <Path Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2zm0-4H7V7h10v2z"
+                                  Fill="#0A8491"
+                                  WidthRequest="20"
+                                  HeightRequest="20"
+                                  Aspect="Uniform"
+                                  HorizontalOptions="Center"
+                                  VerticalOptions="Center" />
+                        </Border>
 
-                        <!-- Close (X) Button -->
-                        <Button Grid.Column="1"
-                                Text="✕"
-                                TextColor="#64748B"
-                                BackgroundColor="Transparent"
-                                FontSize="18"
-                                Padding="0"
+                        <!-- Title & Moderation Subtitle -->
+                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                            <Label Text="Create Incident Report"
+                                   TextColor="#0F172A"
+                                   FontSize="17"
+                                   FontAttributes="Bold"
+                                   LineBreakMode="TailTruncation"
+                                   MaxLines="1" />
+                            <Label Text="Reports are reviewed by admin before posting"
+                                   TextColor="#64748B"
+                                   FontSize="11"
+                                   LineBreakMode="TailTruncation"
+                                   MaxLines="1" />
+                        </VerticalStackLayout>
+
+                        <!-- Close (X) Button Pill -->
+                        <Border Grid.Column="2"
+                                BackgroundColor="#F1F5F9"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 16"
                                 WidthRequest="32"
                                 HeightRequest="32"
-                                Command="{Binding CloseCreateModalCommand}" />
+                                VerticalOptions="Center">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding CloseCreateModalCommand}" />
+                            </Border.GestureRecognizers>
+                            <Label Text="✕"
+                                   TextColor="#64748B"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center" />
+                        </Border>
                     </Grid>
 
                     <!-- Form Body -->
-                    <ScrollView IsEnabled="{Binding CanEditReport}" Grid.Row="1" VerticalScrollBarVisibility="Never">
+                    <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
                         <VerticalStackLayout Spacing="14">
-
-                            <Label Text="{Binding ReportSubmissionStatus}" TextColor="#9A3412" FontSize="12" LineBreakMode="WordWrap" />
 
                             <!-- Category Selection Dropdown -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Category" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="CATEGORY" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" />
                                 <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,0" HeightRequest="44">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <Picker Grid.Column="0"
@@ -544,25 +641,35 @@
 
                             <!-- Title Input -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Title" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="TITLE" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" />
                                 <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,0" HeightRequest="44">
-                                    <Entry Text="{Binding NewReportTitle}" Placeholder="Incident title..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
+                                    <Entry Text="{Binding NewReportTitle}"
+                                           Placeholder="Incident title..."
+                                           PlaceholderColor="#94A3B8"
+                                           TextColor="#0F172A"
+                                           FontSize="14"
+                                           VerticalOptions="Center" />
                                 </Border>
                             </VerticalStackLayout>
 
                             <!-- Description Input -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Description" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Label Text="DESCRIPTION" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" />
                                 <Border BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,8" HeightRequest="80">
-                                    <Editor Text="{Binding NewReportDescription}" Placeholder="Describe the situation..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" AutoSize="Disabled" />
+                                    <Editor Text="{Binding NewReportDescription}"
+                                            Placeholder="Describe the situation..."
+                                            PlaceholderColor="#94A3B8"
+                                            TextColor="#0F172A"
+                                            FontSize="14"
+                                            AutoSize="Disabled" />
                                 </Border>
                             </VerticalStackLayout>
 
                             <!-- Location Input with INTERACTIVE OSM CHANGE BUTTON -->
                             <VerticalStackLayout Spacing="6">
                                 <Grid ColumnDefinitions="*, Auto">
-                                    <Label Grid.Column="0" Text="Location" TextColor="#475569" FontSize="13" FontAttributes="Bold" VerticalOptions="Center" />
-                                    <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsFetchingLocation}" IsVisible="{Binding IsFetchingLocation}" WidthRequest="16" HeightRequest="16" Color="#008080" />
+                                    <Label Grid.Column="0" Text="INCIDENT LOCATION" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" VerticalOptions="Center" />
+                                    <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsFetchingLocation}" IsVisible="{Binding IsFetchingLocation}" WidthRequest="16" HeightRequest="16" Color="#0A8491" />
                                 </Grid>
 
                                 <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12,0" HeightRequest="48">
@@ -576,7 +683,7 @@
 
                                         <!-- Interactive Change Button -->
                                         <Border Grid.Column="1"
-                                                BackgroundColor="#E6F2F2"
+                                                BackgroundColor="#E0F2FE"
                                                 StrokeThickness="0"
                                                 StrokeShape="RoundRectangle 6"
                                                 HeightRequest="32"
@@ -586,15 +693,14 @@
                                                 <TapGestureRecognizer Command="{Binding OpenMapPickerCommand}" />
                                             </Border.GestureRecognizers>
                                             <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                                <!-- Location Pin Icon -->
                                                 <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-                                                      Fill="#008080"
+                                                      Fill="#0A8491"
                                                       WidthRequest="12"
                                                       HeightRequest="12"
                                                       Aspect="Uniform"
                                                       VerticalOptions="Center" />
                                                 <Label Text="Change"
-                                                       TextColor="#008080"
+                                                       TextColor="#0A8491"
                                                        FontSize="12"
                                                        FontAttributes="Bold"
                                                        VerticalOptions="Center" />
@@ -604,18 +710,20 @@
                                 </Border>
                             </VerticalStackLayout>
 
-                            <Label Text="{Binding ReportLocationStatus}" TextColor="#475569" FontSize="12" LineBreakMode="WordWrap" />
-                            <Button Text="Use GPS incident point" Command="{Binding FetchUserLocationCommand}" TextColor="#008080" BackgroundColor="#E6F2F2" FontSize="12" />
-
-                            <!-- Picture / Media Section -->
+                            <!-- Live Incident Media Section (Camera Only: Photo or Video) -->
                             <VerticalStackLayout Spacing="6">
-                                <Label Text="Picture / Media Attachment" TextColor="#475569" FontSize="13" FontAttributes="Bold" />
+                                <Grid ColumnDefinitions="*, Auto">
+                                    <Label Grid.Column="0" Text="LIVE INCIDENT MEDIA" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" VerticalOptions="Center" />
+                                    <Border Grid.Column="1" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,2">
+                                        <Label Text="Camera Only" TextColor="#0369A1" FontSize="9" FontAttributes="Bold" />
+                                    </Border>
+                                </Grid>
 
                                 <Border BackgroundColor="#F8FAFC"
-                                        Stroke="#CBD5E1"
+                                        Stroke="#0A8491"
                                         StrokeThickness="1.5"
-                                        StrokeShape="RoundRectangle 12"
-                                        HeightRequest="120"
+                                        StrokeShape="RoundRectangle 14"
+                                        HeightRequest="130"
                                         Padding="12">
                                     <Border.StrokeDashArray>
                                         <x:Array Type="{x:Type x:Double}">
@@ -625,27 +733,76 @@
                                     </Border.StrokeDashArray>
 
                                     <Grid>
-                                        <!-- No Media Upload State -->
+                                        <!-- No Media Captured State (Camera Only Action) -->
                                         <VerticalStackLayout Spacing="6"
                                                              HorizontalOptions="Center"
                                                              VerticalOptions="Center"
                                                              IsVisible="{Binding NewReportHasMedia, Converter={StaticResource InverseBoolConverter}}">
-                                            <Path Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-                                                  Fill="#94A3B8"
-                                                  WidthRequest="32"
-                                                  HeightRequest="32"
-                                                  Aspect="Uniform"
-                                                  HorizontalOptions="Center" />
-                                            <Label Text="Capture or Pick Image/Video"
-                                                   TextColor="#64748B"
+                                            <Border BackgroundColor="#E0F2FE"
+                                                    WidthRequest="42"
+                                                    HeightRequest="42"
+                                                    StrokeShape="RoundRectangle 21"
+                                                    StrokeThickness="0"
+                                                    HorizontalOptions="Center">
+                                                <!-- Camera Icon -->
+                                                <Path Data="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm8 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"
+                                                      Fill="#0A8491"
+                                                      WidthRequest="22"
+                                                      HeightRequest="22"
+                                                      Aspect="Uniform"
+                                                      HorizontalOptions="Center"
+                                                      VerticalOptions="Center" />
+                                            </Border>
+
+                                            <Label Text="Capture Photo or Video"
+                                                   TextColor="#0A8491"
                                                    FontSize="13"
+                                                   FontAttributes="Bold"
                                                    HorizontalOptions="Center" />
+
+                                            <HorizontalStackLayout Spacing="8" HorizontalOptions="Center">
+                                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,2">
+                                                    <Label Text="📷 Capture Photo" TextColor="#475569" FontSize="10" FontAttributes="Bold" />
+                                                </Border>
+                                                <Border BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 6" Padding="6,2">
+                                                    <Label Text="📹 Capture Video" TextColor="#475569" FontSize="10" FontAttributes="Bold" />
+                                                </Border>
+                                            </HorizontalStackLayout>
                                         </VerticalStackLayout>
 
-                                        <!-- Uploaded Media Preview State -->
-                                        <Grid IsVisible="{Binding NewReportHasMedia}" ColumnDefinitions="*, Auto">
-                                            <Image Grid.Column="0" Source="{Binding NewReportMediaUrl}" Aspect="AspectFill" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
-                                            <Button Grid.Column="1" Text="✕ Remove" TextColor="#EF4444" BackgroundColor="#FEE2E2" FontSize="11" FontAttributes="Bold" CornerRadius="6" HeightRequest="28" Padding="8,0" Margin="8" Command="{Binding RemoveMediaCommand}" VerticalOptions="Start" />
+                                        <!-- Captured Media Preview State -->
+                                        <Grid IsVisible="{Binding NewReportHasMedia}">
+                                            <Border StrokeShape="RoundRectangle 10" StrokeThickness="0" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand">
+                                                <Image Source="{Binding NewReportMediaUrl}" Aspect="AspectFill" HorizontalOptions="FillAndExpand" VerticalOptions="FillAndExpand" />
+                                            </Border>
+
+                                            <!-- Media Type Badge on top left -->
+                                            <Border BackgroundColor="#0A8491"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 6"
+                                                    Padding="6,3"
+                                                    HorizontalOptions="Start"
+                                                    VerticalOptions="Start"
+                                                    Margin="8">
+                                                <Label Text="{Binding NewReportMediaType, StringFormat='Captured {0}'}"
+                                                       TextColor="#FFFFFF"
+                                                       FontSize="10"
+                                                       FontAttributes="Bold" />
+                                            </Border>
+
+                                            <!-- Retake Button on top right -->
+                                            <Border BackgroundColor="#FEE2E2"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 6"
+                                                    Padding="8,4"
+                                                    HorizontalOptions="End"
+                                                    VerticalOptions="Start"
+                                                    Margin="8">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding RemoveMediaCommand}" />
+                                                </Border.GestureRecognizers>
+                                                <Label Text="✕ Retake" TextColor="#EF4444" FontSize="11" FontAttributes="Bold" />
+                                            </Border>
                                         </Grid>
                                     </Grid>
 
@@ -656,24 +813,46 @@
                             </VerticalStackLayout>
 
                             <!-- Allow Comments Checkbox -->
-                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center" Margin="0,4,0,0">
-                                <CheckBox IsChecked="{Binding NewReportAllowComments}" Color="#008080" VerticalOptions="Center" />
-                                <Label Text="Allow community comments" TextColor="#475569" FontSize="14" VerticalOptions="Center" />
+                            <HorizontalStackLayout Spacing="8" VerticalOptions="Center" Margin="0,2,0,0">
+                                <CheckBox IsChecked="{Binding NewReportAllowComments}" Color="#0A8491" VerticalOptions="Center" />
+                                <Label Text="Allow community comments" TextColor="#475569" FontSize="13" VerticalOptions="Center" />
                             </HorizontalStackLayout>
+
+                            <!-- Admin Moderation Notice Callout -->
+                            <Border BackgroundColor="#F0FDFA"
+                                    Stroke="#99F6E4"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 10"
+                                    Padding="10,8">
+                                <Grid ColumnDefinitions="Auto, *" ColumnSpacing="8" VerticalOptions="Center">
+                                    <Path Grid.Column="0"
+                                          Data="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"
+                                          Fill="#0D9488"
+                                          WidthRequest="16"
+                                          HeightRequest="16"
+                                          Aspect="Uniform"
+                                          VerticalOptions="Center" />
+                                    <Label Grid.Column="1"
+                                           Text="Your report will be reviewed and approved by administrators before appearing on the public feed."
+                                           TextColor="#0F766E"
+                                           FontSize="11"
+                                           VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
 
                         </VerticalStackLayout>
                     </ScrollView>
 
                     <!-- Modal Submit Button -->
                     <Button Grid.Row="2"
-                            Text="Submit report for review"
+                            Text="Submit Report for Approval"
                             TextColor="#FFFFFF"
-                            BackgroundColor="#008080"
+                            BackgroundColor="#0A8491"
                             FontSize="15"
                             FontAttributes="Bold"
                             CornerRadius="12"
                             HeightRequest="48"
-                            Command="{Binding SubmitReportCommand}" IsEnabled="{Binding CanEditReport}" />
+                            Command="{Binding SubmitReportCommand}" />
                 </Grid>
             </Border>
         </Grid>
@@ -699,28 +878,33 @@
                 </Border.Shadow>
 
                 <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center">
-                    <Border WidthRequest="80"
-                            HeightRequest="80"
-                            StrokeShape="RoundRectangle 40"
+                    <Border WidthRequest="72"
+                            HeightRequest="72"
+                            StrokeShape="RoundRectangle 36"
                             Stroke="#15803D"
-                            StrokeThickness="4"
-                            BackgroundColor="Transparent"
+                            StrokeThickness="3"
+                            BackgroundColor="#DCFCE7"
                             HorizontalOptions="Center">
                         <Path Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
                               Fill="#15803D"
-                              WidthRequest="40"
-                              HeightRequest="40"
+                              WidthRequest="36"
+                              HeightRequest="36"
                               Aspect="Uniform"
                               HorizontalOptions="Center"
                               VerticalOptions="Center" />
                     </Border>
 
-                    <Label Text="Report submitted"
-                           TextColor="#15803D"
-                           FontSize="22"
+                    <Label Text="Report Submitted!"
+                           TextColor="#0F172A"
+                           FontSize="20"
                            FontAttributes="Bold"
                            HorizontalOptions="Center" />
-                    <Label Text="Accepted for review. Administrator approval is required for public visibility." TextColor="#475569" FontSize="12" HorizontalTextAlignment="Center" />
+
+                    <Label Text="Your report has been submitted to the admin team for review. It will be published to the community feed once approved."
+                           TextColor="#64748B"
+                           FontSize="12"
+                           HorizontalTextAlignment="Center"
+                           HorizontalOptions="Center" />
                 </VerticalStackLayout>
             </Border>
         </Grid>
@@ -756,11 +940,11 @@
                     </Grid>
 
                     <!-- Interactive OSM Search Input -->
-                    <Border Grid.Row="1" BackgroundColor="#FFFFFF" Stroke="#008080" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12,0" HeightRequest="46">
+                    <Border Grid.Row="1" BackgroundColor="#FFFFFF" Stroke="#0A8491" StrokeThickness="1.5" StrokeShape="RoundRectangle 12" Padding="12,0" HeightRequest="46">
                         <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="8" VerticalOptions="Center">
-                            <Path Grid.Column="0" Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" Fill="#008080" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                            <Path Grid.Column="0" Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" Fill="#0A8491" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
                             <Entry Grid.Column="1" Text="{Binding MapSearchQuery, Mode=TwoWay}" Placeholder="Search any street, barangay or city in OSM..." PlaceholderColor="#94A3B8" TextColor="#0F172A" FontSize="14" VerticalOptions="Center" />
-                            <ActivityIndicator Grid.Column="2" IsRunning="{Binding IsSearchingOsm}" IsVisible="{Binding IsSearchingOsm}" WidthRequest="18" HeightRequest="18" Color="#008080" VerticalOptions="Center" />
+                            <ActivityIndicator Grid.Column="2" IsRunning="{Binding IsSearchingOsm}" IsVisible="{Binding IsSearchingOsm}" WidthRequest="18" HeightRequest="18" Color="#0A8491" VerticalOptions="Center" />
                         </Grid>
                     </Border>
 
@@ -770,20 +954,20 @@
 
                             <!-- OSM Live Search Results Section -->
                             <VerticalStackLayout Spacing="6" IsVisible="{Binding OsmSearchResults.Count, Converter={StaticResource InverseBoolConverter}, ConverterParameter='Inverse'}">
-                                <Label Text="OpenStreetMap Search Results" TextColor="#008080" FontSize="12" FontAttributes="Bold" />
+                                <Label Text="OPENSTREETMAP RESULTS" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" />
 
                                 <CollectionView ItemsSource="{Binding OsmSearchResults}">
                                     <CollectionView.ItemTemplate>
                                         <DataTemplate x:DataType="services:OsmSearchResult">
-                                            <Border BackgroundColor="#F0FDF4" Stroke="#DCFCE7" StrokeThickness="1" StrokeShape="RoundRectangle 10" Padding="12" Margin="0,3">
+                                            <Border BackgroundColor="#F0FDFA" Stroke="#CCFBF1" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12" Margin="0,3">
                                                 <Border.GestureRecognizers>
                                                     <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.SelectOsmLocationCommand, x:DataType=local:ReportsPage}" CommandParameter="{Binding .}" />
                                                 </Border.GestureRecognizers>
                                                 <Grid ColumnDefinitions="Auto, *" ColumnSpacing="10" VerticalOptions="Center">
-                                                    <Path Grid.Column="0" Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#166534" WidthRequest="20" HeightRequest="20" Aspect="Uniform" VerticalOptions="Center" />
+                                                    <Path Grid.Column="0" Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#0A8491" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
                                                     <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
                                                         <Label Text="{Binding Name}" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" LineBreakMode="WordWrap" />
-                                                        <Label Text="{Binding DisplayName}" TextColor="#15803D" FontSize="12" LineBreakMode="WordWrap" />
+                                                        <Label Text="{Binding DisplayName}" TextColor="#0F766E" FontSize="12" LineBreakMode="WordWrap" />
                                                     </VerticalStackLayout>
                                                 </Grid>
                                             </Border>
@@ -794,7 +978,7 @@
 
                             <!-- Preset Locations Section -->
                             <VerticalStackLayout Spacing="6" Margin="0,4,0,0">
-                                <Label Text="Popular Locations in Marikina" TextColor="#64748B" FontSize="12" FontAttributes="Bold" />
+                                <Label Text="POPULAR LOCATIONS IN MARIKINA" TextColor="#64748B" FontSize="11" FontAttributes="Bold" CharacterSpacing="0.6" />
 
                                 <CollectionView ItemsSource="{Binding PresetLocations}">
                                     <CollectionView.ItemTemplate>
@@ -804,7 +988,7 @@
                                                     <TapGestureRecognizer Command="{Binding Source={x:Reference ReportsPageRoot}, Path=ViewModel.SelectPresetLocationCommand, x:DataType=local:ReportsPage}" CommandParameter="{Binding .}" />
                                                 </Border.GestureRecognizers>
                                                 <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
-                                                    <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#008080" WidthRequest="18" HeightRequest="18" Aspect="Uniform" VerticalOptions="Center" />
+                                                    <Path Data="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" Fill="#0A8491" WidthRequest="16" HeightRequest="16" Aspect="Uniform" VerticalOptions="Center" />
                                                     <Label Text="{Binding .}" TextColor="#0F172A" FontSize="13" VerticalOptions="Center" LineBreakMode="WordWrap" />
                                                 </HorizontalStackLayout>
                                             </Border>
@@ -817,15 +1001,88 @@
                     </ScrollView>
 
                     <!-- Confirm Custom Button -->
-                    <VerticalStackLayout Grid.Row="3" Spacing="4">
-                        <Label Text="{Binding ReportLocationStatus}" TextColor="#475569" FontSize="11" LineBreakMode="WordWrap" />
-                        <Button Text="Search for this incident location" TextColor="#FFFFFF" BackgroundColor="#008080" FontSize="14" FontAttributes="Bold" CornerRadius="10" HeightRequest="44" Command="{Binding ConfirmCustomMapLocationCommand}" />
-                    </VerticalStackLayout>
+                    <Button Grid.Row="3" Text="Use Typed Custom Address" TextColor="#FFFFFF" BackgroundColor="#0A8491" FontSize="14" FontAttributes="Bold" CornerRadius="12" HeightRequest="44" Command="{Binding ConfirmCustomMapLocationCommand}" />
                 </Grid>
             </Border>
         </Grid>
 
+        <!-- ============================================================== -->
+        <!-- MODAL OVERLAY 4: REALTIME ADVISORY POPUP -->
+        <!-- ============================================================== -->
+        <Grid BackgroundColor="#99000000"
+              IsVisible="{Binding IsPopupVisible}"
+              VerticalOptions="FillAndExpand"
+              HorizontalOptions="FillAndExpand">
 
+            <Border BackgroundColor="#FFFFFF"
+                    Margin="20"
+                    StrokeThickness="0"
+                    StrokeShape="RoundRectangle 24"
+                    VerticalOptions="Center"
+                    MaximumHeightRequest="600">
+                <Border.Shadow>
+                    <Shadow Brush="#000000" Offset="0,12" Radius="24" Opacity="0.4" />
+                </Border.Shadow>
+
+                <VerticalStackLayout Spacing="0">
+                    <!-- Advisory Header Bar -->
+                    <Border BackgroundColor="{Binding SelectedAdvisory.AlertBadgeBg}"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 24,24,0,0"
+                            Padding="16,14">
+                        <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="10" VerticalOptions="Center">
+                            <Path Grid.Column="0" Data="{Binding SelectedAdvisory.CategoryIconData}" Fill="{Binding SelectedAdvisory.AlertBadgeText}" WidthRequest="22" HeightRequest="22" Aspect="Uniform" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                                <Label Text="DISASTER ADVISORY" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="10" FontAttributes="Bold" CharacterSpacing="0.8" />
+                                <Label Text="{Binding SelectedAdvisory.DisplayAlertLevelText}" TextColor="{Binding SelectedAdvisory.AlertBadgeText}" FontSize="15" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+
+                            <Border Grid.Column="2" BackgroundColor="#FFFFFF" StrokeThickness="0" StrokeShape="RoundRectangle 14" WidthRequest="32" HeightRequest="32" VerticalOptions="Center">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ClosePopupCommand}" />
+                                </Border.GestureRecognizers>
+                                <Label Text="✕" TextColor="#64748B" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Advisory Content -->
+                    <ScrollView MaximumHeightRequest="380" Padding="20">
+                        <VerticalStackLayout Spacing="14">
+                            <Label Text="{Binding SelectedAdvisory.DisplayTitleText}" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" />
+                            <Label Text="{Binding SelectedAdvisory.DisplayMessageText}" TextColor="#334155" FontSize="13" LineBreakMode="WordWrap" />
+
+                            <Border IsVisible="{Binding SelectedAdvisory.HasActionPlan}" BackgroundColor="#FFFBEB" Stroke="#FDE68A" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="14,10">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="{Binding SelectedAdvisory.ActionPlanHeaderTagText}" TextColor="#B45309" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayActionPlanText}" TextColor="#92400E" FontSize="12" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Border BackgroundColor="#F8FAFC" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="12,10">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding SelectedAdvisory.AffectedAreaHeaderTagText}" TextColor="#64748B" FontSize="10" FontAttributes="Bold" />
+                                    <Label Text="{Binding SelectedAdvisory.DisplayAffectedAreaText}" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Border>
+
+                            <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
+                                <Label Text="{Binding SelectedAdvisory.CreatedAtText}" TextColor="#94A3B8" FontSize="11" VerticalOptions="Center" />
+                                <Border Grid.Column="1" IsVisible="{Binding SelectedAdvisory.ShowWaterLevel}" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" Padding="8,4">
+                                    <Label Text="{Binding SelectedAdvisory.WaterLevelText}" TextColor="#0284C7" FontSize="11" FontAttributes="Bold" />
+                                </Border>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                    <!-- Advisory Footer Actions -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Padding="20,16" BackgroundColor="#F8FAFC">
+                        <Button Grid.Column="0" Text="{Binding SelectedAdvisory.CloseButtonText}" TextColor="#475569" BackgroundColor="#E2E8F0" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding ClosePopupCommand}" />
+                        <Button Grid.Column="1" Text="{Binding SelectedAdvisory.DetailsButtonText}" TextColor="#FFFFFF" BackgroundColor="#0A8491" CornerRadius="12" HeightRequest="44" FontSize="13" FontAttributes="Bold" Command="{Binding GoToAdvisoriesFeedCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
 
     </Grid>
 </ContentPage>

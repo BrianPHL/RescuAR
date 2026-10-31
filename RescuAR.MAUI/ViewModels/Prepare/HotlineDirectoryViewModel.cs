@@ -144,4 +144,20 @@ public partial class HotlineDirectoryViewModel : ObservableObject
             System.Diagnostics.Debug.WriteLine($"Phone call error: {ex.Message}");
         }
     }
+
+    [RelayCommand]
+    private async Task BackAsync()
+    {
+        if (Shell.Current != null)
+        {
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
+        }
+    }
 }

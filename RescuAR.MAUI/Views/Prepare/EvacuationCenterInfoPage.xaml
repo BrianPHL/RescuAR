@@ -9,11 +9,54 @@
     x:DataType="vm:EvacuationCenterInfoViewModel"
     x:Name="thisPage"
     Title="Evacuation Centers"
+    Shell.NavBarIsVisible="False"
     BackgroundColor="#F8FAFC">
 
-    <Grid>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top Custom Header Bar with Back Button and Title Banner (RescuAR Teal Brand Palette) -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0A8491"
+                StrokeThickness="0"
+                Padding="16,11">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                <!-- Back Button Pill with Professional Triangle Back Arrow (same as Community Reports) -->
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="16"
+                          HeightRequest="16"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Border>
+
+                <!-- Title Banner -->
+                <Label Grid.Column="1"
+                       Text="Evacuation Centers"
+                       TextColor="#FFFFFF"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1" />
+
+                <!-- Spacer to ensure title remains perfectly centered -->
+                <BoxView Grid.Column="2" WidthRequest="36" HeightRequest="36" Color="Transparent" />
+            </Grid>
+        </Border>
+
         <!-- Virtualized Shelters CollectionView with Pull-To-Refresh -->
-        <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}" RefreshColor="#007E8A">
+        <RefreshView Grid.Row="1" IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}" RefreshColor="#007E8A">
             <CollectionView ItemsSource="{Binding EvacuationCenters}" SelectionMode="None">
                 
                 <!-- Collection Header: Search, Category Picker & Section Title -->
@@ -158,14 +201,6 @@
                                 <VerticalStackLayout Spacing="12" Margin="0,2,0,0">
                                     <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
                                         <HorizontalStackLayout.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding ViewModel.NavigateTo2DMapCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}" CommandParameter="{Binding .}" />
-                                        </HorizontalStackLayout.GestureRecognizers>
-                                        <Label Text="Start 2D Map Guidance (Journey)" TextColor="#0284C7" FontSize="14" FontAttributes="Bold" />
-                                        <Path Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z" Fill="#0284C7" WidthRequest="12" HeightRequest="12" Aspect="Uniform" />
-                                    </HorizontalStackLayout>
-
-                                    <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                                        <HorizontalStackLayout.GestureRecognizers>
                                             <TapGestureRecognizer 
                                                 Command="{Binding ViewModel.NavigateToCameraCommand, Source={x:Reference thisPage}, x:DataType=local:EvacuationCenterInfoPage}"
                                                 CommandParameter="{Binding .}" />
@@ -228,7 +263,7 @@
         </RefreshView>
 
         <!-- FULL DETAILS OVERLAY POPUP DIALOG -->
-        <Grid IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#660F172A" Padding="16,20">
+        <Grid Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsDetailsPopupVisible}" BackgroundColor="#660F172A" Padding="16,20">
             <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 24" Padding="18,16" VerticalOptions="Center" MaximumHeightRequest="620">
                 <Border.Shadow>
                     <Shadow Brush="#0F172A" Offset="0,10" Radius="20" Opacity="0.2" />
@@ -377,9 +412,6 @@
 
                     <!-- Row 2: Fixed Bottom Action Buttons -->
                     <VerticalStackLayout Grid.Row="2" Spacing="8" Margin="0,4,0,0">
-                        <Button Text="Start 2D Map Guidance (Journey)" TextColor="White" BackgroundColor="#0284C7"
-                                CornerRadius="14" HeightRequest="46" FontSize="14" FontAttributes="Bold"
-                                Command="{Binding Start2DNavigationCommand}" />
                         <Button Text="Start AR Evacuation Guidance" 
                                 TextColor="#FFFFFF" 
                                 BackgroundColor="#0A8491" 
@@ -418,7 +450,7 @@
         </Grid>
 
         <!-- FULL ENLARGED MAP VIEW OVERLAY DIALOG -->
-        <Grid IsVisible="{Binding IsEnlargedMapVisible}" BackgroundColor="#CC0F172A" Padding="14,24">
+        <Grid Grid.Row="0" Grid.RowSpan="2" IsVisible="{Binding IsEnlargedMapVisible}" BackgroundColor="#CC0F172A" Padding="14,24">
             <Border StrokeThickness="0" BackgroundColor="#FFFFFF" StrokeShape="RoundRectangle 24" Padding="0">
                 <Border.Shadow>
                     <Shadow Brush="#0F172A" Offset="0,12" Radius="24" Opacity="0.25" />

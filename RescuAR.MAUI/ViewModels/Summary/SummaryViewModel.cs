@@ -77,6 +77,9 @@ public partial class SummaryViewModel : ObservableObject
     [ObservableProperty]
     private string lastViewedAdvisoryText = "Active Advisory Feed";
 
+    [ObservableProperty]
+    private int unreadNotificationsCount = 1;
+
     // Dynamic Severity Colors
     [ObservableProperty]
     private string badgeBgColor = "#DCFCE7";
@@ -395,11 +398,24 @@ public partial class SummaryViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task BackAsync()
+    {
+        await GoBackAsync();
+    }
+
+    [RelayCommand]
     private async Task GoBackAsync()
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("..");
+            try
+            {
+                await Shell.Current.GoToAsync("..");
+            }
+            catch
+            {
+                await Shell.Current.GoToAsync("//Home");
+            }
         }
     }
 
