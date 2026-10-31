@@ -10,16 +10,45 @@
     Shell.NavBarIsVisible="False">
 
     <Grid RowDefinitions="Auto,*">
-        <!-- Top Custom Header Bar -->
-        <Border Grid.Row="0" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="0,0,0,1" Padding="16,12">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <Border Grid.Column="0" BackgroundColor="#F1F5F9" StrokeThickness="0" StrokeShape="RoundRectangle 16" WidthRequest="36" HeightRequest="36">
+        <!-- Top Custom Header Bar with Back Button and Title Banner (RescuAR Teal Brand Palette) -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0A8491"
+                StrokeThickness="0"
+                Padding="16,11">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                <!-- Back Button Pill with Professional Triangle Back Arrow (same as Community Reports) -->
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
                     <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding BackCommand}" />
                     </Border.GestureRecognizers>
-                    <Label Text="←" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="16"
+                          HeightRequest="16"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
                 </Border>
-                <Label Grid.Column="1" Text="Flood Documentaries" TextColor="#0F172A" FontSize="17" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+
+                <!-- Title Banner -->
+                <Label Grid.Column="1"
+                       Text="Flood Documentaries"
+                       TextColor="#FFFFFF"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1" />
+
+                <!-- Spacer to ensure title remains perfectly centered -->
+                <BoxView Grid.Column="2" WidthRequest="36" HeightRequest="36" Color="Transparent" />
             </Grid>
         </Border>
 
