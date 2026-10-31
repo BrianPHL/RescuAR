@@ -1,328 +1,212 @@
-using System.Collections.ObjectModel;
+using System;
+using System.IO;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Maui.Controls;
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Devices;
+using Microsoft.Maui.Dispatching;
 using Mapsui;
 using Mapsui.UI.Maui;
-using RescuAR.App.Services.SafetyCircle;
-using RescuAR.MAUI.Services.Navigation;
+using Mapsui.Nts;
+using System.Linq;
+using NetTopologySuite.Geometries;
+using Microsoft.Maui.Devices.Sensors;
+using System.Collections.ObjectModel;
+using RescuAR.App.Models;
 
 namespace RescuAR.App.ViewModels.Map;
 
-public partial class CircleMember : ObservableObject
+public class CircleMember
 {
-    public required CirclePresence Presence { get; init; }
-    public string UserId => Presence.Person.UserId;
-    public string Name { get; init; } = "";
-    public string PhoneNumber => Presence.Person.Phone;
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
     public bool HasPhoneNumber => !string.IsNullOrWhiteSpace(PhoneNumber);
-    public string Initials { get; init; } = "";
-    [ObservableProperty] private string locationSubtitle = "";
-    public string SinceTimeText { get; init; } = "";
-    public string BatteryText => Presence.BatteryPercent is { } percent ? $"{percent}%{(Presence.IsCharging ? " ⚡" : "")}" : "Unknown";
-    public Color BatteryColor => Presence.BatteryPercent is null || !Presence.IsRecent ? Colors.Gray : Presence.IsCharging ? Colors.RoyalBlue : Presence.BatteryPercent <= 20 ? Colors.Crimson : Colors.Teal;
-    public Color ColorTheme { get; init; } = Colors.Gray;
-    public bool HasPosition => Presence.Position is not null;
-    public double Latitude => Presence.Position?.Latitude ?? double.NaN;
-    public double Longitude => Presence.Position?.Longitude ?? double.NaN;
-    public string PinImage { get; set; } = "";
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasAvatarUrl), nameof(HasNoAvatarUrl))] private ImageSource? avatarImage;
-    public bool HasAvatarUrl => AvatarImage is not null;
+    public string Initials { get; set; } = string.Empty;
+    public string StatusText { get; set; } = "Online";
+    public string LocationSubtitle { get; set; } = "Near Current Location";
+    public string SinceTimeText { get; set; } = "Since Just Now";
+    public string BatteryText { get; set; } = "100%";
+    public string BatteryIcon { get; set; } = "🔋";
+    public Microsoft.Maui.Graphics.Color BatteryColor { get; set; } = Microsoft.Maui.Graphics.Color.FromArgb("#16A34A");
+    public bool HasBattery => true;
+    public bool IsCharging { get; set; } = false;
+    public Microsoft.Maui.Graphics.Color ColorTheme { get; set; } = Microsoft.Maui.Graphics.Colors.Teal;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public string AvatarUrl { get; set; } = string.Empty;
+    public bool HasAvatarUrl => !string.IsNullOrWhiteSpace(AvatarUrl);
     public bool HasNoAvatarUrl => !HasAvatarUrl;
+    public string AvatarImageSource { get; set; } = string.Empty;
+    public bool IsMe { get; set; } = false;
+    public bool IsSafe { get; set; } = true;
+    public string MemberStatusLine => $"{SinceTimeText} • {BatteryText}";
 }
 
 public partial class SafetyCircleViewModel : ObservableObject
 {
-    private readonly CircleMembershipService memberships = CircleMembershipRuntime.Current;
-    private readonly CircleMapCoordinator coordinator;
-    private readonly IDispatcherTimer timer;
-    private readonly HttpClient photos = new() { Timeout = TimeSpan.FromSeconds(5) };
-    private readonly Dictionary<string, byte[]> avatarBytes = new();
-    private readonly Dictionary<string, string> placeNames = new();
-    private readonly SemaphoreSlim avatarRequests = new(3, 3);
-    private CircleMembershipScope? owner;
-    private CancellationTokenSource? page;
-    private long version;
-    private bool polling;
-    private bool settingSharing;
-    private bool enablingSharing;
-    private long sharingRequest;
-    private bool centered;
-    private readonly OfflineMapLayerController offlineLayers;
-    [ObservableProperty] private string offlineMapStatus = "";
-    private string selectedId = "";
-    public ObservableCollection<CircleMembership> MyCircles { get; } = new();
+    [ObservableProperty]
+    private Mapsui.Map _map = new();
+
+    [ObservableProperty]
+    private string _selectedCircleName = "Select a Circle";
+
+    [ObservableProperty]
+    private bool _isPeopleSheetOpen = false;
+
+    [ObservableProperty]
+    private bool _isCircleDropdownOpen = false;
+
+    [ObservableProperty]
+    private bool _isCreatedCirclePopupOpen = false;
+
+    [ObservableProperty]
+    private string _newlyCreatedCircleName = string.Empty;
+
+    [ObservableProperty]
+    private string _newlyCreatedInviteCode = string.Empty;
+
+    [ObservableProperty]
+    private bool _isCopiedSuccess = false;
+
+    // --- First-time Guide Wizard & Custom Delete Dialog ---
+    [ObservableProperty]
+    private bool _isTutorialPopupVisible;
+
+    [ObservableProperty]
+    private bool _isDeleteConfirmPopupVisible;
+
+    [ObservableProperty]
+    private SupabaseSafetyCircle? _circleToDelete;
+
     public ObservableCollection<CircleMember> CircleMembers { get; } = new();
-    [ObservableProperty] private Mapsui.Map map = new();
-    [ObservableProperty] private string selectedCircleName = "Select a Circle";
-    [ObservableProperty] private bool isCircleDropdownOpen;
-    [ObservableProperty] private bool isSharingEnabled;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanOpenCircleAction), nameof(CanShowInlineInvite))] private bool isBusy;
-    [ObservableProperty] private string statusMessage = "";
-    [ObservableProperty] private string sharingStatus = "Sharing Off.";
+    public ObservableCollection<SupabaseSafetyCircle> MyCircles { get; } = new();
 
-    public SafetyCircleViewModel()
-    {
-        offlineLayers = new(message => OfflineMapStatus = message);
-        coordinator = new(memberships, new SupabaseCirclePresenceRemote(CircleMembershipRuntime.Context), new MauiCircleDeviceReader(), () => DateTimeOffset.UtcNow);
-        timer = Application.Current?.Dispatcher?.CreateTimer() ?? throw new InvalidOperationException("A page dispatcher is required.");
-        timer.Interval = TimeSpan.FromSeconds(5);
-        timer.Tick += async (_, _) => await Task.WhenAll(PollAsync(), RefreshLocalLocationAsync());
-    }
-    private void Require(CircleMembershipScope scope, long request)
-    {
-        if (page is null || page.IsCancellationRequested || version != request || owner != scope) throw new OperationCanceledException();
-        memberships.Require(scope);
-    }
-    public async Task StartAsync(MapControl control)
-    {
-        Stop();
-        long request = version;
-        try
-        {
-            owner = memberships.Capture(); page = new(); coordinator.Start();
-            if (!Map.Layers.Any())
-            {
-                Map = new Mapsui.Map { CRS = "EPSG:3857" };
-                Map.Layers.Add(MapBaseLayer.CreateOnlineLayer("CircleOnlineBase"));
-                ZoomReset();
-            }
-            foreach (var layer in Map.Layers) layer.Enabled = true;
-            control.Map = Map;
-            _ = PrepareDisplayAsync(request, page.Token);
-            _ = RefreshLocalLocationAsync();
-            await PollAsync();
-            if (request == version && page is not null) timer.Start();
-        }
-        catch (OperationCanceledException) { if (request == version) { Stop(); StatusMessage = "Your account changed. Reopen the Map tab."; } }
-        catch { if (request == version) StatusMessage = "Circle data could not be loaded. Check your sign-in and connection, then Refresh."; }
-    }
-    private async Task PrepareDisplayAsync(long request, CancellationToken token)
-    {
-        if (token.IsCancellationRequested || request != version) return;
-        await offlineLayers.ActivateAsync(Map);
-    }
-    public void Stop()
-    {
-        offlineLayers.Deactivate();
-        Interlocked.Increment(ref version); timer.Stop(); coordinator.Stop();
-        page?.Cancel(); page?.Dispose(); page = null; owner = null;
-        settingSharing = true; IsSharingEnabled = false; settingSharing = false;
-        sharingRequest++; enablingSharing = false;
-        IsBusy = false; polling = false; selectedId = ""; centered = false; IsCircleDropdownOpen = false;
-        localReading = null; locating = localPermissionChecked = localPermissionGranted = false;
-        ResetInlineCircleActions();
-        IsPeopleSheetOpen = IsMapDetailsOpen = false; LocalLocationStatus = "Your device position is unavailable.";
-        SelectedCircleName = "Select a Circle"; StatusMessage = ""; SharingStatus = "Sharing Off. No new positions are uploaded.";
-        MyCircles.Clear(); CircleMembers.Clear(); avatarBytes.Clear(); placeNames.Clear();
-        foreach (var layer in Map.Layers) layer.Enabled = false;
-        var oldPins = Map.Layers.FirstOrDefault(layer => layer.Name == "MapPins");
-        if (oldPins is not null) { Map.Layers.Remove(oldPins); oldPins.Dispose(); }
-    }
-    partial void OnIsSharingEnabledChanged(bool value)
-    {
-        if (settingSharing) return;
-        if (!value) { sharingRequest++; enablingSharing = false; coordinator.SetSharing(false); SharingStatus = "Sharing Off. Previous last-known records remain."; return; }
-        _ = EnableSharingAsync();
-    }
-    private async Task EnableSharingAsync()
-    {
-        if (owner is not { } scope || page is null) { ResetSharing(); return; }
-        long request = version, toggle = ++sharingRequest;
-        enablingSharing = true;
-        try
-        {
-            Require(scope, request);
-            var permission = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
-            if (permission != PermissionStatus.Granted) permission = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
-            Require(scope, request);
-            if (!IsSharingEnabled || toggle != sharingRequest) return;
-            if (permission != PermissionStatus.Granted) { ResetSharing(); SharingStatus = "Sharing Off — location permission was not granted."; return; }
-            coordinator.SetSharing(true); SharingStatus = "Sharing On — waiting for a valid location and confirmed membership.";
-            await PollAsync();
-        }
-        catch { if (request == version && toggle == sharingRequest) { ResetSharing(); SharingStatus = "Sharing Off — permission or account could not be confirmed."; } }
-        finally { if (toggle == sharingRequest) enablingSharing = false; }
-    }
-    private void ResetSharing() { sharingRequest++; enablingSharing = false; coordinator.SetSharing(false); settingSharing = true; IsSharingEnabled = false; settingSharing = false; }
+    private Mapsui.Layers.MemoryLayer _pinsLayer = null!;
+    private readonly RescuAR.App.Services.Cloud.SafetyCircleService _safetyCircleService;
+    private readonly IDispatcherTimer _locationTimer;
+    private string _currentCircleId = "";
+    private bool _hasCenteredOnUser = false;
 
-    private async Task PollAsync()
+    private readonly System.Net.Http.HttpClient _httpClient = new();
+
+    public SafetyCircleViewModel(RescuAR.App.Services.Cloud.SafetyCircleService safetyCircleService)
     {
-        if (polling || IsCircleActionBusy || IsCreateCircleOpen || IsJoinCircleOpen || owner is not { } scope || page is null) return;
-        long request = version; var token = page.Token;
-        polling = true; IsBusy = true;
+        _safetyCircleService = safetyCircleService;
+
+        _isTutorialPopupVisible = !Preferences.Default.Get("HasSeenSafetyCircleTutorial", false);
+
+        _locationTimer = Application.Current?.Dispatcher?.CreateTimer()
+            ?? throw new InvalidOperationException("MAUI dispatcher is not available.");
+        _locationTimer.Interval = TimeSpan.FromSeconds(5);
+        _locationTimer.Tick += async (s, e) => await PollLocationsAsync();
+    }
+
+    public async Task LoadMyCirclesAsync()
+    {
         try
         {
-            var snapshot = await coordinator.PollAsync();
-            Require(scope, request);
-            if (snapshot is null) return;
-            MyCircles.Clear(); foreach (var circle in snapshot.Memberships.Circles) MyCircles.Add(circle);
-            selectedId = snapshot.Memberships.SelectedId;
-            inlineMembershipsCached = snapshot.Memberships.IsCached;
-            IsInlineInviteAvailable = MyCircles.Any(circle => circle.Id == selectedId);
-            SelectedCircleName = MyCircles.FirstOrDefault(circle => circle.Id == selectedId)?.Name ?? "No Circles joined";
-            StatusMessage = snapshot.Memberships.CacheSaved ? snapshot.Notice : snapshot.Memberships.Notice + " " + snapshot.Notice;
-            if (snapshot.Memberships.IsCached) StatusMessage += " Circle list is cached / offline.";
-            SharingStatus = !IsSharingEnabled ? "Sharing Off. No new positions are uploaded; last-known records remain." : enablingSharing ? "Confirming location permission…" : snapshot.SharingNotice;
-            if (!coordinator.SharingEnabled && IsSharingEnabled && !enablingSharing) ResetSharing();
-            var rows = snapshot.People.Select(person => Row(person, scope.UserId, snapshot.PeopleCached)).ToList();
-            CircleMembers.Clear(); foreach (var row in rows) CircleMembers.Add(row);
-            UpdateMapMarkers();
-            await Task.WhenAll(rows.SelectMany(row => new[] { LoadAvatarAsync(row, scope, request, token), LoadPlaceAsync(row, scope, request, token) }));
-            Require(scope, request); UpdateMapMarkers();
-        }
-        catch (OperationCanceledException) { if (request == version) { Stop(); StatusMessage = "The account or Circle screen changed. Reopen the Map tab."; } }
-        catch
-        {
-            if (request == version)
+            var circles = await _safetyCircleService.GetMyCirclesAsync();
+            MainThread.BeginInvokeOnMainThread(() =>
             {
-                ResetSharing(); MyCircles.Clear(); CircleMembers.Clear(); IsInlineInviteAvailable = false; selectedId = ""; SelectedCircleName = "Membership not confirmed"; UpdateMapMarkers();
-                StatusMessage = "Circle access or member readings could not be confirmed. Refresh before continuing.";
-                SharingStatus = "Sharing Off. No new positions are uploaded.";
-            }
-        }
-        finally { if (request == version) { polling = false; IsBusy = false; } }
-    }
-    internal static CircleMember Row(CirclePresence presence, string self, bool cached)
-    {
-        string name = presence.Person.Name + (presence.Person.UserId == self ? " (You)" : "");
-        string initials = string.Concat(presence.Person.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
-        return new() { Presence = presence, Name = name, Initials = initials.Length > 0 ? initials : "?",
-            LocationSubtitle = presence.Position is { } position ? $"Last shared: {position.Latitude:F5}, {position.Longitude:F5}" : "Location unavailable",
-            SinceTimeText = presence.Position is { } at ? at.RecordedAt.ToLocalTime().ToString("MMM d, HH:mm") + (cached ? " · cached" : presence.IsRecent ? " · recent" : " · last known") : "No dated position",
-            ColorTheme = cached || !presence.IsRecent ? Colors.Gray : Color.FromArgb(new[] { "#0A8491", "#931492", "#2563EB", "#16A34A" }[(uint)presence.Person.UserId.GetHashCode() % 4]) };
-    }
-    private async Task LoadAvatarAsync(CircleMember row, CircleMembershipScope scope, long request, CancellationToken token)
-    {
-        string url = CirclePresencePolicy.SafeAvatar(row.Presence.Person.AvatarUrl);
-        if (url.Length == 0) return;
-        await avatarRequests.WaitAsync(token);
-        try
-        {
-            Require(scope, request);
-            if (!avatarBytes.TryGetValue(url, out var bytes))
-            {
-                using var response = await photos.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-                response.EnsureSuccessStatusCode();
-                if (response.Content.Headers.ContentLength is > 4_194_304) return;
-                using var input = await response.Content.ReadAsStreamAsync(token);
-                using var output = new MemoryStream(); byte[] buffer = new byte[8192]; int count;
-                while ((count = await input.ReadAsync(buffer, token)) > 0)
-                { if (output.Length + count > 4_194_304) return; await output.WriteAsync(buffer.AsMemory(0, count), token); }
-                bytes = output.ToArray(); Require(scope, request); avatarBytes[url] = bytes;
-            }
-            Require(scope, request);
-            row.AvatarImage = ImageSource.FromStream(() => new MemoryStream(bytes, false));
-            row.PinImage = GenerateLife360PinImageSource(bytes, row.Name, row.ColorTheme.ToHex(), row.UserId == scope.UserId, row.Initials);
-        }
-        catch (OperationCanceledException) { throw; }
-        catch { /* Keep initials when the optional image is unavailable. */ }
-        finally { avatarRequests.Release(); }
-    }
-    private async Task LoadPlaceAsync(CircleMember row, CircleMembershipScope scope, long request, CancellationToken token)
-    {
-        if (!row.HasPosition || !CircleMembershipRuntime.Context.IsOnline) return;
-        string key = row.Latitude.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) + "," + row.Longitude.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
-        await avatarRequests.WaitAsync(token);
-        try
-        {
-            Require(scope, request);
-            if (!placeNames.TryGetValue(key, out string? label))
-            {
-                label = row.LocationSubtitle;
-                try
+                MyCircles.Clear();
+                foreach (var circle in circles)
                 {
-                    var places = await Geocoding.Default.GetPlacemarksAsync(new Microsoft.Maui.Devices.Sensors.Location(row.Latitude, row.Longitude)).WaitAsync(TimeSpan.FromSeconds(4), token);
-                    Require(scope, request);
-                    string? street = places?.FirstOrDefault()?.Thoroughfare;
-                    if (!string.IsNullOrWhiteSpace(street)) label = "Last shared near " + street.Trim() + " (approx.)";
+                    MyCircles.Add(circle);
                 }
-                catch (OperationCanceledException) { throw; }
-                catch { /* Keep recorded coordinates when the optional street lookup is unavailable. */ }
-                Require(scope, request);
-                if (placeNames.Count >= 256) placeNames.Clear();
-                placeNames[key] = label;
-            }
-            Require(scope, request); row.LocationSubtitle = label;
+
+                if (MyCircles.Any())
+                {
+                    var savedSelectedId = Preferences.Default.Get("SelectedCircleId", string.Empty);
+                    var target = MyCircles.FirstOrDefault(c => c.Id == savedSelectedId)
+                        ?? (!string.IsNullOrEmpty(_currentCircleId) ? MyCircles.FirstOrDefault(c => c.Id == _currentCircleId) : null)
+                        ?? MyCircles.First();
+
+                    SelectCircle(target);
+                }
+                else
+                {
+                    SelectedCircleName = "No Circles Joined";
+                }
+            });
         }
-        finally { avatarRequests.Release(); }
-    }
-    private void UpdateMapMarkers()
-    {
-        var features = new List<Mapsui.Nts.GeometryFeature>();
-        foreach (var member in CircleMembers.Where(member => member.HasPosition &&
-            (member.UserId != owner?.UserId || CurrentLocalReading is null)))
+        catch (Exception ex)
         {
-            var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
-            var feature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
-            string picture = member.PinImage.Length > 0 ? member.PinImage : GenerateLife360PinImageSource(null, member.Name, member.ColorTheme.ToHex(), member.UserId == owner?.UserId, member.Initials);
-            feature.Styles.Add(new Mapsui.Styles.ImageStyle { Image = picture, SymbolScale = 0.5, Offset = new Mapsui.Styles.Offset(0, 35) });
-            features.Add(feature);
+            System.Diagnostics.Debug.WriteLine($"Error loading circles: {ex.Message}");
         }
-        AddLocalPosition(features);
-        var old = Map.Layers.FirstOrDefault(layer => layer.Name == "MapPins");
-        if (old is not null) { Map.Layers.Remove(old); old.Dispose(); }
-        Map.Layers.Add(new Mapsui.Layers.MemoryLayer { Name = "MapPins", Features = features }); Map.Refresh();
     }
 
-    [RelayCommand] private void ToggleCircleDropdown() => IsCircleDropdownOpen = !IsCircleDropdownOpen;
-    [RelayCommand] private void ZoomIn() => Map.Navigator.ZoomIn();
-    [RelayCommand] private void ZoomOut() => Map.Navigator.ZoomOut();
-    [RelayCommand] private void ZoomReset()
+    public void SelectCircle(SupabaseSafetyCircle circle)
     {
-        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
-        Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 9.5546);
+        if (circle == null) return;
+        _currentCircleId = circle.Id;
+        SelectedCircleName = circle.Name;
+        Preferences.Default.Set("SelectedCircleId", circle.Id);
+        IsCircleDropdownOpen = false;
+
+        // Load members instantly, then timer will keep updating
+        _ = PollLocationsAsync();
+        _locationTimer.Start();
     }
-    [RelayCommand] private void CenterOnMember(CircleMember member)
+
+    private async Task<bool> CheckAndRequestLocationPermission()
     {
-        if (member is null || !CircleMembers.Contains(member)) return;
-        if (member.UserId == owner?.UserId && CurrentLocalReading is { } local) { CenterOnLocal(local); return; }
-        if (!member.HasPosition) return;
-        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
-        Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 22);
+        var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+        if (status == PermissionStatus.Granted)
+            return true;
+
+        status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+        return status == PermissionStatus.Granted;
     }
-    [RelayCommand] private async Task SelectCircleFromList(CircleMembership circle)
+
+    private readonly System.Collections.Generic.Dictionary<string, byte[]> _avatarRawBytesCache = new();
+
+    private (int percent, bool isCharging) GetRealtimeBatteryLevel()
     {
-        if (circle is null || owner is not { } scope || IsBusy) return;
-        long request = version;
+        int batteryLevel = 0;
+        bool isCharging = false;
+
+#if ANDROID
         try
         {
-            Require(scope, request); IsBusy = true; ResetSharing(); CircleMembers.Clear(); UpdateMapMarkers();
-            await coordinator.SelectAsync(circle.Id); Require(scope, request);
-            IsCircleDropdownOpen = false; centered = false; IsBusy = false; await PollAsync();
+            var context = Android.App.Application.Context;
+            var filter = new Android.Content.IntentFilter(Android.Content.Intent.ActionBatteryChanged);
+            var batteryStatus = context.RegisterReceiver(null, filter);
+            if (batteryStatus != null)
+            {
+                int level = batteryStatus.GetIntExtra(Android.OS.BatteryManager.ExtraLevel, -1);
+                int scale = batteryStatus.GetIntExtra(Android.OS.BatteryManager.ExtraScale, -1);
+                if (level >= 0 && scale > 0)
+                {
+                    batteryLevel = (int)Math.Round((level / (float)scale) * 100);
+                }
+
+                int status = batteryStatus.GetIntExtra(Android.OS.BatteryManager.ExtraStatus, -1);
+                isCharging = status == (int)Android.OS.BatteryStatus.Charging || status == (int)Android.OS.BatteryStatus.Full;
+            }
         }
-        catch { if (request == version) { IsBusy = false; StatusMessage = "Circle selection could not be confirmed. Refresh and try again."; } }
-    }
-    [RelayCommand] private async Task Refresh() { coordinator.RefreshMemberships(); await PollAsync(); }
-    [RelayCommand] private void CreateCircle() => OpenInlineCircleAction(true);
-    [RelayCommand] private void JoinCircle() => OpenInlineCircleAction(false);
-    [RelayCommand] private Task ManageCircles() => Navigate("SafetyCircleSettingsPage");
-    [RelayCommand] private Task OpenGeneralMap() => Navigate("GeneralMap");
-    [RelayCommand] private Task OpenNotifications() => Navigate("NotificationsPage");
-    private async Task Navigate(string route)
-    {
-        if (Shell.Current is null) return;
-        try { await Shell.Current.GoToAsync(route); }
-        catch { StatusMessage = "This screen could not be opened. Try again."; }
-    }
-    [RelayCommand] private async Task OpenChat()
-    {
-        if (owner is not { } scope || IsBusy || selectedId.Length == 0) return;
-        long request = version;
-        try
+        catch { }
+#endif
+
+        if (batteryLevel <= 0)
         {
-            string id = selectedId;
-            var fresh = await memberships.LoadAsync(scope); Require(scope, request);
-            var circle = fresh.Circles.FirstOrDefault(circle => circle.Id == id);
-            if (fresh.IsCached || circle is null) { StatusMessage = "Connect and confirm this Circle before opening chat."; return; }
-            await Navigate($"CircleChatPage?circleId={Uri.EscapeDataString(id)}&circleName={Uri.EscapeDataString(circle.Name)}");
+            try
+            {
+                var charge = Battery.Default.ChargeLevel;
+                if (charge >= 0)
+                {
+                    batteryLevel = (int)Math.Round(charge * 100);
+                }
+                isCharging = Battery.Default.State == BatteryState.Charging;
+            }
+            catch { }
         }
-        catch { if (request == version) StatusMessage = "Chat membership could not be confirmed. Refresh your Circles."; }
-    }
-    [RelayCommand] private void CallMember(CircleMember member)
-    {
-        if (owner is not { } scope || member is null || !CircleMembers.Contains(member) || !member.HasPhoneNumber) return;
-        try { Require(scope, version); if (PhoneDialer.Default.IsSupported) PhoneDialer.Default.Open(member.PhoneNumber); else StatusMessage = "Phone dialing is unavailable on this device."; }
-        catch { StatusMessage = "The phone app could not be opened."; }
+
+        if (batteryLevel <= 0) batteryLevel = 50;
+
+        return (batteryLevel, isCharging);
     }
 
     private string GenerateLife360PinImageSource(byte[]? avatarBytes, string name, string colorHex, bool isMe, string initials)
@@ -472,5 +356,667 @@ public partial class SafetyCircleViewModel : ObservableObject
         using var ms = new MemoryStream();
         data.SaveTo(ms);
         return $"base64-content://{Convert.ToBase64String(ms.ToArray())}";
+    }
+
+    private async Task PollLocationsAsync()
+    {
+        try
+        {
+            // 1. Get real-time battery
+            var (myBatteryPercent, myIsCharging) = GetRealtimeBatteryLevel();
+            string myBatteryStatus = $"{myBatteryPercent}%{(myIsCharging ? "⚡" : "")}";
+
+            Microsoft.Maui.Devices.Sensors.Location? loc = null;
+            var hasPermission = await CheckAndRequestLocationPermission();
+            if (hasPermission)
+            {
+                try
+                {
+                    loc = await Geolocation.Default.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Medium, TimeSpan.FromSeconds(4)));
+                }
+                catch { }
+
+                if (loc == null)
+                {
+                    try
+                    {
+                        loc = await Geolocation.Default.GetLastKnownLocationAsync();
+                    }
+                    catch { }
+                }
+
+                if (loc != null)
+                {
+                    string pushStatus = $"Online|{myBatteryStatus}";
+                    await _safetyCircleService.PushLocationAsync(loc.Latitude, loc.Longitude, pushStatus);
+
+                    // Auto-center map on user's current GPS location on first fix
+                    if (!_hasCenteredOnUser && Map != null)
+                    {
+                        _hasCenteredOnUser = true;
+                        var (userX, userY) = Mapsui.Projections.SphericalMercator.FromLonLat(loc.Longitude, loc.Latitude);
+                        Map.Navigator?.CenterOnAndZoomTo(new MPoint(userX, userY), 25);
+                    }
+                }
+            }
+
+            // 2. Build current user's profile pin so it ALWAYS appears at their live GPS position
+            double myLat = loc?.Latitude ?? 14.6507;
+            double myLon = loc?.Longitude ?? 121.1029;
+
+            string myName = string.Empty;
+            try
+            {
+                var currentUser = RescuAR.Services.SupabaseService.Instance.Client?.Auth.CurrentUser;
+                if (currentUser?.UserMetadata != null)
+                {
+                    string fn = currentUser.UserMetadata.TryGetValue("first_name", out var f) && f != null ? f.ToString()?.Trim() ?? "" : "";
+                    string ln = currentUser.UserMetadata.TryGetValue("last_name", out var l) && l != null ? l.ToString()?.Trim() ?? "" : "";
+                    myName = $"{fn} {ln}".Trim();
+                }
+            }
+            catch { }
+
+            if (string.IsNullOrWhiteSpace(myName))
+            {
+                var fn = Preferences.Default.Get("UserFirstName", string.Empty);
+                var ln = Preferences.Default.Get("UserLastName", string.Empty);
+                myName = $"{fn} {ln}".Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(myName))
+            {
+                myName = "You";
+            }
+
+            string myInitials = "ME";
+            var myWords = myName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (myWords.Length >= 2)
+            {
+                myInitials = $"{myWords[0][0]}{myWords[1][0]}".ToUpper();
+            }
+            else if (myWords.Length == 1 && myWords[0].Length >= 2)
+            {
+                myInitials = myWords[0].Substring(0, 2).ToUpper();
+            }
+
+            var myPhone = Preferences.Default.Get("UserPhone", Preferences.Default.Get("UserPhoneNumber", string.Empty));
+            var meMember = new CircleMember
+            {
+                Id = _safetyCircleService.GetCurrentUserId(),
+                Name = $"{myName} (You)",
+                PhoneNumber = myPhone,
+                Initials = myInitials,
+                StatusText = "Online",
+                LocationSubtitle = await GetEstimatedLocationSubtitleAsync(myLat, myLon),
+                SinceTimeText = $"Since {DateTime.Now:h:mm tt}",
+                BatteryText = $"{myBatteryPercent}%",
+                BatteryIcon = "🔋",
+                BatteryColor = myIsCharging ? Microsoft.Maui.Graphics.Color.FromArgb("#2563EB") : (myBatteryPercent <= 20 ? Microsoft.Maui.Graphics.Color.FromArgb("#EF4444") : (myBatteryPercent <= 50 ? Microsoft.Maui.Graphics.Color.FromArgb("#F59E0B") : Microsoft.Maui.Graphics.Color.FromArgb("#16A34A"))),
+                IsCharging = myIsCharging,
+                Latitude = myLat,
+                Longitude = myLon,
+                ColorTheme = Microsoft.Maui.Graphics.Color.FromArgb("#10B981"),
+                IsMe = true,
+                IsSafe = true
+            };
+
+            byte[]? myAvatarBytes = null;
+            var localAvatarPath = Preferences.Default.Get("UserAvatarUrl", string.Empty);
+            if (string.IsNullOrWhiteSpace(localAvatarPath))
+            {
+                localAvatarPath = Preferences.Default.Get("UserProfilePicPath", string.Empty);
+            }
+            if (!string.IsNullOrWhiteSpace(localAvatarPath) && File.Exists(localAvatarPath))
+            {
+                try { myAvatarBytes = File.ReadAllBytes(localAvatarPath); } catch { }
+            }
+
+            meMember.AvatarImageSource = GenerateLife360PinImageSource(myAvatarBytes, myName, "#10B981", true, myInitials);
+
+            CircleMembers.Clear();
+            CircleMembers.Add(meMember);
+
+            // 3. If in a circle, load other circle members & cloud locations
+            if (!string.IsNullOrEmpty(_currentCircleId))
+            {
+                var members = await _safetyCircleService.GetCircleMembersAsync(_currentCircleId);
+                var locations = await _safetyCircleService.GetCircleLocationsAsync(_currentCircleId);
+                string currentUserId = string.Empty;
+                try { currentUserId = _safetyCircleService.GetCurrentUserId(); } catch { }
+
+                foreach (var member in members)
+                {
+                    if (string.Equals(member.Id, currentUserId, StringComparison.OrdinalIgnoreCase))
+                        continue; // Already added current user above
+
+                    var userLoc = locations.FirstOrDefault(l => string.Equals(l.UserId, member.Id, StringComparison.OrdinalIgnoreCase));
+                    string rawStatus = userLoc?.StatusText ?? "Online";
+                    string displayStatus = "Online";
+                    string batteryText = "100%";
+                    var batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#16A34A");
+                    bool isCharging = false;
+
+                    if (rawStatus.Contains("|"))
+                    {
+                        var parts = rawStatus.Split('|');
+                        displayStatus = parts[0];
+                        batteryText = parts[1];
+                        if (batteryText.Contains("⚡"))
+                        {
+                            isCharging = true;
+                            batteryText = batteryText.Replace("⚡", "").Trim();
+                            batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#2563EB");
+                        }
+                        else
+                        {
+                            var cleanVal = batteryText.Replace("%", "").Trim();
+                            if (int.TryParse(cleanVal, out int bVal))
+                            {
+                                if (bVal <= 20) batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#EF4444");
+                                else if (bVal <= 50) batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#F59E0B");
+                                else batteryColor = Microsoft.Maui.Graphics.Color.FromArgb("#16A34A");
+                            }
+                        }
+                    }
+
+                    double memberLat = userLoc?.Latitude ?? 0;
+                    double memberLon = userLoc?.Longitude ?? 0;
+
+                    // Fallback to slight offset around user if member coordinates are zero so pins are always visible
+                    if (memberLat == 0 && memberLon == 0 && myLat != 0 && myLon != 0)
+                    {
+                        memberLat = myLat;
+                        memberLon = myLon;
+                    }
+
+                    string memberName = $"{member.FirstName} {member.LastName}".Trim();
+                    if (string.IsNullOrWhiteSpace(memberName))
+                    {
+                        memberName = !string.IsNullOrWhiteSpace(member.Username) ? member.Username : "Family Member";
+                    }
+
+                    string initials = "FM";
+                    var words = memberName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (words.Length >= 2) initials = $"{words[0][0]}{words[1][0]}".ToUpper();
+                    else if (words.Length == 1 && words[0].Length >= 2) initials = words[0].Substring(0, 2).ToUpper();
+
+                    string sinceTime = userLoc != null && userLoc.LastUpdated != default
+                        ? $"Since {userLoc.LastUpdated.ToLocalTime():h:mm tt}"
+                        : $"Since {DateTime.Now:h:mm tt}";
+
+                    string locationSubtitle = await GetEstimatedLocationSubtitleAsync(memberLat, memberLon);
+
+                    var cm = new CircleMember
+                    {
+                        Id = member.Id,
+                        Name = memberName,
+                        PhoneNumber = member.PhoneNumber ?? string.Empty,
+                        Initials = initials,
+                        StatusText = displayStatus,
+                        LocationSubtitle = locationSubtitle,
+                        SinceTimeText = sinceTime,
+                        BatteryText = batteryText.EndsWith("%") ? batteryText : $"{batteryText}%",
+                        BatteryIcon = "🔋",
+                        BatteryColor = batteryColor,
+                        IsCharging = isCharging,
+                        Latitude = memberLat,
+                        Longitude = memberLon,
+                        ColorTheme = GetColorForUser(member.Id),
+                        AvatarUrl = member.AvatarUrl,
+                        IsMe = false,
+                        IsSafe = true
+                    };
+
+                    byte[]? avatarBytes = null;
+                    if (!string.IsNullOrEmpty(cm.AvatarUrl))
+                    {
+                        if (File.Exists(cm.AvatarUrl))
+                        {
+                            try { avatarBytes = File.ReadAllBytes(cm.AvatarUrl); } catch { }
+                        }
+                        else if (!_avatarRawBytesCache.TryGetValue(member.Id, out avatarBytes))
+                        {
+                            try
+                            {
+                                avatarBytes = await _httpClient.GetByteArrayAsync(cm.AvatarUrl);
+                                _avatarRawBytesCache[member.Id] = avatarBytes;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    cm.AvatarImageSource = GenerateLife360PinImageSource(avatarBytes, cm.Name, cm.ColorTheme.ToHex(), false, cm.Initials);
+                    CircleMembers.Add(cm);
+                }
+            }
+
+            // 4. Render all pins onto Map
+            if (Map != null)
+            {
+                UpdateMapMarkers(Map);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Polling Error: {ex.Message}");
+        }
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _streetNameCache = new();
+
+    private async Task<string> GetEstimatedLocationSubtitleAsync(double lat, double lon)
+    {
+        if (lat == 0 || lon == 0) return "Near Current Location";
+
+        string cacheKey = $"{Math.Round(lat, 4)}_{Math.Round(lon, 4)}";
+        if (_streetNameCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        try
+        {
+            var placemarks = await Geocoding.Default.GetPlacemarksAsync(new Microsoft.Maui.Devices.Sensors.Location(lat, lon));
+            var placemark = placemarks?.FirstOrDefault();
+            if (placemark != null)
+            {
+                string street = placemark.Thoroughfare ?? placemark.SubLocality ?? placemark.Locality ?? "";
+                if (!string.IsNullOrWhiteSpace(street))
+                {
+                    string result = street.StartsWith("Near ", StringComparison.OrdinalIgnoreCase) ? street : $"Near {street}";
+                    _streetNameCache[cacheKey] = result;
+                    return result;
+                }
+            }
+        }
+        catch { }
+
+        string fallback = "Near Current Location";
+        _streetNameCache[cacheKey] = fallback;
+        return fallback;
+    }
+
+    private Microsoft.Maui.Graphics.Color GetColorForUser(string userId)
+    {
+        int hash = userId.GetHashCode();
+        var colors = new[] { "#0A8491", "#EAB308", "#931492", "#E11D48", "#2563EB", "#16A34A" };
+        return Microsoft.Maui.Graphics.Color.FromArgb(colors[Math.Abs(hash) % colors.Length]);
+    }
+
+    public async Task InitializeMapAsync(MapControl mapControl)
+    {
+        try
+        {
+            var map = new Mapsui.Map
+            {
+                CRS = "EPSG:3857"
+            };
+            // Clear default debug overlays (INFO, FPS, Scale bar)
+            map.Widgets.Clear();
+
+            // Load Online OpenStreetMap Base Layer with compliant User-Agent
+            map.Layers.Add(Mapsui.Tiling.OpenStreetMap.CreateTileLayer("RescuAR-EvacuationApp/1.0 (contact@rescuar.app)"));
+
+            // Center and Zoom to Map Data (Default Marikina or user location)
+            var (homeX, homeY) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
+            map.Navigator.CenterOnAndZoomTo(new MPoint(homeX, homeY), 38.2);
+
+            Map = map;
+            mapControl.Map = map;
+
+            // Draw initial pins
+            _ = PollLocationsAsync();
+        }
+        catch (Exception ex)
+        {
+            if (Shell.Current != null)
+                await Shell.Current.DisplayAlert("Map Error", $"Base Map failed: {ex.Message}", "OK");
+            Console.WriteLine($"Error loading map: {ex.Message}");
+        }
+    }
+
+    private void UpdateMapMarkers(Mapsui.Map map)
+    {
+        var features = new System.Collections.Generic.List<Mapsui.Nts.GeometryFeature>();
+        var activeMembers = CircleMembers.Where(m => m.Latitude != 0 && m.Longitude != 0).ToList();
+
+        // 1. Group active members into clusters based on proximity (< 45 meters)
+        var clusters = new List<List<CircleMember>>();
+        foreach (var member in activeMembers)
+        {
+            bool added = false;
+            foreach (var cluster in clusters)
+            {
+                var refMember = cluster[0];
+                var (refX, refY) = Mapsui.Projections.SphericalMercator.FromLonLat(refMember.Longitude, refMember.Latitude);
+                var (memX, memY) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
+                double distance = Math.Sqrt(Math.Pow(memX - refX, 2) + Math.Pow(memY - refY, 2));
+
+                if (distance < 45.0) // Within 45 meters in Mercator meters
+                {
+                    cluster.Add(member);
+                    added = true;
+                    break;
+                }
+            }
+            if (!added)
+            {
+                clusters.Add(new List<CircleMember> { member });
+            }
+        }
+
+        // 2. Compute dispersed / fanned-out positions for each cluster
+        foreach (var cluster in clusters)
+        {
+            if (cluster.Count == 1)
+            {
+                var single = cluster[0];
+                var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(single.Longitude, single.Latitude);
+                AddMemberPinFeatures(features, single, x, y);
+            }
+            else
+            {
+                // Multi-member co-located cluster: Calculate centroid
+                double avgLon = cluster.Average(m => m.Longitude);
+                double avgLat = cluster.Average(m => m.Latitude);
+                var (centerX, centerY) = Mapsui.Projections.SphericalMercator.FromLonLat(avgLon, avgLat);
+
+                // Fan-out radius (32m base + scaling per member)
+                double radius = 32.0 + (cluster.Count - 2) * 8.0;
+
+                for (int i = 0; i < cluster.Count; i++)
+                {
+                    var member = cluster[i];
+                    double angle = (2.0 * Math.PI * i / cluster.Count) - (Math.PI / 2.0);
+                    double px = centerX + radius * Math.Cos(angle);
+                    double py = centerY + radius * Math.Sin(angle);
+
+                    AddMemberPinFeatures(features, member, px, py);
+                }
+            }
+        }
+
+        var oldLayer = map.Layers.FirstOrDefault(l => l.Name == "MapPins");
+        if (oldLayer != null)
+        {
+            map.Layers.Remove(oldLayer);
+        }
+
+        _pinsLayer = new Mapsui.Layers.MemoryLayer
+        {
+            Name = "MapPins",
+            Features = features
+        };
+
+        map.Layers.Add(_pinsLayer);
+        map.Refresh();
+    }
+
+    private void AddMemberPinFeatures(System.Collections.Generic.List<Mapsui.Nts.GeometryFeature> features, CircleMember member, double x, double y)
+    {
+        // Halo (Translucent Outer Ring)
+        var haloFeature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
+        var colorTheme = member.ColorTheme;
+        var translucentColor = new Mapsui.Styles.Color((int)(colorTheme.Red * 255), (int)(colorTheme.Green * 255), (int)(colorTheme.Blue * 255), 40);
+        haloFeature.Styles.Add(new Mapsui.Styles.SymbolStyle
+        {
+            SymbolType = Mapsui.Styles.SymbolType.Ellipse,
+            SymbolScale = 1.2,
+            Fill = new Mapsui.Styles.Brush(translucentColor),
+            Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.Transparent)
+        });
+        features.Add(haloFeature);
+
+        // Inner Pin (Life360 Avatar + Pointer + Name Pill)
+        var feature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
+        if (!string.IsNullOrWhiteSpace(member.AvatarImageSource))
+        {
+            feature.Styles.Add(new Mapsui.Styles.ImageStyle
+            {
+                Image = member.AvatarImageSource,
+                SymbolScale = 0.5,
+                Offset = new Mapsui.Styles.Offset(0, 35)
+            });
+        }
+        features.Add(feature);
+    }
+
+    [RelayCommand]
+    private void CenterOnMember(CircleMember member)
+    {
+        if (member == null || member.Latitude == 0 || member.Longitude == 0 || Map == null) return;
+        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(member.Longitude, member.Latitude);
+        Map.Navigator?.CenterOnAndZoomTo(new MPoint(x, y), 22);
+    }
+    private void TogglePeopleSheet()
+    {
+        IsPeopleSheetOpen = !IsPeopleSheetOpen;
+        if (IsPeopleSheetOpen) IsCircleDropdownOpen = false;
+    }
+
+    [RelayCommand]
+    private void ToggleCircleDropdown()
+    {
+        IsCircleDropdownOpen = !IsCircleDropdownOpen;
+        if (IsCircleDropdownOpen) IsPeopleSheetOpen = false;
+    }
+
+    [RelayCommand]
+    private void ZoomIn()
+    {
+        Map?.Navigator?.ZoomIn();
+    }
+
+    [RelayCommand]
+    private void ZoomOut()
+    {
+        Map?.Navigator?.ZoomOut();
+    }
+
+    [RelayCommand]
+    private void ZoomReset()
+    {
+        var (homeX, homeY) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
+        Map?.Navigator?.CenterOnAndZoomTo(new MPoint(homeX, homeY), 38.2);
+    }
+
+    [RelayCommand]
+    private async Task CreateCircleAsync()
+    {
+        if (Shell.Current == null) return;
+        string result = await Shell.Current.DisplayPromptAsync("Create Safety Circle", "Enter a name for your new Safety Circle:", "Create", "Cancel");
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            try
+            {
+                var circle = await _safetyCircleService.CreateCircleAsync(result);
+                NewlyCreatedCircleName = circle.Name;
+                NewlyCreatedInviteCode = circle.InviteCode;
+                IsCopiedSuccess = false;
+                IsCreatedCirclePopupOpen = true;
+
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (!MyCircles.Any(c => c.Id == circle.Id))
+                    {
+                        MyCircles.Insert(0, circle);
+                    }
+                    SelectCircle(circle);
+                });
+
+                await LoadMyCirclesAsync();
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("Error", ex.Message, "OK");
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyInviteCodeAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(NewlyCreatedInviteCode))
+        {
+            await Clipboard.Default.SetTextAsync(NewlyCreatedInviteCode);
+            IsCopiedSuccess = true;
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2500);
+                MainThread.BeginInvokeOnMainThread(() => IsCopiedSuccess = false);
+            });
+        }
+    }
+
+    [RelayCommand]
+    private void CloseCreatedCirclePopup()
+    {
+        IsCreatedCirclePopupOpen = false;
+    }
+
+    [RelayCommand]
+    private async Task JoinCircleAsync()
+    {
+        if (Shell.Current == null) return;
+        string result = await Shell.Current.DisplayPromptAsync("Join Circle", "Enter the 6-character Invite Code:", "Join", "Cancel");
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            try
+            {
+                var circle = await _safetyCircleService.JoinCircleWithCodeAsync(result);
+                await Shell.Current.DisplayAlert("Success", $"You've joined {circle.Name}!", "OK");
+
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (!MyCircles.Any(c => c.Id == circle.Id))
+                    {
+                        MyCircles.Insert(0, circle);
+                    }
+                    SelectCircle(circle);
+                });
+
+                await LoadMyCirclesAsync();
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("Error", ex.Message, "OK");
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void CloseTutorial()
+    {
+        IsTutorialPopupVisible = false;
+        Preferences.Default.Set("HasSeenSafetyCircleTutorial", true);
+    }
+
+    [RelayCommand]
+    private void SelectCircleFromList(RescuAR.App.Models.SupabaseSafetyCircle circle)
+    {
+        if (circle != null)
+        {
+            SelectCircle(circle);
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteCircle(RescuAR.App.Models.SupabaseSafetyCircle circle)
+    {
+        if (circle == null) return;
+        CircleToDelete = circle;
+        IsDeleteConfirmPopupVisible = true;
+    }
+
+    [RelayCommand]
+    private void CancelDeleteCircle()
+    {
+        IsDeleteConfirmPopupVisible = false;
+        CircleToDelete = null;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmDeleteCircleAsync()
+    {
+        if (CircleToDelete == null) return;
+        var circle = CircleToDelete;
+        IsDeleteConfirmPopupVisible = false;
+        CircleToDelete = null;
+
+        try
+        {
+            await _safetyCircleService.DeleteCircleAsync(circle.Id);
+            MyCircles.Remove(circle);
+            if (_currentCircleId == circle.Id)
+            {
+                _currentCircleId = string.Empty;
+                SelectedCircleName = "No Circles Joined";
+                Preferences.Default.Remove("SelectedCircleId");
+                CircleMembers.Clear();
+            }
+            await LoadMyCirclesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error deleting circle: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenChatAsync()
+    {
+        if (string.IsNullOrEmpty(_currentCircleId))
+        {
+            if (Shell.Current != null)
+                await Shell.Current.DisplayAlert("Select Circle", "Please create or select a Safety Circle first to chat with family members.", "OK");
+            return;
+        }
+
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync($"CircleChatPage?circleId={_currentCircleId}&circleName={Uri.EscapeDataString(SelectedCircleName)}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenNotificationsAsync()
+    {
+        if (Shell.Current != null)
+        {
+            await Shell.Current.GoToAsync("NotificationsPage");
+        }
+    }
+
+    [RelayCommand]
+    private async Task CallMemberAsync(CircleMember? member)
+    {
+        if (member == null) return;
+        var phone = member.PhoneNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.DisplayAlert("No Phone Number", $"{member.Name} has not linked a phone number to their account yet.", "OK");
+            }
+            return;
+        }
+
+        try
+        {
+            if (PhoneDialer.Default.IsSupported)
+            {
+                PhoneDialer.Default.Open(phone);
+            }
+            else
+            {
+                await Launcher.Default.OpenAsync(new Uri($"tel:{phone}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Shell.Current != null)
+            {
+                await Shell.Current.DisplayAlert("Call Failed", $"Could not launch dialer: {ex.Message}", "OK");
+            }
+        }
     }
 }

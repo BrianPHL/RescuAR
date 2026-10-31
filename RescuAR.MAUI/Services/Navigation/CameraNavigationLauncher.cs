@@ -29,6 +29,8 @@ namespace RescuAR.MAUI.Services.Navigation;
 /// </summary>
 public static class CameraNavigationLauncher
 {
+    public static bool Prefer2DMapGuidance { get; set; }
+
     private const string LogTag =
         "RescuAR-MLD";
 

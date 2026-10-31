@@ -31,7 +31,7 @@ public partial class CameraPage
                 card.Margin = 0;
             }
             double buttonWidth = Math.Clamp(width - 144, 120, 204);
-            foreach (var button in new Button[] { exploreSafeZonesButton, endNavigationButton, floodSimulationButton })
+            foreach (var button in new Button[] { exploreSafeZonesButton, endNavigationButton, floodSimulationButton, startRoutingButton })
             {
                 button.WidthRequest = buttonWidth;
                 button.FontSize = width < 360 ? 12 : 14;

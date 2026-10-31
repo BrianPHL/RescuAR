@@ -17,64 +17,40 @@ using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Map;
 
-public class SphericalMercatorProjector : NetTopologySuite.Geometries.ICoordinateFilter
-{
-    public void Filter(Coordinate coord)
-    {
-        var projected = Mapsui.Projections.SphericalMercator.FromLonLat(coord.X, coord.Y);
-        coord.X = projected.x;
-        coord.Y = projected.y;
-    }
-}
-
 public partial class MapViewModel : ObservableObject
 {
     private bool _realtimeAdvisorySubscribed;
-    private readonly OfflineMapLayerController offlineLayers;
-    private CancellationTokenSource? page;
-    private long generation;
-    private bool initialized;
-    [ObservableProperty] private string offlineMapStatus = "";
+    private OfflineMapLayerController? detailedMapLayers;
+    private bool mapInitialized;
+    private bool mapVisible;
+    private Task? initialization;
+    [ObservableProperty] private string mapStatus = "Loading offline roads…";
 
     [ObservableProperty]
     private Mapsui.Map _map = new();
 
     public MapViewModel()
     {
-        offlineLayers = new(message => OfflineMapStatus = message);
-    }
-
-    public void Stop()
-    {
-        generation++; page?.Cancel(); page?.Dispose(); page = null;
-        offlineLayers.Deactivate();
-        foreach (var layer in Map.Layers) layer.Enabled = false;
     }
 
     public async Task InitializeMapAsync(MapControl mapControl)
     {
-        Stop(); page = new(); var token = page.Token; long current = generation;
-        Mapsui.Map? candidate = null;
+        mapVisible = true;
+        initialization ??= InitializeMapCoreAsync(mapControl);
+        await initialization;
+        if (mapVisible && mapInitialized && detailedMapLayers is not null) await detailedMapLayers.ActivateAsync(Map);
+        if (!mapInitialized) initialization = null;
+    }
+
+    private async Task InitializeMapCoreAsync(MapControl mapControl)
+    {
         try
         {
-            if (initialized)
-            {
-                foreach (var layer in Map.Layers) layer.Enabled = true;
-                mapControl.Map = Map;
-                await offlineLayers.ActivateAsync(Map);
-                return;
-            }
-            var map = candidate = new Mapsui.Map
+            var map = new Mapsui.Map
             {
                 CRS = "EPSG:3857"
             };
-
-            // Add Google Maps Base Layer
-            var tileSource = new BruTile.Web.HttpTileSource(new BruTile.Predefined.GlobalSphericalMercator(0, 18), "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", name: "Google Maps");
-            var googleMapsLayer = new Mapsui.Tiling.Layers.TileLayer(tileSource) { Name = "BaseMap" };
-            map.Layers.Add(googleMapsLayer);
-
-            // Basic display still uses dev's embedded routing datasets. Optional detail has a separate owner.
+            map.Widgets.Clear();
 
             // Map display and routing share the same embedded datasets.
             foreach (string resourceName in
@@ -107,21 +83,24 @@ public partial class MapViewModel : ObservableObject
             map.Navigator.CenterOn(new MPoint(x, y));
             map.Navigator.ZoomTo(9.5546); // ~Zoom Level 14
 
-            token.ThrowIfCancellationRequested();
-            if (current != generation) return;
-            Map = map; initialized = true; candidate = null;
+            Map = map;
             mapControl.Map = map;
-            await offlineLayers.ActivateAsync(map);
+            mapInitialized = true;
+            detailedMapLayers = new(status => MapStatus = status);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            if (current != generation) return;
+            MapStatus = "Offline map unavailable. Reopen the map to retry.";
             if (Shell.Current != null)
                 await Shell.Current.DisplayAlert("Map Error", $"Base Map failed: {ex.Message}", "OK");
             Console.WriteLine($"Error loading map: {ex.Message}");
         }
-        finally { candidate?.Dispose(); }
+    }
+
+    public void DeactivateMap()
+    {
+        mapVisible = false;
+        detailedMapLayers?.Deactivate();
     }
 
     private async Task LoadGeoJsonLayerAsync(Mapsui.Map map, string resourceName, string layerName, IStyle style)
@@ -138,7 +117,7 @@ public partial class MapViewModel : ObservableObject
                 var featureCollection = reader.Read<NetTopologySuite.Features.FeatureCollection>(geoJson);
                 if (featureCollection == null) return new List<GeometryFeature>();
 
-                var projector = new SphericalMercatorProjector();
+                var projector = new OfflineMapProjector();
                 return featureCollection.Select(f =>
                 {
                     var geom = f.Geometry.Copy();
@@ -161,6 +140,7 @@ public partial class MapViewModel : ObservableObject
             if (Shell.Current != null)
                 await Shell.Current.DisplayAlert("Map Error", $"Failed to load {layerName}: {ex.Message}", "OK");
             Console.WriteLine($"Error loading {layerName}: {ex.Message}");
+            throw;
         }
     }
 
@@ -169,7 +149,7 @@ public partial class MapViewModel : ObservableObject
     {
         if (Shell.Current != null)
         {
-            await Shell.Current.GoToAsync("//Map");
+            await Shell.Current.GoToAsync("SafetyCirclePage");
         }
     }
 
@@ -207,18 +187,9 @@ public partial class MapViewModel : ObservableObject
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += (newAdvisory) =>
         {
-            if (RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories))
-            {
-                SelectedAdvisory = newAdvisory;
-                IsPopupVisible = true;
-            }
+            SelectedAdvisory = newAdvisory;
+            IsPopupVisible = true;
         };
-        RescuAR.MAUI.Services.Settings.AppPreferences.ObserveWeak(this, static (vm, setting) =>
-        {
-            if (setting == RescuAR.MAUI.Services.Settings.AppSetting.ForegroundAdvisories &&
-                !RescuAR.MAUI.Services.Settings.AppPreferences.IsEnabled(setting))
-                MainThread.BeginInvokeOnMainThread(() => vm.IsPopupVisible = false);
-        });
 
         RescuAR.App.Services.Reports.RealtimeAdvisoryManager.StartRealtimeListener();
     }

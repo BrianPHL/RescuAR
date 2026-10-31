@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage
     x:Class="RescuAR.App.Views.Camera.CameraPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
@@ -114,7 +114,6 @@
         <Grid
             Grid.Row="1"
             ZIndex="201"
-            RowDefinitions="Auto,Auto"
             BackgroundColor="#FFFFFF"
             Padding="12,4,12,6">
             <Border
@@ -123,7 +122,7 @@
                 StrokeThickness="1"
                 StrokeShape="RoundRectangle 10"
                 Padding="3">
-                <Grid ColumnDefinitions="*,*,*,Auto" ColumnSpacing="4" MinimumHeightRequest="38">
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
                     <!-- Tab 1: AR Evacuation Guidance -->
                     <Border
                         x:Name="subTabArButton"
@@ -133,7 +132,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnArCameraModeClicked" />
+                            <TapGestureRecognizer Tapped="OnArSubTabClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabArLabel"
@@ -154,7 +153,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnMapModeClicked" />
+                            <TapGestureRecognizer Tapped="OnMapSubTabClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabMapLabel"
@@ -175,7 +174,7 @@
                         StrokeShape="RoundRectangle 7"
                         Padding="4,6">
                         <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnFloodDepthModeClicked" />
+                            <TapGestureRecognizer Tapped="OnFloodSubTabClicked" />
                         </Border.GestureRecognizers>
                         <Label
                             x:Name="subTabFloodLabel"
@@ -186,18 +185,8 @@
                             HorizontalOptions="Center"
                             VerticalOptions="Center" />
                     </Border>
-                    <Border x:Name="cameraVoiceGuidanceButton" Grid.Column="3" WidthRequest="38" HeightRequest="38"
-                            HorizontalOptions="Center" VerticalOptions="Center"
-                            BackgroundColor="#ECFFFFFF" Stroke="#F4FFFFFF" StrokeThickness="1" StrokeShape="RoundRectangle 7" IsVisible="False">
-                        <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnVoiceGuidanceToggleClicked" />
-                        </Border.GestureRecognizers>
-                        <Image x:Name="cameraVoiceGuidanceIcon" Source="lucide_volume_x_black.png" InputTransparent="True"
-                               WidthRequest="23" HeightRequest="23" HorizontalOptions="Center" VerticalOptions="Center" />
-                    </Border>
                 </Grid>
             </Border>
-            <Label x:Name="navigationFeedbackStatusLabel" Grid.Row="1" IsVisible="False" FontSize="11" TextColor="#B45309" Margin="4,4,4,0" />
         </Grid>
 
         <!-- ============================================================= -->
@@ -235,18 +224,6 @@
                 <mapsui:MapControl x:Name="CameraMapControl"
                                    HorizontalOptions="FillAndExpand"
                                    VerticalOptions="FillAndExpand" />
-                <Border VerticalOptions="End" Margin="8,8,8,12" Padding="8" StrokeShape="RoundRectangle 10" BackgroundColor="#F2FFFFFF" Stroke="#CBD5E1">
-                    <VerticalStackLayout Spacing="4">
-                        <Label x:Name="mapModeStatusLabel" FontSize="10" TextColor="#334155" />
-                        <Grid ColumnDefinitions="*,*,*,Auto" ColumnSpacing="4">
-                            <Button Text="Recenter" Clicked="OnCameraMapRecenterClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                            <Button Grid.Column="1" Text="Overview" Clicked="OnCameraMapOverviewClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                            <Button Grid.Column="2" Text="Search" Clicked="OnOpenCenterSearchOverlayClicked" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                            <Button Grid.Column="3" x:Name="mapReturnToRouteButton" Text="Active route" Clicked="OnCameraMapReturnToRouteClicked" IsVisible="False" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
-                        </Grid>
-                        <Label Text="© OpenStreetMap contributors · Maperitive" FontSize="9" TextColor="#64748B" HorizontalOptions="End" />
-                    </VerticalStackLayout>
-                </Border>
             </Grid>
 
             <!-- 2D Map Google Maps Style Route Search Card -->
@@ -292,10 +269,16 @@
                             <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                                 <VerticalStackLayout Spacing="1" VerticalOptions="Center">
                                     <Label Text="FROM" TextColor="#64748B" FontSize="9" FontAttributes="Bold" />
-                                    <Label x:Name="mapFromLocationLabel" Text="Current location unknown" TextColor="#0F172A" FontSize="12" LineBreakMode="WordWrap" />
-                                    <Label x:Name="mapLocationNoticeLabel" Text="Waiting for a current validated GPS fix." TextColor="#64748B" FontSize="10" LineBreakMode="WordWrap" />
+                                    <Label x:Name="mapFromLocationLabel" FontSize="12.5" LineBreakMode="TailTruncation">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="Current Location " TextColor="#0F172A" FontAttributes="Bold" />
+                                                <Span Text="(auto-detected)" TextColor="#94A3B8" FontSize="11" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
                                 </VerticalStackLayout>
-                                <Image Grid.Column="1" Source="lucide_arrow_up_teal.png" WidthRequest="15" HeightRequest="15" VerticalOptions="Center" />
+                                <Image Grid.Column="1" Source="lucide_navigation_teal.png" WidthRequest="15" HeightRequest="15" VerticalOptions="Center" />
                             </Grid>
                         </Border>
 
@@ -334,7 +317,7 @@
                         Grid.Row="2"
                         x:Name="mapCardStartRoutingButton"
                         Text="Start Routing"
-                        ImageSource="lucide_arrow_up_white.png"
+                        ImageSource="lucide_navigation_white.png"
                         ContentLayout="Left,8"
                         TextColor="#FFFFFF"
                         BackgroundColor="#0A8491"
@@ -364,16 +347,13 @@
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
                     <!-- Route icon -->
                     <Border WidthRequest="32" HeightRequest="32" BackgroundColor="#E0F2FE" StrokeThickness="0" StrokeShape="RoundRectangle 8" VerticalOptions="Center">
-                        <Image Source="lucide_arrow_up_teal.png" WidthRequest="16" HeightRequest="16" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Image Source="lucide_navigation_teal.png" WidthRequest="16" HeightRequest="16" HorizontalOptions="Center" VerticalOptions="Center" />
                     </Border>
 
                     <!-- Destination & Distance/Time Stats -->
                     <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
                         <Label x:Name="mapRouteDestinationNameLabel" Text="To: Evacuation Center" TextColor="#0F172A" FontSize="13" FontAttributes="Bold" LineBreakMode="TailTruncation" />
-                        <Label x:Name="mapRouteStatsLabel" Text="Preparing route…" TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
-                        <Label x:Name="mapCurrentGuidanceLabel" Text="Waiting for accepted guidance." TextColor="#0F172A" FontSize="12" FontAttributes="Bold" />
-                        <Label x:Name="mapCurrentDistanceLabel" Text="" TextColor="#64748B" FontSize="11" />
-                        <Button x:Name="mapRetryRouteButton" Text="Retry route" Clicked="OnCameraMapRetryRouteClicked" IsVisible="False" FontSize="11" Padding="8,0" BackgroundColor="#E6F4F2" TextColor="#0A8491" />
+                        <Label x:Name="mapRouteStatsLabel" Text="Calculating route..." TextColor="#0A8491" FontSize="11" FontAttributes="Bold" />
                     </VerticalStackLayout>
 
                     <!-- Action buttons: Steps & Stop Guidance -->
@@ -419,7 +399,7 @@
                                           Fill="#64748B" WidthRequest="18" HeightRequest="18" VerticalOptions="Center" />
                                     <Entry Grid.Column="1"
                                            x:Name="centerModalSearchEntry"
-                                           Placeholder="Search evacuation-center names…"
+                                           Placeholder="Search safe zones, schools, gyms..."
                                            PlaceholderColor="#94A3B8"
                                            TextColor="#0F172A"
                                            FontSize="13.5"
@@ -439,22 +419,16 @@
                         </Grid>
 
                         <!-- Section Title -->
-                        <VerticalStackLayout Grid.Row="1" Spacing="4" Margin="4,0">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <Label Text="Evacuation-center directory" TextColor="#64748B" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
-                                <Button Grid.Column="1" Text="Refresh" Clicked="OnCameraDirectoryRefreshClicked" BackgroundColor="Transparent" TextColor="#0A8491" FontSize="11" Padding="8,0" />
-                            </Grid>
-                            <Label x:Name="mapSearchOrderLabel" Text="Loading directory…" TextColor="#64748B" FontSize="10.5" />
-                        </VerticalStackLayout>
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
+                            <Label Text="Nearby Safe Havens &amp; Shelters" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
+                            <Label Grid.Column="1" Text="Sorted by proximity" TextColor="#94A3B8" FontSize="10.5" />
+                        </Grid>
 
                         <!-- Search Results CollectionView -->
                         <CollectionView
                             Grid.Row="2"
                             x:Name="centerSearchResultsView"
                             SelectionMode="None">
-                            <CollectionView.EmptyView>
-                                <Label x:Name="cameraDirectoryEmptyLabel" Text="No evacuation centers listed." TextColor="#64748B" Padding="12" />
-                            </CollectionView.EmptyView>
                             <CollectionView.ItemTemplate>
                                 <DataTemplate x:DataType="camera:ShelterSearchDisplayItem">
                                     <Border Margin="0,4" Padding="12,10" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">
@@ -525,9 +499,8 @@
                     </Border.Shadow>
                     <VerticalStackLayout Spacing="12" HorizontalOptions="Center" VerticalOptions="Center">
                         <ActivityIndicator IsRunning="True" Color="#0A8491" WidthRequest="42" HeightRequest="42" HorizontalOptions="Center" />
-                        <Label Text="Preparing pedestrian route…" TextColor="#0F172A" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" />
-                        <Label Text="Using the existing destination and hazard-aware routing flow." TextColor="#64748B" FontSize="11.5" HorizontalTextAlignment="Center" />
-                        <Button Text="Cancel navigation" Clicked="OnEndNavigationClicked" BackgroundColor="#E2E8F0" TextColor="#334155" />
+                        <Label Text="Calculating Safe Route..." TextColor="#0F172A" FontSize="15" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                        <Label Text="Analyzing hazard-free roads &amp; pedestrian network" TextColor="#64748B" FontSize="11.5" HorizontalTextAlignment="Center" />
                     </VerticalStackLayout>
                 </Border>
             </Grid>
@@ -953,10 +926,27 @@
                         VerticalOptions="Center" />
                 </Border>
 
-
+                <Border
+                    x:Name="cameraVoiceGuidanceButton"
+                    WidthRequest="58"
+                    HeightRequest="58"
+                    BackgroundColor="#ECFFFFFF"
+                    Stroke="#F4FFFFFF"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 7">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnVoiceGuidanceToggleClicked" />
+                    </Border.GestureRecognizers>
+                    <Image
+                        x:Name="cameraVoiceGuidanceIcon"
+                        InputTransparent="True"
+                        Source="lucide_volume_2_black.png"
+                        WidthRequest="23"
+                        HeightRequest="23"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center" />
+                </Border>
             </VerticalStackLayout>
-
-
 
             <Button
                 x:Name="exploreSafeZonesButton"
@@ -978,7 +968,26 @@
                 CornerRadius="7"
                 Clicked="OnExploreSafeZonesClicked" />
 
-
+            <Button
+                x:Name="startRoutingButton"
+                IsVisible="False"
+                ZIndex="31"
+                Text="Start Routing"
+                ImageSource="lucide_navigation_white.png"
+                ContentLayout="Left,10"
+                HeightRequest="48"
+                WidthRequest="204"
+                Margin="0,0,0,12"
+                HorizontalOptions="Center"
+                VerticalOptions="End"
+                BackgroundColor="#0A8491"
+                BorderColor="#076B75"
+                BorderWidth="1"
+                TextColor="White"
+                FontSize="14"
+                FontAttributes="Bold"
+                CornerRadius="7"
+                Clicked="OnStartRoutingClicked" />
 
             <Button
                 x:Name="endNavigationButton"

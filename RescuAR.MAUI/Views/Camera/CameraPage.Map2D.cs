@@ -1,422 +1,50 @@
-using RescuAR.App.Services.Evacuation;
-using Mapsui;
-using Mapsui.Layers;
-using Mapsui.Nts;
-using NetTopologySuite.Geometries;
-using RescuAR.MAUI.Services.Location;
-using RescuAR.MAUI.Services.Navigation;
-using RescuAR.Navigation.Guidance;
-using RescuAR.Navigation.Models;
-using RescuAR.Navigation.Progress;
-using RescuAR.Navigation.State;
-using Shelter = RescuAR.App.Models.EvacuationCenter;
-using MapColor = Mapsui.Styles.Color;
-using MapBrush = Mapsui.Styles.Brush;
-using MapPen = Mapsui.Styles.Pen;
+using Microsoft.Maui.Controls;
 
 namespace RescuAR.App.Views.Camera;
 
-public sealed class ShelterSearchDisplayItem
-{
-    public required Shelter Center { get; init; }
-    public string Name => Center.Name;
-    public string DetailsText => CameraMapPresentationPolicy.DirectoryStatus(Center.Status);
-    public required string DistanceText { get; init; }
-}
-
-public sealed class RouteDirectionStepItem
-{
-    public required string IconSource { get; init; }
-    public required string InstructionText { get; init; }
-    public required string SubtitleText { get; init; }
-    public required string DistanceText { get; init; }
-    public Color BackgroundColor => Color.FromArgb("#E6F4F2");
-}
-
 public partial class CameraPage
 {
-    private readonly CameraMapViewportPolicy cameraMapViewport = new();
-    private readonly RouteDirectionsService cameraDirections = new();
-    private readonly MemoryLayer cameraMapRouteLayer = new() { Name = "Camera2DRouteLayer" };
-    private readonly MemoryLayer cameraMapUserLayer = new() { Name = "Camera2DUserLocation" };
-    private readonly MemoryLayer cameraMapPlacesLayer = new() { Name = "Camera2DDirectoryAndDestination" };
-    private OfflineMapLayerController? cameraMapDetails;
-    private CancellationTokenSource? cameraMapPage;
-    private CancellationTokenSource? cameraMapLocationRequest;
     private Window? cameraMapWindow;
-    private bool cameraMapWindowStopped, cameraMapPermissionChecked, cameraMapPermissionGranted;
-    private bool cameraMapPlannerOpen;
-    private long cameraMapGeneration;
-    private long cameraMapPlacesTrip = -1, cameraMapDirectoryRevision = -1;
-    private bool cameraDirectorySubscribed, cameraDirectoryRefreshing;
-    private EvacuationDirectorySnapshot? cameraDirectory;
-    private RouteResult? cameraMapRenderedRoute, cameraMapDirectionsRoute;
-    private LocationReading? cameraMapBrowsingReading, cameraMapRenderedLocation;
-    private LocationReading? cameraMapSearchLocation;
-    private Shelter? cameraMapSelectedShelter;
-    private string cameraMapCoverage = "";
-    private string cameraMapLocationNotice = "Waiting for a current validated GPS fix.";
-
-    private void InitializeCameraMapPresentation()
-    {
-        var map = new Mapsui.Map { CRS = "EPSG:3857" };
-        var online = MapBaseLayer.CreateOnlineLayer("Camera2DOnlineBase");
-        online.Name = "Camera2DOnlineBase"; online.Enabled = false;
-        map.Layers.Add(online);
-        map.Layers.Add(new ILayer[] { cameraMapPlacesLayer, cameraMapRouteLayer, cameraMapUserLayer });
-        foreach (var layer in map.Layers) layer.Enabled = false;
-        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
-        map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 9.5546); // Browsing center only; never a user pin or route origin.
-        CameraMapControl.Map = map;
-        cameraMapDetails = new(message => { cameraMapCoverage = message; UpdateCameraMapCoverage(); });
-        InitializeNavigationFeedback();
-    }
+    private bool cameraMapWindowStopped;
 
     private void ObserveCameraMapWindow()
     {
-        if (cameraMapWindow == Window) { ObserveNavigationFeedbackSettings(); ObserveCameraViewRequests(); return; }
-        UnobserveCameraMapWindow(); cameraMapWindow = Window; cameraMapWindowStopped = false;
-        ObserveNavigationFeedbackSettings(); ObserveCameraViewRequests();
-        if (cameraMapWindow is null) return;
-        cameraMapWindow.Stopped += CameraMapWindowStopped;
-        cameraMapWindow.Resumed += CameraMapWindowResumed;
+        if (cameraMapWindow != Window)
+        {
+            UnobserveCameraMapWindow();
+            cameraMapWindow = Window;
+            cameraMapWindowStopped = false;
+            if (cameraMapWindow is not null)
+            {
+                cameraMapWindow.Stopped += CameraMapWindowStopped;
+                cameraMapWindow.Resumed += CameraMapWindowResumed;
+            }
+        }
+        ObserveCameraViewRequests();
+        RefreshCameraStartupPresentation();
     }
+
     private void UnobserveCameraMapWindow()
     {
         UnobserveCameraViewRequests();
-        StopNavigationFeedback(unsubscribe: true);
         if (cameraMapWindow is null) return;
         cameraMapWindow.Stopped -= CameraMapWindowStopped;
         cameraMapWindow.Resumed -= CameraMapWindowResumed;
         cameraMapWindow = null;
     }
-    private void CameraMapWindowStopped(object? sender, EventArgs args) { cameraMapWindowStopped = true; StopCameraMapDisplay(); StopNavigationFeedback(unsubscribe: false); }
-    private void CameraMapWindowResumed(object? sender, EventArgs args) { cameraMapWindowStopped = false; ApplyPendingCameraViewRequest(); RefreshCameraMapPresentation(); }
 
-    private void StopCameraMapDisplay()
+    private void CameraMapWindowStopped(object? sender, EventArgs args)
     {
-        RefreshCameraStartupPresentation();
-        cameraMapGeneration++;
-        if (cameraDirectorySubscribed)
-        {
-            EvacuationDirectoryRuntime.Current.Changed -= CameraDirectoryChanged;
-            Connectivity.Current.ConnectivityChanged -= CameraDirectoryConnectivity;
-            cameraDirectorySubscribed = false;
-        }
-        cameraMapPlacesTrip = cameraMapDirectoryRevision = -1;
-        cameraMapPage?.Cancel(); cameraMapPage?.Dispose(); cameraMapPage = null;
-        cameraMapLocationRequest?.Cancel();
-        cameraMapDetails?.Deactivate();
-        cameraMapBrowsingReading = null; cameraMapRenderedLocation = null;
-        cameraMapPermissionChecked = cameraMapPermissionGranted = false;
-        foreach (var layer in CameraMapControl.Map.Layers) layer.Enabled = false;
-        cameraMapUserLayer.Features = Array.Empty<GeometryFeature>();
-        cameraMapUserLayer.DataHasChanged();
-        mapCenterSearchOverlay.IsVisible = false; routeDirectionsSheet.IsVisible = false; routeCalculatingOverlay.IsVisible = false;
+        cameraMapWindowStopped = true;
+        StopCameraMapDisplay();
     }
 
-    private bool IsCameraMapRequest(long generation, CancellationToken token) =>
-        !token.IsCancellationRequested && generation == cameraMapGeneration && pageIsVisible && !cameraMapWindowStopped &&
-        currentCameraModuleView == CameraModuleViewMode.Map2D;
-
-    private async Task PrepareCameraMapDisplayAsync(long generation, CancellationToken token)
+    private void CameraMapWindowResumed(object? sender, EventArgs args)
     {
-        if (!IsCameraMapRequest(generation, token)) return;
-        await cameraMapDetails!.ActivateAsync(CameraMapControl.Map);
+        cameraMapWindowStopped = false;
+        ApplyPendingCameraViewRequest();
+        RefreshCameraModuleDynamicUi();
     }
 
-    private void UpdateCameraMapCoverage() => mapModeStatusLabel.Text = cameraMapCoverage + "\n" + (cameraDirectory?.Notice ?? "Loading directory…");
-
-    private void CameraDirectoryChanged(EvacuationDirectorySnapshot snapshot) => Dispatcher.Dispatch(() =>
-    {
-        if (cameraMapPage is not null && !cameraMapWindowStopped && pageIsVisible) RefreshCameraMapPresentation();
-    });
-    private void CameraDirectoryConnectivity(object? sender, ConnectivityChangedEventArgs args)
-    {
-        if (cameraMapPage is { } page) _ = RefreshCameraDirectoryAsync(cameraMapGeneration, page.Token, false);
-    }
-    private async Task RefreshCameraDirectoryAsync(long generation, CancellationToken token, bool force)
-    {
-        if (cameraDirectoryRefreshing) return;
-        cameraDirectoryRefreshing = true;
-        try
-        {
-            await EvacuationDirectoryRuntime.Current.RefreshAsync(force, token);
-            if (IsCameraMapRequest(generation, token)) RefreshCameraMapPresentation();
-        }
-        catch (OperationCanceledException) { }
-        finally { cameraDirectoryRefreshing = false; }
-    }
-    private async void OnCameraDirectoryRefreshClicked(object? sender, EventArgs args)
-    {
-        if (cameraMapPage is { } page) await RefreshCameraDirectoryAsync(cameraMapGeneration, page.Token, true);
-    }
-
-    private void RefreshCameraMapPresentation()
-    {
-        if (cameraMapDetails is null) return;
-        if (Dispatcher.IsDispatchRequired) { Dispatcher.Dispatch(RefreshCameraMapPresentation); return; }
-        RefreshCameraStartupPresentation();
-        RefreshNavigationFeedback();
-        bool mapMode = currentCameraModuleView == CameraModuleViewMode.Map2D;
-        SetCameraSubTab(subTabArButton, subTabArLabel, currentCameraModuleView == CameraModuleViewMode.ArCamera);
-        SetCameraSubTab(subTabMapButton, subTabMapLabel, mapMode);
-        SetCameraSubTab(subTabFloodButton, subTabFloodLabel, currentCameraModuleView == CameraModuleViewMode.FloodDepth);
-        if (routeDirectionsSheet.IsVisible) PopulateCameraDirections();
-        bool visible = mapMode && pageIsVisible && !cameraMapWindowStopped;
-        if (!visible)
-        {
-            if (cameraMapPage is not null) StopCameraMapDisplay();
-            mapRouteSearchCard.IsVisible = false; mapRouteSummaryPanel.IsVisible = false;
-            return;
-        }
-        if (cameraMapPage is null)
-        {
-            cameraMapPage = new(); cameraMapGeneration++;
-            if (!cameraDirectorySubscribed)
-            {
-                EvacuationDirectoryRuntime.Current.Changed += CameraDirectoryChanged;
-                Connectivity.Current.ConnectivityChanged += CameraDirectoryConnectivity;
-                cameraDirectorySubscribed = true;
-            }
-            _ = RefreshCameraDirectoryAsync(cameraMapGeneration, cameraMapPage.Token, false);
-            foreach (var layer in CameraMapControl.Map.Layers) layer.Enabled = true;
-            _ = PrepareCameraMapDisplayAsync(cameraMapGeneration, cameraMapPage.Token);
-        }
-
-        cameraDirectory = EvacuationDirectoryRuntime.Current.Current;
-        UpdateCameraMapCoverage();
-        var destination = NavigationDestinationBridge.Current;
-        RouteResult? route; RouteProgressTracker.ProgressSnapshot progress; LocationReading? reading = null; bool held;
-        lock (routeProgressFusionSync)
-        {
-            route = CameraMapPresentationPolicy.ForTrip(activeRoute, activeDestinationVersion, destination.Version, destination.IsAvailable);
-            progress = _routeProgressTracker.Current;
-            held = destination.IsAvailable && (positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended);
-            if (latestGpsCoordinateForRouting is { } coordinate && latestGpsTimestampForRouting is { } timestamp)
-                reading = new(coordinate, latestGpsAccuracyForRouting, null, null, null, timestamp);
-        }
-        var now = DateTimeOffset.UtcNow;
-        // Browsing acquisition never writes route origins/progress. A trip uses only dev's canonical location stream.
-        if (!destination.IsAvailable) reading = cameraMapBrowsingReading;
-        var mapObservation = CameraMapPresentationPolicy.CanShowObservation(reading, now) ? reading : null;
-        if (!CameraMapPresentationPolicy.CanShowCurrent(reading, now, held)) reading = null;
-        mapFromLocationLabel.FormattedText = null;
-        mapFromLocationLabel.Text = mapObservation is null ? "Current location unknown" : $"GPS observation · ±{mapObservation.AccuracyMeters:0} m";
-        mapLocationNoticeLabel.Text = reading is null ? (held
-            ? mapObservation is null ? "Route progress is held; no recent GPS observation." : "GPS shown with uncertainty; route progress and turn distances are held."
-            : cameraMapLocationNotice) : "Current GPS; shelter distances are straight-line estimates.";
-        mapDestinationSelectedLabel.Text = cameraMapSelectedShelter is null ? "Select evacuation center…" :
-            cameraMapSelectedShelter.Name + " · " + CameraMapPresentationPolicy.DistanceTo(new(cameraMapSelectedShelter.Latitude, cameraMapSelectedShelter.Longitude), reading, now);
-
-        bool hasTrip = destination.IsAvailable && !safeZoneConfirmed;
-        mapRouteSearchCard.IsVisible = !emergencyAdvisoryVisible && !safeZoneConfirmed && (cameraMapPlannerOpen || !hasTrip);
-        mapRouteSummaryPanel.IsVisible = !emergencyAdvisoryVisible && hasTrip && !cameraMapPlannerOpen;
-        mapReturnToRouteButton.IsVisible = hasTrip && cameraMapPlannerOpen;
-        routeCalculatingOverlay.IsVisible = routeRequestInProgress && !routeStartupGpsRetryPending && !emergencyAdvisoryVisible && !safeZoneConfirmed;
-        mapCardStartRoutingButton.IsEnabled = !routeRequestInProgress;
-        mapRetryRouteButton.IsVisible = hasTrip && route is null && !routeRequestInProgress;
-        mapRouteDestinationNameLabel.Text = "To: " + destination.Name;
-        mapRouteStatsLabel.Text = route is null ? (routeStartupGpsRetryPending ? "Waiting for accurate GPS · route starts automatically" : routeRequestInProgress ? "Preparing route…" : routeStartupFailureMessage ?? "No accepted route. Check GPS/connection, then Retry route.") :
-            $"{route.TotalDistanceMeters:0} m route · {CameraMapPresentationPolicy.WalkEstimate(route.TotalDistanceMeters)}";
-
-        if (destination.Version != cameraMapPlacesTrip || cameraDirectory.Revision != cameraMapDirectoryRevision)
-        {
-            cameraMapPlacesTrip = destination.Version; cameraMapDirectoryRevision = cameraDirectory.Revision;
-            cameraMapPlacesLayer.Features = BuildCameraMapPlaces(destination, cameraDirectory);
-            cameraMapPlacesLayer.DataHasChanged();
-            if (mapCenterSearchOverlay.IsVisible) PopulateCameraShelters();
-        }
-        if (!ReferenceEquals(route, cameraMapRenderedRoute))
-        {
-            cameraMapRenderedRoute = route;
-            cameraMapRouteLayer.Features = route is null ? Array.Empty<GeometryFeature>() : BuildCameraMapRoute(route);
-            cameraMapRouteLayer.DataHasChanged();
-            if (route is not null && cameraMapViewport.ShouldFrameRoute(destination.Version, route)) FrameCameraMapRoute(route);
-            if (routeDirectionsSheet.IsVisible) PopulateCameraDirections();
-        }
-        if (mapObservation != cameraMapRenderedLocation)
-        {
-            cameraMapRenderedLocation = mapObservation;
-            cameraMapUserLayer.Features = mapObservation is null ? Array.Empty<GeometryFeature>() : BuildCameraMapObservation(mapObservation);
-            cameraMapUserLayer.DataHasChanged();
-        }
-        if (mapCenterSearchOverlay.IsVisible && ((reading is null) != (cameraMapSearchLocation is null) ||
-            (reading is not null && cameraMapSearchLocation is not null && reading.Coordinate.DistanceTo(cameraMapSearchLocation.Coordinate) > 20)))
-            PopulateCameraShelters();
-        var guidance = route is null ? PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable :
-            CameraMapPresentationPolicy.Guidance(route, progress, held || reading is null || lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastOffRouteCandidate || dynamicRerouteInProgress);
-        mapCurrentGuidanceLabel.Text = routeHazardBlocksGuidance ? routeHazardNotice ?? "Reported hazard affects this route." :
-            lastSafeZoneDecision.IsCandidate ? "Near destination — follow the existing arrival confirmation prompt." :
-            guidance.IsAvailable ? RouteDirectionsService.Text(guidance.Instruction) + (double.IsFinite(guidance.DistanceToTurnMeters) ? $" in ~{guidance.DistanceToTurnMeters:0} m" : "") :
-            route is null ? "Guidance begins after a route is accepted." : "Position uncertain · turn distances held.";
-        mapCurrentDistanceLabel.Text = guidance.IsAvailable && !routeHazardBlocksGuidance ? $"~{guidance.RemainingRouteMeters:0} m remaining · approximate" : "";
-        CameraMapControl.Map.RefreshGraphics();
-        if (destination.IsAvailable) cameraMapLocationRequest?.Cancel();
-        else _ = ReadCameraMapBrowsingLocationAsync(cameraMapGeneration, cameraMapPage.Token);
-    }
-
-    private static void SetCameraSubTab(Border button, Label label, bool active)
-    {
-        button.BackgroundColor = active ? Color.FromArgb("#0A8491") : Colors.Transparent;
-        label.TextColor = active ? Colors.White : Color.FromArgb("#64748B");
-    }
-
-    private async Task ReadCameraMapBrowsingLocationAsync(long generation, CancellationToken pageToken)
-    {
-        if (cameraMapLocationRequest is not null || (cameraMapPermissionChecked && !cameraMapPermissionGranted)) return;
-        using var request = CancellationTokenSource.CreateLinkedTokenSource(pageToken);
-        cameraMapLocationRequest = request; long trip = NavigationDestinationBridge.Current.Version;
-        try
-        {
-            if (!cameraMapPermissionChecked)
-            {
-                bool allowed = await _locationService.EnsurePermissionAsync(request.Token);
-                if (!IsCameraMapRequest(generation, request.Token)) return;
-                cameraMapPermissionChecked = true; cameraMapPermissionGranted = allowed;
-                if (!allowed) { cameraMapLocationNotice = "Location permission was not granted; browsing only."; return; }
-            }
-            var reading = await _locationService.GetCurrentLocationAsync(request.Token);
-            if (!IsCameraMapRequest(generation, request.Token) || NavigationDestinationBridge.Current.Version != trip) return;
-            cameraMapBrowsingReading = CameraMapPresentationPolicy.CanShowCurrent(reading, DateTimeOffset.UtcNow, false) ? reading : null;
-            cameraMapLocationNotice = cameraMapBrowsingReading is null ? "No current validated GPS fix. The map can still be browsed." : "";
-        }
-        catch (OperationCanceledException) { }
-        catch { if (IsCameraMapRequest(generation, pageToken)) cameraMapLocationNotice = "Current GPS unavailable; browsing only."; }
-        finally { if (ReferenceEquals(cameraMapLocationRequest, request)) cameraMapLocationRequest = null; }
-    }
-
-    private static GeometryFeature CameraMapPin(GeoCoordinate coordinate, string label, MapColor color, double size = 0.7)
-    {
-        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(coordinate.Longitude, coordinate.Latitude);
-        var feature = new GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
-        feature.Styles.Add(new Mapsui.Styles.SymbolStyle { SymbolType = Mapsui.Styles.SymbolType.Ellipse, SymbolScale = size, Fill = new MapBrush(color), Outline = new MapPen(MapColor.White, 2) });
-        feature.Styles.Add(new Mapsui.Styles.LabelStyle { Text = label, ForeColor = MapColor.FromString("#0F172A"), BackColor = new MapBrush(MapColor.White), Offset = new Mapsui.Styles.Offset(0, -18) });
-        return feature;
-    }
-
-    private static GeometryFeature[] BuildCameraMapObservation(LocationReading reading)
-    {
-        var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(reading.Coordinate.Longitude, reading.Coordinate.Latitude);
-        // EPSG:3857 lengths expand by latitude; retain the reported ground radius.
-        double radius = reading.AccuracyMeters!.Value / Math.Cos(reading.Coordinate.Latitude * Math.PI / 180);
-        var area = new GeometryFeature(new NetTopologySuite.Geometries.Point(x, y).Buffer(radius));
-        area.Styles.Add(new Mapsui.Styles.VectorStyle
-        {
-            Fill = new MapBrush(new MapColor(26, 115, 232, 40)),
-            Outline = new MapPen(MapColor.FromString("#1A73E8"), 1)
-        });
-        return new[] { area, CameraMapPin(reading.Coordinate, $"GPS observation · ±{reading.AccuracyMeters:0} m", MapColor.FromString("#1A73E8"), 0.8) };
-    }
-    private static GeometryFeature[] BuildCameraMapPlaces(NavigationDestinationBridge.DestinationSnapshot destination, EvacuationDirectorySnapshot directory)
-    {
-        var pins = EvacuationCenterRepository.GetEvacuationCenters(directory).Where(center => CameraMapPresentationPolicy.CanProject(new(center.Latitude, center.Longitude)))
-            .Select(center => CameraMapPin(new(center.Latitude, center.Longitude), center.Name + " · directory", MapColor.FromString("#0A8491"))).ToList();
-        if (destination.IsAvailable && CameraMapPresentationPolicy.CanProject(destination.Coordinate))
-            pins.Add(CameraMapPin(destination.Coordinate, "Destination: " + destination.Name, MapColor.FromString("#EA4335"), 1));
-        return pins.ToArray();
-    }
-    private static GeometryFeature[] BuildCameraMapRoute(RouteResult route)
-    {
-        var coordinates = route.Points.Select(point =>
-        {
-            var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(point.Coordinate.Longitude, point.Coordinate.Latitude);
-            return new Coordinate(x, y);
-        }).ToArray();
-        var geometry = new LineString(coordinates);
-        var halo = new GeometryFeature(geometry.Copy());
-        halo.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.White, 12) });
-        var casing = new GeometryFeature(geometry);
-        casing.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#075D66"), 9) });
-        var line = new GeometryFeature(geometry.Copy());
-        line.Styles.Add(new Mapsui.Styles.VectorStyle { Line = new MapPen(MapColor.FromString("#00D9E6"), 6) });
-        return new[] { halo, casing, line, CameraMapPin(route.Points[0].Coordinate, "Route start", MapColor.Gray, 0.6) };
-    }
-    private void FrameCameraMapRoute(RouteResult route)
-    {
-        var points = route.Points.Select(point => Mapsui.Projections.SphericalMercator.FromLonLat(point.Coordinate.Longitude, point.Coordinate.Latitude)).ToArray();
-        double minX = points.Min(point => point.x), maxX = points.Max(point => point.x), minY = points.Min(point => point.y), maxY = points.Max(point => point.y);
-        double width = Math.Max(100, CameraMapControl.Width - 80), height = Math.Max(100, CameraMapControl.Height - 330);
-        double resolution = Math.Clamp(Math.Max((maxX - minX) / width, (maxY - minY) / height) * 1.2, 0.6, 200);
-        CameraMapControl.Map.Navigator.CenterOnAndZoomTo(new MPoint((minX + maxX) / 2, (minY + maxY) / 2), resolution);
-    }
-
-    private void OnOpenCenterSearchOverlayClicked(object? sender, EventArgs args)
-    {
-        cameraMapPlannerOpen = true; mapCenterSearchOverlay.IsVisible = true;
-        centerModalSearchEntry.Text = ""; PopulateCameraShelters();
-        if (cameraMapPage is { } page) _ = RefreshCameraDirectoryAsync(cameraMapGeneration, page.Token, false);
-    }
-    private void OnCloseCenterSearchOverlayClicked(object? sender, EventArgs args) => mapCenterSearchOverlay.IsVisible = false;
-    private void OnClearCenterSearchClicked(object? sender, EventArgs args) { centerModalSearchEntry.Text = ""; PopulateCameraShelters(); }
-    private void OnCenterModalSearchTextChanged(object? sender, TextChangedEventArgs args) => PopulateCameraShelters();
-    private void PopulateCameraShelters()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var current = CameraMapPresentationPolicy.CanShowCurrent(cameraMapRenderedLocation, now, false) ? cameraMapRenderedLocation : null;
-        cameraMapSearchLocation = current;
-        var directory = cameraDirectory = EvacuationDirectoryRuntime.Current.Current;
-        var centers = EvacuationCenterRepository.GetEvacuationCenters(directory).Where(center => center.Name.Contains(centerModalSearchEntry.Text ?? "", StringComparison.OrdinalIgnoreCase));
-        centers = current is null ? centers.OrderBy(center => center.Name) : centers.OrderBy(center => current.Coordinate.DistanceTo(new(center.Latitude, center.Longitude)));
-        centerSearchResultsView.ItemsSource = centers.Select(center => new ShelterSearchDisplayItem { Center = center,
-            DistanceText = CameraMapPresentationPolicy.DistanceTo(new(center.Latitude, center.Longitude), current, now) }).ToArray();
-        mapSearchOrderLabel.Text = (current is null ? "By name · distance unknown" : "By estimated straight-line distance") + "\n" + directory.Notice;
-        cameraDirectoryEmptyLabel.Text = directory.Centers.Count == 0 ? "No evacuation centers are listed in this directory." : "No matching evacuation centers.";
-    }
-    private void OnShelterSearchResultSelected(object? sender, TappedEventArgs args)
-    {
-        if (args.Parameter is not ShelterSearchDisplayItem selected) return;
-        cameraMapSelectedShelter = selected.Center; cameraMapPlannerOpen = true;
-        mapCenterSearchOverlay.IsVisible = false; RefreshCameraMapPresentation();
-    }
-    private async void OnStartRoutingClicked(object? sender, EventArgs args)
-    {
-        if (cameraMapSelectedShelter is null) { OnOpenCenterSearchOverlayClicked(sender, args); return; }
-        var selected = EvacuationDirectoryRuntime.Current.ResolveSelected(cameraMapSelectedShelter.Id, cameraMapSelectedShelter.Latitude, cameraMapSelectedShelter.Longitude);
-        if (selected is null)
-        {
-            cameraMapSelectedShelter = null;
-            await DisplayAlert("Directory changed", "Select the center again from the updated directory.", "OK");
-            OnOpenCenterSearchOverlayClicked(sender, args); return;
-        }
-        cameraMapSelectedShelter = new Shelter { Id = selected.Id, Name = selected.Name, Latitude = selected.Latitude, Longitude = selected.Longitude, Status = selected.Status };
-        cameraMapLocationRequest?.Cancel();
-        if (!CameraNavigationLauncher.Publish(cameraMapSelectedShelter))
-        {
-            await DisplayAlert("Route destination", "This directory entry has no verified destination coordinates.", "OK"); return;
-        }
-        cameraMapPlannerOpen = false;
-        // Publish triggers dev's one destination-change flow; do not assign activeRoute or compute a parallel route.
-        RefreshCameraMapPresentation();
-    }
-    private void OnCameraMapRetryRouteClicked(object? sender, EventArgs args) { StartRouteRequestIfPossible(); RefreshCameraMapPresentation(); }
-    private void OnCameraMapReturnToRouteClicked(object? sender, EventArgs args) { cameraMapPlannerOpen = false; RefreshCameraMapPresentation(); }
-    private void OnCameraMapOverviewClicked(object? sender, EventArgs args) { if (cameraMapRenderedRoute is { } route) FrameCameraMapRoute(route); }
-    private void OnCameraMapRecenterClicked(object? sender, EventArgs args)
-    {
-        if (CameraMapPresentationPolicy.CanShowCurrent(cameraMapRenderedLocation, DateTimeOffset.UtcNow, false))
-        {
-            var coordinate = cameraMapRenderedLocation!.Coordinate;
-            var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(coordinate.Longitude, coordinate.Latitude);
-            CameraMapControl.Map.Navigator.CenterOnAndZoomTo(new MPoint(x, y), 2.3886);
-        }
-        else { cameraMapPermissionChecked = false; cameraMapLocationNotice = "Current location unknown; waiting for a validated GPS fix."; RefreshCameraMapPresentation(); }
-    }
-    private void OnRouteDirectionsButtonClicked(object? sender, EventArgs args) { PopulateCameraDirections(); routeDirectionsSheet.IsVisible = true; }
-    private void OnTurnGuidancePanelClicked(object? sender, TappedEventArgs args) => OnRouteDirectionsButtonClicked(sender, args);
-    private void OnRouteDirectionsCloseClicked(object? sender, EventArgs args) => routeDirectionsSheet.IsVisible = false;
-    private void PopulateCameraDirections()
-    {
-        var destination = NavigationDestinationBridge.Current;
-        RouteResult? route;
-        lock (routeProgressFusionSync) route = CameraMapPresentationPolicy.ForTrip(activeRoute, activeDestinationVersion, destination.Version, destination.IsAvailable);
-        routeDirectionsTitleLabel.Text = "Route overview · estimated geometry";
-        routeDirectionsTargetLabel.Text = destination.IsAvailable ? "To: " + destination.Name : "No active destination";
-        routeDirectionsDistanceLabel.Text = route is null ? "No accepted route" : $"~{route.TotalDistanceMeters:0} m";
-        if (ReferenceEquals(cameraMapDirectionsRoute, route)) return;
-        cameraMapDirectionsRoute = route;
-        routeStepsCollectionView.ItemsSource = route is null ? Array.Empty<RouteDirectionStepItem>() : cameraDirections.Build(route, destination.Name)
-            .Select(step => new RouteDirectionStepItem { IconSource = step.IconSource, InstructionText = step.InstructionText,
-                SubtitleText = step.SubtitleText, DistanceText = step.DistanceText }).ToArray();
-    }
+    private void StopCameraMapDisplay() => RefreshCameraStartupPresentation();
 }
