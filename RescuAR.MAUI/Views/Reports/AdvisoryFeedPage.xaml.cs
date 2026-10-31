@@ -7,10 +7,14 @@ public partial class AdvisoryFeedPage : ContentPage
 {
     public AdvisoryFeedViewModel ViewModel { get; }
 
-    public AdvisoryFeedPage()
+    public AdvisoryFeedPage(AdvisoryFeedViewModel viewModel)
     {
-        ViewModel = new AdvisoryFeedViewModel();
+        ViewModel = viewModel ?? new AdvisoryFeedViewModel();
         InitializeComponent();
         BindingContext = ViewModel;
+    }
+
+    public AdvisoryFeedPage() : this(new AdvisoryFeedViewModel())
+    {
     }
 }
