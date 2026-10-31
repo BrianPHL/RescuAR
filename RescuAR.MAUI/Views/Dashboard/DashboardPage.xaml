@@ -76,7 +76,7 @@
                                             <Shadow Brush="#0F172A" Offset="0,8" Radius="16" Opacity="0.22" />
                                         </Border.Shadow>
                                         <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference DashboardRoot}, Path=ViewModel.ExecuteCarouselActionCommand, x:DataType=dashboard:DashboardPage}"
                                                                  CommandParameter="{Binding .}" />
                                         </Border.GestureRecognizers>
                                         <Grid RowDefinitions="*,Auto">
@@ -124,7 +124,7 @@
                                                         <Shadow Brush="#000000" Offset="0,3" Radius="6" Opacity="0.25" />
                                                     </Border.Shadow>
                                                     <Border.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:DashboardViewModel}}, Path=ExecuteCarouselActionCommand, x:DataType=vm:DashboardViewModel}"
+                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference DashboardRoot}, Path=ViewModel.ExecuteCarouselActionCommand, x:DataType=dashboard:DashboardPage}"
                                                                              CommandParameter="{Binding .}" />
                                                     </Border.GestureRecognizers>
                                                     <Label Text="{Binding ButtonText}"
