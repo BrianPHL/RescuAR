@@ -251,4 +251,22 @@ public class DisasterAdvisory : BaseModel, INotifyPropertyChanged
 
     [JsonIgnore]
     public string AlertIconData => CategoryIconData;
+
+    private static readonly Microsoft.Maui.Controls.Shapes.PathGeometryConverter _geoConverter = new();
+
+    [JsonIgnore]
+    public Microsoft.Maui.Controls.Shapes.Geometry? CategoryGeometry
+    {
+        get
+        {
+            try
+            {
+                return (Microsoft.Maui.Controls.Shapes.Geometry?)_geoConverter.ConvertFromInvariantString(CategoryIconData);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
 }
