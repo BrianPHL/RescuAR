@@ -14,6 +14,7 @@ void Check(bool condition, string name)
 if (args.Contains("--evacuation-directory"))
 {
     await EvacuationDirectoryChecks.RunAsync(Check);
+    await EvacuationRepositoryChecks.RunAsync(Check);
     DirectoryCacheChecks.Run(Check);
     Console.WriteLine($"{passed} evacuation-directory and production-cache checks passed.");
     return;

@@ -1,6 +1,7 @@
 using RescuAR.AR;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Hazards;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using System;
@@ -178,13 +179,32 @@ public sealed class MLDARIntegrationService
     public async Task<RouteResult?> RequestRouteWithDeferredRoadApproachAsync(
         GeoCoordinate origin, GeoCoordinate destination,
         Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<RouteHazard>? hazards = null)
     {
         ArgumentNullException.ThrowIfNull(findRoadAccess);
-        RouteResult? route = await RequestRouteAsync(origin, destination, cancellationToken);
-        if (route is { Points.Count: >= 2 } &&
-            route.Points[0].Coordinate.IsValid &&
-            origin.DistanceTo(route.Points[0].Coordinate) <= 50) return route;
+        // Keep one immutable exclusion set for both the direct request and
+        // the bounded road-access retry. Neither retry may remove hazards.
+        var exclusions = hazards is null ? Array.Empty<RouteHazard>() : new List<RouteHazard>(hazards).ToArray();
+        if (RouteHazardGeometry.IsDestinationExcluded(destination, exclusions)) return null;
+        async Task<RouteResult?> Request(GeoCoordinate start)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RouteResult? candidate = exclusions.Length == 0
+                ? await RequestRouteAsync(start, destination, cancellationToken)
+                : routingService is IHazardAwareRoutingService aware
+                    ? await aware.FindRouteAvoidingHazardsAsync(start, destination, exclusions, cancellationToken)
+                    : null;
+            cancellationToken.ThrowIfCancellationRequested();
+            return candidate is { Points.Count: >= 2 } &&
+                candidate.Points[0].Coordinate.IsValid &&
+                origin.DistanceTo(candidate.Points[0].Coordinate) <= 50 &&
+                RouteHazardGeometry.IsSegmentSafeFromOrigin(origin, candidate.Points[0].Coordinate, origin, exclusions) &&
+                RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(candidate, origin, exclusions)
+                    ? candidate : null;
+        }
+        RouteResult? route = await Request(origin);
+        if (route is not null) return route;
         cancellationToken.ThrowIfCancellationRequested();
         var roadAccess = await findRoadAccess(cancellationToken);
         if (roadAccess is not { ConnectsToDestination: true } access ||
@@ -194,9 +214,8 @@ public sealed class MLDARIntegrationService
         cancellationToken.ThrowIfCancellationRequested();
         AndroidLog.Info(LogTag,
             $"ROAD APPROACH ROUTE RETRY: provider='{routingService.AlgorithmName}', distance={distance:F1}m.");
-        route = await RequestRouteAsync(access.Coordinate, destination, cancellationToken);
-        return route is { Points.Count: >= 2 } && route.Points[0].Coordinate.IsValid &&
-            origin.DistanceTo(route.Points[0].Coordinate) <= 50 ? route : null;
+        if (!RouteHazardGeometry.IsSegmentSafeFromOrigin(origin, access.Coordinate, origin, exclusions)) return null;
+        return await Request(access.Coordinate);
     }
 
     /// <summary>

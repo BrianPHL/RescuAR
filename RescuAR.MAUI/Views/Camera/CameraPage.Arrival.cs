@@ -32,7 +32,7 @@ public partial class CameraPage
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         return pageIsVisible && !safeZoneConfirmed && !emergencyAdvisoryVisible &&
-            currentCameraModuleView == CameraModuleViewMode.ArCamera &&
+            currentCameraModuleView != CameraModuleViewMode.FloodDepth &&
             destination.IsAvailable && activeDestinationVersion == destination.Version &&
             activeDestinationCoordinate == destination.Coordinate &&
             reading is not null && UserArrivalConfirmationPolicy.CanOffer(

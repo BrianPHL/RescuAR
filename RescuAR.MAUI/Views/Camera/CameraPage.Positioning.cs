@@ -14,7 +14,8 @@ public partial class CameraPage
 
     private void RefreshForegroundLocationOwnership()
     {
-        if (pageIsVisible && NavigationDestinationBridge.Current.IsAvailable)
+        if (pageIsVisible && !cameraMapWindowStopped &&
+            (NavigationDestinationBridge.Current.IsAvailable || currentCameraModuleView == CameraModuleViewMode.Map2D))
             foregroundLocationLease ??= (_locationService as IForegroundLocationSource)?.AcquireForegroundUpdates();
         else
             Interlocked.Exchange(ref foregroundLocationLease, null)?.Dispose();

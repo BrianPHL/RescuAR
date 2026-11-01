@@ -358,7 +358,7 @@
 
                     <!-- Action buttons: Steps & Stop Guidance -->
                     <HorizontalStackLayout Grid.Column="2" Spacing="6" VerticalOptions="Center">
-                        <Button Text="Steps" TextColor="#0A8491" BackgroundColor="#F0FDFA" BorderColor="#CCFBF1" BorderWidth="1" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="8,0"
+                        <Button x:Name="mapRouteStepsButton" Text="Steps" TextColor="#0A8491" BackgroundColor="#F0FDFA" BorderColor="#CCFBF1" BorderWidth="1" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="8,0"
                                 Clicked="OnRouteDirectionsButtonClicked" />
                         <Button Text="Stop" TextColor="#FFFFFF" BackgroundColor="#DC2626" CornerRadius="8" HeightRequest="32" FontSize="11" FontAttributes="Bold" Padding="10,0"
                                 Clicked="OnEndNavigationClicked" />
@@ -419,16 +419,22 @@
                         </Grid>
 
                         <!-- Section Title -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,0">
-                            <Label Text="Nearby Safe Havens &amp; Shelters" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
-                            <Label Grid.Column="1" Text="Sorted by proximity" TextColor="#94A3B8" FontSize="10.5" />
-                        </Grid>
+                        <VerticalStackLayout Grid.Row="1" Spacing="4" Margin="4,0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="Nearby Safe Havens &amp; Shelters" TextColor="#64748B" FontSize="11" FontAttributes="Bold" />
+                                <Label x:Name="mapSearchOrderLabel" Grid.Column="1" Text="Fetching shelters…" TextColor="#94A3B8" FontSize="10.5" />
+                            </Grid>
+                            <Label x:Name="cameraDirectoryNoticeLabel" IsVisible="False" TextColor="#64748B" FontSize="10.5" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
 
                         <!-- Search Results CollectionView -->
                         <CollectionView
                             Grid.Row="2"
                             x:Name="centerSearchResultsView"
                             SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Label x:Name="cameraSheltersEmptyLabel" Text="Loading evacuation centers from the database…" TextColor="#64748B" Padding="12" />
+                            </CollectionView.EmptyView>
                             <CollectionView.ItemTemplate>
                                 <DataTemplate x:DataType="camera:ShelterSearchDisplayItem">
                                     <Border Margin="0,4" Padding="12,10" BackgroundColor="#FFFFFF" Stroke="#E2E8F0" StrokeThickness="1" StrokeShape="RoundRectangle 12">

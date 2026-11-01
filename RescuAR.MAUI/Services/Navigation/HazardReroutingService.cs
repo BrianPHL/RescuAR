@@ -67,6 +67,7 @@ public sealed class HazardReroutingService
     private DateTimeOffset? lastRemoteRefreshSuccessUtc;
 
     private int remoteRefreshInProgress;
+    private Task remoteRefreshTask = Task.CompletedTask;
     private RouteHazard[]? fingerprintInput;
     private string? cachedFingerprint;
     private string? persistedFingerprint;
@@ -374,40 +375,50 @@ public sealed class HazardReroutingService
         }
     }
 
-    public void ScheduleRemoteRefreshIfDue(
-        bool internetAvailable)
+    public RouteHazard[] GetRouteHazards()
     {
-        if (!internetAvailable)
-        {
-            return;
-        }
+        lock (sync) return MergeHazardsLocked().ToArray();
+    }
+
+    public DateTimeOffset? LastRemoteRefreshSuccessUtc
+    {
+        get { lock (sync) return lastRemoteRefreshSuccessUtc; }
+    }
+
+    public async Task<RouteHazard[]> GetRouteHazardsAsync(bool internetAvailable, CancellationToken token)
+    {
+        // A slow report server must not hold route startup indefinitely.
+        // The normal monitor keeps refreshing after this bounded wait ends.
+        try { await StartRemoteRefreshIfDue(internetAvailable).WaitAsync(TimeSpan.FromSeconds(3), token); }
+        catch (TimeoutException) { }
+        token.ThrowIfCancellationRequested();
+        return GetRouteHazards();
+    }
+
+    public void ScheduleRemoteRefreshIfDue(bool internetAvailable) =>
+        _ = StartRemoteRefreshIfDue(internetAvailable);
+
+    private Task StartRemoteRefreshIfDue(bool internetAvailable)
+    {
+        if (!internetAvailable) return Task.CompletedTask;
 
         DateTimeOffset now =
             DateTimeOffset.UtcNow;
 
         lock (sync)
         {
-            if (now -
+            if (Volatile.Read(ref remoteRefreshInProgress) != 0 || now -
                     lastRemoteRefreshAttemptUtc <
                 RemoteRefreshInterval)
             {
-                return;
+                return remoteRefreshTask;
             }
 
             lastRemoteRefreshAttemptUtc =
                 now;
+            Volatile.Write(ref remoteRefreshInProgress, 1);
+            return remoteRefreshTask = RefreshRemoteHazardsAsync();
         }
-
-        if (Interlocked.CompareExchange(
-                ref remoteRefreshInProgress,
-                1,
-                0) != 0)
-        {
-            return;
-        }
-
-        _ =
-            RefreshRemoteHazardsAsync();
     }
 
     private async Task RefreshRemoteHazardsAsync()

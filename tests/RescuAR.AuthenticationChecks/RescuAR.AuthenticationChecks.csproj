@@ -39,6 +39,8 @@
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineMapCache.cs" Link="OfflineMapCache.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/OfflineOverlaySession.cs" Link="OfflineOverlaySession.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Evacuation/EvacuationDirectory.cs" Link="EvacuationDirectory.cs" />
+    <Compile Include="../../RescuAR.MAUI/Data/EvacuationCenterRepository.cs" Link="EvacuationCenterRepository.cs" />
+    <Compile Include="../../RescuAR.MAUI/Models/EvacuationCenter.cs" Link="EvacuationCenter.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Storage/EvacuationDirectoryModels.cs" Link="EvacuationDirectoryModels.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Storage/CacheService.cs" Link="CacheService.cs" />
     <Compile Include="../../RescuAR/Navigation/Models/GeoCoordinate.cs" Link="GeoCoordinate.cs" />

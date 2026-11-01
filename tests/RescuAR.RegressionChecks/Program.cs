@@ -17,6 +17,13 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--camera-routing"))
+{
+    CameraMapChecks.Run(Check);
+    await SharedCameraRoutingChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} shared camera routing checks passed.");
+    return;
+}
 if (args.Contains("--pdr-map-matching"))
 {
     LocationAcquisitionChecks.Run(Check);

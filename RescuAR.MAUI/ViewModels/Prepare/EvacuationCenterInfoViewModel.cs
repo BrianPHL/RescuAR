@@ -18,6 +18,7 @@ using Microsoft.Maui.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Storage;
+using RescuAR.App.Services.Evacuation;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.MAUI.Services.Location;
@@ -197,6 +198,9 @@ public partial class EvacuationCenterItem : ObservableObject
 [QueryProperty(nameof(FilterCategory), "filter")]
 public partial class EvacuationCenterInfoViewModel : ObservableObject
 {
+    private bool _directorySubscribed;
+    private long _directoryRevision = -1;
+    private string _directoryNotice = string.Empty;
     private const string MldLogTag = "RescuAR-MLD";
     private readonly List<EvacuationCenterItem> _masterCentersList = new();
     private readonly ILocationService _locationService;
@@ -571,6 +575,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 ShelterSectionSubtitle = "Nearest shelter is listed first";
             }
         }
+        if (!string.IsNullOrWhiteSpace(_directoryNotice)) OfflineStatusDescription = _directoryNotice;
     }
 
     private static string FormatTimestamp(DateTimeOffset dt)
@@ -682,52 +687,45 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     private void LoadData()
     {
         var cached = CacheService.LoadEvacuationCenters();
-        if (cached != null && cached.Centers != null && cached.Centers.Count > 0)
+        if (cached?.Hotlines is { Count: > 0 })
         {
-            _masterCentersList.Clear();
-            foreach (var c in cached.Centers)
-            {
-                _masterCentersList.Add(CreateItemFromCached(c));
-            }
-
-            if (cached.Hotlines != null && cached.Hotlines.Count > 0)
-            {
-                Hotlines.Clear();
-                foreach (var h in cached.Hotlines)
-                {
-                    Hotlines.Add(new EmergencyHotlineItem
-                    {
-                        Name = h.Name,
-                        Number = h.Number,
-                        Type = h.Type,
-                        BadgeText = h.BadgeText
-                    });
-                }
-            }
-            else
-            {
-                LoadDefaultHotlines();
-            }
-
-            LastSuccessfulUpdate = cached.LastUpdatedUtc;
-            IsOfflineData = !IsConnectedToInternet();
-            UpdateOfflineStatusInfo();
-            RecalculateDistances();
+            Hotlines.Clear();
+            foreach (var hotline in cached.Hotlines)
+                Hotlines.Add(new EmergencyHotlineItem { Name = hotline.Name, Number = hotline.Number,
+                    Type = hotline.Type, BadgeText = hotline.BadgeText });
         }
-        else
-        {
-            LoadDefaultHotlines();
-            _masterCentersList.Clear();
-            _masterCentersList.AddRange(GetOfficialMarikinaCenters());
-            LastSuccessfulUpdate = CacheService.GetLastUpdatedTime();
-            IsOfflineData = !IsConnectedToInternet();
-            UpdateOfflineStatusInfo();
-            RecalculateDistances();
-        }
+        else LoadDefaultHotlines();
+        ApplyDirectorySnapshot(EvacuationDirectoryRuntime.Current.Current);
     }
+
+    private void ApplyDirectorySnapshot(EvacuationDirectorySnapshot snapshot)
+    {
+        if (snapshot.Revision == _directoryRevision) return;
+        _directoryRevision = snapshot.Revision;
+        _directoryNotice = snapshot.Notice;
+        _masterCentersList.Clear();
+        foreach (var center in snapshot.Centers) _masterCentersList.Add(CreateItemFromCached(center));
+        LastSuccessfulUpdate = snapshot.UpdatedAt;
+        IsOfflineData = snapshot.Origin != DirectoryOrigin.Live;
+        RecalculateDistances();
+    }
+
+    private void EvacuationDirectoryChanged(EvacuationDirectorySnapshot snapshot) =>
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            var current = EvacuationDirectoryRuntime.Current.Current;
+            if (_directorySubscribed && snapshot.SourceKey == current.SourceKey && snapshot.Revision == current.Revision)
+                ApplyDirectorySnapshot(snapshot);
+        });
 
     public void OnAppearing()
     {
+        if (!_directorySubscribed)
+        {
+            EvacuationDirectoryRuntime.Current.Changed += EvacuationDirectoryChanged;
+            _directorySubscribed = true;
+        }
+        LoadData();
         if (_locationExpiryTimer is null && Application.Current?.Dispatcher is { } dispatcher)
         {
             _locationExpiryTimer = dispatcher.CreateTimer();
@@ -750,6 +748,11 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public void OnDisappearing()
     {
+        if (_directorySubscribed)
+        {
+            EvacuationDirectoryRuntime.Current.Changed -= EvacuationDirectoryChanged;
+            _directorySubscribed = false;
+        }
         _locationExpiryTimer?.Stop();
         if (_isConnectivitySubscribed)
         {
@@ -797,138 +800,25 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
 
     public async Task RefreshDataAsync()
     {
-        Task locationRefresh = FilterEvacuationCentersByGpsAsync();
-        if (!IsConnectedToInternet())
-        {
-            IsOfflineData = true;
-            UpdateOfflineStatusInfo();
-            await locationRefresh;
-            RecalculateDistances();
-            return;
-        }
-
         await Task.WhenAll(
-            locationRefresh,
+            FilterEvacuationCentersByGpsAsync(),
             FetchHotlinesFromSupabaseAsync(),
-            FetchEvacuationCentersFromSupabaseAsync()
-        );
+            FetchEvacuationCentersFromSupabaseAsync());
     }
 
     public async Task FetchEvacuationCentersFromSupabaseAsync()
     {
-        if (!IsConnectedToInternet())
-        {
-            IsOfflineData = true;
-            UpdateOfflineStatusInfo();
-            RecalculateDistances();
-            return;
-        }
-
         try
         {
-            var client = await SupabaseService.Instance.GetClientAsync();
-            if (client != null)
+            var snapshot = await EvacuationDirectoryRuntime.Current.RefreshAsync(force: true);
+            await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                var response = await client.From<SupabaseEvacuationCenter>()
-                    .Order("name", Supabase.Postgrest.Constants.Ordering.Ascending)
-                    .Get();
-
-                if (response?.Models != null && response.Models.Count > 0)
-                {
-#if ANDROID
-                    Android.Util.Log.Info(MldLogTag, $"Fetched {response.Models.Count} evacuation centers from Supabase.");
-#endif
-                    var updatedList = new List<EvacuationCenterItem>();
-
-                    foreach (var model in response.Models)
-                    {
-                        if (!double.TryParse(model.Latitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
-                            !double.TryParse(model.Longitude, NumberStyles.Float, CultureInfo.InvariantCulture, out var lng) ||
-                            !new GeoCoordinate(lat, lng).IsValid || (lat == 0 && lng == 0))
-                            continue;
-
-                        var facilitiesList = ParseFacilities(model.Facilities);
-                        string resolvedImage = (model.ImageUrl ?? string.Empty).Trim();
-
-                        var item = new EvacuationCenterItem
-                        {
-                            Id = model.Id ?? string.Empty,
-                            Name = model.Name ?? string.Empty,
-                            Barangay = model.Barangay ?? string.Empty,
-                            Classification = string.IsNullOrWhiteSpace(model.Classification) ? "Flood-Safe Major" : model.Classification,
-                            Address = string.IsNullOrWhiteSpace(model.Barangay) ? "Marikina City" : $"{model.Barangay}, Marikina City",
-                            VerifiedBy = "Marikina LGU",
-                            Latitude = lat,
-                            Longitude = lng,
-                            Capacity = model.Capacity > 0 ? model.Capacity : 500,
-                            CurrentEvacuees = model.CurrentEvacuees,
-                            Status = string.IsNullOrWhiteSpace(model.Status) ? "Standby" : model.Status,
-                            HeadOfficer = string.IsNullOrWhiteSpace(model.HeadOfficer) ? "Unassigned" : model.HeadOfficer,
-                            Contact = string.IsNullOrWhiteSpace(model.Contact) ? "N/A" : model.Contact,
-                            Facilities = facilitiesList,
-                            FacilityImageUrl = resolvedImage,
-                            MapImageSource = $"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lng}&zoom=16&size=600x300&markers={lat},{lng},red-pushpin"
-                        };
-
-                        item.LoadBookmarkState();
-
-                        updatedList.Add(item);
-                    }
-
-                    if (updatedList.Count == 0)
-                    {
-                        AndroidLog.Warn(MldLogTag,
-                            "Live shelter catalog contained no valid coordinates; saved catalog retained.");
-                        IsOfflineData = true;
-                        RecalculateDistances();
-                        return;
-                    }
-                    AndroidLog.Info(MldLogTag,
-                        $"SHELTER_CATALOG source=LIVE; received={response.Models.Count}; valid={updatedList.Count}.");
-
-                    // Save latest successfully loaded data to local storage (Requirements 1, 3, 4)
-                    var now = DateTimeOffset.UtcNow;
-                    var cachedItems = updatedList.Select(CreateCachedFromItem).ToList();
-                    var cachedHotlines = Hotlines.Select(h => new CachedEmergencyHotlineItem
-                    {
-                        Name = h.Name,
-                        Number = h.Number,
-                        Type = h.Type,
-                        BadgeText = h.BadgeText
-                    }).ToList();
-
-                    CacheService.SaveEvacuationCenters(cachedItems, cachedHotlines, now);
-
-                    MainThread.BeginInvokeOnMainThread(() =>
-                    {
-                        _masterCentersList.Clear();
-                        _masterCentersList.AddRange(updatedList);
-                        LastSuccessfulUpdate = now;
-                        IsOfflineData = false;
-                        UpdateOfflineStatusInfo();
-                        RecalculateDistances();
-                    });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-#if ANDROID
-            Android.Util.Log.Error(MldLogTag, $"Failed to fetch live evacuation centers from Supabase: {ex.Message}");
-#else
-            System.Diagnostics.Debug.WriteLine($"Failed to fetch live evacuation centers from Supabase: {ex.Message}");
-#endif
-            // If online request fails, do NOT overwrite existing saved data with empty/incomplete results (Requirement 4)
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                IsOfflineData = true;
-                UpdateOfflineStatusInfo();
-                if (_masterCentersList.Count == 0)
-                {
-                    LoadData();
-                }
+                var current = EvacuationDirectoryRuntime.Current.Current;
+                if (snapshot.SourceKey == current.SourceKey && snapshot.Revision == current.Revision)
+                    ApplyDirectorySnapshot(snapshot);
             });
         }
+        catch (OperationCanceledException) { }
     }
 
     private static List<string> ParseFacilities(object? rawFacilities)
@@ -957,6 +847,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
     public async Task FetchHotlinesFromSupabaseAsync()
     {
         if (!IsConnectedToInternet()) return;
+        string sourceKey = EvacuationDirectoryRuntime.Current.Current.SourceKey;
 
         try
         {
@@ -971,6 +862,7 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
+                        if (EvacuationDirectoryRuntime.Current.Current.SourceKey != sourceKey) return;
                         Hotlines.Clear();
                         foreach (var h in response.Models)
                         {
@@ -982,6 +874,10 @@ public partial class EvacuationCenterInfoViewModel : ObservableObject
                                 BadgeText = string.IsNullOrWhiteSpace(h.Category) ? "EMS" : h.Category.ToUpper()
                             });
                         }
+                        CacheService.UpdateHotlines(Hotlines.Select(h => new CachedEmergencyHotlineItem
+                        {
+                            Name = h.Name, Number = h.Number, Type = h.Type, BadgeText = h.BadgeText
+                        }), sourceKey);
                     });
                 }
             }
