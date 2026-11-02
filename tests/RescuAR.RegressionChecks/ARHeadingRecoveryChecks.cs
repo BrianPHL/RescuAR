@@ -204,6 +204,29 @@ internal static class ARHeadingRecoveryChecks
         check(withheld && heading.LastResult is { IsStable: false, RequiresMovementValidation: true } &&
             !heading.CanCaptureAutomatically,
             "restart: a same-frame magnetic contradiction still withholds guidance instead of rotating a live route");
+
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(39);
+            heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2)
+            {
+                check(heading.LastResult is { IsStable: false, RequiresMovementValidation: true },
+                    "visibility: one or two supporting samples cannot release a contradicted heading");
+                await Task.Delay(1050);
+            }
+        }
+        check(heading.LastResult == recovered && heading.CanCaptureAutomatically,
+            "visibility: repeated same-frame support restores the original magnetic yaw without rotating the route");
+
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(0);
+            heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2) await Task.Delay(1050);
+        }
+        check(heading.LastResult is { IsStable: false, RequiresMovementValidation: true },
+            "visibility: another real contradiction still suspends the recovered heading");
         heading.PrepareForNavigationTrip();
         check(heading.LastResult is null && heading.CanCaptureAutomatically,
             "restart: a new trip discards an already invalid magnetic cache");
@@ -217,6 +240,38 @@ internal static class ARHeadingRecoveryChecks
         heading.PrepareForNavigationTrip();
         check(heading.LastResult == partial && !heading.CanCaptureAutomatically,
             "restart: a destination change cannot override partial movement calibration with the compass");
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(90);
+            heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2) await Task.Delay(1050);
+        }
+        check(heading.LastResult == partial && !heading.CanCaptureAutomatically,
+            "visibility: compass agreement cannot release a partial movement correction");
+
+        // A held magnetic calibration cannot be restored in another epoch,
+        // even when the compass happens to agree with its former yaw.
+        heading.ResetSessionCalibration("visibility frame boundary fixture");
+        var beforePause = await Capture(0);
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(39);
+            heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2) await Task.Delay(1050);
+        }
+        check(beforePause is { IsStable: true } && heading.LastResult is { IsStable: false },
+            "visibility: frame boundary fixture begins with suspended magnetic trust");
+        ARTrackingStateBridge.PublishLifecycleTransition(generation.SessionGeneration, "Paused", "visibility pause", false);
+        ARTrackingStateBridge.PublishLifecycleTransition(generation.SessionGeneration, "Running", "visibility resume", false);
+        for (int i = 0; i < 3; i++)
+        {
+            Sample(0);
+            heading.ObserveIndependentContinuity(C(0), null);
+            if (i < 2) await Task.Delay(1050);
+        }
+        check(heading.LastResult is { IsStable: false, RequiresMovementValidation: true } &&
+            heading.LastResult != beforePause,
+            "visibility: same-yaw compass support cannot restore trust across a tracking pause");
     }
 
     private static void CheckObservationPairing(Action<bool, string> check, ARRenderGenerationToken generation)

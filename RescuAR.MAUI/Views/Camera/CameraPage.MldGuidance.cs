@@ -53,9 +53,13 @@ public partial class CameraPage
         return true;
     }
 
-    private void TryPublishReadyMldWindow(RouteResult route, string reason)
+    // Heading and floor readiness can complete after the GPS observation was
+    // accepted in either view. Both providers must bind that observation once
+    // AR is ready; waiting for another GPS sample can leave A* unpublished.
+    private void TryPublishReadyRouteWindow(RouteResult route, string reason)
     {
-        if (!IsMldRoute(route)) return;
+        if (!pageIsVisible || cameraMapWindowStopped ||
+            currentCameraModuleView != CameraModuleViewMode.ArCamera) return;
         lock (routeProgressFusionSync)
         {
             var accepted = acceptedGpsPosition;
@@ -89,8 +93,8 @@ public partial class CameraPage
                 ? TryPublishMovingRouteWindow(route, match, reason)
                 : TryPublishApproachToRouteVisual(route, match, reason);
             if (previousWindow != ARRouteBridge.Current.Version)
-                LogDetailedDebug(ProgressLogTag, $"NAV_MLD_READY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
-                $"trip={activeDestinationVersion}; published={published}; source='{reason}'.");
+                LogDetailedDebug(ProgressLogTag, $"NAV_ROUTE_READY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                $"trip={activeDestinationVersion}; algorithm='{route.Algorithm}'; published={published}; source='{reason}'.");
         }
     }
 }

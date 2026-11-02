@@ -103,6 +103,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         new();
 
     private static HeadingAlignmentResult? sessionCalibration;
+    private static HeadingAlignmentResult? continuitySuspendedCalibration;
     private static long calibrationRevision;
     private readonly HeadingContinuityPolicy continuity = new();
     public long CalibrationRevision { get { lock (sessionCalibrationSync) return calibrationRevision; } }
@@ -178,6 +179,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
             if (sessionCalibration is not { Source: "MAGNETIC" } ||
                 LastResult is not { IsStable: false }) return;
             sessionCalibration = null;
+            continuitySuspendedCalibration = null;
             calibrationRevision++;
         }
     }
@@ -194,6 +196,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             sessionCalibration =
                 null;
+            continuitySuspendedCalibration = null;
             calibrationRevision++;
         }
 
@@ -334,6 +337,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
             if (CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame))
             {
                 sessionCalibration = null;
+                continuitySuspendedCalibration = null;
                 calibrationRevision++;
             }
             cachedCalibration = LastResult;
@@ -628,6 +632,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
             sessionCalibration =
                 corrected;
+            continuitySuspendedCalibration = null;
             calibrationRevision++;
         }
 
@@ -649,7 +654,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
     public bool TryGetIndependentObservation(GeoCoordinate location, double? altitudeMeters,
         out HeadingAlignmentResult observation) => TryCreateSample(location, altitudeMeters, out observation, out _);
 
-    /// <summary>Requalifies a healthy pause or withholds contradicted trust. Never rotates geometry from the compass.</summary>
+    /// <summary>Requalifies retained alignment or withholds contradicted trust. Never rotates geometry from the compass.</summary>
     public bool ObserveIndependentContinuity(GeoCoordinate location, double? altitudeMeters)
     {
         if (!TryCreateSample(location, altitudeMeters, out var sample, out _)) return false;
@@ -660,6 +665,22 @@ public sealed class ArHeadingAlignmentService : IDisposable
             var verdict = continuity.Observe(retained.MapToArYawDegrees, sample.MapToArYawDegrees,
                 sample.OrientationObservedAt, sample.SessionGeneration, sample.TrackingEpoch,
                 sample.WorldFrame, calibrationRevision);
+            // A temporary magnetic disturbance must not latch the route off
+            // for the rest of a short trip. Repeated support may restore only
+            // the exact previously stable magnetic calibration in its original
+            // frame. A different yaw, movement correction or frame still needs
+            // the normal acquisition/movement validation path.
+            if (verdict == HeadingContinuityPolicy.Verdict.SupportsRetained &&
+                continuitySuspendedCalibration is { } suspended &&
+                retained == (suspended with { IsStable = false, RequiresMovementValidation = true }) &&
+                suspended.SessionGeneration == sample.SessionGeneration &&
+                suspended.TrackingEpoch == sample.TrackingEpoch && suspended.WorldFrame == sample.WorldFrame)
+            {
+                sessionCalibration = suspended;
+                continuitySuspendedCalibration = null;
+                calibrationRevision++;
+                return true;
+            }
             bool healthyResume = verdict == HeadingContinuityPolicy.Verdict.SupportsRetained &&
                 retained.IsStable && !retained.RequiresMovementValidation && retained.WorldFrame == sample.WorldFrame;
             if (healthyResume && retained.TrackingEpoch != sample.TrackingEpoch)
@@ -669,6 +690,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 return true;
             }
             if (verdict != HeadingContinuityPolicy.Verdict.Contradicted || retained.RequiresMovementValidation) return false;
+            continuitySuspendedCalibration = retained is { Source: "MAGNETIC", IsStable: true }
+                ? retained : null;
             sessionCalibration = retained with { IsStable = false, RequiresMovementValidation = true };
             calibrationRevision++;
             return true;
@@ -976,6 +999,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 result.TrackingEpoch != frame.TrackingEpoch || result.WorldFrame != frame.WorldFrame)
                 return false;
             sessionCalibration = result;
+            continuitySuspendedCalibration = null;
             calibrationRevision++;
         }
 

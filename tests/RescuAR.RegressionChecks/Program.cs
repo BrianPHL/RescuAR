@@ -17,6 +17,17 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--route-visibility"))
+{
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await ARGuidanceParityChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    CameraMapChecks.Run(Check);
+    ArrivalArrowChecks.Run(Check);
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} route visibility regression checks passed.");
+    return;
+}
 if (args.Contains("--camera-routing"))
 {
     CameraMapChecks.Run(Check);

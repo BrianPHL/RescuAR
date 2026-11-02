@@ -1333,8 +1333,8 @@ namespace RescuAR.App.Views.Camera
                 _arCoreService.TrackingSnapshot;
 
             if (pageIsVisible && currentCameraModuleView == CameraModuleViewMode.ArCamera &&
-                activeRoute is { } trackedRoute && IsMldRoute(trackedRoute))
-                TryPublishReadyMldWindow(trackedRoute, "MLD/REGISTERED-MOTION");
+                activeRoute is { } trackedRoute)
+                TryPublishReadyRouteWindow(trackedRoute, "AR/REGISTERED-MOTION");
             bool headingTrusted = HasCurrentRouteHeading();
 
             ARCameraSpatialController.SetRouteHeadingTrust(
@@ -4352,7 +4352,7 @@ namespace RescuAR.App.Views.Camera
                     ResetArRouteVisualMode("heading ready; confirm road entry with fresh GPS");
                     initialRoadApproachPending = true;
                     roadEntryConfirmation.Reset();
-                    TryPublishReadyMldWindow(route, "MLD/HEADING-READY");
+                    TryPublishReadyRouteWindow(route, "AR/HEADING-READY");
                 }
 
                 var routeSnapshot = ARRouteBridge.Current;
@@ -4587,7 +4587,7 @@ namespace RescuAR.App.Views.Camera
                     ResetArRouteVisualMode("AR heading recovered; require fresh road-entry observations");
                     initialRoadApproachPending = true;
                     roadEntryConfirmation.Reset();
-                    TryPublishReadyMldWindow(route, "MLD/HEADING-RECOVERED");
+                    TryPublishReadyRouteWindow(route, "AR/HEADING-RECOVERED");
                 }
                 AndroidLog.Info(HeadingLogTag, "AR heading recovered without recalculating the geographic route.");
             }
