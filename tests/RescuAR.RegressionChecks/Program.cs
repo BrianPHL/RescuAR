@@ -17,8 +17,10 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
-if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy"))
+if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy") || args.Contains("--astar-gps"))
 {
+    LocationAcquisitionChecks.Run(Check);
+    await AStarLocationAcquisitionChecks.RunAsync(Check);
     await AStarRouteDisplayChecks.RunAsync(Check);
     await AStarHeadingRecoveryChecks.RunAsync(Check);
     await MldGuidanceOwnershipChecks.RunAsync(Check);
@@ -27,6 +29,7 @@ if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy"))
 }
 if (args.Contains("--route-visibility"))
 {
+    await AStarLocationAcquisitionChecks.RunAsync(Check);
     await AStarRouteDisplayChecks.RunAsync(Check);
     await AStarHeadingRecoveryChecks.RunAsync(Check);
     await ARHeadingRecoveryChecks.RunAsync(Check);

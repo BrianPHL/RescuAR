@@ -23,6 +23,8 @@
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/RouteDirectionsService.cs" Link="RouteDirectionsService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Location/LocationReading.cs" Link="LocationReading.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Location/LocationAcquisitionPolicy.cs" Link="LocationAcquisitionPolicy.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Location/ILocationService.cs" Link="ILocationService.cs" />
+    <Compile Include="../../RescuAR.MAUI/Services/Location/AStarLocationAcquisitionPolicy.cs" Link="AStarLocationAcquisitionPolicy.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationVoiceGuidanceService.cs" Link="NavigationVoiceGuidanceService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationHapticGuidanceService.cs" Link="NavigationHapticGuidanceService.cs" />
     <Compile Include="../../RescuAR.MAUI/Services/Navigation/NavigationFeedbackController.cs" Link="NavigationFeedbackController.cs" />

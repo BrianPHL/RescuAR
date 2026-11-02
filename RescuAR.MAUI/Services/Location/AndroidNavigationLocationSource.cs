@@ -100,6 +100,54 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         }
     }
 
+    public async Task<LocationReading?> GetAStarCurrentAsync(DateTimeOffset? newerThan,
+        CancellationToken cancellationToken)
+    {
+        await requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            lock (sync)
+            {
+                activeRequests++;
+                if (suspended) return null;
+                Start();
+            }
+            long started = Environment.TickCount64;
+            LocationReading? best = null;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var now = DateTimeOffset.UtcNow;
+                lock (sync)
+                {
+                    if (suspended) return null;
+                    Start();
+                    best = AStarLocationAcquisitionPolicy.Select(gps, network, best, now, newerThan);
+                }
+                var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+                if (AStarLocationAcquisitionPolicy.CanComplete(best, now, newerThan, elapsed) ||
+                    elapsed >= AStarLocationAcquisitionPolicy.CollectionWindow)
+                {
+                    AndroidLog.Info("RescuAR-GPS", $"NAV_ASTAR_LOCATION selected={best?.Provider ?? "none"}; " +
+                        $"accuracy={best?.AccuracyMeters:F2}m; ageMs={(now - best?.Timestamp)?.TotalMilliseconds:F0}; " +
+                        $"elapsedMs={elapsed.TotalMilliseconds:F0}; newerThan={newerThan:O}; " +
+                        "acquisitionTimePreserved=True; coordinatesFiltered=False.");
+                    return best;
+                }
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            lock (sync)
+            {
+                activeRequests--;
+                StopIfUnused();
+            }
+            requestGate.Release();
+        }
+    }
+
     private void Start()
     {
         if (listening) return;

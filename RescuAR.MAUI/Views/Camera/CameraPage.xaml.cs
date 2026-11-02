@@ -4446,6 +4446,19 @@ namespace RescuAR.App.Views.Camera
         {
             LocationReading? cached;
             lock (routeProgressFusionSync) cached = latestRouteStartupReading;
+            if (AStarLocationAcquisitionPolicy.UseForStartup(activeRoute,
+                    NavigationDestinationBridge.Current.IsAvailable,
+                    Connectivity.Current.NetworkAccess == NetworkAccess.Internet) &&
+                _locationService is IAStarLocationSource)
+            {
+                // An offline A* start waits briefly for actual fresh evidence;
+                // it does not reuse an eight-second planning cache as its origin.
+                var newerThan = LocationAcquisitionPolicy.IsCurrent(cached, DateTimeOffset.UtcNow)
+                    ? cached!.Timestamp : (DateTimeOffset?)null;
+                var precise = await TryGetRouteLocationAsync(cancellationToken, useAStar: true, newerThan: newerThan);
+                return IsCurrentRouteStartupLocationAcceptable(precise)
+                    ? (precise, "ASTAR_FRESH", false) : (null, "ASTAR_CURRENT_REJECTED", false);
+            }
             if (IsRecentRouteStartupLocationAcceptable(cached, out _))
                 return (cached, "CAMERA_RECENT", true);
 
@@ -5095,12 +5108,12 @@ namespace RescuAR.App.Views.Camera
         }
 
         private async Task<LocationReading?> TryGetRouteLocationAsync(
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken, bool useAStar = false, DateTimeOffset? newerThan = null)
         {
             try
             {
-                return await _locationService.GetCurrentLocationAsync(
-                    cancellationToken);
+                return await AStarLocationAcquisitionPolicy.GetAsync(_locationService, useAStar,
+                    newerThan, cancellationToken);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -5214,7 +5227,8 @@ namespace RescuAR.App.Views.Camera
                     }
 
                     LocationReading? reading =
-                        await TryGetRouteLocationAsync(cancellationToken);
+                        await TryGetRouteLocationAsync(cancellationToken,
+                            useAStar: AStarRouteDisplayPolicy.AppliesTo(route), newerThan: consumedLocationAt);
 
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -5786,7 +5800,8 @@ namespace RescuAR.App.Views.Camera
 #endif
 
                     await Task.Delay(
-                        RouteProgressPollInterval,
+                        AStarRouteDisplayPolicy.AppliesTo(route)
+                            ? AStarLocationAcquisitionPolicy.PollInterval : RouteProgressPollInterval,
                         cancellationToken);
                 }
             }

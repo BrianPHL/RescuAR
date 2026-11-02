@@ -22,3 +22,10 @@ public interface IForegroundLocationSource
 {
     IDisposable? AcquireForegroundUpdates();
 }
+
+/// <summary>Optional acquisition of a fresh, unconsumed fix for offline A*.</summary>
+public interface IAStarLocationSource
+{
+    Task<LocationReading?> GetAStarLocationAsync(DateTimeOffset? newerThan,
+        CancellationToken cancellationToken = default);
+}
