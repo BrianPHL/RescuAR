@@ -21,6 +21,7 @@ namespace RescuAR.App.Views.Reports
 
         protected override void OnDisappearing()
         {
+            ViewModel.ConnectivityStatus.StopMonitoring();
             ViewModel.PauseReportWork();
             base.OnDisappearing();
         }
@@ -28,6 +29,7 @@ namespace RescuAR.App.Views.Reports
         protected override void OnAppearing()
         {
             base.OnAppearing();
+            ViewModel.ConnectivityStatus.StartMonitoring();
             ViewModel.ResumeReportWork();
             if (BindingContext is ReportsViewModel vm)
             {

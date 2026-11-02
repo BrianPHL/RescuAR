@@ -17,6 +17,8 @@ namespace RescuAR.App.ViewModels.Reports
     {
         private readonly CommunityReportService _reportService;
         private readonly IOsmGeocodingService _osmService;
+        private long _feedLoadVersion;
+        public ConnectivityMonitoringViewModel ConnectivityStatus { get; } = new();
         private ResidentReportScope? _reportOwner;
         private IncidentPoint? _reportPoint;
         private System.Threading.CancellationTokenSource? _reportCancellation;
@@ -57,7 +59,7 @@ namespace RescuAR.App.ViewModels.Reports
         private bool isVicinityMonitoringActive = true;
 
         [ObservableProperty]
-        private bool hasVicinityAlerts = true;
+        private bool hasVicinityAlerts;
 
         [ObservableProperty]
         private string vicinityStatusTitle = "Vicinity Monitoring Active";
@@ -180,8 +182,7 @@ namespace RescuAR.App.ViewModels.Reports
             _reportService = reportService;
             _osmService = osmService;
 
-            // Fetch reports initially when VM is created
-            _ = LoadReportsAsync();
+            ConnectivityStatus.ConnectionRestored += (_, _) => _ = LoadReportsAsync();
 
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed -= HandleNewAdvisoryPushed;
             RescuAR.App.Services.Reports.RealtimeAdvisoryManager.OnNewAdvisoryPushed += HandleNewAdvisoryPushed;
@@ -248,6 +249,14 @@ namespace RescuAR.App.ViewModels.Reports
         [RelayCommand]
         public async Task LoadReportsAsync()
         {
+            var loadVersion = ++_feedLoadVersion;
+            ConnectivityStatus.Refresh();
+            if (!ConnectivityStatus.IsInternetAvailable)
+            {
+                IsRefreshing = false;
+                return;
+            }
+
             IsRefreshing = true;
             try
             {
@@ -273,6 +282,8 @@ namespace RescuAR.App.ViewModels.Reports
                 }
 
                 var list = await _reportService.GetReportsAsync(SearchQuery, SelectedFilter, UserLatitude, UserLongitude);
+                ConnectivityStatus.Refresh();
+                if (loadVersion != _feedLoadVersion || !ConnectivityStatus.IsInternetAvailable) return;
 
                 foreach (var report in list)
                 {
@@ -304,15 +315,19 @@ namespace RescuAR.App.ViewModels.Reports
             }
             finally
             {
-                IsRefreshing = false;
+                if (loadVersion == _feedLoadVersion)
+                {
+                    IsRefreshing = false;
+                    ConnectivityStatus.CompleteRefresh();
+                }
             }
         }
 
         private void UpdateVicinityHazardAlerts(List<CommunityReport> reports)
         {
+            HasVicinityAlerts = true;
             if (reports == null || reports.Count == 0)
             {
-                HasVicinityAlerts = true;
                 VicinityAlertSeverity = "Clear";
                 VicinityStatusTitle = "Vicinity Clear • Safe Area";
                 VicinityStatusSubtitle = "No active disaster reports within your 5 km vicinity.";

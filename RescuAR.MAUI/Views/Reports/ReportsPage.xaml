@@ -113,6 +113,32 @@
                 <ScrollView VerticalScrollBarVisibility="Never">
                     <VerticalStackLayout Spacing="16" Padding="16,14,16,88">
 
+                        <!-- Internet availability for the community report feed. -->
+                        <Border BackgroundColor="{Binding ConnectivityStatus.BackgroundColor}"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 12"
+                                Padding="12,10">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <Path Data="M1,9L3,11C7.97,6.03 16.03,6.03 21,11L23,9C16.93,2.93 7.08,2.93 1,9M9,17L12,20L15,17C13.35,15.34 10.66,15.34 9,17M5,13L7,15C9.76,12.24 14.24,12.24 17,15L19,13C15.14,9.14 8.87,9.14 5,13Z"
+                                      Fill="{Binding ConnectivityStatus.ForegroundColor}"
+                                      WidthRequest="20"
+                                      HeightRequest="20"
+                                      Aspect="Uniform"
+                                      VerticalOptions="Start"
+                                      Margin="0,2,0,0" />
+                                <VerticalStackLayout Grid.Column="1" Spacing="3">
+                                    <Label Text="{Binding ConnectivityStatus.Title}"
+                                           TextColor="{Binding ConnectivityStatus.ForegroundColor}"
+                                           FontSize="13"
+                                           FontAttributes="Bold" />
+                                    <Label Text="{Binding ConnectivityStatus.Message}"
+                                           TextColor="{Binding ConnectivityStatus.ForegroundColor}"
+                                           FontSize="11"
+                                           LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Border>
+
                         <!-- HERO VICINITY MONITORING BANNER (No Shadow, Clean Inset Track) -->
                         <Border BackgroundColor="#0A8491"
                                 StrokeThickness="0"
@@ -272,8 +298,20 @@
                         <CollectionView ItemsSource="{Binding Reports}">
                             <CollectionView.EmptyView>
                                 <VerticalStackLayout Spacing="8" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
-                                    <Label Text="No reports found" TextColor="#94A3B8" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" />
-                                    <Label Text="Be the first to post a community report." TextColor="#64748B" FontSize="13" HorizontalOptions="Center" />
+                                    <Label Text="No reports found" TextColor="#94A3B8" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding ConnectivityStatus.IsInternetAvailable}" Value="False">
+                                                <Setter Property="Text" Value="Reports unavailable offline" />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
+                                    <Label Text="Be the first to post a community report." TextColor="#64748B" FontSize="13" HorizontalOptions="Center" HorizontalTextAlignment="Center">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding ConnectivityStatus.IsInternetAvailable}" Value="False">
+                                                <Setter Property="Text" Value="Connect to the internet to load community reports." />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
                                 </VerticalStackLayout>
                             </CollectionView.EmptyView>
 
