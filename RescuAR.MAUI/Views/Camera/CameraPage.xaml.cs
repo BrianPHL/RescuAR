@@ -11387,6 +11387,7 @@ namespace RescuAR.App.Views.Camera
             if (!pageIsVisible || cameraMapWindowStopped) return;
             RefreshCameraMapNavigation();
 #if ANDROID
+            TryResetInheritedAStarHeading();
             if (pageIsVisible && !safeZoneConfirmed && !_arCoreService.IsSessionPaused &&
                 latestRouteStartupReading is { } orientationLocation)
                 ObserveHeadingContinuity(orientationLocation);

@@ -17,8 +17,16 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--astar-visibility"))
+{
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} A* visibility and MLD lock regression checks passed.");
+    return;
+}
 if (args.Contains("--route-visibility"))
 {
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
     await ARHeadingRecoveryChecks.RunAsync(Check);
     await ARGuidanceParityChecks.RunAsync(Check);
     await MldGuidanceOwnershipChecks.RunAsync(Check);

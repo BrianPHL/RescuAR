@@ -184,6 +184,35 @@ public sealed class ArHeadingAlignmentService : IDisposable
         }
     }
 
+    /// <summary>Allows a new offline A* trip to acquire its first heading when
+    /// the previous trip left an untrusted calibration in the retained session.</summary>
+    public bool TryPrepareForAStarTrip(RouteResult route, DateTimeOffset tripStartedAt,
+        bool routeWindowPublished)
+    {
+        bool isAStar = string.Equals(route.Provenance.Provider, "ASTAR", StringComparison.OrdinalIgnoreCase) ||
+            (route.Provenance == RouteProvenance.Unreported &&
+             (string.Equals(route.Algorithm, "AStar", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(route.Algorithm, "AStar (Hazard-Aware)", StringComparison.OrdinalIgnoreCase)));
+        if (!isAStar || routeWindowPublished) return false;
+        lock (sessionCalibrationSync)
+        {
+            var frame = ARCameraPoseBridge.CurrentFrame;
+            if (LastResult is not { IsAvailable: true, IsStable: false, RequiresMovementValidation: true } inherited ||
+                inherited.Timestamp >= tripStartedAt ||
+                !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
+                inherited.SessionGeneration != frame.Generation.SessionGeneration) return false;
+
+            // This is an untrusted estimate from an earlier trip, not a
+            // correction established during this trip. CaptureAsync must still
+            // obtain fresh synchronized, stable orientation/AR samples before
+            // any route can be rendered. MLD never enters this reset path.
+            sessionCalibration = null;
+            continuitySuspendedCalibration = null;
+            calibrationRevision++;
+            return true;
+        }
+    }
+
     /// <summary>
     /// Clears the cached map-to-AR yaw because a genuinely new ARCore world
     /// frame is about to be created. Do not call this for Camera-tab pause /
