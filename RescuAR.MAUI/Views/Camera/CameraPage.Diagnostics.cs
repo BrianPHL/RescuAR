@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.Diagnostics;
 using System.Collections.Generic;
 using System.Threading;
@@ -200,7 +201,7 @@ public partial class CameraPage
             RescuAR.Diagnostics.AndroidLog.Info("RescuAR-Routing",
                 $"ROAD DIAGNOSTICS PLACEMENT: session={frame.Generation.SessionGeneration}, " +
                 $"gpsAccuracy={reading.AccuracyMeters:F1}m, " +
-                $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds):F1}s, " +
+                $"fixAge={Math.Max(0, (NavigationClock.UtcNow - reading.ObservationTime).TotalSeconds):F1}s, " +
                 $"headingRepeatability={heading.Value.MaxSampleDeviationDegrees:F2}deg, " +
                 $"mapToArYaw={heading.Value.MapToArYawDegrees:F2}deg, " +
                 $"calibratedAt={heading.Value.Timestamp:O}, " +

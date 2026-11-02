@@ -168,6 +168,15 @@ public static class ARCameraSpatialController
     private static int lastTrackedPlacementTrustScore;
 
     private static bool routeHeadingTrusted;
+    private static bool routeDepthOcclusionEnabled;
+    public static bool RouteDepthOcclusionEnabled { get { lock (sync) return routeDepthOcclusionEnabled; } }
+
+    /// <summary>Optional scene occlusion is independent of baseline mapped
+    /// navigation and floor acquisition. Enable only for a deliberate retest.</summary>
+    public static void SetRouteDepthOcclusionEnabled(bool enabled)
+    {
+        lock (sync) routeDepthOcclusionEnabled = enabled;
+    }
 
     private static SpatialContinuitySnapshot currentSpatialContinuity =
         new(
@@ -1178,7 +1187,7 @@ public static class ARCameraSpatialController
             (!trackingValid || !anchor.IsAvailable);
 
         ARRouteRenderer.SetDepthOcclusionRequested(
-            route.IsEnabled &&
+            routeDepthOcclusionEnabled && route.IsEnabled &&
             trackingValid && !roadDiagnostic.Active);
 
         if (route.IsEnabled &&

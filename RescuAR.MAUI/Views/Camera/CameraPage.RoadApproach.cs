@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.AR;
 using RescuAR.MAUI.Services.Location;
@@ -51,7 +52,7 @@ public partial class CameraPage
 
     private static bool IsRoadApproachFixUsable(LocationReading? reading) =>
         reading is not null && RouteStartupLocationPolicy.CanPlace(reading.Coordinate,
-            reading.AccuracyMeters, reading.Timestamp, DateTimeOffset.UtcNow);
+            reading.AccuracyMeters, reading.ObservationTime, NavigationClock.UtcNow);
 
     private void ClearRoadApproachCue()
     {
@@ -135,7 +136,7 @@ public partial class CameraPage
         {
             if (epoch != roadApproachEpoch) return;
             if (IsRoadApproachFixUsable(latestRouteStartupReading) &&
-                latestRouteStartupReading!.Timestamp > reading!.Timestamp)
+                latestRouteStartupReading!.ObservationTime > reading!.ObservationTime)
                 reading = latestRouteStartupReading;
         }
         if (!IsRoadApproachFixUsable(reading)) return;
@@ -209,7 +210,7 @@ public partial class CameraPage
         }
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
-        TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+        TimeSpan age = reading is null ? TimeSpan.MaxValue : NavigationClock.UtcNow - reading.ObservationTime;
         bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
         if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
@@ -278,7 +279,7 @@ public partial class CameraPage
         {
             if (activeRoute is not { } mappedRoute || GetTrackedRouteMotion() is not { } motion ||
                 !_routeDisplayProgressPolicy.TryGetRegisteredReference(mappedRoute, cue.Target,
-                DateTimeOffset.UtcNow, motion, out var targetReference))
+                NavigationClock.UtcNow, motion, out var targetReference))
             {
                 ARRoadApproachBridge.Clear("mapped target registration unavailable");
                 return false;
@@ -295,7 +296,7 @@ public partial class CameraPage
         }
         ARRoadApproachBridge.SetOwnership(cue.Owner);
         if (!ARRoadApproachBridge.Publish(cue.Reading.Coordinate, cue.Target, cue.Yaw,
-            cue.Reading.AccuracyMeters, cue.Reading.Timestamp, cue.Session, cue.Owner, registeredDirection, worldTarget))
+            cue.Reading.AccuracyMeters, cue.Reading.ObservationTime, cue.Session, cue.Owner, registeredDirection, worldTarget))
             return false;
         routeLocatorIcon.IsVisible = true;
         routeLocatorIcon.Source = "lucide_arrow_up_teal.png";
@@ -324,8 +325,8 @@ public partial class CameraPage
         LocationReading? reading;
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         bool fresh = reading is not null && RouteStartupLocationPolicy.CanPlan(
-            reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
-            DateTimeOffset.UtcNow, cached: true);
+            reading.Coordinate, reading.AccuracyMeters, reading.ObservationTime,
+            NavigationClock.UtcNow, cached: true);
         // A distance summary survives brief AR/floor acquisition interruptions.
         // A direction-only cue additionally requires fresh GPS and camera pose;
         // it never advances progress or constructs walking geometry.
@@ -337,7 +338,7 @@ public partial class CameraPage
                 ? $"Destination ~{reading!.Coordinate.DistanceTo(destination.Coordinate):0} m away. Use the map to check walking access."
                 : "Waiting for accurate GPS. Use the map to check walking access.";
         var frame = ARCameraPoseBridge.CurrentFrame;
-        TimeSpan age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+        TimeSpan age = reading is null ? TimeSpan.MaxValue : NavigationClock.UtcNow - reading.ObservationTime;
         if (fresh && reading is not null && reading.AccuracyMeters is double accuracy &&
             accuracy <= 30 && age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10) &&
             HasCurrentRouteHeading() && frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
@@ -366,8 +367,8 @@ public partial class CameraPage
         if (cue is null || !IsRoadApproachFixUsable(cue.Reading) ||
             (pendingInitialRoute is not null && !computedRouteReady) ||
             (!computedRouteReady && cue.Reading.Coordinate.DistanceTo(cue.Target) > 20) ||
-            DateTimeOffset.UtcNow < (computedRouteReady ? nextHeadingRetryAt : nextRoadApproachRetryAt)) return;
-        nextRoadApproachRetryAt = DateTimeOffset.UtcNow.AddSeconds(10);
+            NavigationClock.UtcNow < (computedRouteReady ? nextHeadingRetryAt : nextRoadApproachRetryAt)) return;
+        nextRoadApproachRetryAt = NavigationClock.UtcNow.AddSeconds(10);
         Dispatcher.Dispatch(() =>
         {
             if (!token.IsCancellationRequested && pageIsVisible && !safeZoneConfirmed &&

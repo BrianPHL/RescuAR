@@ -1,4 +1,5 @@
 using System;
+using RescuAR.Navigation.Timing;
 using RescuAR.Navigation.Models;
 
 namespace RescuAR.Navigation.Guidance;
@@ -172,7 +173,7 @@ public sealed class SafeZoneConfirmationService
             accuracyMeters!.Value <=
                 MaximumAcceptedAccuracyMeters;
 
-        TimeSpan fixAge = (evaluatedAt ?? DateTimeOffset.UtcNow) - observedAt;
+        TimeSpan fixAge = (evaluatedAt ?? NavigationClock.UtcNow) - observedAt;
         bool observationIsFresh = fixAge >= TimeSpan.FromSeconds(-2) &&
             fixAge <= TimeSpan.FromSeconds(5);
 
@@ -267,7 +268,7 @@ public sealed class SafeZoneConfirmationService
             distanceToDestinationMeters <= CandidateResetDistanceMeters &&
             distanceToDestinationMeters - accuracyMeters.Value <= effectiveArrivalRadiusMeters &&
             lastCountedObservationTime.HasValue && observedAt >= lastCountedObservationTime.Value &&
-            (evaluatedAt ?? DateTimeOffset.UtcNow) - lastCountedObservationTime.Value <= MaximumObservationGap;
+            (evaluatedAt ?? NavigationClock.UtcNow) - lastCountedObservationTime.Value <= MaximumObservationGap;
         if (!holdObservations) ResetCandidate();
 
         string reason =

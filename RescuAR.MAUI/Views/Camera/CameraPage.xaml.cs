@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.App.Services.Evacuation;
 #if ANDROID
 using Android.Util;
@@ -590,7 +591,7 @@ namespace RescuAR.App.Views.Camera
         {
             InitializeComponent();
             navigationStability = new(stabilityOptions);
-            _routeDisplayProgressPolicy = new(navigationStability.Options);
+            _routeDisplayProgressPolicy = new(navigationStability.Options, requireInitialConfirmation: true);
             ConfigureCompactArLayout();
             ConfigureFloodSimulationSheet();
 
@@ -623,7 +624,7 @@ namespace RescuAR.App.Views.Camera
                     () =>
                         Connectivity.Current.NetworkAccess ==
                             NetworkAccess.Internet,
-                    requireEmbeddedPedestrianGraph: false,
+                    requireEmbeddedPedestrianGraph: ForceOfflineRouterForFieldTest(),
                     roadDatasetId: () => NavigationDataBootstrap.DatasetId);
 
             _mldArIntegrationService =
@@ -1394,7 +1395,7 @@ namespace RescuAR.App.Views.Camera
             }
 
             DateTimeOffset now =
-                DateTimeOffset.UtcNow;
+                NavigationClock.UtcNow;
 
             TimeSpan gpsAge =
                 latestGpsTimestamp.HasValue
@@ -1698,6 +1699,7 @@ namespace RescuAR.App.Views.Camera
                     DisplayMessage = routeHazardNotice ?? "Hazard on route — check the map" };
 
             confidence = ResolveMldPresentation(confidence, route, placementFrame);
+            confidence = PresentNavigationQuality(confidence, route, placementFrame, headingTrusted, gpsFresh);
             bool confidenceChanged =
                 confidence.State !=
                     lastArGuidanceConfidence.State ||
@@ -1804,7 +1806,7 @@ namespace RescuAR.App.Views.Camera
                         : "#7A5700");
 
             arTrackingStatusLabel.Text =
-                confidence.DisplayMessage;
+                $"{NavigationRecoveryPolicy.ProviderLabel(activeRoute)} · {confidence.DisplayMessage}";
         }
 
         private ARGuidanceConfidencePolicy.GuidanceConfidenceSnapshot
@@ -2412,7 +2414,7 @@ namespace RescuAR.App.Views.Camera
             PedestrianTurnGuidanceService.TurnGuidanceSnapshot currentGuidance;
             lock (turnGuidanceSync) currentGuidance = lastTurnGuidance;
             if (currentGuidance.IsAvailable && lastArGuidanceConfidence.AllowsRouteGeometry &&
-                HasCurrentGuidancePosition(progress, DateTimeOffset.UtcNow))
+                HasCurrentGuidancePosition(progress, NavigationClock.UtcNow))
             {
                 ApplyPrototypeTurnGuidance(currentGuidance);
                 SetTurnGuidanceVisible(true);
@@ -2891,7 +2893,7 @@ namespace RescuAR.App.Views.Camera
             if (requestCurrent && routeRequestInProgress) return;
             var token = owner.Token;
             cameraMapLocationRequestInProgress = true;
-            cameraMapLastLocationAttempt = DateTimeOffset.UtcNow;
+            cameraMapLastLocationAttempt = NavigationClock.UtcNow;
             try
             {
                 LocationReading? reading;
@@ -2907,7 +2909,7 @@ namespace RescuAR.App.Views.Camera
                 lock (routeProgressFusionSync)
                 {
                     if (reading is not null && (latestRouteStartupReading is null ||
-                        reading.Timestamp > latestRouteStartupReading.Timestamp))
+                        reading.ObservationTime > latestRouteStartupReading.ObservationTime))
                         latestRouteStartupReading = reading;
                 }
                 Dispatcher.Dispatch(() =>
@@ -2943,7 +2945,7 @@ namespace RescuAR.App.Views.Camera
 
                 if (_selectedShelterFor2DMap != null && mapDestinationSelectedLabel != null)
                 {
-                    string distText = CameraMapPresentationPolicy.DistanceTo(new GeoCoordinate(_selectedShelterFor2DMap.Latitude, _selectedShelterFor2DMap.Longitude), reading, DateTimeOffset.UtcNow);
+                    string distText = CameraMapPresentationPolicy.DistanceTo(new GeoCoordinate(_selectedShelterFor2DMap.Latitude, _selectedShelterFor2DMap.Longitude), reading, NavigationClock.UtcNow);
                     mapDestinationSelectedLabel.Text = $"{_selectedShelterFor2DMap.Name} ({distText})";
                     mapDestinationSelectedLabel.TextColor = Color.FromArgb("#0F172A");
                 }
@@ -3009,7 +3011,7 @@ namespace RescuAR.App.Views.Camera
                 var results = query
                     .Select(s =>
                     {
-                        string distText = CameraMapPresentationPolicy.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude), reading, DateTimeOffset.UtcNow);
+                        string distText = CameraMapPresentationPolicy.DistanceTo(new GeoCoordinate(s.Latitude, s.Longitude), reading, NavigationClock.UtcNow);
                         return new ShelterSearchDisplayItem
                         {
                             Center = s,
@@ -3920,7 +3922,7 @@ namespace RescuAR.App.Views.Camera
 
             routeRequestInProgress =
                 true;
-            routeStartupStartedAt = DateTimeOffset.UtcNow;
+            routeStartupStartedAt = NavigationClock.UtcNow;
             routeStartupFirstVisibleLogged = false;
             routeStartupPublishedVersion = -1;
             routeStartupFailureMessage = null;
@@ -3977,7 +3979,7 @@ namespace RescuAR.App.Views.Camera
                 {
                     routeStartupGpsRetryPending = true;
                     routeStartupRetryDestination = destination.Coordinate;
-                    nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(3);
+                    nextHeadingRetryAt = NavigationClock.UtcNow.AddSeconds(3);
                     routeStartupFailureMessage =
                         "Waiting for accurate GPS — the route will start automatically";
                     Log.Error(
@@ -3997,7 +3999,7 @@ namespace RescuAR.App.Views.Camera
                     $"accuracy=" +
                     $"{(locationReading.AccuracyMeters.HasValue ? locationReading.AccuracyMeters.Value.ToString("F1") : "<unknown>")}m, " +
                     $"age=" +
-                    $"{Math.Max(0.0, (DateTimeOffset.UtcNow - locationReading.Timestamp).TotalSeconds):F1}s.");
+                    $"{Math.Max(0.0, (NavigationClock.UtcNow - locationReading.ObservationTime).TotalSeconds):F1}s.");
 
                 GeoCoordinate origin =
                     locationReading.Coordinate;
@@ -4012,7 +4014,7 @@ namespace RescuAR.App.Views.Camera
                         locationReading.AccuracyMeters;
 
                     latestGpsTimestampForRouting =
-                        locationReading.Timestamp;
+                        locationReading.ObservationTime;
                 }
 
                 if (!origin.IsValid)
@@ -4045,7 +4047,7 @@ namespace RescuAR.App.Views.Camera
                     destination.SafeZoneRadiusMeters,
                     locationReading.AccuracyMeters,
                     double.PositiveInfinity,
-                    locationReading.Timestamp,
+                    locationReading.ObservationTime,
                     majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                         origin, destination.Coordinate),
                     destinationVersion: destination.Version);
@@ -4083,7 +4085,7 @@ namespace RescuAR.App.Views.Camera
                     pendingInitialDestination == destination.Coordinate &&
                     origin.DistanceTo(pendingInitialOrigin) <= 40.0 &&
                     RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(pendingInitialRoute, origin, startupHazards) &&
-                    DateTimeOffset.UtcNow - pendingInitialRouteAt <
+                    NavigationClock.UtcNow - pendingInitialRouteAt <
                         TimeSpan.FromMinutes(2);
                 Task<RouteResult?> routeWork = reuseComputedRoute
                     ? Task.FromResult(pendingInitialRoute)
@@ -4194,7 +4196,7 @@ namespace RescuAR.App.Views.Camera
                 MldGuidanceBridge.SetRouteOwner(route, destination.Version);
 
                 navigationSessionStartedAt ??=
-                    DateTimeOffset.UtcNow;
+                    NavigationClock.UtcNow;
 
                 activeDestinationName =
                     destination.Name;
@@ -4239,7 +4241,7 @@ namespace RescuAR.App.Views.Camera
                 lastGpsReliabilityWeight = initialFusion.ReliabilityWeight;
                 if (initialFused.IsAccepted && !initialFused.IsOffRoute)
                     progressMotionPolicy.Filter(route, origin, locationReading.AccuracyMeters,
-                        locationReading.Timestamp, initialFused.CommittedProgressMeters,
+                        locationReading.ObservationTime, initialFused.CommittedProgressMeters,
                         initialFused.CommittedProgressMeters,
                         GetAcquisitionMotion(locationReading, requireTrustedHeading: false), out _);
 
@@ -4317,7 +4319,7 @@ namespace RescuAR.App.Views.Camera
                     pendingInitialRoute = route;
                     pendingInitialOrigin = origin;
                     pendingInitialDestination = destination.Coordinate;
-                    pendingInitialRouteAt = DateTimeOffset.UtcNow;
+                    pendingInitialRouteAt = NavigationClock.UtcNow;
                     nextHeadingRetryAt = pendingInitialRouteAt.AddSeconds(1);
                     lastHeadingAlignment = null;
                     routeStartupFailureMessage =
@@ -4447,6 +4449,14 @@ namespace RescuAR.App.Views.Camera
         {
             LocationReading? cached;
             lock (routeProgressFusionSync) cached = latestRouteStartupReading;
+            if (_locationService is INavigationLocationSource)
+            {
+                var newerThan = LocationAcquisitionPolicy.IsCurrent(cached, NavigationClock.UtcNow)
+                    ? cached!.ObservationTime : (DateTimeOffset?)null;
+                var current = await TryGetRouteLocationAsync(cancellationToken, newerThan: newerThan);
+                return IsCurrentRouteStartupLocationAcceptable(current)
+                    ? (current, "NAVIGATION_FRESH", false) : (null, "NAVIGATION_CURRENT_REJECTED", false);
+            }
             if (AStarLocationAcquisitionPolicy.UseForStartup(activeRoute,
                     NavigationDestinationBridge.Current.IsAvailable,
                     Connectivity.Current.NetworkAccess == NetworkAccess.Internet) &&
@@ -4454,8 +4464,8 @@ namespace RescuAR.App.Views.Camera
             {
                 // An offline A* start waits briefly for actual fresh evidence;
                 // it does not reuse an eight-second planning cache as its origin.
-                var newerThan = LocationAcquisitionPolicy.IsCurrent(cached, DateTimeOffset.UtcNow)
-                    ? cached!.Timestamp : (DateTimeOffset?)null;
+                var newerThan = LocationAcquisitionPolicy.IsCurrent(cached, NavigationClock.UtcNow)
+                    ? cached!.ObservationTime : (DateTimeOffset?)null;
                 var precise = await TryGetRouteLocationAsync(cancellationToken, useAStar: true, newerThan: newerThan);
                 return IsCurrentRouteStartupLocationAcceptable(precise)
                     ? (precise, "ASTAR_FRESH", false) : (null, "ASTAR_CURRENT_REJECTED", false);
@@ -4489,17 +4499,17 @@ namespace RescuAR.App.Views.Camera
         private static bool IsCurrentRouteStartupLocationAcceptable(LocationReading? reading)
         {
             return reading is not null && RouteStartupLocationPolicy.CanPlan(
-                reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
-                DateTimeOffset.UtcNow, cached: false);
+                reading.Coordinate, reading.AccuracyMeters, reading.ObservationTime,
+                NavigationClock.UtcNow, cached: false);
         }
 
         private static bool IsRecentRouteStartupLocationAcceptable(
             LocationReading? reading, out TimeSpan age)
         {
-            age = reading is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - reading.Timestamp;
+            age = reading is null ? TimeSpan.MaxValue : NavigationClock.UtcNow - reading.ObservationTime;
             return reading is not null && RouteStartupLocationPolicy.CanPlan(
-                reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
-                DateTimeOffset.UtcNow, cached: true);
+                reading.Coordinate, reading.AccuracyMeters, reading.ObservationTime,
+                NavigationClock.UtcNow, cached: true);
         }
 
         /// <summary>
@@ -5123,7 +5133,7 @@ namespace RescuAR.App.Views.Camera
             }
             catch (Exception exception)
             {
-                DateTimeOffset now = DateTimeOffset.UtcNow;
+                DateTimeOffset now = NavigationClock.UtcNow;
                 if (now - lastRouteLocationFailureLogAt >
                     TimeSpan.FromSeconds(30))
                 {
@@ -5142,7 +5152,7 @@ namespace RescuAR.App.Views.Camera
             CancellationToken cancellationToken)
         {
             var tripDestination = NavigationDestinationBridge.Current;
-            DateTimeOffset? consumedLocationAt = latestRouteStartupReading?.Timestamp;
+            DateTimeOffset? consumedLocationAt = latestRouteStartupReading?.ObservationTime;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
@@ -5179,10 +5189,10 @@ namespace RescuAR.App.Views.Camera
                         if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
                         if (arrivalReading is not null &&
                             activeDestinationCoordinate.HasValue &&
-                            DateTimeOffset.UtcNow - arrivalReading.Timestamp <=
+                            NavigationClock.UtcNow - arrivalReading.ObservationTime <=
                                 TimeSpan.FromSeconds(5) &&
-                            arrivalReading.Timestamp <=
-                                DateTimeOffset.UtcNow.AddSeconds(2))
+                            arrivalReading.ObservationTime <=
+                                NavigationClock.UtcNow.AddSeconds(2))
                         {
                             var arrival = _safeZoneConfirmationService.Evaluate(
                                 arrivalReading.Coordinate,
@@ -5190,7 +5200,7 @@ namespace RescuAR.App.Views.Camera
                                 activeDestinationSafeZoneRadiusMeters,
                                 arrivalReading.AccuracyMeters,
                                 double.PositiveInfinity,
-                                arrivalReading.Timestamp,
+                                arrivalReading.ObservationTime,
                                 majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                     arrivalReading.Coordinate,
                                     activeDestinationCoordinate.Value),
@@ -5201,7 +5211,7 @@ namespace RescuAR.App.Views.Camera
                                 latestRouteStartupReading = arrivalReading;
                                 latestGpsCoordinateForRouting = arrivalReading.Coordinate;
                                 latestGpsAccuracyForRouting = arrivalReading.AccuracyMeters;
-                                latestGpsTimestampForRouting = arrivalReading.Timestamp;
+                                latestGpsTimestampForRouting = arrivalReading.ObservationTime;
                             }
                             if (mapModeLayer != null && mapModeLayer.IsVisible)
                                 MainThread.BeginInvokeOnMainThread(() => RefreshCameraMapNavigation());
@@ -5236,10 +5246,10 @@ namespace RescuAR.App.Views.Camera
                     if (!CanApplyRouteRequest(tripDestination.Version, cancellationToken)) return;
 
                     if (reading is not null &&
-                        (DateTimeOffset.UtcNow - reading.Timestamp >
+                        (NavigationClock.UtcNow - reading.ObservationTime >
                             TimeSpan.FromSeconds(5) ||
-                         reading.Timestamp >
-                            DateTimeOffset.UtcNow.AddSeconds(2)))
+                         reading.ObservationTime >
+                            NavigationClock.UtcNow.AddSeconds(2)))
                     {
                         AndroidLog.Warn(ProgressLogTag,
                             "Ignoring stale or future-dated location observation.");
@@ -5253,7 +5263,7 @@ namespace RescuAR.App.Views.Camera
                         LocationAcquisitionPolicy.IsNewObservation(reading, consumedLocationAt);
                     if (newObservation && reading is not null)
                     {
-                        consumedLocationAt = reading.Timestamp;
+                        consumedLocationAt = reading.ObservationTime;
                         lock (routeProgressFusionSync)
                         {
                             latestRouteStartupReading = reading;
@@ -5264,7 +5274,7 @@ namespace RescuAR.App.Views.Camera
                                 reading.AccuracyMeters;
 
                             latestGpsTimestampForRouting =
-                                reading.Timestamp;
+                                reading.ObservationTime;
                         }
 
                         if (mapModeLayer != null && mapModeLayer.IsVisible)
@@ -5316,14 +5326,14 @@ namespace RescuAR.App.Views.Camera
                                 _routeProgressTracker.Current;
 
                             var observation = positionObservationPolicy.Evaluate(route, reading.Coordinate,
-                                reading.AccuracyMeters, reading.Timestamp, DateTimeOffset.UtcNow,
+                                reading.AccuracyMeters, reading.ObservationTime, NavigationClock.UtcNow,
                                 GetAcquisitionMotion(reading, requireTrustedHeading: false));
                             var stability = navigationStability.Observe(route, reading.Coordinate, reading.AccuracyMeters,
-                                reading.Timestamp, DateTimeOffset.UtcNow,
+                                reading.ObservationTime, NavigationClock.UtcNow,
                                 GetAcquisitionMotion(reading, requireTrustedHeading: false), observation.IsHeld);
                             positionObservationHeld = !stability.Reliable;
                             LogDetailedDebug(ProgressLogTag,
-                                $"NAV_STABILITY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; trip={activeDestinationVersion}; " +
+                                $"NAV_STABILITY sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; trip={activeDestinationVersion}; " +
                                 $"reliable={stability.Reliable}; assess={stability.AssessDeviation}; prolonged={stability.ProlongedUncertainty}; " +
                                 $"reliableAgeSec={stability.ReliableAgeSeconds:F1}; intervalSec={navigationStability.Options.AssessmentInterval.TotalSeconds:F1}; " +
                                 $"reason='{stability.Reason}'.");
@@ -5335,7 +5345,7 @@ namespace RescuAR.App.Views.Camera
                             if (observation.IsHeld || observation.IsConfirmedCorrection)
                                 LogDetailedDebug(ProgressLogTag,
                                     $"NAV_OBSERVATION held={observation.IsHeld}; confirmedCorrection={observation.IsConfirmedCorrection}; " +
-                                    $"sample={reading.Timestamp.ToUnixTimeMilliseconds()}; residual={observation.ResidualMeters:F2}m; " +
+                                    $"sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; residual={observation.ResidualMeters:F2}m; " +
                                     $"reason='{observation.Reason}'.");
 
                             RouteProgressTracker.RouteProgressUpdate matchedGps =
@@ -5361,20 +5371,20 @@ namespace RescuAR.App.Views.Camera
                             bool nearDestination = activeDestinationCoordinate.HasValue &&
                                 _destinationProximityReroutePolicy.ShouldHold(reading.Coordinate,
                                     activeDestinationCoordinate.Value, reading.AccuracyMeters,
-                                    reading.Timestamp, DateTimeOffset.UtcNow,
+                                    reading.ObservationTime, NavigationClock.UtcNow,
                                     accessVerified: arrivalRoadGraph is not null &&
                                         !arrivalRoadGraph.AccessCrossesMajorRoad(reading.Coordinate,
                                             activeDestinationCoordinate.Value));
                             OffRouteReroutePolicy.OffRouteDecision offRouteDecision =
                                 !stability.AssessDeviation ? default : _offRouteReroutePolicy.Evaluate(
                                     matchedGps,
-                                    reading.Timestamp,
+                                    reading.ObservationTime,
                                     destinationProximityUncertain: nearDestination);
 
-                            DateTimeOffset evaluatedAt = DateTimeOffset.UtcNow;
-                            TimeSpan observationAge = evaluatedAt - reading.Timestamp;
+                            DateTimeOffset evaluatedAt = NavigationClock.UtcNow;
+                            TimeSpan observationAge = evaluatedAt - reading.ObservationTime;
                             if (stability.AssessDeviation) lastBacktrackingDecision = _routeBacktrackingPolicy.Evaluate(route,
-                                matchedGps, reading.Timestamp, evaluatedAt, nearDestination,
+                                matchedGps, reading.ObservationTime, evaluatedAt, nearDestination,
                                 observationAge >= TimeSpan.Zero && observationAge <= TimeSpan.FromSeconds(3) &&
                                     !_gpsPdrFusionPolicy.IsRouteIdentitySuspended
                                     ? GetTrackedRouteMotion() : null);
@@ -5449,12 +5459,12 @@ namespace RescuAR.App.Views.Camera
                                         : 0.0,
                                     beforeGps.HasProgress,
                                     matchedGps,
-                                    reading.Timestamp);
+                                    reading.ObservationTime);
 
                             if (!positionObservationHeld && matchedGps.IsAccepted && !matchedGps.IsOffRoute)
                             {
                                 double motionFilteredProgress = progressMotionPolicy.Filter(route,
-                                    reading.Coordinate, reading.AccuracyMeters, reading.Timestamp,
+                                    reading.Coordinate, reading.AccuracyMeters, reading.ObservationTime,
                                     beforeGps.CommittedProgressMeters, gpsFusionDecision.TargetProgressMeters,
                                     GetAcquisitionMotion(reading, requireTrustedHeading: false), out bool stationary);
                                 if (stationary)
@@ -5643,7 +5653,7 @@ namespace RescuAR.App.Views.Camera
                                         safeZoneEvaluationRadiusMeters,
                                         reading.AccuracyMeters,
                                         safeZoneEvaluationRemainingMeters,
-                                        reading.Timestamp,
+                                        reading.ObservationTime,
                                         majorRoadBarrier: !developerArrivalTest &&
                                             (arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                                 reading.Coordinate,
@@ -5746,8 +5756,8 @@ namespace RescuAR.App.Views.Camera
                     else if (reading is null)
                     {
                         lock (routeProgressFusionSync)
-                            navigationStability.Observe(route, default, null, DateTimeOffset.UtcNow,
-                                DateTimeOffset.UtcNow, null, observationHeld: true);
+                            navigationStability.Observe(route, default, null, NavigationClock.UtcNow,
+                                NavigationClock.UtcNow, null, observationHeld: true);
                     }
                     if (!publishedRealProgress) TryPublishUncertainRouteEstimate(route);
 #if RESCUAR_DIAGNOSTICS
@@ -5801,8 +5811,7 @@ namespace RescuAR.App.Views.Camera
 #endif
 
                     await Task.Delay(
-                        AStarRouteDisplayPolicy.AppliesTo(route)
-                            ? AStarLocationAcquisitionPolicy.PollInterval : RouteProgressPollInterval,
+                        AStarLocationAcquisitionPolicy.PollInterval,
                         cancellationToken);
                 }
             }
@@ -6185,7 +6194,7 @@ namespace RescuAR.App.Views.Camera
                     _offRouteReroutePolicy.ResetConfirmation();
 
                     DateTimeOffset now =
-                        DateTimeOffset.UtcNow;
+                        NavigationClock.UtcNow;
 
                     for (int confirmation = 1;
                          confirmation <= 3;
@@ -6447,7 +6456,7 @@ namespace RescuAR.App.Views.Camera
                     "High",
                     "DEV simulated blocked route",
                     "Stage 10 developer validation",
-                    DateTimeOffset.UtcNow);
+                    NavigationClock.UtcNow);
 
             _hazardReroutingService.SetDeveloperHazard(
                 hazard);
@@ -6734,7 +6743,7 @@ namespace RescuAR.App.Views.Camera
                                 explicitlyJustifiedDetour:
                                     hazardAware,
                                 timestampUtc:
-                                    DateTimeOffset.UtcNow,
+                                    NavigationClock.UtcNow,
                                 allowRoadApproach: true);
                     }
 
@@ -6773,8 +6782,8 @@ namespace RescuAR.App.Views.Camera
                         _headingRevalidationPolicy.Reset("replacement geographic route accepted");
 
                         _offRouteReroutePolicy.MarkRerouteCompleted(
-                            DateTimeOffset.UtcNow);
-                        _routeBacktrackingPolicy.MarkRerouteCompleted(DateTimeOffset.UtcNow);
+                            NavigationClock.UtcNow);
+                        _routeBacktrackingPolicy.MarkRerouteCompleted(NavigationClock.UtcNow);
 
                         lastOffRouteCandidate =
                             false;
@@ -6912,10 +6921,10 @@ namespace RescuAR.App.Views.Camera
                     lock (routeProgressFusionSync)
                     {
                         _offRouteReroutePolicy.MarkRerouteFailed(
-                            DateTimeOffset.UtcNow,
+                            NavigationClock.UtcNow,
                             awaitingConfirmation: lastRerouteResult ==
                                 "AwaitingRouteConfirmation");
-                        _routeBacktrackingPolicy.MarkRerouteFailed(DateTimeOffset.UtcNow,
+                        _routeBacktrackingPolicy.MarkRerouteFailed(NavigationClock.UtcNow,
                             awaitingConfirmation: lastRerouteResult == "AwaitingRouteConfirmation");
                     }
                 }
@@ -8181,14 +8190,14 @@ namespace RescuAR.App.Views.Camera
             if (!decision.IsConfirmed && (!decision.IsCandidate || decision.IsObservationHeld) && decision.IsAvailable &&
                 decision.DistanceToDestinationMeters <= SafeZoneConfirmationService.CandidateResetDistanceMeters &&
                 (lastArrivalHoldReason != decision.Reason ||
-                 DateTimeOffset.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
+                 NavigationClock.UtcNow - lastArrivalHoldLogAt >= TimeSpan.FromSeconds(15)))
             {
                 lastArrivalHoldReason = decision.Reason;
-                lastArrivalHoldLogAt = DateTimeOffset.UtcNow;
+                lastArrivalHoldLogAt = NavigationClock.UtcNow;
                 Log.Info(SafeZoneLogTag,
                     $"ARRIVAL HELD: distance={decision.DistanceToDestinationMeters:F1}m, " +
                     $"radius={decision.ArrivalRadiusMeters:F1}m, accuracy={decision.AccuracyMeters?.ToString("F1") ?? "unknown"}m, " +
-                    $"fixAge={Math.Max(0, (DateTimeOffset.UtcNow - decision.ObservedAt).TotalSeconds):F1}s, " +
+                    $"fixAge={Math.Max(0, (NavigationClock.UtcNow - decision.ObservedAt).TotalSeconds):F1}s, " +
                     $"accessDataReady={arrivalRoadGraph is not null}, reason='{decision.Reason}'.");
             }
             if (decision.IsCandidate &&
@@ -8318,7 +8327,7 @@ namespace RescuAR.App.Views.Camera
 
                     TimeSpan elapsed =
                         navigationSessionStartedAt.HasValue
-                            ? DateTimeOffset.UtcNow - navigationSessionStartedAt.Value
+                            ? NavigationClock.UtcNow - navigationSessionStartedAt.Value
                             : TimeSpan.Zero;
 
                     int elapsedMinutes =
@@ -9443,7 +9452,7 @@ namespace RescuAR.App.Views.Camera
                 bool usedLastKnownLocation =
                     reading is not null &&
                     reading.Coordinate.IsValid &&
-                    DateTimeOffset.UtcNow - reading.Timestamp <=
+                    NavigationClock.UtcNow - reading.ObservationTime <=
                         TimeSpan.FromMinutes(10) &&
                     (!reading.AccuracyMeters.HasValue ||
                      reading.AccuracyMeters.Value <= 250.0);
@@ -9482,7 +9491,7 @@ namespace RescuAR.App.Views.Camera
                         "Emergency destination selection location acquired: " +
                         $"source='{locationSource}', " +
                         $"accuracy={accuracyText}, " +
-                        $"timestamp={reading.Timestamp:O}.");
+                        $"timestamp={reading.ObservationTime:O}.");
                 }
 #endif
 
@@ -9980,9 +9989,9 @@ namespace RescuAR.App.Views.Camera
             if (!spatial.IsFresh || !spatial.IsTracking ||
                 !spatial.Pose.IsTracking ||
                 GetTrackedRouteMotion(requireTrustedHeading: false) is null ||
-                reading.Timestamp > DateTimeOffset.UtcNow ||
-                DateTimeOffset.UtcNow - reading.Timestamp > TimeSpan.FromSeconds(3) ||
-                !ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+                reading.ObservationTime > NavigationClock.UtcNow ||
+                NavigationClock.UtcNow - reading.ObservationTime > TimeSpan.FromSeconds(3) ||
+                !ARCameraPoseBridge.TryGetObservationFrame(reading.ObservationTime, NavigationClock.UtcNow,
                     Environment.TickCount64, out var observedFrame, out long poseSkew))
             {
                 return false;
@@ -10002,7 +10011,7 @@ namespace RescuAR.App.Views.Camera
                     routeTangentBearingDegrees,
                     observedFrame.Pose.PositionX,
                     observedFrame.Pose.PositionZ,
-                    reading.Timestamp,
+                    reading.ObservationTime,
                     observedFrame.Generation.SessionGeneration,
                     observedFrame.WorldFrame,
                     observedFrame.TrackingEpoch,
@@ -10040,7 +10049,7 @@ namespace RescuAR.App.Views.Camera
                     $"evidenceReset={_headingRevalidationPolicy.EvidenceResetVersion}; " +
                     $"resetReason='{_headingRevalidationPolicy.LastEvidenceResetReason}'.");
                 LogDetailedDebug(HeadingLogTag,
-                    $"NAV_HEADING_PAIR sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                    $"NAV_HEADING_PAIR sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
                     $"frameNs={observedFrame.FrameTimestamp}; skewMs={poseSkew}; " +
                     $"trackingEpoch={observedFrame.TrackingEpoch}; worldFrame={observedFrame.WorldFrame}; " +
                     $"source={calibration.Source}; recovery={calibration.RequiresMovementValidation}; " +
@@ -10061,7 +10070,7 @@ namespace RescuAR.App.Views.Camera
                     decision.CorrectedYawDegrees);
 
             if (!_headingAlignmentService.TryApplyMovementValidatedYaw(decision.CorrectedYawDegrees,
-                    decision.ConfirmationCount, residualAlignmentErrorDegrees, DateTimeOffset.UtcNow,
+                    decision.ConfirmationCount, residualAlignmentErrorDegrees, NavigationClock.UtcNow,
                     observedFrame.Generation.SessionGeneration, observedFrame.TrackingEpoch,
                     observedFrame.WorldFrame, out var corrected)) return false;
 
@@ -10071,7 +10080,7 @@ namespace RescuAR.App.Views.Camera
             activeMapToArYawDegrees = corrected.MapToArYawDegrees;
             lastHeadingAlignment = corrected;
             ClearRoadApproachCue();
-            _headingRevalidationPolicy.MarkCorrectionApplied(DateTimeOffset.UtcNow);
+            _headingRevalidationPolicy.MarkCorrectionApplied(NavigationClock.UtcNow);
             positionObservationPolicy.Reset();
             _routeDisplayProgressPolicy.Reset();
             verifiedPosition = null;
@@ -10277,7 +10286,7 @@ namespace RescuAR.App.Views.Camera
                     (!IsIndoorRouteTestModeEnabled &&
                      !TryGetBoundedDisplayPosition(route,
                          _routeProgressTracker.Current.CommittedProgressMeters + fusedStepAdvanceMeters,
-                         DateTimeOffset.UtcNow, out _, out _)))
+                         NavigationClock.UtcNow, out _, out _)))
                 {
                     RecordPdrStepRejection(e, "POSITION_ANCHOR_EXPIRED",
                         "PDR requires the same tracked reference within 8 seconds and 8 meters of verified GPS");
@@ -10402,7 +10411,7 @@ namespace RescuAR.App.Views.Camera
             double progress = _routeProgressTracker.Current.CommittedProgressMeters;
             bool positionReady = route is not null && (IsIndoorRouteTestModeEnabled
                 ? RouteDisplayProgressPolicy.TryAtDistance(route, progress, out displayPosition)
-                : TryGetBoundedDisplayPosition(route, progress, DateTimeOffset.UtcNow,
+                : TryGetBoundedDisplayPosition(route, progress, NavigationClock.UtcNow,
                     out displayPosition, out _));
             if (!positionReady || route is null || !HasCurrentRouteHeading() ||
                 !TryGetRouteSegmentBearing(route, displayPosition.SegmentIndex, out double bearing))
@@ -10654,7 +10663,7 @@ namespace RescuAR.App.Views.Camera
             bool confirmed = roadEntryConfirmation.Observe(
                 update.IsAccepted && accessVerified, update.IsOffRoute, update.CrossTrackErrorMeters,
                 update.CorridorRadiusMeters, update.MatchConfidence, update.AccuracyMeters,
-                fixTimestamp, DateTimeOffset.UtcNow);
+                fixTimestamp, NavigationClock.UtcNow);
             roadFollowingReentryConfirmationCount = roadEntryConfirmation.ConfirmationCount;
 
 #if ANDROID
@@ -10762,7 +10771,7 @@ namespace RescuAR.App.Views.Camera
             RouteDisplayProgressPolicy.DisplayPosition displayPosition;
             bool positionReady = pdrStep
                 ? TryGetBoundedDisplayPosition(route, update.CommittedProgressMeters,
-                    DateTimeOffset.UtcNow, out displayPosition, out _)
+                    NavigationClock.UtcNow, out displayPosition, out _)
                 : syntheticStep
                     ? RouteDisplayProgressPolicy.TryAtDistance(route, update.CommittedProgressMeters, out displayPosition)
                     : TryGetObservedDisplayPosition(route, out displayPosition);
@@ -11064,7 +11073,7 @@ namespace RescuAR.App.Views.Camera
                     !CanApplyRouteRequest(destinationVersion, CancellationToken.None))
                     return false;
                 if (!TryGetBoundedDisplayPosition(route, _routeProgressTracker.Current.CommittedProgressMeters,
-                        DateTimeOffset.UtcNow, out var displayPosition, out _))
+                        NavigationClock.UtcNow, out var displayPosition, out _))
                     return CompleteGroundHandoffAwaitingPosition();
                 startDistanceMeters = displayPosition.ProgressMeters;
                 published = PublishRegisteredRouteWindow(route, displayPosition, spatial, "GROUND-REBASE");
@@ -11116,7 +11125,7 @@ namespace RescuAR.App.Views.Camera
         {
             lock (routeProgressFusionSync)
                 return _routeDisplayProgressPolicy.TryResolvePdr(route,
-                    _routeProgressTracker.Current.CommittedProgressMeters, DateTimeOffset.UtcNow, out position);
+                    _routeProgressTracker.Current.CommittedProgressMeters, NavigationClock.UtcNow, out position);
         }
 
         private bool CanPublishMappedRoutePreview(RouteResult route,
@@ -11137,7 +11146,7 @@ namespace RescuAR.App.Views.Camera
                 !positionObservationHeld && !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
                 MappedRoutePreviewPolicy.CanDisplay(update.IsAccepted, update.IsOffRoute,
                     update.MatchConfidence, update.AccuracyMeters, update.GpsCoordinate,
-                    position.RoadCoordinate, fixTimestamp, DateTimeOffset.UtcNow,
+                    position.RoadCoordinate, fixTimestamp, NavigationClock.UtcNow,
                     arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
                             update.GpsCoordinate, position.RoadCoordinate),
                     initialRoadApproachPending, recoveryConnectorVerified, CanRetainMldMappedPreview(route));
@@ -11404,7 +11413,7 @@ namespace RescuAR.App.Views.Camera
             if (!pageIsVisible || cameraMapWindowStopped) return;
             RefreshCameraMapNavigation();
 #if ANDROID
-            TryResetInheritedAStarHeading();
+            TryResetExpiredNavigationHeading();
             if (pageIsVisible && !safeZoneConfirmed && !_arCoreService.IsSessionPaused &&
                 latestRouteStartupReading is { } orientationLocation)
                 ObserveHeadingContinuity(orientationLocation);
@@ -11420,9 +11429,9 @@ namespace RescuAR.App.Views.Camera
                 currentCameraModuleView == CameraModuleViewMode.ArCamera &&
                 IsRoadApproachFixUsable(latestRouteStartupReading) &&
                 routeHeadingRecoveryTask is not { IsCompleted: false } &&
-                DateTimeOffset.UtcNow >= nextHeadingRetryAt)
+                NavigationClock.UtcNow >= nextHeadingRetryAt)
             {
-                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(5);
+                nextHeadingRetryAt = NavigationClock.UtcNow.AddSeconds(5);
                 routeHeadingRecoveryTask = RecoverRouteHeadingAsync(headingRoute, latestRouteStartupReading!);
             }
             if ((routeStartupGpsRetryPending || pendingInitialRoute is not null) &&
@@ -11434,9 +11443,9 @@ namespace RescuAR.App.Views.Camera
                 NavigationDestinationBridge.Current.IsAvailable &&
                 NavigationDestinationBridge.Current.Coordinate ==
                     (routeStartupGpsRetryPending ? routeStartupRetryDestination : pendingInitialDestination) &&
-                DateTimeOffset.UtcNow >= nextHeadingRetryAt)
+                NavigationClock.UtcNow >= nextHeadingRetryAt)
             {
-                nextHeadingRetryAt = DateTimeOffset.UtcNow.AddSeconds(10);
+                nextHeadingRetryAt = NavigationClock.UtcNow.AddSeconds(10);
                 StartRouteRequestIfPossible();
             }
 

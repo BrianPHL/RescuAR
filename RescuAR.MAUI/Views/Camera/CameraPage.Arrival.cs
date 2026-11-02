@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.Navigation.Guidance;
@@ -20,7 +21,7 @@ public partial class CameraPage
         lock (routeProgressFusionSync) reading = latestRouteStartupReading;
         return CanOfferUserArrival() && reading is not null && UserArrivalConfirmationPolicy.CanShowNotice(
             reading.Coordinate, NavigationDestinationBridge.Current.Coordinate, reading.AccuracyMeters,
-            reading.Timestamp, DateTimeOffset.UtcNow);
+            reading.ObservationTime, NavigationClock.UtcNow);
     }
 
     private void SetTurnGuidanceVisible(bool visible) =>
@@ -37,7 +38,7 @@ public partial class CameraPage
             activeDestinationCoordinate == destination.Coordinate &&
             reading is not null && UserArrivalConfirmationPolicy.CanOffer(
                 reading.Coordinate, destination.Coordinate, reading.AccuracyMeters,
-                reading.Timestamp, DateTimeOffset.UtcNow,
+                reading.ObservationTime, NavigationClock.UtcNow,
                 majorRoadBarrier: arrivalRoadGraph is null || arrivalRoadGraph.AccessCrossesMajorRoad(
                     reading.Coordinate, destination.Coordinate), observationHeld: positionObservationHeld);
     }
@@ -71,7 +72,7 @@ public partial class CameraPage
                     ArrivalRadiusMeters: SafeZoneConfirmationService.ArrivalRadiusMeters,
                     RemainingRouteMeters: progress.RemainingMeters,
                     MaximumRemainingRouteMeters: SafeZoneConfirmationService.MaximumRemainingRouteMeters,
-                    AccuracyMeters: reading.AccuracyMeters, ObservedAt: reading.Timestamp,
+                    AccuracyMeters: reading.AccuracyMeters, ObservedAt: reading.ObservationTime,
                     Reason: "User reported arrival; GPS proximity and facility entry are unverified.",
                     DestinationVersion: destination.Version);
                 HandleSafeZoneDecision(decision, userReported: true);

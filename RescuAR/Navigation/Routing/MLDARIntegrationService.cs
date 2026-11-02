@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.AR;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
@@ -251,9 +252,9 @@ public sealed class MLDARIntegrationService
             if (!placement.IsAvailable || retained.Coordinate != snappedReference ||
                 retained.Session != placement.Generation.SessionGeneration ||
                 retained.TrackingEpoch != placement.TrackingEpoch || retained.WorldFrame != placement.WorldFrame ||
-                DateTimeOffset.UtcNow - retained.SupportedAt > (maximumRegistrationAge ?? TimeSpan.FromSeconds(
+                NavigationClock.UtcNow - retained.SupportedAt > (maximumRegistrationAge ?? TimeSpan.FromSeconds(
                     RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) ||
-                retained.SupportedAt > DateTimeOffset.UtcNow.AddSeconds(2) || retained.RegisteredAt > retained.SupportedAt ||
+                retained.SupportedAt > NavigationClock.UtcNow.AddSeconds(2) || retained.RegisteredAt > retained.SupportedAt ||
                 !double.IsFinite(retained.YawDegrees) ||
                 Math.Abs(Math.IEEERemainder(retained.YawDegrees - mapToArYawDegrees, 360)) >= 0.001 ||
                 !float.IsFinite(retained.WorldX) || !float.IsFinite(retained.WorldZ)) return false;

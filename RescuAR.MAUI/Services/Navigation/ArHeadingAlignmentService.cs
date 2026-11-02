@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.Navigation.Projection;
 #if ANDROID
 using Android.Hardware;
@@ -158,7 +159,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
         ARCameraPoseBridge.SpatialSnapshot frame) =>
         retained is { Source: "MAGNETIC" } previous && frame.IsFresh && frame.IsTracking &&
         previous.SessionGeneration == frame.Generation.SessionGeneration &&
-        previous.WorldFrame == frame.WorldFrame && previous.TrackingEpoch != frame.TrackingEpoch;
+        (previous.WorldFrame != frame.WorldFrame || previous.TrackingEpoch != frame.TrackingEpoch);
 
     public bool CanCaptureAutomatically
     {
@@ -184,28 +185,36 @@ public sealed class ArHeadingAlignmentService : IDisposable
         }
     }
 
-    /// <summary>Allows a new offline A* trip to acquire its first heading when
-    /// the previous trip left an untrusted calibration in the retained session.</summary>
+    // Compatibility entry points retain their provider guards; both delegate
+    // to the same navigation recovery contract.
     public bool TryPrepareForAStarTrip(RouteResult route, DateTimeOffset tripStartedAt,
+        bool routeWindowPublished) => AStarRouteDisplayPolicy.AppliesTo(route) &&
+        TryPrepareForNavigationRoute(route, tripStartedAt, routeWindowPublished);
+
+    public bool TryPrepareForMldTrip(RouteResult route, DateTimeOffset tripStartedAt,
+        bool routeWindowPublished) => IsMldProvider(route) &&
+        TryPrepareForNavigationRoute(route, tripStartedAt, routeWindowPublished);
+
+    private static bool IsMldProvider(RouteResult route) => MldGuidanceBridge.IsMld(route.Algorithm) &&
+        (string.Equals(route.Provenance.Provider, "MLD", StringComparison.OrdinalIgnoreCase) ||
+         route.Provenance == RouteProvenance.Unreported);
+
+    /// <summary>Expire an invalid prior-trip estimate or a magnetic estimate
+    /// belonging to an old frame. Current-trip movement corrections and
+    /// same-frame contradictions still require independent validation.</summary>
+    public bool TryPrepareForNavigationRoute(RouteResult route, DateTimeOffset tripStartedAt,
         bool routeWindowPublished)
     {
-        bool isAStar = string.Equals(route.Provenance.Provider, "ASTAR", StringComparison.OrdinalIgnoreCase) ||
-            (route.Provenance == RouteProvenance.Unreported &&
-             (string.Equals(route.Algorithm, "AStar", StringComparison.OrdinalIgnoreCase) ||
-              string.Equals(route.Algorithm, "AStar (Hazard-Aware)", StringComparison.OrdinalIgnoreCase)));
-        if (!isAStar || routeWindowPublished) return false;
+        if (!AStarRouteDisplayPolicy.AppliesTo(route) && !IsMldProvider(route)) return false;
         lock (sessionCalibrationSync)
         {
             var frame = ARCameraPoseBridge.CurrentFrame;
             if (LastResult is not { IsAvailable: true, IsStable: false, RequiresMovementValidation: true } inherited ||
-                inherited.Timestamp >= tripStartedAt ||
                 !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
                 inherited.SessionGeneration != frame.Generation.SessionGeneration) return false;
-
-            // This is an untrusted estimate from an earlier trip, not a
-            // correction established during this trip. CaptureAsync must still
-            // obtain fresh synchronized, stable orientation/AR samples before
-            // any route can be rendered. MLD never enters this reset path.
+            bool previousTrip = !routeWindowPublished && inherited.Timestamp < tripStartedAt;
+            bool expiredMagneticFrame = CanReacquireMagneticFrame(sessionCalibration, frame);
+            if (!previousTrip && !expiredMagneticFrame) return false;
             sessionCalibration = null;
             continuitySuspendedCalibration = null;
             calibrationRevision++;
@@ -403,14 +412,14 @@ public sealed class ArHeadingAlignmentService : IDisposable
 #endif
 
         DateTimeOffset deadline =
-            DateTimeOffset.UtcNow +
+            NavigationClock.UtcNow +
             CaptureTimeout;
 
         List<HeadingAlignmentResult> samples =
             new(
                 MaximumSamples);
 
-        while (DateTimeOffset.UtcNow <
+        while (NavigationClock.UtcNow <
                deadline &&
                samples.Count <
                MaximumSamples)
@@ -759,7 +768,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 orientation;
 
             latestOrientationTimestamp =
-                DateTimeOffset.UtcNow;
+                NavigationClock.UtcNow;
 
             hasOrientationReading =
                 true;
@@ -802,7 +811,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
             return false;
         }
 
-        if (DateTimeOffset.UtcNow -
+        if (NavigationClock.UtcNow -
             orientationTimestamp >
             SensorReadingMaxAge)
         {
@@ -868,7 +877,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 declinationDegrees);
 
         bool paired = ARCameraPoseBridge.TryGetObservationFrame(orientationTimestamp,
-            DateTimeOffset.UtcNow, Environment.TickCount64, out var spatial, out long poseSkew);
+            NavigationClock.UtcNow, Environment.TickCount64, out var spatial, out long poseSkew);
 
         if (!paired || !spatial.IsFresh || !spatial.IsTracking ||
             !spatial.Pose.IsTracking)
@@ -969,7 +978,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 1,
                 0.0,
                 false,
-                DateTimeOffset.UtcNow,
+                NavigationClock.UtcNow,
                 GetDisplayRotationName(),
                 HeadingCoordinateConvention,
                 1.0,
@@ -996,7 +1005,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
                     (float)location.Longitude,
                     (float)(altitudeMeters ??
                             0.0),
-                    DateTimeOffset.UtcNow
+                    NavigationClock.UtcNow
                         .ToUnixTimeMilliseconds());
 
             return field.Declination;

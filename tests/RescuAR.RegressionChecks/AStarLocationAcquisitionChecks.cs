@@ -24,8 +24,8 @@ internal static class AStarLocationAcquisitionChecks
             !AStarLocationAcquisitionPolicy.UseForStartup(mldTrip, true, true),
             "MLD lock: a retained MLD trip cannot switch GPS policy when Internet connectivity changes");
         check(ReferenceEquals(LocationAcquisitionPolicy.Select(oldPrecise, currentNetwork, at), oldPrecise) &&
-            ReferenceEquals(AStarLocationAcquisitionPolicy.Select(oldPrecise, currentNetwork, null, at, null), currentNetwork),
-            "A* GPS: excludes the two-second-old precise fix while default/MLD selection stays unchanged");
+            ReferenceEquals(AStarLocationAcquisitionPolicy.Select(oldPrecise, currentNetwork, null, at, null), oldPrecise),
+            "navigation GPS: both providers use the same bounded age/precision ranking for a two-second-old fix");
         var fresh = Fix("gps", 6);
         var retained = Fix("gps", 5, 1);
         check(ReferenceEquals(AStarLocationAcquisitionPolicy.Select(fresh, null, retained, at, null), fresh),
@@ -33,7 +33,7 @@ internal static class AStarLocationAcquisitionChecks
         var better = Fix("gps", 4, .2);
         check(ReferenceEquals(AStarLocationAcquisitionPolicy.Select(Fix("gps", 10), null, better, at, null), better),
             "A* GPS: retains a better actual observation within the bounded collection window");
-        check(AStarLocationAcquisitionPolicy.Select(null, null, better, at.AddSeconds(2), null) is null,
+        check(AStarLocationAcquisitionPolicy.Select(null, null, better, at.Add(AStarLocationAcquisitionPolicy.MaximumFixAge), null) is null,
             "A* GPS: a retained candidate expires rather than being refreshed at timeout");
         check(AStarLocationAcquisitionPolicy.Select(fresh, currentNetwork, better, at, at) is null &&
             AStarLocationAcquisitionPolicy.Select(better, null, null, at, fresh.Timestamp) is null,

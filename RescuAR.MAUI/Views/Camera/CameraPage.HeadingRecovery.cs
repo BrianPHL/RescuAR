@@ -1,44 +1,40 @@
 using RescuAR.AR;
 using RescuAR.Diagnostics;
+using RescuAR.Navigation.Timing;
 
 namespace RescuAR.App.Views.Camera;
 
 public partial class CameraPage
 {
-    private void TryResetInheritedAStarHeading()
+    private void TryResetExpiredNavigationHeading()
     {
         if (!pageIsVisible || cameraMapWindowStopped || safeZoneConfirmed || dynamicRerouteInProgress ||
             routeRequestInProgress || currentCameraModuleView != CameraModuleViewMode.ArCamera ||
             !_arCoreService.IsInitialized || _arCoreService.IsSessionPaused ||
-            activeRoute is not { } route || navigationSessionStartedAt is not { } startedAt)
-            return;
+            activeRoute is not { } route || navigationSessionStartedAt is not { } startedAt) return;
 
         lock (routeProgressFusionSync)
         {
             if (!ReferenceEquals(activeRoute, route) || navigationSessionStartedAt != startedAt ||
                 !CanApplyRouteRequest(activeDestinationVersion, CancellationToken.None)) return;
-            var inherited = _headingAlignmentService.LastResult;
-            if (!_headingAlignmentService.TryPrepareForAStarTrip(route, startedAt,
+            var previous = _headingAlignmentService.LastResult;
+            if (!_headingAlignmentService.TryPrepareForNavigationRoute(route, startedAt,
                     routeStartupPublishedVersion >= 0)) return;
-
-            // Keep the accepted geographic trip, voice, progress and arrival
-            // evidence. Only the old calibration's AR display references expire.
             lastHeadingAlignment = null;
-            _headingRevalidationPolicy.Reset("A* first-window heading acquisition");
+            _headingRevalidationPolicy.Reset("navigation frame heading acquisition");
             _pdrHeadingSmoother.Reset();
             _routeDisplayProgressPolicy.Reset();
             verifiedPosition = null;
             lastRegisteredPublication = null;
             _verifiedRouteWindowHoldPolicy.Reset();
             approachRoutePreviewPublished = false;
+            MldGuidanceBridge.Suppress("navigation heading acquisition");
             ARRouteBridge.Clear();
-            ARCameraSpatialController.SetRouteRenderingEnabled(false,
-                "A* is acquiring a fresh heading for the new trip");
-            nextHeadingRetryAt = DateTimeOffset.UtcNow;
-
+            ARCameraSpatialController.SetRouteRenderingEnabled(false, "acquiring a fresh navigation heading");
+            nextHeadingRetryAt = NavigationClock.UtcNow;
             AndroidLog.Info(HeadingLogTag,
-                $"NAV_ASTAR_HEADING_REACQUIRE trip={activeDestinationVersion}; " +
-                $"previousSource={inherited?.Source}; previousCalibrationAt={inherited?.Timestamp:O}; " +
+                $"NAV_HEADING_REACQUIRE trip={activeDestinationVersion}; algorithm='{route.Algorithm}'; " +
+                $"previousSource={previous?.Source}; previousCalibrationAt={previous?.Timestamp:O}; " +
                 $"tripStartedAt={startedAt:O}; geographicProgressRetained=True.");
         }
     }

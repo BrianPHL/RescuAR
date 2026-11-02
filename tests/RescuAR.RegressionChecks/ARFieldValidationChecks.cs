@@ -55,9 +55,9 @@ internal static class ARFieldValidationChecks
         check(denseMatch.IsAccepted && denseMatch.MatchConfidence == RouteMatchConfidence.High,
             "dense consecutive GeoJSON vertices on one straight road do not create false route ambiguity");
         var fusion = new GpsPdrFusionPolicy();
-        fusion.EvaluateGps(0, false, denseMatch with { MatchConfidence = RouteMatchConfidence.Low });
-        fusion.EvaluateGps(0, false, denseMatch);
-        fusion.EvaluateGps(0, false, denseMatch);
+        fusion.EvaluateGps(0, false, denseMatch with { MatchConfidence = RouteMatchConfidence.Low }, now.AddSeconds(-3));
+        fusion.EvaluateGps(0, false, denseMatch, now.AddSeconds(-2));
+        fusion.EvaluateGps(0, false, denseMatch, now.AddSeconds(-1));
         check(!fusion.IsRouteIdentitySuspended,
             "repeated accurate matches recover route identity on the connected road");
         var weakSameRoad = denseMatch with { AccuracyMeters = 43.1,

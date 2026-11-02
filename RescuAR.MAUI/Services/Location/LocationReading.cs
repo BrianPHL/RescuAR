@@ -1,4 +1,5 @@
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Timing;
 
 namespace RescuAR.MAUI.Services.Location;
 
@@ -20,6 +21,12 @@ public sealed record LocationReading(
     public string Provider { get; init; } = "unavailable";
     public double? CourseAccuracyDegrees { get; init; }
     public long? AcquisitionElapsedRealtimeNanoseconds { get; init; }
+    public long? AcquisitionMonotonicMilliseconds { get; init; }
+
+    // Timestamp remains exactly the provider's UTC value. Live navigation uses
+    // acquisition time in its stable clock; persisted/legacy fixes retain UTC.
+    public DateTimeOffset ObservationTime => AcquisitionMonotonicMilliseconds is { } acquired
+        ? NavigationClock.AtMonotonicMilliseconds(acquired) : Timestamp;
 
     // A reported inaccurate course must not select a different road branch.
     public double? QualifiedCourseDegrees => CourseAccuracyDegrees is { } error &&

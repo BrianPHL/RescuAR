@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using System;
 
 namespace RescuAR.Navigation.Progress;
@@ -171,7 +172,7 @@ public sealed class GpsPdrFusionPolicy
         RouteProgressTracker.RouteProgressUpdate gpsUpdate,
         DateTimeOffset? observedAt = null)
     {
-        DateTimeOffset timestamp = observedAt ?? DateTimeOffset.UtcNow;
+        DateTimeOffset timestamp = observedAt ?? NavigationClock.UtcNow;
         if (!gpsUpdate.IsAccepted ||
             gpsUpdate.IsOffRoute)
         {

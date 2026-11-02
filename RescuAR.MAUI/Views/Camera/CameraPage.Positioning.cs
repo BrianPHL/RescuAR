@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.AR;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.Navigation.Models;
@@ -73,11 +74,11 @@ public partial class CameraPage
     {
         DateTimeOffset? observation;
         lock (routeProgressFusionSync)
-            observation = capturedObservation ?? (retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.Timestamp);
+            observation = capturedObservation ?? (retainedObservation ? verifiedPosition?.At : latestRouteStartupReading?.ObservationTime);
         var observed = ARCameraPoseBridge.SpatialSnapshot.Unavailable;
         long skew = long.MaxValue;
         bool paired = observation.HasValue && ARCameraPoseBridge.TryGetObservationFrame(observation.Value,
-            DateTimeOffset.UtcNow, Environment.TickCount64, out observed, out skew);
+            NavigationClock.UtcNow, Environment.TickCount64, out observed, out skew);
         return new(frame.Generation, frame.Anchor.ReferenceGeneration, frame.Version,
             Environment.TickCount64, frame.Anchor.PositionX, frame.Anchor.PositionZ,
             frame.Pose.PositionX, frame.Pose.PositionZ, observation, source, activeMapToArYawDegrees,
@@ -126,9 +127,13 @@ public partial class CameraPage
     private RouteBacktrackingPolicy.TrackedMotion? GetAcquisitionMotion(LocationReading reading,
         bool requireTrustedHeading = true)
     {
-        if (GetTrackedRouteMotion(requireTrustedHeading) is not { } current ||
-            !ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
-                Environment.TickCount64, out var observed, out _)) return null;
+        if (GetTrackedRouteMotion(requireTrustedHeading) is not { } current) return null;
+        ARCameraPoseBridge.SpatialSnapshot observed;
+        bool paired = reading.AcquisitionMonotonicMilliseconds is { } acquired
+            ? ARCameraPoseBridge.TryGetObservationFrame(acquired, Environment.TickCount64, out observed, out _)
+            : ARCameraPoseBridge.TryGetObservationFrame(reading.ObservationTime, NavigationClock.UtcNow,
+                Environment.TickCount64, out observed, out _);
+        if (!paired) return null;
         var motion = new RouteBacktrackingPolicy.TrackedMotion(observed.Pose.PositionX, observed.Pose.PositionZ,
             activeMapToArYawDegrees, observed.Generation.SessionGeneration, observed.Anchor.ReferenceGeneration,
             observed.TrackingEpoch, observed.WorldFrame);
@@ -146,30 +151,30 @@ public partial class CameraPage
             // Geographic acceptance precedes AR readiness. Retain that exact
             // accepted observation so heading completion can bind it once.
             if (acceptedGpsPosition is null || !ReferenceEquals(acceptedGpsPosition.Route, route) ||
-                reading.Timestamp > acceptedGpsPosition.Reading.Timestamp)
+                reading.ObservationTime > acceptedGpsPosition.Reading.ObservationTime)
                 acceptedGpsPosition = new(route, reading, update);
             if (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
-                reading.Timestamp <= previous.At) return;
-            // A coarse MLD bootstrap reference still passes the shared heading,
-            // tracking and placement gates before publication.
-            if (GetAcquisitionMotion(reading, requireTrustedHeading: !IsMldRoute(route)) is not { } motion) return;
-            _routeDisplayProgressPolicy.ObserveGps(route, update, reading.Timestamp);
-            var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.Timestamp,
-                DateTimeOffset.UtcNow, motion);
+                reading.ObservationTime <= previous.At) return;
+            // Both providers can collect registration evidence before heading
+            // trust completes. Publication still requires all shared gates.
+            if (GetAcquisitionMotion(reading, requireTrustedHeading: false) is not { } motion) return;
+            _routeDisplayProgressPolicy.ObserveGps(route, update, reading.ObservationTime);
+            var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.ObservationTime,
+                NavigationClock.UtcNow, motion);
             LogDetailedDebug(ProgressLogTag,
-                $"NAV_REGISTRATION_DECISION sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                $"NAV_REGISTRATION_DECISION sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
                 $"trip={activeDestinationVersion}; state={registration.State}; innovation={registration.InnovationMeters:F3}m; " +
                 $"correctionAR=({registration.CorrectionX:F3},{registration.CorrectionZ:F3}); evidence={registration.EvidenceCount}; " +
                 $"changed={registration.Changed}; " +
-                $"supportAgeMs={(DateTimeOffset.UtcNow - _routeDisplayProgressPolicy.RegistrationSupportedAt)?.TotalMilliseconds:F0}; " +
-                $"candidateAgeMs={(reading.Timestamp - _routeDisplayProgressPolicy.PendingRegistrationAt)?.TotalMilliseconds:F0}; " +
+                $"supportAgeMs={(NavigationClock.UtcNow - _routeDisplayProgressPolicy.RegistrationSupportedAt)?.TotalMilliseconds:F0}; " +
+                $"candidateAgeMs={(reading.ObservationTime - _routeDisplayProgressPolicy.PendingRegistrationAt)?.TotalMilliseconds:F0}; " +
                 $"seedAccuracy={_routeDisplayProgressPolicy.RegistrationAccuracyMeters:F2}m; " +
                 $"requalificationLifetimeSec={navigationStability.Options.RecoveryLifetime.TotalSeconds:F1}; " +
                 $"session={motion.Session}; epoch={motion.TrackingEpoch}; world={motion.WorldFrame}.");
             positionObservationPolicy.Seed(route, reading.Coordinate, reading.AccuracyMeters,
-                reading.Timestamp, DateTimeOffset.UtcNow, motion);
+                reading.ObservationTime, NavigationClock.UtcNow, motion);
             LogPositionInnovation(verifiedPosition, route, reading, motion);
-            verifiedPosition = new(route, reading.Timestamp, reading.AccuracyMeters!.Value,
+            verifiedPosition = new(route, reading.ObservationTime, reading.AccuracyMeters!.Value,
                 update.CommittedProgressMeters, motion, reading.Coordinate, update.RawProgressMeters);
         }
     }
@@ -188,7 +193,7 @@ public partial class CameraPage
             if (verifiedPosition is not { } verified || !ReferenceEquals(verified.Route, route))
                 return RejectRegisteredWindow("no verified geographic observation", source);
             if (!_routeDisplayProgressPolicy.TryGetRegisteredReference(route, position.RoadCoordinate,
-                    DateTimeOffset.UtcNow, current, out var reference,
+                    NavigationClock.UtcNow, current, out var reference,
                     boundedRecovery ? navigationStability.Options.RecoveryLifetime : null))
                 return RejectRegisteredWindow("registration unsupported or context changed", source);
             double window = GetCurrentArRouteVisualWindowMeters();
@@ -270,7 +275,7 @@ public partial class CameraPage
                 verifiedPosition is not { Motion: { } from } verified || !ReferenceEquals(verified.Route, route) ||
                 GetTrackedRouteMotion() is not { } to ||
                 !navigationStability.TryEstimate(route, verified.Coordinate, verified.DisplayProgress,
-                    verified.At, DateTimeOffset.UtcNow, from, to, out var estimate)) return false;
+                    verified.At, NavigationClock.UtcNow, from, to, out var estimate)) return false;
             return PublishRegisteredRouteWindow(route, estimate, ARCameraPoseBridge.CurrentFrame,
                 "BOUNDED_UNCERTAIN_ESTIMATE", boundedRecovery: true);
         }
@@ -292,12 +297,12 @@ public partial class CameraPage
         {
             position = default;
             if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion)
-                return _routeDisplayProgressPolicy.TryGetNavigationDisplayPosition(route, DateTimeOffset.UtcNow,
+                return _routeDisplayProgressPolicy.TryGetNavigationDisplayPosition(route, NavigationClock.UtcNow,
                     motion, lastGpsFusionAction, out position);
             if (AStarRouteDisplayPolicy.AppliesTo(route))
                 return AStarRouteDisplayPolicy.TryGetDisplayPosition(route, _routeDisplayProgressPolicy,
-                    DateTimeOffset.UtcNow, GetTrackedRouteMotion(), out position);
-            return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
+                    NavigationClock.UtcNow, GetTrackedRouteMotion(), out position);
+            return _routeDisplayProgressPolicy.TryGetObservedPosition(route, NavigationClock.UtcNow, out position);
         }
     }
 
@@ -314,7 +319,7 @@ public partial class CameraPage
         if (!preview.IsAvailable || preview.NavigationState.VisualKind != RouteVisualKind.RouteWindow ||
             !owner.Active || owner.Trip != activeDestinationVersion || owner.Geometry != route.GeometryFingerprint ||
             owner.Window != preview.Version || !preview.Placement.IsFor(frame)) return false;
-        var now = DateTimeOffset.UtcNow;
+        var now = NavigationClock.UtcNow;
         return RescuAR.Navigation.Projection.MappedRoutePreviewPolicy.CanRetain(verified.At, now,
             HasSupportedRouteRegistration(route, preview.NavigationState.WindowStartProgressMeters, now));
     }
@@ -358,12 +363,12 @@ public partial class CameraPage
             if (activeRoute is not { } route || verifiedPosition is not { Motion: { } from } verified ||
                 !ReferenceEquals(verified.Route, route) || GetTrackedRouteMotion() is not { } to ||
                 !TryGetBoundedDisplayPosition(route, _routeProgressTracker.Current.CommittedProgressMeters,
-                    DateTimeOffset.UtcNow, out _, out _)) return false;
+                    NavigationClock.UtcNow, out _, out _)) return false;
             var window = ARRouteBridge.Current;
             if (!string.Equals(window.Algorithm, route.Algorithm, StringComparison.Ordinal) ||
                 Math.Abs(window.TotalDistanceMeters - route.TotalDistanceMeters) > 0.5 ||
                 !RouteAnchorRecoveryPolicy.TryRebaseWindow(window, frame, from, to,
-                    DateTimeOffset.UtcNow, out var points, out var placement)) return false;
+                    NavigationClock.UtcNow, out var points, out var placement)) return false;
             ARRouteBridge.Publish(points, window.Algorithm, window.TotalDistanceMeters,
                 window.NavigationState.VisualKind, window.NavigationState.WindowStartProgressMeters,
                 window.NavigationState.SourceSegmentIndex, placement);
@@ -371,7 +376,7 @@ public partial class CameraPage
             AndroidLog.Info("RescuAR-AnchorRecovery",
                 $"GROUND_HANDOFF_RETAINED oldReference={window.Placement.GroundReference}; " +
                 $"newReference={placement.GroundReference}; worldPositionsPreserved=True; " +
-                $"observationAgeMs={(DateTimeOffset.UtcNow - verified.At).TotalMilliseconds:F0}.");
+                $"observationAgeMs={(NavigationClock.UtcNow - verified.At).TotalMilliseconds:F0}.");
             return true;
         }
     }
@@ -405,7 +410,7 @@ public partial class CameraPage
                     out var position)) return false;
             guidance = _turnGuidanceService.Evaluate(route, position.ProgressMeters, position.SegmentIndex)
                 with { RemainingRouteMeters = progress.RemainingMeters };
-            bool currentPosition = HasCurrentGuidancePosition(progress, DateTimeOffset.UtcNow);
+            bool currentPosition = HasCurrentGuidancePosition(progress, NavigationClock.UtcNow);
             positionStatus = currentPosition ? "Distance is approximate" : "Position uncertain · distance held";
         }
         if (!guidance.IsAvailable) return false;

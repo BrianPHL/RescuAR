@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.AR;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Location;
@@ -56,7 +57,7 @@ public partial class CameraPage
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}; userArrivalButton={confirmUserArrivalButton.IsVisible}; " +
             $"turnCard={turnGuidancePanel.IsVisible}; statusBanner={cameraModeStatusBanner.IsVisible}; " +
             $"nearPanel={routeLocatorPanel.IsVisible}; nearCategory={arrivalNoticeCategory}; " +
-            $"nearSample={noticeReading?.Timestamp.ToUnixTimeMilliseconds()}; " +
+            $"nearSample={noticeReading?.ObservationTime.ToUnixTimeMilliseconds()}; " +
             $"nearEligible={HasArrivalNoticePriority()}; observationHeld={positionObservationHeld}; " +
             $"nearMargin={routeLocatorPanel.Margin}; nearVertical={routeLocatorPanel.VerticalOptions.Alignment}; " +
             $"arrivalReason='{lastSafeZoneDecision.Reason}'; " +
@@ -64,7 +65,7 @@ public partial class CameraPage
         if (lastNavigationUiTrace == key) return;
         lastNavigationUiTrace = key;
         AndroidLog.Info(RouteLogTag, $"NAV_UI {key}; nearFixAgeMs=" +
-            $"{(noticeReading is null ? double.NaN : (DateTimeOffset.UtcNow - noticeReading.Timestamp).TotalMilliseconds):F0}.");
+            $"{(noticeReading is null ? double.NaN : (NavigationClock.UtcNow - noticeReading.ObservationTime).TotalMilliseconds):F0}.");
     }
 
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
@@ -132,13 +133,13 @@ public partial class CameraPage
         LogGeographicRoute(route, activeDestinationVersion);
         var trace = GetGeographicTrace(route);
         var frame = ARCameraPoseBridge.CurrentFrame;
-        bool paired = ARCameraPoseBridge.TryGetObservationFrame(reading.Timestamp, DateTimeOffset.UtcNow,
+        bool paired = ARCameraPoseBridge.TryGetObservationFrame(reading.ObservationTime, NavigationClock.UtcNow,
             Environment.TickCount64, out var observed, out long skew);
         bool roadReady = RouteDisplayProgressPolicy.TryAtDistance(route, matched.RawProgressMeters, out var road);
-        AndroidLog.Info(ProgressLogTag, $"NAV_POSITION_PIPELINE sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+        AndroidLog.Info(ProgressLogTag, $"NAV_POSITION_PIPELINE sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
             $"trip={activeDestinationVersion}; geoRef={navigationTraceOwner}/{geographicTraceVersion}; geometry={route.GeometryFingerprint}; " +
             $"gpsEN={trace.Point(reading.Coordinate)}; accuracy={reading.AccuracyMeters:F2}m; " +
-            $"ageMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; provider={reading.Provider}; courseAccuracy={reading.CourseAccuracyDegrees:F1}; " +
+            $"ageMs={(NavigationClock.UtcNow - reading.ObservationTime).TotalMilliseconds:F0}; provider={reading.Provider}; courseAccuracy={reading.CourseAccuracyDegrees:F1}; " +
             $"accepted={matched.IsAccepted}; held={positionObservationHeld}; match={matched.MatchConfidence}; " +
             $"rawProgress={matched.RawProgressMeters:F3}; fusedProgress={fused.CommittedProgressMeters:F3}; " +
             $"roadEN={(roadReady ? trace.Point(road.RoadCoordinate) : "unavailable")}; " +
@@ -155,18 +156,18 @@ public partial class CameraPage
     {
         if (previous is null || !ReferenceEquals(previous.Route, route) ||
             previous.Motion is not { } from || motion is not { } to || !from.IsContinuousWith(to) ||
-            reading.Timestamp - previous.At > TimeSpan.FromSeconds(RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) return;
+            reading.ObservationTime - previous.At > TimeSpan.FromSeconds(RouteDisplayProgressPolicy.MaximumPdrGpsAgeSeconds)) return;
         double east = (reading.Coordinate.Longitude - previous.Coordinate.Longitude) *
             Math.PI / 180 * 6371008.8 * Math.Cos(previous.Coordinate.Latitude * Math.PI / 180);
         double north = (reading.Coordinate.Latitude - previous.Coordinate.Latitude) * Math.PI / 180 * 6371008.8;
         var projected = MapToArCoordinates.Rotate(east, north, to.YawDegrees);
         double arX = to.X - from.X, arZ = to.Z - from.Z;
         AndroidLog.Info(RouteLogTag,
-            $"NAV_POSITION_INNOVATION sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+            $"NAV_POSITION_INNOVATION sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
             $"previousSample={previous.At.ToUnixTimeMilliseconds()}; session={to.Session}; " +
             $"ground={from.GroundReference}/{to.GroundReference}; " +
             $"trackingEpoch={to.TrackingEpoch}; worldFrame={to.WorldFrame}; " +
-            $"gpsAgeMs={(DateTimeOffset.UtcNow - reading.Timestamp).TotalMilliseconds:F0}; " +
+            $"gpsAgeMs={(NavigationClock.UtcNow - reading.ObservationTime).TotalMilliseconds:F0}; " +
             $"accuracy={previous.Accuracy:F1}/{reading.AccuracyMeters:F1}m; " +
             $"gpsEN=({east:F2},{north:F2})m; gpsAR=({projected.X:F2},{projected.Z:F2})m; " +
             $"trackedAR=({arX:F2},{arZ:F2})m; residual=({arX - projected.X:F2},{arZ - projected.Z:F2})m; " +
@@ -279,7 +280,7 @@ public partial class CameraPage
                 $"trackingEpoch={placed.TrackingEpoch}; worldFrame={placed.WorldFrame}; " +
                 $"placementAgeMs={now - placed.PublishedAt}; " +
                 $"poseAtPublicationAgeMs={placed.PublishedAt - placed.PosePublishedAt}; frameNs={placed.FrameTimestamp}; " +
-                $"gpsAtPublicationMs={(placed.ObservationTime.HasValue ? placed.PublishedAt - now + (DateTimeOffset.UtcNow - placed.ObservationTime.Value).TotalMilliseconds : double.NaN):F0}; " +
+                $"gpsAtPublicationMs={(placed.ObservationTime.HasValue ? placed.PublishedAt - now + (NavigationClock.UtcNow - placed.ObservationTime.Value).TotalMilliseconds : double.NaN):F0}; " +
                 $"yaw={placed.YawDegrees:F2}; gpsToRoadEN=({placed.GpsToRoadEast:F2},{placed.GpsToRoadNorth:F2})m; " +
                 $"cameraPairing={placed.AlignmentSource}; registrationSample={placed.RegistrationSample}; " +
                 $"registeredWorldRef=({placed.RegisteredWorldX:F3},{placed.RegisteredWorldZ:F3}); " +

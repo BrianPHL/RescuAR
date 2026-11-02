@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using System;
 using System.Numerics;
 using RescuAR.Navigation.Models;
@@ -56,7 +57,7 @@ public static class ARRoadApproachBridge
             Clear("mapped target registration unavailable");
             return false;
         }
-        if (!RouteStartupLocationPolicy.CanPlace(origin, accuracy, timestamp, DateTimeOffset.UtcNow) ||
+        if (!RouteStartupLocationPolicy.CanPlace(origin, accuracy, timestamp, NavigationClock.UtcNow) ||
             !RoadApproachCuePolicy.TryGetDirection(origin, target, yaw, out var direction, out _) ||
             !ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(out var frame) ||
             frame.Generation.SessionGeneration != expectedSession ||
@@ -103,14 +104,14 @@ public static class ARRoadApproachBridge
         bool qualified = CanRender(snapshot, frame.Generation, frame.Anchor.ReferenceGeneration,
             frame.Anchor.Trust, frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
                 frame.Anchor.IsAvailable && frame.Anchor.GroundState.RenderGeneration == frame.Generation,
-            DateTimeOffset.UtcNow, Environment.TickCount64);
+            NavigationClock.UtcNow, Environment.TickCount64);
         if (!qualified)
         {
             if (snapshot.Active)
                 System.Threading.Volatile.Write(ref lastRenderReason,
                     snapshot.GroundReference != frame.Anchor.ReferenceGeneration ? "ground reference changed" :
                     Environment.TickCount64 - snapshot.PublishedAt > MaximumAgeMilliseconds ? "cue publication expired" :
-                    !RouteStartupLocationPolicy.CanPlace(snapshot.Origin, snapshot.Accuracy, snapshot.FixTimestamp, DateTimeOffset.UtcNow)
+                    !RouteStartupLocationPolicy.CanPlace(snapshot.Origin, snapshot.Accuracy, snapshot.FixTimestamp, NavigationClock.UtcNow)
                         ? "GPS cue support expired or inaccurate" : "tracking, generation or floor unqualified");
             return default;
         }

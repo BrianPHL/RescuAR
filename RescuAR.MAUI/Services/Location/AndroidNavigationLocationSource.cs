@@ -7,6 +7,7 @@ using Microsoft.Maui.Devices.Sensors;
 using RescuAR.Diagnostics;
 using RescuAR.MAUI.Services.Navigation;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Timing;
 using AndroidLocation = Android.Locations.Location;
 using Environment = System.Environment;
 
@@ -21,6 +22,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
     private LocationManager? manager;
     private bool listening;
     private bool suspended;
+    private bool providersDirty;
     private int foregroundOwners, activeRequests;
     private long gpsSamples, networkSamples, rejectedSamples;
     private LocationReading? gps, network;
@@ -68,7 +70,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             while (Environment.TickCount64 - started < timeout.TotalMilliseconds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var now = DateTimeOffset.UtcNow;
+                var now = NavigationClock.UtcNow;
                 LocationReading? best;
                 lock (sync)
                 {
@@ -82,7 +84,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             }
             lock (sync)
             {
-                var result = LocationAcquisitionPolicy.Select(gps, network, DateTimeOffset.UtcNow);
+                var result = LocationAcquisitionPolicy.Select(gps, network, NavigationClock.UtcNow);
                 AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_POLL timeout=True; selected={result?.Provider ?? "none"}; " +
                     $"gpsCallbacks={gpsSamples}; networkCallbacks={networkSamples}; rejectedCallbacks={rejectedSamples}; " +
                     $"gpsAt={gps?.Timestamp:O}; networkAt={network?.Timestamp:O}; owners={foregroundOwners}.");
@@ -100,7 +102,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         }
     }
 
-    public async Task<LocationReading?> GetAStarCurrentAsync(DateTimeOffset? newerThan,
+    public async Task<LocationReading?> GetNavigationCurrentAsync(DateTimeOffset? newerThan,
         CancellationToken cancellationToken)
     {
         await requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -117,7 +119,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var now = DateTimeOffset.UtcNow;
+                var now = NavigationClock.UtcNow;
                 lock (sync)
                 {
                     if (suspended) return null;
@@ -128,8 +130,8 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
                 if (AStarLocationAcquisitionPolicy.CanComplete(best, now, newerThan, elapsed) ||
                     elapsed >= AStarLocationAcquisitionPolicy.CollectionWindow)
                 {
-                    AndroidLog.Info("RescuAR-GPS", $"NAV_ASTAR_LOCATION selected={best?.Provider ?? "none"}; " +
-                        $"accuracy={best?.AccuracyMeters:F2}m; ageMs={(now - best?.Timestamp)?.TotalMilliseconds:F0}; " +
+                    AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_ACQUISITION selected={best?.Provider ?? "none"}; " +
+                        $"accuracy={best?.AccuracyMeters:F2}m; ageMs={(now - best?.ObservationTime)?.TotalMilliseconds:F0}; " +
                         $"elapsedMs={elapsed.TotalMilliseconds:F0}; newerThan={newerThan:O}; " +
                         "acquisitionTimePreserved=True; coordinatesFiltered=False.");
                     return best;
@@ -150,7 +152,9 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
 
     private void Start()
     {
-        if (listening) return;
+        if (listening && !providersDirty) return;
+        if (listening) { manager?.RemoveUpdates(this); listening = false; }
+        providersDirty = false;
         manager ??= Platform.AppContext.GetSystemService(Context.LocationService) as LocationManager;
         if (manager is null) throw new FeatureNotSupportedException("Android location manager unavailable.");
         try
@@ -189,6 +193,19 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
 
     public void OnLocationChanged(AndroidLocation location)
     {
+        long receivedAt = Environment.TickCount64;
+        if (!NavigationClock.TryMapElapsedNanoseconds(location.ElapsedRealtimeNanos,
+                SystemClock.ElapsedRealtimeNanos(), receivedAt, out long acquiredAt))
+        {
+            lock (sync)
+            {
+                if (!listening) return;
+                rejectedSamples++;
+                if (rejectedSamples == 1 || rejectedSamples % 30 == 0)
+                    AndroidLog.Warn("RescuAR-GPS", $"NAV_LOCATION_CLOCK rejected=True; provider={location.Provider}; reason=INVALID_NATIVE_ACQUISITION; count={rejectedSamples}.");
+            }
+            return;
+        }
         DateTimeOffset timestamp;
         try { timestamp = DateTimeOffset.FromUnixTimeMilliseconds(location.Time); }
         catch (ArgumentOutOfRangeException) { return; }
@@ -200,12 +217,13 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             Provider = location.Provider ?? "unavailable",
             CourseAccuracyDegrees = OperatingSystem.IsAndroidVersionAtLeast(26) && location.HasBearingAccuracy
                 ? location.BearingAccuracyDegrees : null,
-            AcquisitionElapsedRealtimeNanoseconds = location.ElapsedRealtimeNanos
+            AcquisitionElapsedRealtimeNanoseconds = location.ElapsedRealtimeNanos,
+            AcquisitionMonotonicMilliseconds = acquiredAt
         };
         lock (sync)
         {
             if (!listening) return;
-            if (!LocationAcquisitionPolicy.IsCurrent(reading, DateTimeOffset.UtcNow))
+            if (!LocationAcquisitionPolicy.IsCurrent(reading, NavigationClock.UtcNow))
             {
                 rejectedSamples++;
                 return;
@@ -213,18 +231,26 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             if (reading.Provider == LocationManager.GpsProvider)
             {
                 gpsSamples++;
-                if (gps is null || reading.Timestamp > gps.Timestamp) gps = reading;
+                if (location.ElapsedRealtimeNanos > (gps?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) gps = reading;
             }
             else if (reading.Provider == LocationManager.NetworkProvider)
             {
                 networkSamples++;
-                if (network is null || reading.Timestamp > network.Timestamp) network = reading;
+                if (location.ElapsedRealtimeNanos > (network?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) network = reading;
             }
         }
     }
 
-    public void OnProviderDisabled(string provider) { }
-    public void OnProviderEnabled(string provider) { }
+    public void OnProviderDisabled(string provider)
+    {
+        lock (sync)
+        {
+            providersDirty = true;
+            if (provider == LocationManager.GpsProvider) gps = null;
+            if (provider == LocationManager.NetworkProvider) network = null;
+        }
+    }
+    public void OnProviderEnabled(string provider) { lock (sync) providersDirty = true; }
     public void OnStatusChanged(string? provider, Availability status, Bundle? extras) { }
 }
 #endif

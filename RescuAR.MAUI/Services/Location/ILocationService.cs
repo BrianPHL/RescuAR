@@ -29,3 +29,10 @@ public interface IAStarLocationSource
     Task<LocationReading?> GetAStarLocationAsync(DateTimeOffset? newerThan,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Shared bounded acquisition for either navigation provider.</summary>
+public interface INavigationLocationSource
+{
+    Task<LocationReading?> GetNavigationLocationAsync(DateTimeOffset? newerThan,
+        CancellationToken cancellationToken = default);
+}

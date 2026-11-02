@@ -25,15 +25,17 @@ public sealed partial class ArCoreService
     {
         bool forceOn = false, forceOff = false, diagnosticRetest = false;
 #if RESCUAR_DIAGNOSTICS
-        // The requested field candidate exercises supported Depth again. The
-        // production quarantine remains until this device retest is accepted.
-        diagnosticRetest = true;
+        // Diagnostic logging must not silently change the feature configuration
+        // being tested. A depth experiment requires an explicit launch flag.
         try
         {
             var intent = global::Microsoft.Maui.ApplicationModel.Platform
                 .CurrentActivity?.Intent;
             forceOn = intent?.GetBooleanExtra("rescuar.arcore.force_depth_on", false) == true;
             forceOff = intent?.GetBooleanExtra(ForceDepthOffIntentExtra, false) == true;
+            diagnosticRetest = forceOn;
+            ARCameraSpatialController.SetRouteDepthOcclusionEnabled(
+                !forceOff && intent?.GetBooleanExtra("rescuar.arcore.route_depth_occlusion", false) == true);
         }
         catch (Exception exception)
         {
@@ -147,6 +149,7 @@ public sealed partial class ArCoreService
             $"depthSupported={depthModeSupported}, " +
             $"depthExperimentMode={depthExperimentMode}, " +
             $"depthEnabled={depthModeEnabled}, " +
+            $"routeDepthOcclusion={ARCameraSpatialController.RouteDepthOcclusionEnabled}, " +
             $"cameraFacing={cameraFacing}, " +
             $"cameraFps={cameraFps}, " +
             $"gpuTexture={gpuTexture}, " +

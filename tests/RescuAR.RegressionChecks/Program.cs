@@ -17,6 +17,42 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--device-reliability-tail"))
+{
+    ARFieldValidationChecks.Run(Check);
+    ArrivalArrowChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    await SharedCameraRoutingChecks.RunAsync(Check);
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} remaining device reliability regression checks passed.");
+    return;
+}
+if (args.Contains("--device-reliability"))
+{
+    await NavigationDeviceReliabilityChecks.RunAsync(Check);
+    LocationAcquisitionChecks.Run(Check);
+    await AStarLocationAcquisitionChecks.RunAsync(Check);
+    await MldRoutingChecks.RunAsync(Check);
+    await MldHeadingRecoveryChecks.RunAsync(Check);
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    MldWindowContinuityChecks.Run(Check);
+    MldRibbonRegistrationChecks.Run(Check);
+    ARRegistrationChecks.Run(Check);
+    ARMultiDeviceRecoveryChecks.Run(Check);
+    NavigationStabilityChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    PdrMapMatchingChecks.Run(Check);
+    ARGroundFloodChecks.Run(Check);
+    ARFieldValidationChecks.Run(Check);
+    ArrivalArrowChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    await SharedCameraRoutingChecks.RunAsync(Check);
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} device reliability, routing and shared camera regression checks passed.");
+    return;
+}
 if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy") || args.Contains("--astar-gps"))
 {
     LocationAcquisitionChecks.Run(Check);
@@ -25,6 +61,18 @@ if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy") || 
     await AStarHeadingRecoveryChecks.RunAsync(Check);
     await MldGuidanceOwnershipChecks.RunAsync(Check);
     Console.WriteLine($"{passed} A* visibility and MLD lock regression checks passed.");
+    return;
+}
+if (args.Contains("--mld-recovery"))
+{
+    await MldRoutingChecks.RunAsync(Check);
+    await MldHeadingRecoveryChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    MldWindowContinuityChecks.Run(Check);
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await AStarRouteDisplayChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} MLD routing/heading and A* preservation checks passed.");
     return;
 }
 if (args.Contains("--route-visibility"))
@@ -176,11 +224,14 @@ if (args.Contains("--field-validation") || args.Contains("--ar-guidance") || arg
     return;
 }
 await NavigationFeedbackChecks.RunAsync(Check);
+await NavigationDeviceReliabilityChecks.RunAsync(Check);
 ArrivalArrowChecks.Run(Check);
 CameraMapChecks.Run(Check);
 CameraStartupChecks.Run(Check);
 SurfaceResizeChecks.Run(Check);
 ARRegistrationChecks.Run(Check);
+await MldRoutingChecks.RunAsync(Check);
+await MldHeadingRecoveryChecks.RunAsync(Check);
 await MldGuidanceOwnershipChecks.RunAsync(Check);
 ARMultiDeviceRecoveryChecks.Run(Check);
 NavigationStabilityChecks.Run(Check);

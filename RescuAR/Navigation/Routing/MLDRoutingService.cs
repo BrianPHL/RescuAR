@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,8 +18,8 @@ namespace RescuAR.Navigation.Routing;
 /// <summary>
 /// Online routing adapter for the Railway-hosted RescuAR OSRM service.
 ///
-/// Ordinary routing preserves the existing OSRM behavior. Stage 10 adds a
-/// hazard-aware path that first asks MLD for multiple alternatives and rejects
+/// Ordinary routing preserves the walking profile's evacuation costs. The
+/// hazard-aware path first asks MLD for multiple alternatives and rejects
 /// any route intersecting active RescuAR hazard exclusion zones. If all direct
 /// alternatives are unsafe, MLD is asked to route through bounded bypass
 /// waypoints around the first blocking hazard. The returned geometry is always
@@ -34,6 +35,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
     private const int HazardDirectAlternativeCount =
         3;
+
+    private const int DirectAlternativeCount = 3;
 
     private const int HazardDetourAlternativeCount =
         2;
@@ -177,14 +180,11 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
                             origin,
                             destination
                         },
-                        0,
+                        DirectAlternativeCount,
                         AlgorithmName,
                         cancellationToken);
 
-                RouteResult? route =
-                    routes.Count > 0
-                        ? routes[0]
-                        : null;
+                RouteResult? route = routes.FirstOrDefault();
 
                 if (route is null)
                 {
@@ -654,10 +654,11 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             $"MLD endpoint request: {new Uri(baseUrl).GetLeftPart(UriPartial.Authority)}; " +
             $"inputs={string.Join(";", coordinates.Select(c => DiagnosticPrivacyPolicy.FormatCoordinate(c.Latitude, c.Longitude)))}");
 
-        using HttpResponseMessage response =
-            await httpClient.GetAsync(
-                requestUrl,
-                cancellationToken);
+        // Every initial/replacement route reaches the transport with the actual
+        // current origin. Do not reuse a cached response for a previous walk.
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
 
         string json =
             await response.Content.ReadAsStringAsync(
@@ -758,6 +759,8 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
         List<RouteResult> routes =
             new();
+        var costs = new List<double?>();
+        var objectives = new List<string?>();
 
         foreach (JsonElement routeElement in
                  routesElement.EnumerateArray())
@@ -771,11 +774,22 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
             {
                 routes.Add(
                     route);
+                costs.Add(routeElement.TryGetProperty("weight", out var weight) && weight.ValueKind == JsonValueKind.Number &&
+                    weight.TryGetDouble(out double cost) && double.IsFinite(cost) && cost >= 0 ? cost : null);
+                objectives.Add(routeElement.TryGetProperty("weight_name", out var name) &&
+                    name.ValueKind == JsonValueKind.String ? name.GetString() : null);
             }
         }
 
         if (routes.Count == 0)
             throw new InvalidDataException("OSRM Ok response contains no usable geometry.");
+        // The foot profile encodes shared access/surface/crossing preferences
+        // in its cost. Distance alone must not undo those preferences. Missing
+        // comparable metadata retains the server's recommended ordering.
+        if (costs.All(cost => cost.HasValue) && objectives.All(name => !string.IsNullOrWhiteSpace(name) && name == objectives[0]))
+            return routes.Select((route, index) => (Route: route, Cost: costs[index]!.Value))
+                .OrderBy(candidate => candidate.Cost).ThenBy(candidate => candidate.Route.TotalDistanceMeters)
+                .Select(candidate => candidate.Route).ToArray();
         return routes;
     }
 

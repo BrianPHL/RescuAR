@@ -1,3 +1,5 @@
+using RescuAR.Navigation.Timing;
+using RescuAR.Navigation.Progress;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Networking;
 using RescuAR.App.Services.Evacuation;
@@ -25,7 +27,7 @@ public partial class CameraPage
     {
         lock (routeProgressFusionSync)
             return CameraMapPresentationPolicy.CanShowCurrent(latestRouteStartupReading,
-                DateTimeOffset.UtcNow, positionObservationHeld) ? latestRouteStartupReading : null;
+                NavigationClock.UtcNow, positionObservationHeld) ? latestRouteStartupReading : null;
     }
 
     private RouteResult? GetCameraMapRoute()
@@ -94,7 +96,7 @@ public partial class CameraPage
             string hazardStatus = hazardUpdated is not { } at ? "Hazard data unavailable"
                 : Connectivity.Current.NetworkAccess == NetworkAccess.Internet && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(15)
                     ? $"Known hazards updated {at.ToLocalTime():HH:mm}" : $"Saved hazards · {at.ToLocalTime():MMM d, HH:mm}";
-            mapRouteStatsLabel.Text = $"{remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
+            mapRouteStatsLabel.Text = $"{NavigationRecoveryPolicy.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
         }
 
         RefreshCameraMapTurnGuidance(route);
@@ -104,14 +106,14 @@ public partial class CameraPage
             OpenRouteDirectionsSheet();
         }
         if (!destination.IsAvailable && !cameraLocationPermissionDenied &&
-            DateTimeOffset.UtcNow - cameraMapLastLocationAttempt >= TimeSpan.FromSeconds(5))
+            NavigationClock.UtcNow - cameraMapLastLocationAttempt >= TimeSpan.FromSeconds(5))
             _ = Refresh2DMapLocationAsync(requestCurrent: false);
     }
 
     private void RefreshCameraMapTurnGuidance(RouteResult? route)
     {
         var progress = _routeProgressTracker.Current;
-        bool held = !HasCurrentGuidancePosition(progress, DateTimeOffset.UtcNow);
+        bool held = !HasCurrentGuidancePosition(progress, NavigationClock.UtcNow);
         var guidance = route is null ? PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable
             : CameraMapPresentationPolicy.Guidance(route, progress, held);
         if (!guidance.IsAvailable || dynamicRerouteInProgress || emergencyAdvisoryVisible ||
@@ -138,7 +140,7 @@ public partial class CameraPage
         !dynamicRerouteInProgress && !emergencyAdvisoryVisible && !safeZoneConfirmed &&
         !lastSafeZoneDecision.IsCandidate && GetCameraMapRoute() is not null &&
         GetCameraMapReading() is not null &&
-        HasCurrentGuidancePosition(_routeProgressTracker.Current, DateTimeOffset.UtcNow);
+        HasCurrentGuidancePosition(_routeProgressTracker.Current, NavigationClock.UtcNow);
 
     private void CancelCameraInstructionSpeech()
     {

@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using Microsoft.Maui.Devices.Sensors;
 using System.Numerics;
 
@@ -209,7 +210,7 @@ public sealed class PedestrianDeadReckoningService
         }
 
         DateTimeOffset now =
-            DateTimeOffset.UtcNow;
+            NavigationClock.UtcNow;
 
         PdrStepDetectedEventArgs? acceptedStep =
             null;

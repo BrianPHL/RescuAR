@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using System;
 using System.Threading;
 
@@ -25,7 +26,7 @@ public static class ARTrackingStateBridge
             lock (sync)
             {
                 return current.WithCurrentLossDuration(
-                    DateTimeOffset.UtcNow);
+                    NavigationClock.UtcNow);
             }
         }
     }
@@ -37,7 +38,7 @@ public static class ARTrackingStateBridge
         long frameTimestamp,
         bool depthEnabled)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = NavigationClock.UtcNow;
 
         lock (sync)
         {
@@ -162,7 +163,7 @@ public static class ARTrackingStateBridge
         string reason,
         bool depthEnabled)
     {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = NavigationClock.UtcNow;
 
         lock (sync)
         {

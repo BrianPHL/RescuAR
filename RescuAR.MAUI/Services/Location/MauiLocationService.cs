@@ -19,7 +19,7 @@ namespace RescuAR.MAUI.Services.Location;
 /// as a foreground polling loop owned by CameraPage. This service remains the
 /// single adapter that converts MAUI Location into RescuAR LocationReading.
 /// </summary>
-public sealed class MauiLocationService : ILocationService, IForegroundLocationSource, IAStarLocationSource
+public sealed class MauiLocationService : ILocationService, IForegroundLocationSource, IAStarLocationSource, INavigationLocationSource
 {
 #if ANDROID
     private readonly AndroidNavigationLocationSource navigationLocations = new();
@@ -118,6 +118,10 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
 
     public Task<LocationReading?> GetAStarLocationAsync(DateTimeOffset? newerThan,
         CancellationToken cancellationToken = default) =>
+        GetNavigationLocationAsync(newerThan, cancellationToken);
+
+    public Task<LocationReading?> GetNavigationLocationAsync(DateTimeOffset? newerThan,
+        CancellationToken cancellationToken = default) =>
         GetCurrentLocationCoreAsync(true, newerThan, cancellationToken);
 
     private async Task<LocationReading?> GetCurrentLocationCoreAsync(bool useAStar, DateTimeOffset? newerThan,
@@ -151,7 +155,7 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
         {
 #if ANDROID
             var reading = useAStar
-                ? await navigationLocations.GetAStarCurrentAsync(newerThan, cancellationToken)
+                ? await navigationLocations.GetNavigationCurrentAsync(newerThan, cancellationToken)
                 : await navigationLocations.GetCurrentAsync(CurrentLocationTimeout, cancellationToken);
             if (reading is not null)
             {

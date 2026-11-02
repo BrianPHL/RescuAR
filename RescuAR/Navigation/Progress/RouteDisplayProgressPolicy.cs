@@ -16,6 +16,7 @@ public sealed class RouteDisplayProgressPolicy
     public const int MaximumPdrGpsAgeSeconds = 8;
     public const double MaximumPdrAdvanceMeters = 8;
     private readonly TimeSpan frameRequalificationLifetime;
+    private readonly bool requireInitialConfirmation;
     private RouteResult? currentRoute;
     private DateTimeOffset? observedAt;
     private DisplayPosition gpsPosition;
@@ -38,11 +39,12 @@ public sealed class RouteDisplayProgressPolicy
         long Session, long TrackingEpoch, long WorldFrame, double YawDegrees, DateTimeOffset RegisteredAt,
         DateTimeOffset SupportedAt, string Source = "QUALIFIED_ACQUISITION");
 
-    public RouteDisplayProgressPolicy(NavigationStabilityOptions? options = null)
+    public RouteDisplayProgressPolicy(NavigationStabilityOptions? options = null, bool requireInitialConfirmation = false)
     {
         var configured = options ?? new NavigationStabilityOptions();
         configured.Validate();
         frameRequalificationLifetime = configured.RecoveryLifetime;
+        this.requireInitialConfirmation = requireInitialConfirmation;
     }
 
     public DateTimeOffset? RegistrationSupportedAt => registrationSupportedAt;
@@ -134,11 +136,29 @@ public sealed class RouteDisplayProgressPolicy
         bool sameFrame = registration is { } previous && SameFrame(previous.Motion, motion);
         if (registration is null)
         {
+            if (requireInitialConfirmation)
+            {
+                bool consistent = pendingRegistration is { } seed && SameFrame(seed.Motion, motion) &&
+                    at - seed.At <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) &&
+                    RegistrationResidual(seed, next) <= RoutePositionObservationPolicy.MotionAllowanceMeters +
+                        Math.Min(3, Math.Min(seed.Accuracy, next.Accuracy));
+                if (!consistent)
+                {
+                    pendingRegistration = next;
+                    registrationConfirmations = 1;
+                    return LastRegistrationDecision = new("ACQUISITION_CONFIRMATION_PENDING", double.NaN, false, EvidenceCount: 1);
+                }
+                registrationConfirmations++;
+                if (at - pendingRegistration!.Value.At < TimeSpan.FromSeconds(1) || registrationConfirmations < 2)
+                    return LastRegistrationDecision = new("ACQUISITION_CONFIRMATION_PENDING", double.NaN, false,
+                        EvidenceCount: registrationConfirmations);
+            }
             registration = next;
             registrationCorrections.Reset();
             trackedDisplayProgress = gpsPosition.ProgressMeters;
             lastDisplayMotion = motion;
             pendingRegistration = null;
+            registrationConfirmations = 0;
             registrationSupportedAt = at;
             return LastRegistrationDecision = new("ACQUISITION_SEEDED", 0, true);
         }

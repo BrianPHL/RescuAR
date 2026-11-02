@@ -1,4 +1,6 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.AR;
+using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.State;
@@ -67,7 +69,7 @@ public partial class CameraPage
                 positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
                 (accepted is null || !ReferenceEquals(accepted.Route, route) ||
-                    accepted.Reading.Timestamp != reading.Timestamp || latestGpsTimestampForRouting != reading.Timestamp) ||
+                    accepted.Reading.ObservationTime != reading.ObservationTime || latestGpsTimestampForRouting != reading.ObservationTime) ||
                     (lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium || lastGpsReliabilityWeight < .35))
                 return;
             if (accepted is not null)
@@ -81,7 +83,7 @@ public partial class CameraPage
                     lastRegisteredPublication = null;
                 }
                 ObserveVerifiedGpsPosition(route, accepted.Update, accepted.Reading);
-                if (verifiedPosition is not { } verified || verified.At != accepted.Reading.Timestamp) return;
+                if (verifiedPosition is not { } verified || verified.At != accepted.Reading.ObservationTime) return;
             }
             // Observe-only matching cannot add a second progress/arrival/entry
             // sample. Existing acquisition pairing, age, precision, registration,
@@ -93,7 +95,7 @@ public partial class CameraPage
                 ? TryPublishMovingRouteWindow(route, match, reason)
                 : TryPublishApproachToRouteVisual(route, match, reason);
             if (previousWindow != ARRouteBridge.Current.Version)
-                LogDetailedDebug(ProgressLogTag, $"NAV_ROUTE_READY sample={reading.Timestamp.ToUnixTimeMilliseconds()}; " +
+                LogDetailedDebug(ProgressLogTag, $"NAV_ROUTE_READY sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
                 $"trip={activeDestinationVersion}; algorithm='{route.Algorithm}'; published={published}; source='{reason}'.");
         }
     }

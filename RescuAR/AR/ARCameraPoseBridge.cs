@@ -20,7 +20,8 @@ public static class ARCameraPoseBridge
 
     // Bounded ~3 s acquisition-time history for navigation as well as the
     // existing camera/depth coherence lookup. Historical poses never render.
-    private const int FrameHistoryCapacity = 160;
+    // Covers the three-second GPS window even at high publication rates.
+    private const int FrameHistoryCapacity = 512;
 
     private static readonly object sync =
         new();
@@ -344,11 +345,27 @@ public static class ARCameraPoseBridge
         snapshot = SpatialSnapshot.Unavailable;
         skewMilliseconds = long.MaxValue;
         double age = (now - observedAt).TotalMilliseconds;
+        if (!double.IsFinite(age) || age < 0 || age > 3_000)
+        {
+            snapshot = SpatialSnapshot.Unavailable;
+            skewMilliseconds = long.MaxValue;
+            return false;
+        }
+        return TryGetObservationFrame(monotonicNow - (long)Math.Round(age), monotonicNow,
+            out snapshot, out skewMilliseconds);
+    }
+
+    public static bool TryGetObservationFrame(long acquiredMonotonicMilliseconds, long monotonicNow,
+        out SpatialSnapshot snapshot, out long skewMilliseconds)
+    {
+        snapshot = SpatialSnapshot.Unavailable;
+        skewMilliseconds = long.MaxValue;
+        long age = monotonicNow - acquiredMonotonicMilliseconds;
         var live = CurrentFrame;
-        if (!double.IsFinite(age) || age < 0 || age > 3_000 || !live.IsTracking ||
+        if (age < 0 || age > 3_000 || !live.IsTracking ||
             !live.Pose.IsTracking || live.TrackingEpoch != CurrentTrackingEpoch(live.Generation.SessionGeneration) ||
             live.WorldFrame != ARCameraSpatialController.WorldFrameGeneration) return false;
-        long target = monotonicNow - (long)Math.Round(age);
+        long target = acquiredMonotonicMilliseconds;
         lock (sync)
         {
             for (int index = 0; index < frameHistoryCount; index++)
@@ -456,6 +473,13 @@ public static class ARCameraPoseBridge
     private static void AddToHistory(
         SpatialSnapshot snapshot)
     {
+        if (frameHistoryCount > 0)
+        {
+            var previous = frameHistory[(frameHistoryWriteIndex - 1 + FrameHistoryCapacity) % FrameHistoryCapacity];
+            if (previous.Generation == snapshot.Generation && previous.FrameTimestamp == snapshot.FrameTimestamp &&
+                previous.TrackingEpoch == snapshot.TrackingEpoch && previous.WorldFrame == snapshot.WorldFrame &&
+                previous.IsTracking == snapshot.IsTracking) return;
+        }
         frameHistory[frameHistoryWriteIndex] =
             snapshot;
 

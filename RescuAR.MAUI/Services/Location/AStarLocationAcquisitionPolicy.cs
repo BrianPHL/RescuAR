@@ -1,3 +1,4 @@
+using RescuAR.Navigation.Timing;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -9,7 +10,7 @@ namespace RescuAR.MAUI.Services.Location;
 public static class AStarLocationAcquisitionPolicy
 {
     public const double DesiredAccuracyMeters = 6;
-    public static readonly TimeSpan MaximumFixAge = TimeSpan.FromMilliseconds(1500);
+    public static readonly TimeSpan MaximumFixAge = LocationAcquisitionPolicy.MaximumFixAge;
     public static readonly TimeSpan CollectionWindow = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ImmediateFixAge = TimeSpan.FromMilliseconds(500);
@@ -20,9 +21,9 @@ public static class AStarLocationAcquisitionPolicy
 
     public static bool IsEligible(LocationReading? reading, DateTimeOffset now, DateTimeOffset? newerThan) =>
         reading is not null && LocationAcquisitionPolicy.IsCurrent(reading, now) &&
-        now - reading.Timestamp <= MaximumFixAge &&
+        now - reading.ObservationTime <= MaximumFixAge &&
         reading.AccuracyMeters <= RouteStartupLocationPolicy.MaximumPlanningAccuracyMeters &&
-        (!newerThan.HasValue || reading.Timestamp > newerThan.Value);
+        (!newerThan.HasValue || reading.ObservationTime > newerThan.Value);
 
     public static LocationReading? Select(LocationReading? gps, LocationReading? network,
         LocationReading? retained, DateTimeOffset now, DateTimeOffset? newerThan)
@@ -34,8 +35,8 @@ public static class AStarLocationAcquisitionPolicy
             if (!IsEligible(reading, now, newerThan)) continue;
             // Age is an additional selection cost (1.5 m/s pedestrian travel),
             // not a claim that the provider's reported accuracy has changed.
-            double score = reading!.AccuracyMeters!.Value + (now - reading.Timestamp).TotalSeconds * 1.5;
-            if (score < bestScore || score == bestScore && reading.Timestamp > best!.Timestamp)
+            double score = LocationAcquisitionPolicy.Score(reading!, now);
+            if (score < bestScore || score == bestScore && reading!.ObservationTime > best!.ObservationTime)
             {
                 best = reading;
                 bestScore = score;
@@ -48,18 +49,27 @@ public static class AStarLocationAcquisitionPolicy
         DateTimeOffset? newerThan, TimeSpan elapsed) =>
         IsEligible(reading, now, newerThan) && elapsed >= TimeSpan.Zero &&
         (elapsed >= CollectionWindow || reading!.Provider == "gps" &&
-         reading.AccuracyMeters <= DesiredAccuracyMeters && now - reading.Timestamp <= ImmediateFixAge);
+         reading.AccuracyMeters <= DesiredAccuracyMeters && now - reading.ObservationTime <= ImmediateFixAge);
 
     public static async Task<LocationReading?> GetAsync(ILocationService source, bool useAStar,
         DateTimeOffset? newerThan, CancellationToken cancellationToken = default)
     {
-        // Preserve the existing MLD/default acquisition call and result.
-        if (!useAStar) return await source.GetCurrentLocationAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        if (source is INavigationLocationSource navigation)
+        {
+            var current = await navigation.GetNavigationLocationAsync(newerThan, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var now = current?.AcquisitionMonotonicMilliseconds is not null ? NavigationClock.UtcNow : DateTimeOffset.UtcNow;
+            return IsEligible(current, now, newerThan) ? current : null;
+        }
+        // Legacy providers keep their default path until they implement the
+        // shared navigation capability. Native Android uses it for both routers.
+        if (!useAStar) return await source.GetCurrentLocationAsync(cancellationToken);
         var reading = source is IAStarLocationSource precise
             ? await precise.GetAStarLocationAsync(newerThan, cancellationToken)
             : await source.GetCurrentLocationAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        return IsEligible(reading, DateTimeOffset.UtcNow, newerThan) ? reading : null;
+        var evaluatedAt = reading?.AcquisitionMonotonicMilliseconds is not null ? NavigationClock.UtcNow : DateTimeOffset.UtcNow;
+        return IsEligible(reading, evaluatedAt, newerThan) ? reading : null;
     }
 }
