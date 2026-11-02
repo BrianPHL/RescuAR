@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+<<<<<<< Updated upstream
 import {canView} from '../rbac/access';
 import './SidebarRbac.css';
 import { 
@@ -11,6 +12,18 @@ import {
   Users, 
   Rss, 
   Settings, 
+=======
+import {
+  LayoutDashboard,
+  Activity,
+  ChevronDown,
+  Radio,
+  Waves,
+  AlertTriangle,
+  Users,
+  Rss,
+  Settings,
+>>>>>>> Stashed changes
   BookOpen,
   HelpCircle,
   Gavel,
@@ -180,6 +193,7 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
                 onClick={() => onViewChange('community-reports-moderation')}
               >
                 <span>Reports Moderation</span>
+<<<<<<< Updated upstream
               </button>)}
               {(canView(access, 'community-user-management') || canView(access, 'rbac-admins')) && (
                 <div className="sidebar-nested-group">
@@ -202,6 +216,21 @@ export default function Sidebar({ activeView, onViewChange, isMobileViewport = f
                   )}
                 </div>
               )}
+=======
+              </button>
+              <button type="button"
+                className={`sidebar-link ${activeView === 'community-user-management' ? 'active' : ''}`}
+                onClick={() => onViewChange('community-user-management')}
+              >
+                <span>User Management</span>
+              </button>
+              <button type="button"
+                className={`sidebar-link ${activeView === 'community-sms-parser' ? 'active' : ''}`}
+                onClick={() => onViewChange('community-sms-parser')}
+              >
+                <span>SMS Composer</span>
+              </button>
+>>>>>>> Stashed changes
             </div>
           </div>
         </div>)}
