@@ -294,6 +294,9 @@ public partial class CameraPage
             if (IsMldRoute(route) && GetTrackedRouteMotion(requireTrustedHeading: false) is { } motion)
                 return _routeDisplayProgressPolicy.TryGetNavigationDisplayPosition(route, DateTimeOffset.UtcNow,
                     motion, lastGpsFusionAction, out position);
+            if (AStarRouteDisplayPolicy.AppliesTo(route))
+                return AStarRouteDisplayPolicy.TryGetDisplayPosition(route, _routeDisplayProgressPolicy,
+                    DateTimeOffset.UtcNow, GetTrackedRouteMotion(), out position);
             return _routeDisplayProgressPolicy.TryGetObservedPosition(route, DateTimeOffset.UtcNow, out position);
         }
     }
@@ -339,7 +342,9 @@ public partial class CameraPage
             if (dx * dx + dz * dz > MaximumPdrRouteWindowAdvanceMeters * MaximumPdrRouteWindowAdvanceMeters ||
                 !(IsMldRoute(route)
                     ? _routeDisplayProgressPolicy.TryGetRegisteredDisplayPosition(route, now, to, out position)
-                    : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
+                    : AStarRouteDisplayPolicy.AppliesTo(route)
+                        ? AStarRouteDisplayPolicy.TryGetDisplayPosition(route, _routeDisplayProgressPolicy, now, to, out position)
+                        : _routeDisplayProgressPolicy.TryResolvePdr(route, committedProgress, now, out position)))
                 return false;
             accuracy = previous.Accuracy;
             return true;

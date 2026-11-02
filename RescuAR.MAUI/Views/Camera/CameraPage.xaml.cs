@@ -10521,10 +10521,11 @@ namespace RescuAR.App.Views.Camera
 
         private double GetCurrentArRouteVisualWindowMeters()
         {
-            return arRouteVisualMode ==
+            double window = arRouteVisualMode ==
                 ArRouteVisualMode.RoadFollowingLong
                 ? RoadFollowingRouteVisualWindowMeters
                 : ApproachRouteVisualWindowMeters;
+            return activeRoute is { } route ? AStarRouteDisplayPolicy.LimitWindow(route, window) : window;
         }
 
         private void ResetArRouteVisualMode(

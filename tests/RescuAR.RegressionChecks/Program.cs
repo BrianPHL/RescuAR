@@ -17,8 +17,9 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
-if (args.Contains("--astar-visibility"))
+if (args.Contains("--astar-visibility") || args.Contains("--astar-accuracy"))
 {
+    await AStarRouteDisplayChecks.RunAsync(Check);
     await AStarHeadingRecoveryChecks.RunAsync(Check);
     await MldGuidanceOwnershipChecks.RunAsync(Check);
     Console.WriteLine($"{passed} A* visibility and MLD lock regression checks passed.");
@@ -26,6 +27,7 @@ if (args.Contains("--astar-visibility"))
 }
 if (args.Contains("--route-visibility"))
 {
+    await AStarRouteDisplayChecks.RunAsync(Check);
     await AStarHeadingRecoveryChecks.RunAsync(Check);
     await ARHeadingRecoveryChecks.RunAsync(Check);
     await ARGuidanceParityChecks.RunAsync(Check);
