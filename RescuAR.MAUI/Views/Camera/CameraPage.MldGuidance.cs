@@ -66,7 +66,7 @@ public partial class CameraPage
         {
             var accepted = acceptedGpsPosition;
             if (!ReferenceEquals(activeRoute, route) || safeZoneConfirmed || dynamicRerouteInProgress ||
-                positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
+                positionObservationHeld || arPositionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 !HasCurrentRouteHeading() || latestRouteStartupReading is not { } reading ||
                 (accepted is null || !ReferenceEquals(accepted.Route, route) ||
                     accepted.Reading.ObservationTime != reading.ObservationTime || latestGpsTimestampForRouting != reading.ObservationTime) ||

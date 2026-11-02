@@ -105,6 +105,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
     private static HeadingAlignmentResult? sessionCalibration;
     private static HeadingAlignmentResult? continuitySuspendedCalibration;
+    private static double? continuityReferenceYaw;
+    private static DateTimeOffset? calibrationSuspendedAt;
+    private static readonly TimeSpan MagneticReacquisitionDelay = TimeSpan.FromSeconds(5);
     private static long calibrationRevision;
     private readonly HeadingContinuityPolicy continuity = new();
     public long CalibrationRevision { get { lock (sessionCalibrationSync) return calibrationRevision; } }
@@ -161,13 +164,21 @@ public sealed class ArHeadingAlignmentService : IDisposable
         previous.SessionGeneration == frame.Generation.SessionGeneration &&
         (previous.WorldFrame != frame.WorldFrame || previous.TrackingEpoch != frame.TrackingEpoch);
 
+    private static bool CanReacquireSuspendedMagneticFrame(ARCameraPoseBridge.SpatialSnapshot frame) =>
+        continuitySuspendedCalibration is { Source: "MAGNETIC", IsStable: true } previous &&
+        calibrationSuspendedAt is { } suspendedAt && NavigationClock.UtcNow - suspendedAt >= MagneticReacquisitionDelay &&
+        frame.IsFresh && frame.IsTracking && frame.Pose.IsTracking &&
+        previous.SessionGeneration == frame.Generation.SessionGeneration &&
+        previous.TrackingEpoch == frame.TrackingEpoch && previous.WorldFrame == frame.WorldFrame;
+
     public bool CanCaptureAutomatically
     {
         get
         {
             lock (sessionCalibrationSync)
                 return LastResult is not { RequiresMovementValidation: true } ||
-                    CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame);
+                    CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame) ||
+                    CanReacquireSuspendedMagneticFrame(ARCameraPoseBridge.CurrentFrame);
         }
     }
 
@@ -181,6 +192,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 LastResult is not { IsStable: false }) return;
             sessionCalibration = null;
             continuitySuspendedCalibration = null;
+            continuityReferenceYaw = null;
+            calibrationSuspendedAt = null;
             calibrationRevision++;
         }
     }
@@ -213,10 +226,13 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 !frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
                 inherited.SessionGeneration != frame.Generation.SessionGeneration) return false;
             bool previousTrip = !routeWindowPublished && inherited.Timestamp < tripStartedAt;
-            bool expiredMagneticFrame = CanReacquireMagneticFrame(sessionCalibration, frame);
+            bool expiredMagneticFrame = CanReacquireMagneticFrame(sessionCalibration, frame) ||
+                CanReacquireSuspendedMagneticFrame(frame);
             if (!previousTrip && !expiredMagneticFrame) return false;
             sessionCalibration = null;
             continuitySuspendedCalibration = null;
+            continuityReferenceYaw = null;
+            calibrationSuspendedAt = null;
             calibrationRevision++;
             return true;
         }
@@ -235,6 +251,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
             sessionCalibration =
                 null;
             continuitySuspendedCalibration = null;
+            continuityReferenceYaw = null;
+            calibrationSuspendedAt = null;
             calibrationRevision++;
         }
 
@@ -372,10 +390,13 @@ public sealed class ArHeadingAlignmentService : IDisposable
 
         lock (sessionCalibrationSync)
         {
-            if (CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame))
+            if (CanReacquireMagneticFrame(sessionCalibration, ARCameraPoseBridge.CurrentFrame) ||
+                CanReacquireSuspendedMagneticFrame(ARCameraPoseBridge.CurrentFrame))
             {
                 sessionCalibration = null;
                 continuitySuspendedCalibration = null;
+                continuityReferenceYaw = null;
+                calibrationSuspendedAt = null;
                 calibrationRevision++;
             }
             cachedCalibration = LastResult;
@@ -566,6 +587,22 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 "Magnetic interference or device movement may be present.");
 #endif
 
+            // Keep an untrusted estimate available to the independent walking
+            // observer. Otherwise a noisy initial compass leaves no candidate,
+            // so walking recovery exits before it can collect any evidence.
+            lock (sessionCalibrationSync)
+            {
+                var frame = ARCameraPoseBridge.CurrentFrame;
+                if (calibrationRevision != captureRevision || !frame.IsFresh || !frame.IsTracking ||
+                    bestEffort.SessionGeneration != frame.Generation.SessionGeneration ||
+                    bestEffort.TrackingEpoch != frame.TrackingEpoch || bestEffort.WorldFrame != frame.WorldFrame)
+                    return null;
+                sessionCalibration = bestEffort;
+                continuitySuspendedCalibration = null;
+                continuityReferenceYaw = bestEffort.MapToArYawDegrees;
+                calibrationSuspendedAt = null;
+                calibrationRevision++;
+            }
             return bestEffort;
         }
 
@@ -671,6 +708,11 @@ public sealed class ArHeadingAlignmentService : IDisposable
             sessionCalibration =
                 corrected;
             continuitySuspendedCalibration = null;
+            // Movement establishes geographic yaw independently of compass
+            // bias. The next paired observation records that sensor's own
+            // reference; continuity monitors changes, not absolute agreement.
+            continuityReferenceYaw = null;
+            calibrationSuspendedAt = null;
             calibrationRevision++;
         }
 
@@ -700,14 +742,22 @@ public sealed class ArHeadingAlignmentService : IDisposable
         {
             if (sessionCalibration is not { } retained || retained.SessionGeneration != sample.SessionGeneration)
                 return false;
-            var verdict = continuity.Observe(retained.MapToArYawDegrees, sample.MapToArYawDegrees,
+            if (!retained.IsStable && !retained.RequiresMovementValidation) return false;
+            if (continuityReferenceYaw is null)
+            {
+                // Never invent a reference after the frame has changed.
+                if (retained.TrackingEpoch != sample.TrackingEpoch || retained.WorldFrame != sample.WorldFrame)
+                    return false;
+                continuityReferenceYaw = retained.Source == "MAGNETIC"
+                    ? retained.MapToArYawDegrees : sample.MapToArYawDegrees;
+            }
+            var verdict = continuity.Observe(continuityReferenceYaw.Value, sample.MapToArYawDegrees,
                 sample.OrientationObservedAt, sample.SessionGeneration, sample.TrackingEpoch,
                 sample.WorldFrame, calibrationRevision);
             // A temporary magnetic disturbance must not latch the route off
             // for the rest of a short trip. Repeated support may restore only
-            // the exact previously stable magnetic calibration in its original
-            // frame. A different yaw, movement correction or frame still needs
-            // the normal acquisition/movement validation path.
+            // the exact previously stable calibration in its original frame.
+            // It never supplies a new yaw or completes a partial correction.
             if (verdict == HeadingContinuityPolicy.Verdict.SupportsRetained &&
                 continuitySuspendedCalibration is { } suspended &&
                 retained == (suspended with { IsStable = false, RequiresMovementValidation = true }) &&
@@ -716,6 +766,7 @@ public sealed class ArHeadingAlignmentService : IDisposable
             {
                 sessionCalibration = suspended;
                 continuitySuspendedCalibration = null;
+                calibrationSuspendedAt = null;
                 calibrationRevision++;
                 return true;
             }
@@ -728,8 +779,9 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 return true;
             }
             if (verdict != HeadingContinuityPolicy.Verdict.Contradicted || retained.RequiresMovementValidation) return false;
-            continuitySuspendedCalibration = retained is { Source: "MAGNETIC", IsStable: true }
+            continuitySuspendedCalibration = retained is { IsStable: true }
                 ? retained : null;
+            calibrationSuspendedAt = NavigationClock.UtcNow;
             sessionCalibration = retained with { IsStable = false, RequiresMovementValidation = true };
             calibrationRevision++;
             return true;
@@ -1038,6 +1090,8 @@ public sealed class ArHeadingAlignmentService : IDisposable
                 return false;
             sessionCalibration = result;
             continuitySuspendedCalibration = null;
+            continuityReferenceYaw = result.MapToArYawDegrees;
+            calibrationSuspendedAt = null;
             calibrationRevision++;
         }
 

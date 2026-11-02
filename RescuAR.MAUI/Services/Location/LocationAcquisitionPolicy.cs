@@ -5,7 +5,7 @@ public static class LocationAcquisitionPolicy
 {
     public static readonly TimeSpan MaximumFixAge = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan CollectionWindow = TimeSpan.FromSeconds(2);
-    public const double DesiredAccuracyMeters = 6;
+    public const double DesiredAccuracyMeters = 8;
 
     // Re-reading one native fix is not another observation or a loss of quality.
     // Keep its original timestamp; downstream expiry still applies normally.
@@ -17,16 +17,17 @@ public static class LocationAcquisitionPolicy
         reading.AccuracyMeters is { } accuracy && double.IsFinite(accuracy) && accuracy > 0 &&
         now >= reading.ObservationTime && now - reading.ObservationTime <= MaximumFixAge;
 
-    public static LocationReading? Select(LocationReading? gps, LocationReading? network, DateTimeOffset now)
+    public static LocationReading? Select(LocationReading? gps, LocationReading? network, DateTimeOffset now,
+        LocationReading? fused = null)
     {
         if (!IsCurrent(gps, now)) gps = null;
         if (!IsCurrent(network, now)) network = null;
-        if (gps is null) return network;
-        if (network is null) return gps;
-        double gpsScore = Score(gps, now), networkScore = Score(network, now);
-        return gpsScore == networkScore
+        LocationReading? best = gps is null ? network : network is null ? gps : Score(gps, now) == Score(network, now)
             ? gps.ObservationTime >= network.ObservationTime ? gps : network
-            : gpsScore < networkScore ? gps : network;
+            : Score(gps, now) < Score(network, now) ? gps : network;
+        if (IsCurrent(fused, now) && (best is null || Score(fused!, now) < Score(best, now) ||
+            Score(fused!, now) == Score(best, now) && fused!.ObservationTime > best.ObservationTime)) best = fused;
+        return best;
     }
 
     public static double Score(LocationReading reading, DateTimeOffset now) =>
@@ -34,6 +35,5 @@ public static class LocationAcquisitionPolicy
 
     public static bool CanComplete(LocationReading? reading, DateTimeOffset now, TimeSpan elapsed) =>
         IsCurrent(reading, now) && elapsed >= TimeSpan.Zero &&
-        (reading!.Provider == "gps" && reading.AccuracyMeters <= DesiredAccuracyMeters &&
-            now - reading.ObservationTime <= TimeSpan.FromMilliseconds(500) || elapsed >= CollectionWindow);
+        ((reading!.Provider is "gps" or "fused") && reading.AccuracyMeters <= DesiredAccuracyMeters || elapsed >= CollectionWindow);
 }

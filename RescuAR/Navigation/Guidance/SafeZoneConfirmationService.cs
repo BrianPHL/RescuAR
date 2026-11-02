@@ -29,7 +29,9 @@ public sealed class SafeZoneConfirmationService
     public const double MaximumAutomaticConfirmationRadiusMeters = 40.0;
 
     private static readonly TimeSpan MinimumConfirmationDuration = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan MaximumObservationGap = TimeSpan.FromSeconds(12);
+    // Distinct fresh acquisitions may be 15–20 s apart on the captured device.
+    // This does not extend the five-second freshness requirement of each fix.
+    private static readonly TimeSpan MaximumObservationGap = TimeSpan.FromSeconds(30);
 
     public const double MaximumAcceptedAccuracyMeters =
         25.0;

@@ -591,7 +591,9 @@ namespace RescuAR.App.Views.Camera
         {
             InitializeComponent();
             navigationStability = new(stabilityOptions);
-            _routeDisplayProgressPolicy = new(navigationStability.Options, requireInitialConfirmation: true);
+            // Restore b239fa7's qualified acquisition seed. A mandatory second
+            // fix inside eight seconds never completes on the captured A54 cadence.
+            _routeDisplayProgressPolicy = new(navigationStability.Options);
             ConfigureCompactArLayout();
             ConfigureFloodSimulationSheet();
 
@@ -1698,6 +1700,10 @@ namespace RescuAR.App.Views.Camera
                     State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
                     DisplayMessage = routeHazardNotice ?? "Hazard on route — check the map" };
 
+            if (arPositionObservationHeld)
+                confidence = confidence with { AllowsRouteGeometry = false,
+                    State = ARGuidanceConfidencePolicy.GuidanceConfidenceState.Recovery,
+                    DisplayMessage = "Checking AR placement — geographic guidance continues" };
             confidence = ResolveMldPresentation(confidence, route, placementFrame);
             confidence = PresentNavigationQuality(confidence, route, placementFrame, headingTrusted, gpsFresh);
             bool confidenceChanged =
@@ -4243,7 +4249,7 @@ namespace RescuAR.App.Views.Camera
                     progressMotionPolicy.Filter(route, origin, locationReading.AccuracyMeters,
                         locationReading.ObservationTime, initialFused.CommittedProgressMeters,
                         initialFused.CommittedProgressMeters,
-                        GetAcquisitionMotion(locationReading, requireTrustedHeading: false), out _);
+                        motion: null, out _);
 
                 if (initialMatch.IsAccepted && !initialMatch.IsOffRoute &&
                     initialMatch.MatchConfidence >= RouteMatchConfidence.Medium &&
@@ -5313,7 +5319,7 @@ namespace RescuAR.App.Views.Camera
                             // This observer must remain reachable even when the
                             // retained yaw rejects GPS-to-AR vector innovations.
                             bool headingObservedForRecovery =
-                                _headingAlignmentService.LastResult is { RequiresMovementValidation: true };
+                                _headingAlignmentService.LastResult is { IsStable: false };
                             bool headingPublishedForRecovery = false;
                             if (headingObservedForRecovery)
                             {
@@ -5328,9 +5334,11 @@ namespace RescuAR.App.Views.Camera
                             var observation = positionObservationPolicy.Evaluate(route, reading.Coordinate,
                                 reading.AccuracyMeters, reading.ObservationTime, NavigationClock.UtcNow,
                                 GetAcquisitionMotion(reading, requireTrustedHeading: false));
-                            var stability = navigationStability.Observe(route, reading.Coordinate, reading.AccuracyMeters,
-                                reading.ObservationTime, NavigationClock.UtcNow,
-                                GetAcquisitionMotion(reading, requireTrustedHeading: false), observation.IsHeld);
+                            var stability = navigationStability.ObserveGeographic(route, reading.Coordinate, reading.AccuracyMeters,
+                                reading.ObservationTime, NavigationClock.UtcNow);
+                            // AR disagreement suppresses placement, not
+                            // independently qualified map/text/voice/arrival GPS.
+                            arPositionObservationHeld = observation.IsHeld;
                             positionObservationHeld = !stability.Reliable;
                             LogDetailedDebug(ProgressLogTag,
                                 $"NAV_STABILITY sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; trip={activeDestinationVersion}; " +
@@ -5466,7 +5474,7 @@ namespace RescuAR.App.Views.Camera
                                 double motionFilteredProgress = progressMotionPolicy.Filter(route,
                                     reading.Coordinate, reading.AccuracyMeters, reading.ObservationTime,
                                     beforeGps.CommittedProgressMeters, gpsFusionDecision.TargetProgressMeters,
-                                    GetAcquisitionMotion(reading, requireTrustedHeading: false), out bool stationary);
+                                    motion: null, out bool stationary);
                                 if (stationary)
                                     gpsFusionDecision = gpsFusionDecision with {
                                         TargetProgressMeters = motionFilteredProgress,

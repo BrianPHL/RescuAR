@@ -22,6 +22,19 @@ public partial class CameraPage
     private bool cameraOpenDirectionsWhenReady;
     private bool? cameraMapHadLocation;
     private bool cameraLocationPermissionDenied;
+    private LocationReading? cameraMapLastMeasuredLocation;
+
+    private CameraMapPresentationPolicy.LocationMarker? GetCameraMapLocationMarker()
+    {
+        lock (routeProgressFusionSync)
+        {
+            var now = NavigationClock.UtcNow;
+            if (CameraMapPresentationPolicy.GetLocationMarker(latestRouteStartupReading, now) is { } latest &&
+                (cameraMapLastMeasuredLocation is null || latest.Reading.ObservationTime > cameraMapLastMeasuredLocation.ObservationTime))
+                cameraMapLastMeasuredLocation = latest.Reading;
+            return CameraMapPresentationPolicy.GetLocationMarker(cameraMapLastMeasuredLocation, now);
+        }
+    }
 
     private LocationReading? GetCameraMapReading()
     {
@@ -65,7 +78,7 @@ public partial class CameraPage
         RefreshCameraMapLocationPin();
         var reading = GetCameraMapReading();
         mapFromLocationLabel.FormattedText = null;
-        mapFromLocationLabel.Text = reading is null ? "Waiting for accurate GPS" : "Current device location";
+        mapFromLocationLabel.Text = GetCameraMapLocationMarker()?.Label ?? "Waiting for accurate GPS";
         mapSearchOrderLabel.Text = cameraDirectoryRefreshing ? "Fetching shelters…"
             : $"{EvacuationDirectoryRuntime.Current.Current.Centers.Count} shelters · {(reading is null ? "by name" : "nearest first")}";
         if (cameraMapHadLocation != (reading is not null))
@@ -97,6 +110,8 @@ public partial class CameraPage
                 : Connectivity.Current.NetworkAccess == NetworkAccess.Internet && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(15)
                     ? $"Known hazards updated {at.ToLocalTime():HH:mm}" : $"Saved hazards · {at.ToLocalTime():MMM d, HH:mm}";
             mapRouteStatsLabel.Text = $"{NavigationRecoveryPolicy.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
+            if (GetCameraMapLocationMarker() is { } marker)
+                mapRouteStatsLabel.Text += $"\n{marker.Label}";
         }
 
         RefreshCameraMapTurnGuidance(route);
@@ -159,20 +174,41 @@ public partial class CameraPage
             map.Layers.Add(layer);
         }
         var features = new List<Mapsui.Nts.GeometryFeature>();
-        if (GetCameraMapReading() is { } reading)
+        if (GetCameraMapLocationMarker() is { } marker)
         {
+            var reading = marker.Reading;
             var (x, y) = Mapsui.Projections.SphericalMercator.FromLonLat(reading.Coordinate.Longitude, reading.Coordinate.Latitude);
+            var color = marker.IsCurrent ? new Mapsui.Styles.Color(26, 115, 232) : new Mapsui.Styles.Color(110, 110, 110);
+            // Web Mercator distances scale with latitude. Draw the reported
+            // accuracy around the measured coordinate, never a road-snapped pin.
+            double radius = reading.AccuracyMeters!.Value / Math.Cos(reading.Coordinate.Latitude * Math.PI / 180);
+            if (radius > 0)
+            {
+                var uncertainty = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y).Buffer(radius));
+                uncertainty.Styles.Add(new Mapsui.Styles.VectorStyle
+                {
+                    Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(color.R, color.G, color.B, 30)),
+                    Outline = new Mapsui.Styles.Pen(color, 1)
+                });
+                features.Add(uncertainty);
+            }
             var feature = new Mapsui.Nts.GeometryFeature(new NetTopologySuite.Geometries.Point(x, y));
             feature.Styles.Add(new Mapsui.Styles.SymbolStyle
             {
                 SymbolType = Mapsui.Styles.SymbolType.Ellipse,
                 SymbolScale = 1.0,
-                Fill = new Mapsui.Styles.Brush(new Mapsui.Styles.Color(26, 115, 232)),
+                Fill = new Mapsui.Styles.Brush(color),
                 Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2)
             });
             features.Add(feature);
         }
         layer.Features = features;
+        // A route redraw appends layers; keep the user's marker above them.
+        if (map.Layers.LastOrDefault() != layer)
+        {
+            map.Layers.Remove(layer);
+            map.Layers.Add(layer);
+        }
         layer.DataHasChanged();
         map.RefreshGraphics();
     }

@@ -16,6 +16,17 @@ internal static class CameraMapChecks
         check(CameraMapPresentationPolicy.CanShowObservation(fix, now) &&
             !CameraMapPresentationPolicy.CanShowCurrent(fix, now, true),
             "fresh measured GPS remains displayable separately from held accepted route progress");
+        check(CameraMapPresentationPolicy.GetLocationMarker(fix, now) is { IsCurrent: true } measured &&
+                measured.Reading.Coordinate == fix.Coordinate && measured.Label.Contains("±10"),
+            "map marker uses the measured position and reported uncertainty independently of AR route matching");
+        check(CameraMapPresentationPolicy.GetLocationMarker(fix, now.AddSeconds(20)) is { IsCurrent: false, AgeSeconds: 20 } retained &&
+                retained.Reading == fix && retained.Label.Contains("Last known"),
+            "map marker remains visible during GPS gaps with an explicit last-known age instead of pretending it is live");
+        check(CameraMapPresentationPolicy.GetLocationMarker(null, now) is null &&
+                CameraMapPresentationPolicy.GetLocationMarker(fix with { Coordinate = new(double.NaN, 121) }, now) is null &&
+                CameraMapPresentationPolicy.GetLocationMarker(fix with { Timestamp = now.AddSeconds(3) }, now) is null &&
+                CameraMapPresentationPolicy.GetLocationMarker(fix with { AccuracyMeters = double.NaN }, now) is null,
+            "persistent map marker cannot invent missing positions or retain invalid/future observations");
         check(!CameraMapPresentationPolicy.CanShowObservation(fix with { Timestamp = now.AddSeconds(-6) }, now) &&
             !CameraMapPresentationPolicy.CanShowObservation(fix with { AccuracyMeters = 31 }, now) &&
             !CameraMapPresentationPolicy.CanShowObservation(null, now),

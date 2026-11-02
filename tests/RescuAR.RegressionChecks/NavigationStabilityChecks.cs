@@ -40,7 +40,7 @@ internal static class NavigationStabilityChecks
                 $"{algorithm}: prolonged recovery estimates only along the existing road without promoting GPS authority");
             check(!policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(31), M(0), M(4), out _),
                 $"{algorithm}: recovery lifetime expires instead of extrapolating indefinitely");
-            check(!policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(16), M(0), M(9), out _) &&
+            check(!policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(16), M(0), M(31), out _) &&
                 !policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(16), M(0), M(4, 3), out _) &&
                 !policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(16), M(0), M(-4), out _),
                 $"{algorithm}: distance, lateral and reverse bounds reject implausible recovery estimates");
@@ -48,8 +48,8 @@ internal static class NavigationStabilityChecks
                 !policy.TryEstimate(route, C(0), 0, at, at.AddSeconds(16), M(0), M(4, epoch: 1), out _) &&
                 !policy.TryEstimate(Road(algorithm), C(0), 0, at, at.AddSeconds(16), M(0), M(4), out _),
                 $"{algorithm}: uncertainty cannot cross a turn, tracking epoch or trip identity");
-            check(!Observe(20, 5, 40).Reliable && !Observe(22, 5, 44).Reliable && Observe(24, 5, 48).Reliable,
-                $"{algorithm}: recovery from a long outage requires three spaced plausible reliable fixes");
+            check(Observe(20, 5, 40).Reliable && Observe(22, 5, 44).Reliable && Observe(24, 5, 48).Reliable,
+                $"{algorithm}: fresh plausible fixes restore geography without a cadence-dependent recovery latch");
 
             policy.Reset(); Observe(0, 5, 0);
             void Timeout(int second) => policy.Observe(route, default, null,
@@ -57,12 +57,12 @@ internal static class NavigationStabilityChecks
             NavigationStabilityPolicy.Decision Delivered(int acquired, int received) => policy.Observe(route,
                 C(0), 5, at.AddSeconds(acquired), at.AddSeconds(received), null, observationHeld: false);
             Timeout(18);
-            check(!Delivered(17, 19).Reliable, $"{algorithm}: first real recovery fix still requires corroboration after an empty poll");
+            check(Delivered(17, 19).Reliable, $"{algorithm}: a fresh real observation restores geography after an empty poll");
             Timeout(22);
-            check(!Delivered(21, 23).Reliable, $"{algorithm}: second real recovery fix is counted without bypassing confirmation");
+            check(Delivered(21, 23).Reliable, $"{algorithm}: fresh recovery observations remain usable across empty polls");
             Timeout(26);
             check(Delivered(25, 27).Reliable,
-                $"{algorithm}: empty poll timestamps cannot permanently exclude fresh acquired GPS from three-fix recovery");
+                $"{algorithm}: empty poll timestamps cannot permanently exclude fresh acquired GPS");
             check(!Delivered(25, 27).Reliable,
                 $"{algorithm}: a duplicate real GPS timestamp cannot supply additional recovery evidence");
 

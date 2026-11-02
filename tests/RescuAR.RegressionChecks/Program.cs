@@ -17,6 +17,48 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--field-cadence"))
+{
+    FieldCadenceRecoveryChecks.Run(Check);
+    LocationAcquisitionChecks.Run(Check);
+    await AStarLocationAcquisitionChecks.RunAsync(Check);
+    NavigationStabilityChecks.Run(Check);
+    ArrivalArrowChecks.Run(Check);
+    ARFieldValidationChecks.Run(Check);
+    PdrMapMatchingChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    await ARHeadingSensorReferenceChecks.RunAsync(Check);
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await MldHeadingRecoveryChecks.RunAsync(Check);
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    MldRibbonRegistrationChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    await SharedCameraRoutingChecks.RunAsync(Check);
+    await NavigationFeedbackChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} field cadence, AR recovery, shared guidance and arrival checks passed.");
+    return;
+}
+if (args.Contains("--ar-route-recovery"))
+{
+    await ARHeadingSensorReferenceChecks.RunAsync(Check);
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await MldHeadingRecoveryChecks.RunAsync(Check);
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    ARRegistrationChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    NavigationStabilityChecks.Run(Check);
+    CameraMapChecks.Run(Check);
+    Console.WriteLine($"{passed} AR route recovery and map marker regression checks passed.");
+    return;
+}
+if (args.Contains("--ar-heading-offset"))
+{
+    await ARHeadingSensorReferenceChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} field-test heading offset checks passed.");
+    return;
+}
 if (args.Contains("--device-reliability-tail"))
 {
     ARFieldValidationChecks.Run(Check);
@@ -29,6 +71,8 @@ if (args.Contains("--device-reliability-tail"))
 }
 if (args.Contains("--device-reliability"))
 {
+    FieldCadenceRecoveryChecks.Run(Check);
+    await ARHeadingSensorReferenceChecks.RunAsync(Check);
     await NavigationDeviceReliabilityChecks.RunAsync(Check);
     LocationAcquisitionChecks.Run(Check);
     await AStarLocationAcquisitionChecks.RunAsync(Check);

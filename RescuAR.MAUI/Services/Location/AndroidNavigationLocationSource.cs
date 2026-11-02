@@ -24,8 +24,8 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
     private bool suspended;
     private bool providersDirty;
     private int foregroundOwners, activeRequests;
-    private long gpsSamples, networkSamples, rejectedSamples;
-    private LocationReading? gps, network;
+    private long gpsSamples, networkSamples, fusedSamples, rejectedSamples;
+    private LocationReading? gps, network, fused;
 
     public AndroidNavigationLocationSource() => Platform.ActivityStateChanged += OnActivityStateChanged;
 
@@ -76,7 +76,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
                 {
                     if (suspended) return null;
                     Start();
-                    best = LocationAcquisitionPolicy.Select(gps, network, now);
+                    best = LocationAcquisitionPolicy.Select(gps, network, now, fused);
                 }
                 if (LocationAcquisitionPolicy.CanComplete(best, now,
                     TimeSpan.FromMilliseconds(Environment.TickCount64 - started))) return best;
@@ -84,7 +84,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             }
             lock (sync)
             {
-                var result = LocationAcquisitionPolicy.Select(gps, network, NavigationClock.UtcNow);
+                var result = LocationAcquisitionPolicy.Select(gps, network, NavigationClock.UtcNow, fused);
                 AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_POLL timeout=True; selected={result?.Provider ?? "none"}; " +
                     $"gpsCallbacks={gpsSamples}; networkCallbacks={networkSamples}; rejectedCallbacks={rejectedSamples}; " +
                     $"gpsAt={gps?.Timestamp:O}; networkAt={network?.Timestamp:O}; owners={foregroundOwners}.");
@@ -124,15 +124,16 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
                 {
                     if (suspended) return null;
                     Start();
-                    best = AStarLocationAcquisitionPolicy.Select(gps, network, best, now, newerThan);
+                    best = AStarLocationAcquisitionPolicy.Select(gps, network, best, now, newerThan, fused);
                 }
                 var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
                 if (AStarLocationAcquisitionPolicy.CanComplete(best, now, newerThan, elapsed) ||
-                    elapsed >= AStarLocationAcquisitionPolicy.CollectionWindow)
+                    elapsed >= AStarLocationAcquisitionPolicy.MaximumWait)
                 {
                     AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_ACQUISITION selected={best?.Provider ?? "none"}; " +
                         $"accuracy={best?.AccuracyMeters:F2}m; ageMs={(now - best?.ObservationTime)?.TotalMilliseconds:F0}; " +
                         $"elapsedMs={elapsed.TotalMilliseconds:F0}; newerThan={newerThan:O}; " +
+                        $"gpsCallbacks={gpsSamples}; networkCallbacks={networkSamples}; fusedCallbacks={fusedSamples}; rejectedCallbacks={rejectedSamples}; " +
                         "acquisitionTimePreserved=True; coordinatesFiltered=False.");
                     return best;
                 }
@@ -162,18 +163,28 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             int providers = 0;
             bool precisePermission = Platform.AppContext.CheckSelfPermission(Android.Manifest.Permission.AccessFineLocation)
                 == Android.Content.PM.Permission.Granted;
-            foreach (string provider in new[] { LocationManager.GpsProvider, LocationManager.NetworkProvider })
+            var requestedProviders = new List<string> { LocationManager.GpsProvider, LocationManager.NetworkProvider };
+            if (OperatingSystem.IsAndroidVersionAtLeast(31) && precisePermission &&
+                manager.AllProviders.Contains(LocationManager.FusedProvider)) requestedProviders.Add(LocationManager.FusedProvider);
+            foreach (string provider in requestedProviders)
             {
                 if (provider == LocationManager.GpsProvider && !precisePermission) continue;
                 if (!manager.IsProviderEnabled(provider)) continue;
                 // Zero minimum distance is deliberate: stationary accuracy
                 // improvements and slow pedestrian steps must still be delivered.
-                manager.RequestLocationUpdates(provider, 1000, 0, this, Looper.MainLooper);
-                providers++;
+                try
+                {
+                    manager.RequestLocationUpdates(provider, 1000, 0, this, Looper.MainLooper);
+                    providers++;
+                }
+                catch (Java.Lang.IllegalArgumentException) when (provider == "fused")
+                {
+                    AndroidLog.Info("RescuAR-GPS", "NAV_LOCATION_SOURCE optional fused provider unavailable; GPS/network retained.");
+                }
             }
             if (providers == 0) throw new FeatureNotEnabledException("Android location providers are disabled.");
             listening = true;
-            AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_SOURCE started; precisePermission={precisePermission}; intervalMs=1000; minimumDistance=0; selection=REPORTED_ACCURACY; cloud=False.");
+            AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_SOURCE started; precisePermission={precisePermission}; providers={providers}; intervalMs=1000; minimumDistance=0; selection=REPORTED_ACCURACY; cloud=False.");
         }
         catch
         {
@@ -187,7 +198,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         if (!listening || !force && (foregroundOwners > 0 || activeRequests > 0)) return;
         manager?.RemoveUpdates(this);
         listening = false;
-        gps = network = null;
+        gps = network = fused = null;
         AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_SOURCE stopped; lifecycleSuspend={force}; owners={foregroundOwners}; requests={activeRequests}.");
     }
 
@@ -223,6 +234,9 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         lock (sync)
         {
             if (!listening) return;
+            if (reading.Provider == LocationManager.GpsProvider) gpsSamples++;
+            else if (reading.Provider == LocationManager.NetworkProvider) networkSamples++;
+            else if (reading.Provider == "fused") fusedSamples++;
             if (!LocationAcquisitionPolicy.IsCurrent(reading, NavigationClock.UtcNow))
             {
                 rejectedSamples++;
@@ -230,14 +244,14 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             }
             if (reading.Provider == LocationManager.GpsProvider)
             {
-                gpsSamples++;
                 if (location.ElapsedRealtimeNanos > (gps?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) gps = reading;
             }
             else if (reading.Provider == LocationManager.NetworkProvider)
             {
-                networkSamples++;
                 if (location.ElapsedRealtimeNanos > (network?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) network = reading;
             }
+            else if (reading.Provider == "fused" && location.ElapsedRealtimeNanos > (fused?.AcquisitionElapsedRealtimeNanoseconds ?? 0))
+                fused = reading;
         }
     }
 
@@ -248,6 +262,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             providersDirty = true;
             if (provider == LocationManager.GpsProvider) gps = null;
             if (provider == LocationManager.NetworkProvider) network = null;
+            if (provider == "fused") fused = null;
         }
     }
     public void OnProviderEnabled(string provider) { lock (sync) providersDirty = true; }

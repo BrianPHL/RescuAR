@@ -13,7 +13,9 @@ public sealed record NavigationStabilityOptions
     public TimeSpan UncertaintyTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan RecoveryLifetime { get; init; } = TimeSpan.FromSeconds(30);
     public double MaximumReliableAccuracyMeters { get; init; } = 20;
-    public double MaximumEstimatedAdvanceMeters { get; init; } = RouteDisplayProgressPolicy.MaximumPdrAdvanceMeters;
+    // Live visual odometry may bridge a 15–20 s GNSS cadence on one straight
+    // segment. This is separate from the eight-metre step/PDR cap.
+    public double MaximumEstimatedAdvanceMeters { get; init; } = 30;
     public double MaximumWalkingSpeedMetersPerSecond { get; init; } = 3;
 
     internal void Validate()
@@ -35,10 +37,6 @@ public sealed class NavigationStabilityPolicy
     private GeoCoordinate reliableCoordinate;
     private double reliableAccuracy;
     private RouteBacktrackingPolicy.TrackedMotion? reliableMotion;
-    private GeoCoordinate recoveryCoordinate;
-    private DateTimeOffset? recoveryAt;
-    private double recoveryAccuracy;
-    private int recoverySamples;
     public Decision Current { get; private set; }
     public readonly record struct Decision(bool Reliable, bool AssessDeviation, bool ProlongedUncertainty,
         double ReliableAgeSeconds, string Reason);
@@ -54,10 +52,12 @@ public sealed class NavigationStabilityPolicy
         route = null;
         lastObservation = lastAssessment = lastReliable = uncertainSince = null;
         reliableMotion = null;
-        recoveryAt = null;
-        recoverySamples = 0;
         Current = default;
     }
+
+    public Decision ObserveGeographic(RouteResult activeRoute, GeoCoordinate coordinate, double? accuracy,
+        DateTimeOffset at, DateTimeOffset now) =>
+        Observe(activeRoute, coordinate, accuracy, at, now, motion: null, observationHeld: false);
 
     public Decision Observe(RouteResult activeRoute, GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset at, DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion? motion,
@@ -85,24 +85,10 @@ public sealed class NavigationStabilityPolicy
                 qualified = distance <= Options.MaximumWalkingSpeedMetersPerSecond *
                     (at - previous).TotalSeconds + budget;
         }
-        if (qualified && lastReliable.HasValue && at - lastReliable.Value >= Options.UncertaintyTimeout)
-        {
-            if (!recoveryAt.HasValue || at - recoveryAt.Value > Options.UncertaintyTimeout ||
-                recoveryCoordinate.DistanceTo(coordinate) > recoveryAccuracy + accuracy!.Value +
-                    Options.MaximumWalkingSpeedMetersPerSecond * (at - recoveryAt.Value).TotalSeconds)
-            {
-                recoverySamples = 0;
-                recoveryAt = null;
-            }
-            if (!recoveryAt.HasValue || at - recoveryAt.Value >= Options.AssessmentInterval)
-            {
-                recoverySamples++;
-                recoveryAt = at;
-                recoveryCoordinate = coordinate;
-                recoveryAccuracy = accuracy!.Value;
-            }
-            qualified = recoverySamples >= 3;
-        }
+        // A gap is not contradictory evidence. A newly acquired, plausible
+        // fix restores geographic guidance; AR registration and route identity
+        // retain their own confirmation rules. Three fixes inside fifteen
+        // seconds permanently excluded the captured A54 GNSS cadence.
         if (qualified)
         {
             lastReliable = at;
@@ -110,8 +96,6 @@ public sealed class NavigationStabilityPolicy
             reliableAccuracy = accuracy!.Value;
             reliableMotion = motion;
             uncertainSince = null;
-            recoveryAt = null;
-            recoverySamples = 0;
         }
         else uncertainSince ??= now;
         double age = lastReliable.HasValue ? Math.Max(0, (now - lastReliable.Value).TotalSeconds) : double.PositiveInfinity;

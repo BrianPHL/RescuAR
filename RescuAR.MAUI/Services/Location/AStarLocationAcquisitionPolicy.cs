@@ -9,11 +9,11 @@ namespace RescuAR.MAUI.Services.Location;
 /// coordinates, uncertainty, acquisition time or provider metadata.</summary>
 public static class AStarLocationAcquisitionPolicy
 {
-    public const double DesiredAccuracyMeters = 6;
+    public const double DesiredAccuracyMeters = LocationAcquisitionPolicy.DesiredAccuracyMeters;
     public static readonly TimeSpan MaximumFixAge = LocationAcquisitionPolicy.MaximumFixAge;
     public static readonly TimeSpan CollectionWindow = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan ImmediateFixAge = TimeSpan.FromMilliseconds(500);
+    public static readonly TimeSpan MaximumWait = TimeSpan.FromSeconds(15);
 
     public static bool UseForStartup(RouteResult? retainedRoute, bool hasDestination, bool internetAvailable) =>
         hasDestination && !internetAvailable &&
@@ -26,11 +26,11 @@ public static class AStarLocationAcquisitionPolicy
         (!newerThan.HasValue || reading.ObservationTime > newerThan.Value);
 
     public static LocationReading? Select(LocationReading? gps, LocationReading? network,
-        LocationReading? retained, DateTimeOffset now, DateTimeOffset? newerThan)
+        LocationReading? retained, DateTimeOffset now, DateTimeOffset? newerThan, LocationReading? fused = null)
     {
         LocationReading? best = null;
         double bestScore = double.PositiveInfinity;
-        foreach (var reading in new[] { gps, network, retained })
+        foreach (var reading in new[] { gps, network, fused, retained })
         {
             if (!IsEligible(reading, now, newerThan)) continue;
             // Age is an additional selection cost (1.5 m/s pedestrian travel),
@@ -48,8 +48,8 @@ public static class AStarLocationAcquisitionPolicy
     public static bool CanComplete(LocationReading? reading, DateTimeOffset now,
         DateTimeOffset? newerThan, TimeSpan elapsed) =>
         IsEligible(reading, now, newerThan) && elapsed >= TimeSpan.Zero &&
-        (elapsed >= CollectionWindow || reading!.Provider == "gps" &&
-         reading.AccuracyMeters <= DesiredAccuracyMeters && now - reading.ObservationTime <= ImmediateFixAge);
+        (elapsed >= CollectionWindow || (reading!.Provider is "gps" or "fused") &&
+         reading.AccuracyMeters <= DesiredAccuracyMeters);
 
     public static async Task<LocationReading?> GetAsync(ILocationService source, bool useAStar,
         DateTimeOffset? newerThan, CancellationToken cancellationToken = default)

@@ -49,9 +49,9 @@ internal static class AStarLocationAcquisitionChecks
             !AStarLocationAcquisitionPolicy.IsEligible(Fix("gps", 4, -.1), at, null),
             "A* GPS: invalid coordinates and future acquisitions cannot become current fixes");
         check(AStarLocationAcquisitionPolicy.CanComplete(fresh, at, null, TimeSpan.FromMilliseconds(100)) &&
-            !AStarLocationAcquisitionPolicy.CanComplete(Fix("gps", 6, 1), at, null, TimeSpan.FromMilliseconds(100)) &&
+            AStarLocationAcquisitionPolicy.CanComplete(Fix("gps", 6, 1), at, null, TimeSpan.FromMilliseconds(100)) &&
             !AStarLocationAcquisitionPolicy.CanComplete(Fix("gps", 12), at, null, TimeSpan.FromMilliseconds(100)),
-            "A* GPS: early completion requires a newly measured precise GPS fix, not simply a GPS provider label");
+            "navigation GPS: a still-fresh precise native fix is delivered promptly without a receipt-age gate");
         check(!AStarLocationAcquisitionPolicy.CanComplete(currentNetwork, at, null, TimeSpan.FromSeconds(1)) &&
             AStarLocationAcquisitionPolicy.CanComplete(currentNetwork, at, null, TimeSpan.FromSeconds(2)) &&
             !AStarLocationAcquisitionPolicy.CanComplete(null, at, null, TimeSpan.FromSeconds(2)),

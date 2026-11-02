@@ -43,7 +43,7 @@ public partial class CameraPage
         if (!gpsFresh || lastGpsConfidence < GpsPdrFusionPolicy.GpsConfidence.Medium) blockers |= NavigationBlockers.Gps;
         if (!headingTrusted) blockers |= NavigationBlockers.Heading;
         if (!frame.Anchor.IsAvailable) blockers |= NavigationBlockers.Ground;
-        if (positionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended) blockers |= NavigationBlockers.Position;
+        if (positionObservationHeld || arPositionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended) blockers |= NavigationBlockers.Position;
         if (!window.IsAvailable || _routeDisplayProgressPolicy.RegistrationSupportedAt is null)
             blockers |= NavigationBlockers.Registration;
         if (!confidence.AllowsRouteGeometry && blockers == NavigationBlockers.None) blockers |= NavigationBlockers.Geometry;
@@ -75,6 +75,7 @@ public partial class CameraPage
                 $"nativeClock={reading?.AcquisitionMonotonicMilliseconds is not null}; paired={paired}; poseSkewMs={skew}; " +
                 $"headingSource={_headingAlignmentService.LastResult?.Source ?? "none"}; headingTrusted={headingTrusted}; " +
                 $"registration={_routeDisplayProgressPolicy.LastRegistrationDecision.State}; " +
+                $"geographicHeld={positionObservationHeld}; arObservationHeld={arPositionObservationHeld}; " +
                 $"epoch={frame.TrackingEpoch}; world={frame.WorldFrame}; ground={frame.Anchor.ReferenceGeneration}; " +
                 $"renderRoot={rendered.RootEnabled}; enabledSegments={rendered.EnabledSegments}; " +
                 $"depthHidden={rendered.DepthHiddenSegments}; inFront={rendered.InFrontSegments}; " +

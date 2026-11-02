@@ -20,6 +20,22 @@ public static class CameraMapPresentationPolicy
     public static bool CanShowObservation(LocationReading? reading, DateTimeOffset now) =>
         CanShowCurrent(reading, now, held: false);
 
+    public readonly record struct LocationMarker(LocationReading Reading, bool IsCurrent, double AgeSeconds)
+    {
+        public string Label => IsCurrent ? $"Current location · GPS ±{Reading.AccuracyMeters:0} m"
+            : $"Last known location · {AgeSeconds:0} s ago · GPS ±{Reading.AccuracyMeters:0} m";
+    }
+
+    // A last measured position remains useful when AR matching is held or GPS
+    // briefly stops. It is explicitly stale, never a routing/arrival input.
+    public static LocationMarker? GetLocationMarker(LocationReading? reading, DateTimeOffset now)
+    {
+        if (reading is null || !CanProject(reading.Coordinate) ||
+            reading.AccuracyMeters is not { } accuracy || !double.IsFinite(accuracy) || accuracy < 0 || accuracy > 30 ||
+            reading.ObservationTime > now.AddSeconds(1)) return null;
+        return new(reading, CanShowObservation(reading, now), Math.Max(0, (now - reading.ObservationTime).TotalSeconds));
+    }
+
     public static RouteResult? ForTrip(RouteResult? route, long routeTrip, long destinationTrip, bool hasDestination)
     {
         if (!hasDestination || destinationTrip <= 0 || routeTrip != destinationTrip || route is null ||

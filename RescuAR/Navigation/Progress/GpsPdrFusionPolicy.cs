@@ -154,9 +154,12 @@ public sealed class GpsPdrFusionPolicy
     private DateTimeOffset? lastResolvedRouteIdentityAt;
     private DateTimeOffset? lastRouteIdentityCandidateAt;
     private static readonly TimeSpan MaximumIdentityEvidenceGap = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan MaximumStrongIdentityEvidenceGap = TimeSpan.FromSeconds(30);
+    private DateTimeOffset? lastProgressObservationAt;
 
     public void Reset()
     {
+        lastProgressObservationAt = null;
         highConfidenceBackwardConfirmations =
             0;
 
@@ -350,8 +353,10 @@ public sealed class GpsPdrFusionPolicy
                 "Route identity recovery requires repeated nearby GPS matches.");
         }
 
-        RememberResolvedRouteIdentity(
-            gpsUpdate, timestamp);
+        double elapsedSeconds = lastProgressObservationAt is { } previousAt && timestamp > previousAt
+            ? Math.Min(30, (timestamp - previousAt).TotalSeconds) : 0;
+        lastProgressObservationAt = timestamp;
+        RememberResolvedRouteIdentity(gpsUpdate, timestamp);
 
         if (divergence >=
             0.0)
@@ -359,7 +364,7 @@ public sealed class GpsPdrFusionPolicy
             ResetBackwardConfirmation();
 
             double maximumAdvance =
-                HighMaximumForwardCorrectionMeters *
+                Math.Max(HighMaximumForwardCorrectionMeters, Math.Min(60, elapsedSeconds * 3)) *
                 reliabilityWeight;
 
             double target =
@@ -733,7 +738,7 @@ public sealed class GpsPdrFusionPolicy
             return false;
         bool agreesWithPreviousCandidate =
             lastRouteIdentityCandidateAt.HasValue &&
-            timestamp - lastRouteIdentityCandidateAt.Value <= MaximumIdentityEvidenceGap &&
+            timestamp - lastRouteIdentityCandidateAt.Value <= MaximumStrongIdentityEvidenceGap &&
             lastRouteIdentityCandidateSegment >=
                 0 &&
             Math.Abs(

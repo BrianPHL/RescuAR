@@ -31,6 +31,7 @@ public partial class CameraPage
     private readonly RoutePositionObservationPolicy positionObservationPolicy = new();
     private readonly RouteProgressMotionPolicy progressMotionPolicy = new();
     private volatile bool positionObservationHeld;
+    private volatile bool arPositionObservationHeld;
     private readonly NavigationStabilityPolicy navigationStability;
     private RegisteredPublication? lastRegisteredPublication;
     private string? lastRegistrationRejection;
@@ -51,6 +52,7 @@ public partial class CameraPage
             acceptedGpsPosition = null;
             lastRegisteredPublication = null;
             lastRegistrationRejection = null;
+            arPositionObservationHeld = false;
             Interlocked.Exchange(ref routeWindowPublishedCount, 0);
             Interlocked.Exchange(ref routeWindowReusedCount, 0);
         }
@@ -117,8 +119,16 @@ public partial class CameraPage
             ARCameraSpatialController.CurrentRouteWorldCorrectionRequest.IsPending)
             return null;
 
+        double yaw = activeMapToArYawDegrees;
+        if (!requireTrustedHeading)
+        {
+            if (_headingAlignmentService.LastResult is not { IsAvailable: true } candidate ||
+                candidate.SessionGeneration != frame.Generation.SessionGeneration ||
+                !double.IsFinite(candidate.MapToArYawDegrees)) return null;
+            yaw = candidate.MapToArYawDegrees;
+        }
         var motion = new RouteBacktrackingPolicy.TrackedMotion(frame.Pose.PositionX,
-            frame.Pose.PositionZ, activeMapToArYawDegrees, frame.Generation.SessionGeneration,
+            frame.Pose.PositionZ, yaw, frame.Generation.SessionGeneration,
             frame.Anchor.ReferenceGeneration,
             frame.TrackingEpoch, frame.WorldFrame);
         return motion.IsValid ? motion : null;
@@ -135,7 +145,7 @@ public partial class CameraPage
                 Environment.TickCount64, out observed, out _);
         if (!paired) return null;
         var motion = new RouteBacktrackingPolicy.TrackedMotion(observed.Pose.PositionX, observed.Pose.PositionZ,
-            activeMapToArYawDegrees, observed.Generation.SessionGeneration, observed.Anchor.ReferenceGeneration,
+            current.YawDegrees, observed.Generation.SessionGeneration, observed.Anchor.ReferenceGeneration,
             observed.TrackingEpoch, observed.WorldFrame);
         return motion.IsContinuousWith(current) ? motion : null;
     }
@@ -153,6 +163,7 @@ public partial class CameraPage
             if (acceptedGpsPosition is null || !ReferenceEquals(acceptedGpsPosition.Route, route) ||
                 reading.ObservationTime > acceptedGpsPosition.Reading.ObservationTime)
                 acceptedGpsPosition = new(route, reading, update);
+            if (arPositionObservationHeld) return;
             if (verifiedPosition is { } previous && ReferenceEquals(previous.Route, route) &&
                 reading.ObservationTime <= previous.At) return;
             // Both providers can collect registration evidence before heading
@@ -185,6 +196,7 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             if (!ReferenceEquals(route, activeRoute)) return RejectRegisteredWindow("route identity changed", source);
+            if (arPositionObservationHeld) return RejectRegisteredWindow("GPS and AR registration disagree", source);
             if (GetTrackedRouteMotion() is not { } current)
                 return RejectRegisteredWindow("tracking or heading not qualified", source);
             if (current.Session != frame.Generation.SessionGeneration || current.TrackingEpoch != frame.TrackingEpoch ||
@@ -270,7 +282,7 @@ public partial class CameraPage
         lock (routeProgressFusionSync)
         {
             if (safeZoneConfirmed || dynamicRerouteInProgress || routeHazardBlocksGuidance ||
-                lastOffRouteCandidate || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
+                lastOffRouteCandidate || arPositionObservationHeld || _gpsPdrFusionPolicy.IsRouteIdentitySuspended ||
                 arRouteVisualMode != ArRouteVisualMode.RoadFollowingLong ||
                 verifiedPosition is not { Motion: { } from } verified || !ReferenceEquals(verified.Route, route) ||
                 GetTrackedRouteMotion() is not { } to ||
