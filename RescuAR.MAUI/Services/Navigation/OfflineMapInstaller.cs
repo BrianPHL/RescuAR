@@ -12,6 +12,7 @@ public static class OfflineMapInstaller
     public static async Task<string> InstallAsync(string directory, Func<Task<Stream>> openPackage,
         CancellationToken token = default, string expectedHash = PackageHash, long expectedSize = PackageSize)
     {
+        token.ThrowIfCancellationRequested();
         Directory.CreateDirectory(directory);
         string target = Path.Combine(directory, PackageName);
         if (File.Exists(target) && await IsValidAsync(target, expectedHash, expectedSize, token).ConfigureAwait(false)) return target;
@@ -20,7 +21,15 @@ public static class OfflineMapInstaller
         {
             await using (Stream source = await openPackage().ConfigureAwait(false))
             await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
-                await source.CopyToAsync(output, token).ConfigureAwait(false);
+            {
+                byte[] buffer = new byte[81920]; long bytes = 0; int count;
+                while ((count = await source.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
+                {
+                    bytes += count;
+                    if (bytes > expectedSize) throw new InvalidDataException("The map package exceeds its pinned size.");
+                    await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+                }
+            }
             if (!await IsValidAsync(temporary, expectedHash, expectedSize, token).ConfigureAwait(false))
                 throw new InvalidDataException("The packaged offline map failed its integrity check.");
             token.ThrowIfCancellationRequested();

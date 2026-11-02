@@ -15,6 +15,7 @@ using NetTopologySuite.Geometries;
 using Microsoft.Maui.Devices.Sensors;
 using System.Collections.ObjectModel;
 using RescuAR.App.Models;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.ViewModels.Map;
 
@@ -49,6 +50,10 @@ public partial class SafetyCircleViewModel : ObservableObject
 {
     [ObservableProperty]
     private Mapsui.Map _map = new();
+
+    [ObservableProperty] private string mapStatus = "Loading offline map…";
+    private OfflineBasemapController? basemap;
+    private bool mapInitialized;
 
     [ObservableProperty]
     private string _selectedCircleName = "Select a Circle";
@@ -646,6 +651,12 @@ public partial class SafetyCircleViewModel : ObservableObject
     {
         try
         {
+            if (mapInitialized)
+            {
+                mapControl.Map = Map;
+                await basemap!.ActivateAsync(Map);
+                return;
+            }
             var map = new Mapsui.Map
             {
                 CRS = "EPSG:3857"
@@ -653,15 +664,15 @@ public partial class SafetyCircleViewModel : ObservableObject
             // Clear default debug overlays (INFO, FPS, Scale bar)
             map.Widgets.Clear();
 
-            // Load Online OpenStreetMap Base Layer with compliant User-Agent
-            map.Layers.Add(Mapsui.Tiling.OpenStreetMap.CreateTileLayer("RescuAR-EvacuationApp/1.0 (contact@rescuar.app)"));
-
             // Center and Zoom to Map Data (Default Marikina or user location)
             var (homeX, homeY) = Mapsui.Projections.SphericalMercator.FromLonLat(121.1029, 14.6507);
             map.Navigator.CenterOnAndZoomTo(new MPoint(homeX, homeY), 38.2);
 
             Map = map;
             mapControl.Map = map;
+            mapInitialized = true;
+            basemap = new(message => MapStatus = message);
+            await basemap.ActivateAsync(map);
 
             // Draw initial pins
             _ = PollLocationsAsync();
@@ -673,6 +684,8 @@ public partial class SafetyCircleViewModel : ObservableObject
             Console.WriteLine($"Error loading map: {ex.Message}");
         }
     }
+
+    public void DeactivateMap() => basemap?.Deactivate();
 
     private void UpdateMapMarkers(Mapsui.Map map)
     {

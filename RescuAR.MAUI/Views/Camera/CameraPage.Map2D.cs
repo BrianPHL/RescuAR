@@ -1,6 +1,7 @@
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Networking;
 using RescuAR.App.Services.Evacuation;
+using RescuAR.MAUI.Services.Navigation;
 
 namespace RescuAR.App.Views.Camera;
 
@@ -10,6 +11,19 @@ public partial class CameraPage
     private bool cameraMapWindowStopped;
     private CancellationTokenSource? cameraDirectoryPage;
     private bool cameraDirectoryRefreshing;
+    private OfflineBasemapController? cameraBasemap;
+
+    private void RefreshCameraBasemap()
+    {
+        if (!pageIsVisible || cameraMapWindowStopped || currentCameraModuleView != CameraModuleViewMode.Map2D)
+        {
+            cameraBasemap?.Deactivate();
+            return;
+        }
+        if (CameraMapControl?.Map is not { } map) return;
+        cameraBasemap ??= new(message => cameraMapStatusLabel.Text = message);
+        _ = cameraBasemap.ActivateAsync(map);
+    }
 
     private void StartCameraShelterDirectory()
     {
@@ -153,6 +167,7 @@ public partial class CameraPage
 
     private void UnobserveCameraMapWindow()
     {
+        cameraBasemap?.Deactivate();
         StopCameraShelterDirectory();
         UnobserveCameraViewRequests();
         if (cameraMapWindow is null) return;
@@ -180,6 +195,7 @@ public partial class CameraPage
 
     private void StopCameraMapDisplay()
     {
+        cameraBasemap?.Deactivate();
         StopCameraShelterDirectory();
         CancelRouteRequest("Camera window stopped or page exited.");
         StopRouteProgress("Camera window stopped or page exited.");

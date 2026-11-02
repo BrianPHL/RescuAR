@@ -936,6 +936,7 @@ namespace RescuAR.App.Views.Camera
 
         private void RefreshCameraModuleDynamicUi()
         {
+            RefreshCameraBasemap();
             confirmUserArrivalButton.IsVisible = CanOfferUserArrival();
             RefreshLowLightFallbackState();
             RefreshFloodGroundTrustState();
@@ -12026,8 +12027,8 @@ namespace RescuAR.App.Views.Camera
                 if (currentMap == null) return;
                 currentMap.Widgets.Clear();
 
-                // 1. Ensure base OpenStreetMap tile layer is loaded with compliant User-Agent
-                _ = EnsureCamera2DOpenStreetMapLoadedAsync(currentMap);
+                // The basemap is page-owned; route redraws retain its offline layers and viewport.
+                RefreshCameraBasemap();
 
                 // 2. Remove existing dynamic route, roads & marker layers
                 var existingRoads = currentMap.Layers.FirstOrDefault(l => l.Name == "Camera2DRoadsLayer");
@@ -12151,24 +12152,6 @@ namespace RescuAR.App.Views.Camera
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"InitializeOrRefresh2DCameraMap error: {ex.Message}");
-            }
-        }
-
-        private async Task EnsureCamera2DOpenStreetMapLoadedAsync(Mapsui.Map map)
-        {
-            try
-            {
-                // Ensure base OpenStreetMap tile layer is present with compliant User-Agent
-                if (!map.Layers.Any(l => l.Name == "Camera2DOpenStreetMap"))
-                {
-                    var tileLayer = Mapsui.Tiling.OpenStreetMap.CreateTileLayer("RescuAR-Mobile-Evacuation-App/1.0 (contact@rescuar.app)");
-                    tileLayer.Name = "Camera2DOpenStreetMap";
-                    map.Layers.Insert(0, tileLayer);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error loading OpenStreetMap base layer: {ex.Message}");
             }
         }
 

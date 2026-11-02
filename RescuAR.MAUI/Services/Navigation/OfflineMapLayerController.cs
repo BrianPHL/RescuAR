@@ -1,74 +1,86 @@
-using Mapsui;
+using Map = Mapsui.Map;
 using Mapsui.Layers;
 using RescuAR.MAUI.Services.Settings;
-using Map = Mapsui.Map;
 
 namespace RescuAR.MAUI.Services.Navigation;
 
-/// <summary>Owns optional display layers and a preference subscription for one visible page.</summary>
-public sealed class OfflineMapLayerController(Action<string> setStatus)
+/// <summary>Page-scoped detail ownership. All entry points run on the page dispatcher.</summary>
+public sealed class OfflineMapLayerController
 {
-    private readonly SemaphoreSlim loadGate = new(1, 1);
-    private IReadOnlyList<ILayer> layers = [];
-    private Map? map;
-    private bool active;
+    private readonly OfflineOverlaySession<Map, ILayer> session;
+    private readonly Action<string> status;
+    private bool subscribed;
+    private long coverageRequest;
 
-    public async Task ActivateAsync(Map target)
+    public OfflineMapLayerController(Action<string> status, int insertionIndex = 0)
     {
-        map = target;
-        if (!active) AppPreferences.Current.Changed += OnPreferenceChanged;
-        active = true;
-        await RefreshAsync();
+        this.status = status;
+        session = new(DetailedOfflineMapService.CreateLayersAsync,
+            (map, layers) => { map.Layers.Insert(Math.Min(insertionIndex, map.Layers.Count), layers); map.Refresh(); },
+            (map, layers) => { foreach (var layer in layers) map.Layers.Remove(layer); map.Refresh(); },
+            layer => { layer.Enabled = false; layer.Dispose(); }, Changed);
+    }
+
+    public async Task ActivateAsync(Map map)
+    {
+        Deactivate();
+        AppPreferences.Current.Changed += SettingChanged;
+        OfflineMapRuntime.Invalidated += Invalidated;
+        map.Navigator.FetchRequested += ViewportChanged;
+        subscribed = true;
+        await session.ActivateAsync(map, AppPreferences.IsEnabled(AppSetting.DetailedOfflineMap));
     }
 
     public void Deactivate()
     {
-        active = false;
-        AppPreferences.Current.Changed -= OnPreferenceChanged;
+        if (subscribed)
+        {
+            AppPreferences.Current.Changed -= SettingChanged;
+            OfflineMapRuntime.Invalidated -= Invalidated;
+            if (session.Map is { } map) map.Navigator.FetchRequested -= ViewportChanged;
+            subscribed = false;
+        }
+        coverageRequest++;
+        session.Deactivate();
     }
 
-    private void OnPreferenceChanged(AppSetting setting)
+    private void SettingChanged(AppSetting setting)
     {
         if (setting == AppSetting.DetailedOfflineMap)
-            MainThread.BeginInvokeOnMainThread(async () => await RefreshAsync());
+            MainThread.BeginInvokeOnMainThread(async () => { if (subscribed) await session.RefreshAsync(AppPreferences.IsEnabled(setting)); });
     }
-
-    private async Task RefreshAsync()
+    private void Invalidated() { coverageRequest++; session.Invalidate(); }
+    private void ViewportChanged(object? sender, EventArgs args) => MainThread.BeginInvokeOnMainThread(async () => await UpdateCoverageAsync());
+    private void Changed(OfflineDisplayState state)
     {
-        if (!active || map is null) return;
-        bool enabled = AppPreferences.Current.Get(AppSetting.DetailedOfflineMap);
-        foreach (var layer in layers) layer.Enabled = enabled;
-        map.Refresh();
-        if (!enabled) { setStatus("Basic offline roads • detailed map off"); return; }
-        await loadGate.WaitAsync();
+        coverageRequest++;
+        status(state switch
+        {
+            OfflineDisplayState.Loading => "Loading offline map…",
+            OfflineDisplayState.Disabled => "Basic offline roads · map detail off.",
+            OfflineDisplayState.Unavailable => "Basic offline roads · detailed map unavailable.",
+            OfflineDisplayState.Cleared => "Map cache cleared · reopen the map to restore detail.",
+            OfflineDisplayState.Ready => "Offline map ready · checking coverage…",
+            _ => ""
+        });
+        if (state == OfflineDisplayState.Ready) _ = UpdateCoverageAsync();
+    }
+    private async Task UpdateCoverageAsync()
+    {
+        if (session.State != OfflineDisplayState.Ready || session.Map is not { } map) return;
+        var viewport = map.Navigator.Viewport;
+        if (!double.IsFinite(viewport.Resolution) || viewport.Resolution <= 0) return;
+        var token = session.Token; long current = ++coverageRequest;
+        var (longitude, latitude) = Mapsui.Projections.SphericalMercator.ToLonLat(viewport.CenterX, viewport.CenterY);
+        int zoom = (int)Math.Round(Math.Log2(156543.03392804097 / viewport.Resolution));
         try
         {
-            if (!active || !AppPreferences.Current.Get(AppSetting.DetailedOfflineMap)) return;
-            setStatus("Loading detailed offline map…");
-            await Task.Run(() => DetailedOfflineMapService.PrepareAsync());
-            if (!active || !AppPreferences.Current.Get(AppSetting.DetailedOfflineMap)) return;
-            if (layers.Count == 0)
-            {
-                var loaded = await Task.Run(() => DetailedOfflineMapService.CreateLayersAsync());
-                if (!active || !AppPreferences.Current.Get(AppSetting.DetailedOfflineMap))
-                {
-                    foreach (var layer in loaded) layer.Dispose();
-                    return;
-                }
-                layers = loaded;
-                // Background context stays below dev roads, selected routes and location markers.
-                for (int index = 0; index < layers.Count; index++) map.Layers.Insert(index, layers[index]);
-            }
-            foreach (var layer in layers) layer.Enabled = true;
-            setStatus("Detailed offline map • Marikina • zoom 13–18 • static context");
-            map.Refresh();
+            bool covered = await OfflineMapRuntime.Cache.CoversAsync(longitude, latitude, zoom, token);
+            if (token.IsCancellationRequested || current != coverageRequest || session.Map != map || session.State != OfflineDisplayState.Ready) return;
+            status(covered ? "Offline map · Marikina detail"
+                : "Outside packaged detail · basic offline roads.");
         }
-        catch (Exception)
-        {
-            if (active) setStatus(AppPreferences.Current.Get(AppSetting.DetailedOfflineMap)
-                ? "Detailed map unavailable • basic roads remain available. Reopen the map to retry."
-                : "Basic offline roads • detailed map off");
-        }
-        finally { loadGate.Release(); }
+        catch (OperationCanceledException) { }
+        catch { if (current == coverageRequest && session.State == OfflineDisplayState.Ready) status("Offline coverage unavailable · basic offline roads."); }
     }
 }

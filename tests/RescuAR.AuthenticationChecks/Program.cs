@@ -27,6 +27,13 @@ if (args.Contains("--camera-view-handoff"))
     return;
 }
 
+if (args.Contains("--offline-map"))
+{
+    await OfflineMapChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} offline-map checks passed.");
+    return;
+}
+
 if (args.Contains("--circle-chat"))
 {
     await CircleChatChecks.RunAsync(Check);

@@ -150,6 +150,27 @@ internal static class OfflineMapChecks
             "a hidden page cannot attach delayed map detail or dispose another module's overlays");
         await session.RefreshAsync(true);
         check(requests.Count == 5, "inactive detail owners do not load or reinstall an archive");
+
+        // Camera and Circle may overlap during a transition; closing one must not cancel the other.
+        var circleMap = new List<Layer> { marker };
+        var circleLayers = new Layer[] { new("Circle detail") };
+        CancellationToken circleToken = default;
+        var circle = new OfflineOverlaySession<List<Layer>, Layer>(token =>
+            { circleToken = token; return Task.FromResult<IReadOnlyList<Layer>>(circleLayers); },
+            (map, layers) => map.InsertRange(0, layers),
+            (map, layers) => { foreach (var layer in layers) map.Remove(layer); },
+            layer => layer.Disposed = true, _ => { });
+        await circle.ActivateAsync(circleMap, true);
+        pending = session.ActivateAsync(first, true);
+        var cameraTiles = new Layer("Camera detail");
+        requests[5].SetResult(new[] { cameraTiles }); await pending;
+        session.Deactivate();
+        check(cameraTiles.Disposed && !circleToken.IsCancellationRequested && !circleLayers[0].Disposed && circleMap.Contains(circleLayers[0]),
+            "closing Camera detail leaves the Circle owner's tile requests and overlays active");
+        circle.Deactivate();
+        check(circleToken.IsCancellationRequested && circleLayers[0].Disposed && circleMap.SequenceEqual(new[] { marker }),
+            "closing Circle releases only its own map detail and preserves member overlays");
+
         var partial = new Layer("partial");
         var failing = new OfflineOverlaySession<List<Layer>, Layer>(_ => Task.FromResult<IReadOnlyList<Layer>>(new[] { partial }),
             (map, layers) => { map.Add(layers[0]); throw new IOException("attach failure"); }, (map, layers) => { foreach (var layer in layers) map.Remove(layer); },

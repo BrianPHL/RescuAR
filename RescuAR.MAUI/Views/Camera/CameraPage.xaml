@@ -224,6 +224,13 @@
                 <mapsui:MapControl x:Name="CameraMapControl"
                                    HorizontalOptions="FillAndExpand"
                                    VerticalOptions="FillAndExpand" />
+                <VerticalStackLayout HorizontalOptions="Start" VerticalOptions="End"
+                                     Margin="8,0,8,6" Padding="5,3" BackgroundColor="#EFFFFFFF"
+                                     InputTransparent="True" MaximumWidthRequest="300">
+                    <Label x:Name="cameraMapStatusLabel" FontSize="10" TextColor="#334155" />
+                    <Label Text="© OpenStreetMap contributors · Made with Maperitive"
+                           FontSize="9" TextColor="#475569" />
+                </VerticalStackLayout>
             </Grid>
 
             <!-- 2D Map Google Maps Style Route Search Card -->

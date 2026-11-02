@@ -55,6 +55,13 @@
             <mapsui:MapControl x:Name="MapControl"
                                HorizontalOptions="FillAndExpand"
                                VerticalOptions="FillAndExpand" />
+            <VerticalStackLayout HorizontalOptions="Start" VerticalOptions="Start"
+                                 Margin="8,68,8,0" Padding="5,3" BackgroundColor="#EFFFFFFF"
+                                 InputTransparent="True" MaximumWidthRequest="290">
+                <Label Text="{Binding MapStatus}" FontSize="10" TextColor="#334155" />
+                <Label Text="© OpenStreetMap contributors · Made with Maperitive"
+                       FontSize="9" TextColor="#475569" />
+            </VerticalStackLayout>
 
             <!-- Top Circle Selector Pill -->
             <Border BackgroundColor="White"

@@ -20,8 +20,11 @@ public sealed class OfflineTileArchive : IDisposable
             using var metadata = entry.Open();
             Manifest = JsonSerializer.Deserialize<OfflineMapManifest>(metadata) ?? throw new InvalidDataException("Invalid offline map manifest.");
             if (Manifest.Version != 1 || Manifest.Format != "png" || Manifest.Scheme != "xyz" ||
-                Manifest.MinZoom < 0 || Manifest.MaxZoom > 22 || Manifest.MinZoom > Manifest.MaxZoom || Manifest.TileCount < 1)
-                throw new InvalidDataException("Unsupported offline map format.");
+                Manifest.MinZoom < 0 || Manifest.MaxZoom > 22 || Manifest.MinZoom > Manifest.MaxZoom || Manifest.TileCount is < 1 or > 1_000_000 ||
+                Manifest.Bounds is not { Length: 4 } bounds || bounds.Any(value => !double.IsFinite(value)) ||
+                bounds[0] < -180 || bounds[2] > 180 || bounds[1] < -85.05112878 || bounds[3] > 85.05112878 ||
+                bounds[0] >= bounds[2] || bounds[1] >= bounds[3])
+                throw new InvalidDataException("Unsupported offline map format or coverage.");
         }
         catch { archive.Dispose(); throw; }
     }
