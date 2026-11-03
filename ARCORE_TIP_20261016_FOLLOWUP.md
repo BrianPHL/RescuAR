@@ -1,5 +1,8 @@
 # TIP arrival and camera follow-up — 16 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 This records the earlier candidate and its checks. The subsequent full audit,
 additional corrections and replacement APK are documented in
 `AR_SYSTEM_AUDIT_20261016.md`.

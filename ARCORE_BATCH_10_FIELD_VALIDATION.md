@@ -1,5 +1,8 @@
 # ARCore Batch 10 Field Validation
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Historical batch procedure. Its package profile and local diagnostic defaults
 have been superseded. Use the [current field procedure](docs/field-testing/README.md)
 and [compatibility matrix](ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md) for a new

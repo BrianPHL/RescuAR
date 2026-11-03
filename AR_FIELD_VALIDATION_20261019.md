@@ -1,5 +1,8 @@
 # Field validation corrections — 19 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 The user's MLD, A*, arrival, flood, and logging findings were read before the
 captures. The changes below are local and uncommitted. Ground acquisition fixes
 from the preceding review are retained. No routing datasets, dependency pins,

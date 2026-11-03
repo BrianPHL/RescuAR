@@ -1,5 +1,8 @@
 # Athena preservation audit — 27 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 **Resolution:** The user-approved repairs are now committed. See [completed batches, verification and device checks](2026-10-28-athena-regression-repairs.md). The pinned findings below describe the earlier audit checkpoint.
 
 Compared these exact local Git sources, without changing application behavior:

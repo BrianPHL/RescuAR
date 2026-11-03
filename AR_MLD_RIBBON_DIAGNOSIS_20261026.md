@@ -1,5 +1,8 @@
 # MLD ribbon and registration review — October 26, 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Reviewed checkout: `55089d8c73518fe038dfc448e7a5f3b5c2a0f1c6`, with the focused changes below left uncommitted. No logs were supplied for the photographed test. Earlier captures are not evidence of this run's GPS accuracy, heading, tracking state, route coordinates or installed APK hash.
 
 ## What the photos establish

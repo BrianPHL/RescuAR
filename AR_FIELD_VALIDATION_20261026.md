@@ -1,5 +1,8 @@
 # Multi-device navigation investigation — 26 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Two locally reproduced recovery/arrow defects were corrected in the earlier candidate. The tester subsequently reported inaccurate arrows and an absent cyan path on **A54 / Android 14 / MLD** with that candidate. Capture was not started. The MLD follow-up below addresses a separately reproduced presentation-ownership defect. **The recurring physical alignment and visibility problems are not accepted as resolved.** No video, screenshots or surveyed references were supplied.
 
 ## Evidence and identities

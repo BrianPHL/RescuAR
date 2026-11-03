@@ -1,5 +1,8 @@
 # Navigation failure investigation — October 26, 2026, 15:44 capture
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Status: focused source fixes and Android candidate; physical acceptance pending.
 
 ## Evidence and limits

@@ -1,5 +1,8 @@
 # ARCore Batch 10 Revision Manifest
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Baseline
 
 - Source: `RescuAR(10).zip`

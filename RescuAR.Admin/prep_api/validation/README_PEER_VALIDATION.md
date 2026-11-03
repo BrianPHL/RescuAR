@@ -104,31 +104,12 @@ After installation, restart RStudio if necessary.
 
 # 2. Open the Project Correctly
 
-Extract the `RescuAR.Admin` folder anywhere on your computer.
-
-Example:
-
-```text
-C:/Users/YourName/Documents/RescuAR.Admin/
-```
-
-or:
-
-```text
-D:/Projects/RescuAR.Admin/
-```
-
-Open RStudio from inside the project or one of its subfolders.
-
-The scripts should be configured to locate the project root automatically.
-
-If your copy still contains a hardcoded path such as:
-
-```r
-C:/Users/Josh/Documents/Project/RescuAR/RescuAR.Admin
-```
-
-replace it before running the validation.
+Use the repository's `RescuAR.Admin/` directory, or that directory from an
+independently supplied evaluation package. Keep its relative subfolders intact.
+In RStudio, set the working directory to `RescuAR.Admin/` or one of its subfolders
+before sourcing a script. The scripts locate the project through its data markers;
+they do not require another evaluator's absolute Windows path. Review any older
+copy that hardcodes a user directory before running it.
 
 ---
 

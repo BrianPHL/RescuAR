@@ -1,5 +1,8 @@
 # AR / 2D route placement review — 2026-10-30
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Evidence
 
 Reviewed `Logs/RescuAR_FieldTest_20261030_161013.zip` and both supplied recordings,

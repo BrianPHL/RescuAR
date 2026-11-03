@@ -1,5 +1,8 @@
 # GPS startup and guidance presentation — 29 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Evidence and confirmed causes
 
 Reviewed `Logs/RescuAR_FieldTest_20261029_200439.zip` and the 6m11s recording `Screen_Recording_20261029_201218.mp4`. Offline video review covers 10-second samples across the recording and larger frames around retry, AR entry and overlapping cards. Evidence is in `artifacts/field-review-20261029-2004/`.

@@ -1,5 +1,8 @@
 # Dev / Athena integration review — 26 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 At the original review checkpoint, source preparation was complete on `codex/integrate-athena-modules` and all finished batches were committed without a merge or final APK. The integration was subsequently merged into `migration/athena-modules-pt2` (`51ede19`). The post-review Release correction below is now applied to both checkouts.
 
 The preserved sources are dev `004ed201b3f2e0b7922dc4cbb6c784bdddaa6ad9` and Athena `fa777da153a492268ace76162a80389e0d904534`. The final code checkpoint is `22836e154ec0ecde8b165ebc5819324f52b29d0a`; the later documentation commit contains this review and the final records. See [the progress log](2026-10-26-integration-progress.md) for the full decisions, commits and per-batch evidence, and [the baseline manifest](2026-10-26-integration-baseline.json) for source hashes and reversible Camera adaptations.

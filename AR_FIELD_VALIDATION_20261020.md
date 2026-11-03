@@ -1,5 +1,8 @@
 # Navigation stability candidate — 20 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Implementation authorized by the supplied Navigation Stability, Adaptive Route Correction,
 AR UI Optimization, and Performance request. Changes remain uncommitted.
 

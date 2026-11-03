@@ -62,7 +62,8 @@ The provisional mappings are:
 | Critical | 100 years | High |
 
 These are project scenario rules, not proven hydraulic equivalences or universal
-warning thresholds. The [validation workflow](validation/VALIDATION_WORKFLOW.md)
+warning thresholds. Use the [research index](validation/README.md) to select the
+relevant validation/reference procedure. The [validation workflow](validation/VALIDATION_WORKFLOW.md)
 separates research, gated file promotion and the unfinished API/frontend connection.
 A promoted file or successful health response does not establish calibrated
 automatic mapping in the dashboard.

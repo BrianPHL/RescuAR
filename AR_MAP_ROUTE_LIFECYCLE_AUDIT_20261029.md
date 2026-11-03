@@ -1,5 +1,8 @@
 # AR / 2D map routing audit — 29 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Evidence
 
 - Reviewed `Logs/RescuAR_FieldTest_20261029_192031.zip` and the 6m22s `LTqMHF1A.mp4`: 10-second samples across the recording plus larger frames around route starts, disappearing markers and AR entry. Review artifacts are under `artifacts/field-review-20261029-1920/`.

@@ -1,5 +1,8 @@
 # Native crash and offline account startup — 29 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Evidence
 
 - Complete field archive: `Logs/RescuAR_FieldTest_20261029_210402.zip`, 21:04:06–21:07:17 PHT, Samsung SM-A546E / Android 14.

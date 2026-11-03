@@ -1,5 +1,8 @@
 # October 10 navigation field-test follow-up
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Evidence
 
 Reviewed `RescuAR_FieldTest_20261010_162624.zip` and

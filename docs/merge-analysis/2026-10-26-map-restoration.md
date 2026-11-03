@@ -1,5 +1,8 @@
 # Map restoration after comparison with Athena
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 **27 October source-attribution correction:** Athena `fa777da` already used `LocalTileSource : ITileSource`. The tile-interface defect repaired below was inherited; it was not introduced by integration. The archive/actual-library verification remains valid. A subsequent audit found separate lost directory and 2D-entry connections; see [the preservation audit](2026-10-27-athena-regression-audit.md).
 
 Compared `migration/athena-modules` (`fa777da`) with integration checkpoint `ac5c60c` and the user's built branch `migration/athena-modules-pt2` (`776aae1`). No branch merge was performed. Both checkouts received the same focused source changes.

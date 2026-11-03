@@ -9,6 +9,10 @@ Documentation aligned with source on 2026-11-03, starting from `dev` at
 `d83d797`. Repository behavior does not establish a deployed service's state,
 installed APK behavior, carrier delivery, or physical AR accuracy.
 
+AI agents and new contributors should begin with [AGENTS.md](AGENTS.md) and the
+[task-based documentation index](docs/README.md). Gemini/Antigravity and other
+host entry formats are described in the [compatibility guide](docs/contributing/ai-agents.md).
+
 ## Project layout
 
 | Path | Purpose |
@@ -59,9 +63,9 @@ connection. The [database guide](RescuAR.Admin/database/README.md) identifies
 missing bootstrap prerequisites; this checkout cannot recreate the complete
 Supabase database from an empty project.
 
-The admin production build is currently blocked by conflict markers already in
-the `d83d797` version of `RescuAR.Admin/src/components/Sidebar.jsx`. The setup
-guide describes the intended source configuration, not a passing frontend build.
+See the [source-based status register](docs/status.md) for the existing Admin
+build blocker and other implementation/acceptance gaps. Setup instructions do
+not imply a passing frontend build or hosted acceptance.
 
 The [SIM SMS gateway](RescuAR.Admin/SMS_GATEWAY_SETUP.md) is a separate Android
 project under `RescuAR.Admin/android-sms-gateway/`. It is not the MAUI app.

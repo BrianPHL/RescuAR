@@ -1,5 +1,8 @@
 # MLD map matching, distant start and window flicker — 18:11 capture
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Reviewed checkout `de687d0` with the preceding restart-recovery changes committed. The supplied `RescuAR_FieldTest_20261026_181106.zip` is a complete A54/Android 14 capture from 18:11:09 to 18:16:45. Its installed hash `a02ab28eba04991be156cc0dd1aecf50788154971564e1172acadb28ac754246` matches the last delivered APK. Analysis files and verification logs are under `artifacts/field-review-20261026-1811/`.
 
 ## Direct answer: the route is already map-matched

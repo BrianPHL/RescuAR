@@ -30,8 +30,11 @@ investigations as historical evidence and link them when they explain a change.
 | Content | Destination |
 | --- | --- |
 | Durable agent rules and pointers | [AGENTS.md](../../AGENTS.md) |
+| Agent-specific discovery/import formats | [Compatibility guide](ai-agents.md); thin root/host adapters only |
 | Project onboarding and common commands | [Root README](../../README.md) |
 | Documentation navigation and current gaps | [docs/README.md](../README.md) |
+| Complete document inventory and evidence-role classification | [Generated catalog](../catalog.md) |
+| Known implementation/acceptance gaps with source evidence | [Status register](../status.md) |
 | What changed, why, evidence and pending work | [docs/changes/](../changes/README.md) |
 | Appearance baseline, source screenshots and confirmed exceptions | [docs/design/](../design/README.md) |
 | Android field procedure and dated device evidence | [docs/field-testing/](../field-testing/README.md) |
@@ -46,6 +49,39 @@ Keep a single current guide for each contract. A change record links to it rathe
 than copies it. Existing root `AR_*` and batch reports retain their dated context;
 new investigation records belong in the appropriate `docs/` folder. If a file is
 moved, update all local links and entry points in the same change.
+
+## Portable authoring and agent context
+
+- Keep shared rules in `AGENTS.md`. Maintain imports/pointers in agent adapters,
+  not copied rule sets. See [AI agent compatibility](ai-agents.md).
+- Use plain UTF-8 Markdown, relative forward-slash links, descriptive headings,
+  and language-tagged command blocks. State each command's working directory and
+  required tools. Avoid machine-specific paths in current setup instructions.
+- Separate current guides, research/source references, historical evidence and
+  task records. Add an explicit historical note when an old report could otherwise
+  be mistaken for present instructions. Preserve original findings, dates/hashes
+  and verification limits; do not rewrite captured baselines to match today's tree.
+- Link durable known gaps from [status](../status.md). Update its evidence when
+  the owning implementation is actually fixed; do not copy stale status lists
+  into every guide or adapter.
+- Give agents a short route through [the task index](../README.md). The
+  [catalog](../catalog.md) inventories the full corpus for discovery, not for
+  unconditional loading. Do not import all reports or the full-resolution image
+  into every agent session.
+
+With Git and PowerShell 7, from the repository root:
+
+```powershell
+./build/Verify-Documentation.ps1 -UpdateCatalog
+./build/Verify-Documentation.ps1
+git diff --check
+```
+
+Regenerate the catalog after adding, renaming or retitling Markdown files. The
+checker uses tracked and nonignored untracked documents; it validates local
+inline targets and root Gemini/Claude imports, not external websites, every
+possible Markdown extension or AI-client behavior. If the host lacks PowerShell,
+perform/report available static checks without installing tools or inventing a pass.
 
 ## Change-record template
 

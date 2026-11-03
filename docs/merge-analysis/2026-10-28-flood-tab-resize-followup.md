@@ -1,5 +1,8 @@
 # Flood-tab resize follow-up — 2026-10-28
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 ## What the new capture proves
 
 `Logs/RescuAR_FieldTest_20261028_114543.zip` identifies installed source revision `adfede614b5c033b2bf6fb7fbf04b2d88e389522`, including the earlier ownership fix, on Samsung SM-A546E / Android 14. Start/collection APK hashes agree. Capture completion markers are present.

@@ -1,5 +1,8 @@
 # MLD regression: alignment and stop/change-destination
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Reviewed `5933e11` against preceding `55089d8`. Focused changes remain uncommitted. This report supersedes speculation made before the new capture arrived.
 
 ## Evidence

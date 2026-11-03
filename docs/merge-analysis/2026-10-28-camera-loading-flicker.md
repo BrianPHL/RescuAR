@@ -1,5 +1,8 @@
 # Camera loading-cover flicker — 2026-10-28
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 ## Evidence
 
 The user supplied `RescuAR_FieldTest_20261028_123152.zip` and `xBhnmWxq.mp4`. The installed manifest identifies build `613ee05ccecd5cb49b8f5b3d196a40d07019eae0`. Log capture completion is confirmed; no fatal signal/exception/abort entries were found.

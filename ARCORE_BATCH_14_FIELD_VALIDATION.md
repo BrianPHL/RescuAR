@@ -1,5 +1,8 @@
 # ARCore corrective batch 14
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Historical corrective-package record. Do not reapply its ZIP to the integrated
 checkout. Use the [current field procedure](docs/field-testing/README.md) and
 [compatibility matrix](ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md) for current
