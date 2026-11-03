@@ -9,6 +9,9 @@ their old commands or results are not current deployment evidence.
 
 | Topic | Guide |
 | --- | --- |
+| Agent workflow and required change documentation | [AGENTS.md](../AGENTS.md), [documentation workflow](contributing/documentation-workflow.md) |
+| Task change records and verification history | [Change records](changes/README.md) |
+| Mobile/Admin appearance baseline and design confirmation | [UI reference guide](design/README.md) |
 | Repository layout, prerequisites and builds | [Project README](../README.md) |
 | Frontend, telemetry worker and environment variables | [Admin README](../RescuAR.Admin/README.md) |
 | Available SQL and missing database prerequisites | [Database guide](../RescuAR.Admin/database/README.md) |
@@ -49,3 +52,8 @@ supersedes the earlier two-observation startup candidate described in the
 
 The admin patch documents are historical package instructions. Current setup is
 in the Admin README; original patch folders/payloads are not in this checkout.
+
+Change records were introduced after the documentation alignment commit
+`15222e5`. They identify a task's baseline and verification separately from the
+current guides. The [documentation workflow](contributing/documentation-workflow.md)
+defines where future documentation and records belong.
