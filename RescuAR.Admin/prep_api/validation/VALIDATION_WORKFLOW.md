@@ -1,5 +1,9 @@
 # PREP Validation and Calibration Workflow
 
+Source alignment: 2026-11-03. Research scripts and file promotion exist, but the
+dedicated API-to-frontend rules connection below is incomplete. Historical metric
+outputs do not establish current production acceptance.
+
 ## Current single-event validation
 
 ```text
@@ -49,7 +53,7 @@ UNAPPROVED candidate config
 
 No observed data are synthesized or altered to force a target score.
 
-## Production promotion
+## Gated configuration-file promotion
 
 ```text
 selected_rules_unapproved.json
@@ -62,10 +66,21 @@ manual approval + minimum-event gates
         ↓
 config/exposure_scenario_rules.json
         ↓
-PREP API GET /v1/exposure/rules
-        ↓
-Admin Flood Hazard Exposure automatic mapping
+R metadata: automatic_rule_config
 ```
+
+The default gate requires explicit `APPROVE_PROMOTION <- TRUE`, at least two
+calibration events and one holdout event, and the configured holdout F1 gate.
+Adequate independent event evidence remains necessary; retrospective Ulysses
+partition scores do not supply it.
+
+This writes a file; it does not deploy a service or complete frontend integration.
+`GET /v1/exposure/definitions` and scenario model metadata include the R rule
+configuration. However, the Admin loader requests `GET /v1/exposure/rules`, which
+is absent from the checked-in `plumber.R`. That request fails and the page keeps
+its provisional defaults with a configuration error. The API/client contract and
+its acceptance must be completed before claiming automatic dashboard promotion.
+See the [API guide](../README_IMPLEMENTATION.md) for implemented endpoints.
 
 ## Population-exposure improvement
 

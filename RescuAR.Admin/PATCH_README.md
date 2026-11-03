@@ -1,5 +1,9 @@
 # RescuAR.Admin — Hybrid Bootstrap + Custom CSS Responsive Patch
 
+Historical patch record. The responsive source is already integrated; the patch
+archive described below is not a prerequisite for this checkout. Do not overwrite
+current files with that snapshot. Use [README.md](README.md) for current setup.
+
 ## Apply
 
 1. Back up or commit your current `RescuAR.Admin` files.

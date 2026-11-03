@@ -1,5 +1,10 @@
 # ARCore Batch 10 Field Validation
 
+Historical batch procedure. Its package profile and local diagnostic defaults
+have been superseded. Use the [current field procedure](docs/field-testing/README.md)
+and [compatibility matrix](ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md) for a new
+candidate; retain the batch-specific instructions below as historical evidence.
+
 ## Scope
 
 This corrective revision removes the standalone automated test project and replaces its release claim with explicit build, package, and physical-device validation. It also repairs the missing dependency matrix, package-profile verification, evidence schema, and overstated ADB scenario reporting.

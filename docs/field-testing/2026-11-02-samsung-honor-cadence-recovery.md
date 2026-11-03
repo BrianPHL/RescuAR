@@ -1,5 +1,10 @@
 # Samsung/Honor field regression and recovery
 
+The recovery source was subsequently committed as `d83d797`. The candidate
+source label, APK hash and original verification below identify the earlier
+locally built artifact; that artifact is not automatically identical to a new
+build of the committed revision. Use the [current field procedure](README.md).
+
 Reference behavior: `b239fa7`. Checkout: `dev`, HEAD `9a48b90`, with the preceding uncommitted AR recovery changes retained and refined. No commit or push was created.
 
 ## Evidence

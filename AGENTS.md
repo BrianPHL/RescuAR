@@ -6,7 +6,7 @@
 - `RescuAR.MAUI/`: Android app organized into `Views/`, `ViewModels/`, `Services/`, `Models/`, `Platforms/`, and `Resources/`.
 - `RescuAR.Windows/` and `RescuAR.Editor/`: desktop host and editor extensions; `Content/` contains Evergine scenes and assets.
 - `RescuAR.Admin/src/`: React dashboard; `public/` holds static assets and `scraper/` runs telemetry ingestion.
-- `tests/RescuAR.RegressionChecks/`: regression runner; `build/`: Android validation scripts.
+- `tests/RescuAR.RegressionChecks/` and `tests/RescuAR.AuthenticationChecks/`: focused host regression runners; `build/`: Android validation scripts.
 
 ## Build, Test, and Development Commands
 
@@ -24,7 +24,7 @@ Prefer four-space C# indentation and two-space JavaScript/JSX indentation; prese
 
 ## Testing Guidelines
 
-Run `dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj`. This console harness uses `Check(condition, "behavior description")`; add descriptive assertions for routing, AR, or policy changes. No coverage threshold or admin test script is configured; run admin lint/build and manually verify changed screens. For Android changes, run `./build/Verify-ARCoreReleaseReadiness.ps1` and follow the package/device checks in `.github/workflows/arcore-native-bridge.yml` and `ARCORE_BATCH_14_FIELD_VALIDATION.md`.
+The console harness uses `Check(condition, "behavior description")`; select checks relevant to the change, such as `dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence` for GPS/AR recovery. Authentication/directory checks use the separate `tests/RescuAR.AuthenticationChecks/` runner. Admin has `npm run test:option-b` and focused Node test files documented in `RescuAR.Admin/README.md`; no coverage threshold is configured. Database fixture tests are blocked by missing prerequisites listed in `RescuAR.Admin/database/README.md`. For Android changes, run `./build/Verify-ARCoreReleaseReadiness.ps1` and follow package checks in `.github/workflows/arcore-native-bridge.yml` and the current manual procedure in `docs/field-testing/README.md`. Dated batch reports preserve historical results. Do not run integration/E2E or app/browser interaction checks unless explicitly authorized; provide manual steps to the user when needed.
 
 ## Commit & Pull Request Guidelines
 
@@ -32,5 +32,5 @@ History mixes plain summaries and scoped Conventional Commits. Prefer `fix(routi
 
 ## Security & Configuration Tips
 
-Keep credentials in ignored environment files. Use `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` for the dashboard; reserve `SUPABASE_SERVICE_ROLE_KEY` for the worker. Preserve dependency pins documented in `ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md`; update compatibility evidence when changing them.
+Keep credentials in ignored environment files; `RescuAR.Admin/.env.example` contains placeholders only. Use public `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` and `VITE_PREP_EXPOSURE_API_URL` for the dashboard. `SUPABASE_SERVICE_ROLE_KEY` belongs only in server/worker or Edge Function environments, never a `VITE_*` variable. The local worker reads `RescuAR.Admin/.env`. Preserve dependency pins documented in `ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md`; update compatibility evidence when changing them.
 

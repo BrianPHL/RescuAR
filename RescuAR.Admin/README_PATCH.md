@@ -1,5 +1,12 @@
 # RescuAR Admin — Create Verified Administrators (Temporary Password) Patch
 
+Historical package instructions. The feature source is integrated, but its SQL
+and Edge Function still need the actual target environment's prerequisites and
+configuration. The `RescuAR_Admin_Provisioning_PATCH` installer layout is absent;
+do not run the retained installer against this checkout. Use
+[README.md](README.md) and [the database guide](database/README.md) for current
+setup limits. The function contract below is retained for reference.
+
 ## Scope and prerequisites
 
 Source archive: `RescuAR.Admin(20261026-065143).zip` (October 26, 2026).

@@ -1,9 +1,12 @@
 # Reports Moderation: database audit entry point
 
-Status: migration 002 is deployed. The supplied `report_moderation_audit_report`
-passed all 13 checks; all 11 function bodies and access contracts match. The web
-moderator now uses the guarded RPC and acknowledged interaction capture locally.
-Live authenticated acceptance of this frontend integration remains pending.
+Source alignment: 2026-11-03. The current moderator uses the guarded RPC and
+acknowledged interaction capture. The October 7 supplied deployment report was
+recorded as passing 13 checks and matching 11 function/access contracts; this is
+historical evidence, not a fresh inspection of any current environment. The
+foundation migration/fixtures are absent from this checkout, so database setup
+and fixture verification are blocked as described in [README.md](README.md).
+Live authenticated acceptance has not been established by this update.
 
 ## Deployed schema review
 
@@ -32,15 +35,15 @@ worker does not reference `community_reports`.
 
 ## Apply and verify
 
-Migration 002 is already installed in the reviewed project. Do not rerun either
-migration 001 or 002. The supplied PostgreSQL 17.6 verification result confirms
-foundation version 1, moderation version 1, protected storage, administrator
-authorization, retry handling, RPC security, and preserved shared-table contracts.
-The following sequence is retained for a separate project installing this step:
+The October 7 record reported migrations 001/002 installed in that reviewed
+project. Do not assume a new environment has the same state or rerun a deployed
+migration. A new installation is blocked until the missing reviewed foundation
+is recovered and the target schema is inspected. Only after those prerequisites
+are established does this sequence apply:
 
 1. In the same Supabase project's SQL Editor, select the `postgres` role and run
    all of [002_report_moderation_audit.sql](migrations/002_report_moderation_audit.sql)
-   once. Foundation 001 is already installed; do not rerun it.
+   once, with the required matching foundation already installed.
 2. If the migration fails, share its redacted error before proceeding. Its
    transaction rejects repeat installation, name conflicts, report contract/trigger
    drift, or changed audit helpers; it leaves no partial RPC installation.
@@ -110,43 +113,40 @@ decisions. There are no direct status updates in the web moderator.
 - A stale decision reloads the report for review. A failed read retains previous
   rows and reports the failure; confirmed receipts remain acknowledged even if
   the following read fails. An access denial clears rows, selection, and pending
-  retry state and requests the shared administrator gate to recheck access.
+  retry state. The component accepts an access-denied callback, but the active
+  `App.jsx` route does not supply one; automatic gate rechecking is not established.
 - Media navigation follows its acknowledged observation; unsupported attachment
   URLs are not navigable. Automatic refetch and request cleanup ignore obsolete
   responses after a newer read or module disposal.
 
 ## Validation and remaining coverage
 
-Eight local PostgreSQL tests cover preconditions, administrator authorization,
-all three decisions, null/unchanged status, privacy, retries, conflicting operation
-reuse, stale decisions, atomic rollback, suppressed updates, historical retention,
-shared mobile-style writes, preserved foundation verification, and metadata-only
-deployment checks. Run from `RescuAR.Admin`:
+The retained database tests describe preconditions, authorization, decisions,
+privacy, retries, stale decisions, atomicity and shared-write compatibility.
+They cannot currently execute: their foundation SQL, baseline fixture and
+foundation-verification SQL are missing. The original report recorded eight
+moderation database checks, 22 full database tests and 33 application tests;
+those counts are historical and are not reproduced by this documentation update.
+
+Available report service/controller checks cover receipt validation, observation/
+privacy contracts, selection/filtering, denial, media ordering, stale reads,
+retries and disposal. From `RescuAR.Admin/`:
 
 ```powershell
-node --test database/tests/report-moderation-audit.test.mjs
-npm run lint -- database/tests/report-moderation-audit.test.mjs
-```
-
-The full database suite is documented in [README.md](README.md): all 22 tests
-passed. The application suite passed all 33 tests, including 12 report service/
-controller tests for receipt validation, observation/privacy contracts, selection,
-filtering, access denial, media ordering, stale reads, retries, and disposal.
-
-```powershell
-node --test tests/adminSessionGate.test.mjs tests/webAuditClient.test.mjs tests/prepInundationApi.test.mjs tests/reportsModeration.test.mjs
-npm run lint -- src/App.jsx src/components/ReportsModeration.jsx src/services/webAuditService.js src/services/reportsModerationClient.js src/services/reportsModerationController.js src/services/reportsModerationService.js tests/reportsModeration.test.mjs
+node --test tests/reportsModeration.test.mjs
+npm run lint
 npm run build
 ```
 
-Targeted lint, build, whitespace, and documentation-link checks passed. Broader
-lint has existing warnings in other modules; the build retains the existing
-large-bundle warning. Browser checks used the real
+The original record reported passing local lint/build/link checks with warnings
+elsewhere, and synthetic browser checks using the real
 moderator with injected synthetic reports and RPC responses: explicit search and
 keyboard/map selection, all three decisions, an identical retry after a committed
 but lost acknowledgment, stale status, read failure, observation failure, access
 denial cleanup, automatic refetch, and acknowledged media navigation passed.
-These checks did not access or moderate live Supabase records.
+Those historical checks did not access or moderate live Supabase records. No
+browser, app interaction, live database or device checks were run for this
+documentation update.
 
 ## Live acceptance remaining
 
@@ -154,16 +154,17 @@ These checks did not access or moderate live Supabase records.
    current rows, map, and details load; test explicit selection, Search/Clear,
    Refresh, and an attachment.
 2. For an intended moderation decision on an appropriate existing report, confirm
-   the saved status survives refresh. In Audit Logs, filter the module to
-   `community-reports-moderation`; confirm its decision has `database` source,
+   the saved status survives refresh. Using a verified backend audit-inspection
+   path, inspect module `community-reports-moderation`; confirm `database` source,
    the matching report ID, actual before/after status, and the correct outcome.
    Repeat the other decision types using controlled records as appropriate.
+   The current System Logs screen contains samples; it is not an audit viewer.
 3. Confirm deliberate interactions appear as `client_observed` with `observed`
    outcome and without report content or raw search text. Automatic updates and
    default selection should not add extra deliberate-task entries.
 4. Verify resident report submission, likes/comments, and worker ingestion still
    behave normally. Do not create artificial production decisions to test errors;
-   the local fixtures cover denied, stale, rollback, and uncertain-response cases.
+   those cases belong in restored local fixtures, not live production experiments.
 
 Live authenticated web/mobile acceptance and multi-session contention are not
 established by the supplied metadata report or the synthetic checks above.

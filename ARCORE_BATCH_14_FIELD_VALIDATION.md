@@ -1,5 +1,10 @@
 # ARCore corrective batch 14
 
+Historical corrective-package record. Do not reapply its ZIP to the integrated
+checkout. Use the [current field procedure](docs/field-testing/README.md) and
+[compatibility matrix](ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md) for current
+candidate configuration and retests. The observations below belong to this batch.
+
 Apply this changed-files ZIP to repository root after batch 13 (base commit
 94e6674df2fcd957d7ffa8b913cdc097ebb6d937). Archive paths are repository-relative.
 The packaged COMMIT_MESSAGE.txt contains the Conventional Commit summary and body.

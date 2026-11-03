@@ -17,12 +17,18 @@
 
 ## Supported validation targets
 
+Current policy reviewed on 2026-11-03. Diagnostic logging alone does not enable
+Depth on a quarantined device. `ArCoreService.DeviceCompatibility.cs` passes an
+explicit `rescuar.arcore.force_depth_on` launch flag into the compatibility policy;
+`force_depth_off` takes precedence when both flags are set. Route-depth occlusion
+is a separate opt-in flag. Use the [current field procedure](docs/field-testing/README.md).
+
 | Target | Required checks |
 |---|---|
 | Primary development phone | Build, install, native self-test, camera passthrough, Depth, route, flood, and repeated Camera-page entry/exit. |
 | Samsung SM-A156E | Repeat the full test with Depth off and Depth automatic; verify tracking, native loading, JNI warnings, and teardown. |
-| Samsung SM-A546E / Android API 34 | Normal builds retain the plane-only native-crash quarantine. The October 19 diagnostic candidate revalidates supported automatic Depth; repeat lifecycle, alignment, arrival, and realistic flood composition. See the [October 19 review](AR_FIELD_VALIDATION_20261019.md) and [batch 14 field validation](ARCORE_BATCH_14_FIELD_VALIDATION.md). |
-| Samsung SM-A546E / API 36 and SM-A156E / API 36+ | Normal builds retain the native-crash quarantine; diagnostic field candidates revalidate Depth unless explicitly disabled. A successful build is not provider/crash acceptance. See the [October 19 review](AR_FIELD_VALIDATION_20261019.md). |
+| Samsung SM-A546E / Android API 34 | Production and diagnostic baselines retain the plane-only native-crash quarantine. A separate controlled diagnostic test may explicitly request Depth; confirm the logged configuration and repeat lifecycle, alignment, arrival and flood checks. The October 19 and batch 14 reports are historical evidence. |
+| Samsung SM-A546E / API 36+ and SM-A156E / API 36+ | Production and diagnostic baselines retain the native-crash quarantine. Depth revalidation requires the explicit diagnostic force-on flag and device evidence; a successful build is not crash acceptance. |
 | Additional ARM64 ARCore/Vulkan device | Repeat the full test on a different GPU/vendor when available. |
 
 ## Finding 38 decision

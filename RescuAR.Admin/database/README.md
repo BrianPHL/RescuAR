@@ -1,94 +1,89 @@
-# Audit Logs database implementation
+# Database contracts and setup limits
 
-Status: the supplied deployed schema report has been reviewed. The task inventory
-and [deployed-schema-review.md](deployed-schema-review.md) document the confirmed
-contracts and access gaps. The step 2 migration is installed and the supplied
-deployed verification report passed all nine checks. See
-[foundation-deployment-review.md](foundation-deployment-review.md) for the result and
-[web-audit-foundation.md](web-audit-foundation.md) for its scope and instructions.
-The step 3 administrator gate and real audit viewer are now integrated locally;
-[application-integration.md](application-integration.md) records behavior,
-validation and the live acceptance reported completed by the user. Its UI revision
-keeps details on the right and scrolling within the table/details content.
-No additional SQL is needed for the gate and audit viewer.
+Reviewed against repository source on 2026-11-03. This directory contains
+incremental changes for an existing Supabase project, not a complete database
+bootstrap. Historical deployment results are reported evidence from 2026-10-07;
+the current hosted schema has not been reinspected by this update.
 
-## Reports Moderation integration
+## Available migrations
 
-The supplied result of [the focused inspection](inspect-report-moderation-prerequisites.sql)
-has been reviewed. The report confirms text IDs, nullable text status, broad
-public insert/update policies, no report triggers, and matching audit helpers.
-[report-moderation-audit.md](report-moderation-audit.md) records the deployed
-findings, the tested RPC contract, frontend behavior, limitations, and live checklist.
+| File | Purpose and prerequisite |
+| --- | --- |
+| [002_report_moderation_audit.sql](migrations/002_report_moderation_audit.sql) | Guarded report decisions and atomic audit receipts. Requires the exact earlier audit foundation and report-table contract; its preflight rejects drift and repeat installation. |
+| [003_pagasa_river_chart.sql](migrations/003_pagasa_river_chart.sql) | Chart RPC over existing PAGASA station/history tables; not a telemetry-schema bootstrap. |
+| [004_rbac_foundation.sql](migrations/004_rbac_foundation.sql) | Role-based access control (RBAC), assignments, audit log and test records. Contains an explicit bootstrap-UUID step for an existing Auth account. |
+| [004_sms_outbound.sql](migrations/004_sms_outbound.sql) | SMS queue and device claim/report functions over an existing application database. |
+| [005_rbac_admin_provisioning.sql](migrations/005_rbac_admin_provisioning.sql) | Server-managed onboarding and password-setup status; install after `004_rbac_foundation.sql`. |
 
-Migration [002_report_moderation_audit.sql](migrations/002_report_moderation_audit.sql)
-adds administrator-only approve/reject/resolve with atomic audit evidence,
-retry receipts, and stale-status rejection. Shared policies and mobile writes are
-preserved. The supplied deployment report passed all 13 checks and matched all
-11 function bodies/access contracts. The web moderator now uses this RPC and
-records deliberate opening, selection, media, filtering, and refresh observations.
-All 33 application tests and synthetic browser checks passed; authenticated live
-acceptance remains pending. Direct report writes can still bypass capture.
-Migrations 001 and 002 are already installed; do not rerun them.
+The two `004_*` files are separate features, not interchangeable migrations.
+Review feature prerequisites and the actual deployed schema; do not run the
+directory blindly in lexical order. Existing deployments must be inspected before
+applying anything again. Do not rerun the RBAC bootstrap to repair sign-in.
 
-## Run the inspection
+## Missing prerequisites
 
-1. Open the Supabase project used by RescuAR.Admin, then **SQL Editor**.
-2. Paste all of `inspect-audit-prerequisites.sql` into a new query and run it.
-3. Copy the complete `audit_schema_report` result, or export the result as CSV.
-4. Review definitions and defaults for credential literals, redact credential
-   values if present, and share the result in the implementation chat.
+The following referenced artifacts are absent from this checkout:
 
-The query reads PostgreSQL catalogs only. It returns table shapes, constraints,
-indexes, RLS policies, grants, triggers, and relevant function definitions. It
-does not read application rows, invoke application RPCs, or change the database.
-Missing expected tables are reported without making the query fail.
+- `migrations/001_web_audit_foundation.sql`
+- `inspect-audit-prerequisites.sql` and `verify-web-audit-foundation.sql`
+- `tests/fixtures/step1-baseline.sql`
+- `tests/inspect-audit-prerequisites.test.mjs` and `tests/web-audit-foundation.test.mjs`
+- `deployed-schema-review.md`, `foundation-deployment-review.md`,
+  `web-audit-foundation.md` and `application-integration.md`
 
-Raw grants and effective role privileges are both included. Effective privileges
-account for role inheritance but do not establish which rows an RLS policy permits.
-The SQL Editor result is a schema review, not a test of actual administrator access.
+Recover the reviewed originals or obtain a documented schema baseline before
+bootstrapping another project. Migration 002 requires `audit_private.events`,
+`audit_private.require_admin()`, `audit_private.append_event(...)` and
+`public.web_admin_access()` with specific contracts/fingerprints. Reconstructing
+them from guesses would not restore the original implementation or its evidence.
+Other existing tables and user-management RPCs also lack a complete bootstrap here.
 
-The supplied report confirms that `admin_roles` has no role column: a matching
-`user_id` establishes membership in the current application. No role assignments
-or resident records are requested.
-The presence of `auth.audit_log_entries` does not establish whether Supabase is
-configured to store Auth logs there. Functions referenced indirectly inside
-PL/pgSQL bodies may require a follow-up inspection after the first report.
+## Current application contracts
 
-## Review task coverage
+The frontend gate uses `rbac_my_access` and `rbac_password_setup_status`; it no
+longer uses the historical `adminSessionGate.js`/`web_admin_access` client gate.
+The older `admin_roles`-based audit/SMS contracts and newer RBAC assignments are
+distinct. A role assignment alone does not prove access through every legacy RPC.
 
-`audit-task-inventory.md` maps the current routes and operations to proposed
-events and their existing execution paths. Capture/acceptance for the remaining
-modules is pending; the foundation has local tests. Local UI interactions, simulations, database changes, and external
-requests require different evidence; the inventory records those distinctions.
+Reports Moderation calls `record_web_audit_event` for deliberate observations and
+`admin_moderate_report` for decisions. The decision RPC changes status and appends
+its audit event atomically when its database prerequisites exist. User operations
+call `get_all_users_with_roles`, `admin_update_user`,
+`admin_toggle_suspend_user` and `admin_delete_user`; their deployed bodies must be
+reviewed before asserting authorization or audit coverage.
 
-The supplied report completes the deployed-schema review in step 1. The task
-inventory records the available execution paths; capture ownership and acceptance
-tests will be assigned during integration. The protected database foundation is
-installed and verified against the supplied catalog report, with remaining access
-gaps tracked in the schema review. The user reported authenticated application
-acceptance of the integrated viewer/access gate completed and validated.
+The `webAuditService.js` client remains in source, but the active System Logs view
+shows static sample entries. There is no active audit-history viewer in `App.jsx`.
+See [audit-task-inventory.md](audit-task-inventory.md) for current execution paths.
 
-## Validate locally
+## Existing-project inspection
 
-Tests use Node's test runner and PGlite 0.5.8 in an ignored validation folder,
-with no changes to the application package or lockfile. From the repository root
-in PowerShell:
+The available [report inspection](inspect-report-moderation-prerequisites.sql)
+and [moderation verification](verify-report-moderation-audit.sql) read catalog
+metadata. They do not establish authenticated application behavior or authorize
+schema changes. Review function definitions for credential literals before sharing
+output, and redact any secret values.
+
+The retained [moderation report](report-moderation-audit.md) records the October 7
+schema/result snapshot and the RPC contract. Its old deployment assertions and
+test counts are historical; do not infer that every environment has migrations
+001/002 installed or still matches those bodies.
+
+## Local verification
+
+Both remaining database test files require missing `step1-baseline.sql` and
+foundation 001; the moderation tests also require the missing foundation
+verification SQL. The suite cannot currently run from this checkout. Installing
+PGlite alone does not fix those missing inputs. Restore and review the complete
+fixture set before documenting a runnable database-test command.
+
+The available frontend service tests are independent of those PostgreSQL fixtures.
+From `RescuAR.Admin/`:
 
 ```powershell
-$auditValidationRoot = Join-Path (Get-Location) 'RescuAR.Admin/node_modules/.cache/rescuar-audit-validation'
-npm install --prefix $auditValidationRoot --cache (Join-Path $auditValidationRoot 'npm-cache') --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
-$env:RESCUAR_AUDIT_VALIDATION_ROOT = $auditValidationRoot
-node --test --test-concurrency=1 RescuAR.Admin/database/tests/inspect-audit-prerequisites.test.mjs RescuAR.Admin/database/tests/web-audit-foundation.test.mjs RescuAR.Admin/database/tests/inspect-report-moderation-prerequisites.test.mjs RescuAR.Admin/database/tests/report-moderation-audit.test.mjs
+node --test tests/reportsModeration.test.mjs
 ```
 
-The tests execute the exact inspection query in read-only transactions against
-empty and representative PostgreSQL fixtures. They verify missing-table handling,
-RLS and privilege discovery, policy/trigger function discovery, overloaded RPCs,
-and preservation of fixture data. This is local query validation; the supplied
-Supabase report separately verifies the deployed catalogs. Foundation tests additionally
-cover real role permissions, handling of broad default grants, atomic mutation
-and audit commits, redaction, retries, history retention, cursor pagination, and
-the metadata verification query. Fixtures contain synthetic records only.
-
-Catalog inspection functions follow the [PostgreSQL documentation](https://www.postgresql.org/docs/current/functions-info.html).
-The local fixture runtime follows the [PGlite documentation](https://pglite.dev/docs/).
+This tests synthetic service/controller behavior, not live Supabase permissions,
+deployed RPCs, concurrent sessions or persistent audit history. Authenticated
+acceptance remains separate from source and catalog verification.

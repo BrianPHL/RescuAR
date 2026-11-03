@@ -1,126 +1,66 @@
 # Web administrative task inventory
 
-Inspected: 2026-10-07. Scope: RescuAR.Admin and its supporting web operations.
-Status: capture catalogue; application acceptance is pending. The deployed
-foundation installs capture in the four user RPCs; its catalog verification is
-recorded in [foundation-deployment-review.md](foundation-deployment-review.md).
-The original schema snapshot is reviewed in
-[deployed-schema-review.md](deployed-schema-review.md).
-The [step 3 application integration](application-integration.md) installs the
-administrator session gate and real audit viewer. Initial live acceptance of
-those features was reported completed and validated by the user on 2026-10-07.
-The Reports Moderation prerequisite and deployment results have been reviewed.
-Migration 002 passed all 13 catalog checks. R01-R03 now use its guarded, atomic
-RPC in the web moderator; deliberate opening, selection, media, applied search,
-and refresh have acknowledged observation capture. Local application/browser
-checks passed; live authenticated acceptance remains pending. See
-[report-moderation-audit.md](report-moderation-audit.md).
+Reviewed against source on 2026-11-03, starting at `dev` revision `d83d797`.
+This replaces the October 7 route inventory. It records source-level call paths,
+not proof of current deployment, complete auditing or successful delivery.
+Database prerequisites and missing historical evidence are listed in
+[README.md](README.md).
 
-## Common task coverage
+## Common capture contract
 
-These tasks apply to each available module. A task has one operation ID, with
-related request/outcome events sharing that ID. Every intentional repetition is
-a new task. A retried request keeps its ID and must not repeat a completed change.
+Intentional module opening, record/media viewing, applied search/filter/sort,
+paging, refresh, drafts/cancellation and analytical controls are potential admin
+tasks. Client-observed actions are distinct from database-confirmed changes and
+provider outcomes. Automatic polling, Realtime updates and rerenders are not new
+intentional tasks. Do not record keystrokes, report contents, passwords, recipient
+messages or raw location data as generic audit metadata.
 
-| ID | Task | Proposed event | Existing path / evidence required |
-| --- | --- | --- | --- |
-| C01 | Open or switch a module | `module.opened` | App/Sidebar navigation; client interaction acknowledged by an authenticated backend, not proof a user read its contents |
-| C02 | Request/list records | `records.listed` | Initial load or explicit request; identify module, query scope and returned count |
-| C03 | Open a record or report media | `record.viewed`, `report.media_opened` | Current selections often use already-loaded browser data; distinguish client-observed viewing from server-provided data access |
-| C04 | Search, filter, sort, or paginate | `records.queried` | Current operations are mainly local; capture applied query state after debounce, without storing sensitive search text |
-| C05 | Manually refresh a module | `module.refreshed` | Link the click to its fetch and confirmed outcome; a visual-only refresh is identified as local |
-| C06 | Begin a draft or apply a template | `draft.opened`, `draft.template_applied` | Current browser state; record draft ID/template ID, not every input keystroke or draft contents |
-| C07 | Cancel a draft, confirmation, or running task | `task.cancelled` | Record cancellation against an operation/draft ID; distinguish abandoning a form from cancelling submitted backend work |
-| C08 | Change analytical/display controls | `analysis.controls_changed` | Station/date range, simulation mode/input, map style, station summary; group a completed interaction and allowlist its parameters |
+Use an operation ID per intentional mutation; retain it only for an identical
+retry. A success event requires a confirmed outcome. Atomic audit requirements,
+durable failures/denials and retry reconciliation must be verified in the owning
+backend, not inferred from a frontend success message.
 
-Client-observed events must be labelled as such. Only verified backend/provider
-outcomes may assert a persisted change, access decision, calculation, or delivery.
-If a browser never reaches the server, the server cannot independently prove that
-interaction. Later integration must define retry/reconciliation behavior rather
-than claim complete capture during a network outage.
+## Current tasks and owners
 
-Automatic polling, Realtime updates, component rerenders, default first-record
-selection, and the audit writer are not additional intentional admin tasks.
-Classify automatic work by source; link work caused by an admin task to its parent
-operation. Viewing an audit event must not recursively generate more view events.
+Paths are relative to `RescuAR.Admin/`. Complete cross-module capture is not
+implemented or established by this inventory.
 
-## Module-specific tasks
+| ID | Task | Current path and capture boundary |
+| --- | --- | --- |
+| A01 | Sign in, restore/check session, sign out | `src/AuthWrapper.jsx`, `src/components/Auth.jsx`, `src/rbac/access.js`, `src/components/Header.jsx`: Supabase Auth, `rbac_my_access`, `rbac_password_setup_status`, local-scope logout. Durable access-decision capture is not established. |
+| A02 | Complete first-login password setup | `src/components/FirstLoginPasswordChange.jsx`, `supabase/functions/rbac-admin-provision/index.ts`, migration 005: server-managed setup; temporary passwords must never enter generic audit metadata. |
+| D01 | View/export dashboard and refresh | `src/components/Dashboard.jsx`: static datasets/activities, browser CSV export and refresh timer. Export generation does not prove a saved download. |
+| M01 | List/refresh/sort stations and change summary | `src/components/MonitoringStations.jsx`: Supabase reads, Realtime and local controls. Age comes from `observed_at`; no general admin audit writer is integrated here. |
+| M02 | View river history and select chart controls | `src/components/RiverLevel.jsx`: station/source reads and `pagasa_river_chart`. Worker/source health and measurement freshness are distinct. |
+| P01 | Choose automatic/manual hazard exposure and request scenario | `src/components/HazardExposure.jsx`, `src/services/prepExposureApi.js`: PREP requests using telemetry context or manual inputs. Missing rules endpoint causes provisional fallback; this is reference exposure, not a live inundation forecast. |
+| R01-R03 | Approve, reject or resolve report | `src/services/reportsModerationController.js`, `src/services/reportsModerationService.js`, migration 002: `admin_moderate_report`, validated receipt and refetch. SQL appends the corresponding `report.approved`/`report.rejected`/`report.resolved` event atomically when prerequisites exist. Live acceptance is unverified here. |
+| R04 | Open moderation, select report/media, apply search or refresh | Same controller/service and `src/services/webAuditService.js`: acknowledged `record_web_audit_event` calls; automatic updates/default selection excluded. |
+| U01 | List/refresh users and select profile | `src/components/UserManagement.jsx`: `get_all_users_with_roles`, Realtime and local selection. The RPC's full baseline is absent; read/audit coverage cannot be inferred. |
+| U02-U04 | Edit, suspend/reactivate or delete user | Same component: `admin_update_user`, `admin_toggle_suspend_user`, `admin_delete_user`. Deployed authorization, suspension enforcement and atomic auditing need backend evidence. |
+| U05 | Notify from user detail form | Same component: browser alert only; no dispatch. |
+| V01-V07 | Create/edit/archive/reactivate/duplicate/delete advisory; copy text | `src/components/Advisories.jsx`, `src/components/Modals.jsx`: direct Supabase writes and local clipboard action; generic atomic audit capture is not established. |
+| E01-E04 | Create/edit centers, upload/attach images, synchronize cache | `src/components/EvacuationCenters.jsx`, `src/utils/cloudinary.js`: local/cache state, Supabase writes and Cloudinary upload. Upload alone does not prove attachment to a persisted center. |
+| H01 | Add hotline | `src/components/EmergencyHotlines.jsx`: direct `emergency_hotlines` insert; additional capture is not established. |
+| S01 | Save system settings | `src/components/SystemSettings.jsx`: local state/success timer; no persisted configuration. |
+| N01 | Run Notify Residents broadcast | `src/components/Modals.jsx`: local progress simulation; SMS/push/siren choices do not dispatch. |
+| L01 | Open System Logs or Documentation | `src/components/SystemLogs.jsx` contains static sample logs; `src/components/Documentation.jsx` describes operation. Neither is an audit-history viewer. |
+| L02 | Open Residents Directory | `src/App.jsx`: placeholder; distinct from active User Management. |
+| B01 | Ingest telemetry | `scraper/syncWorker.js`: initial sync and five-minute schedule, station/history/source-status writes; no admin initiator. |
+| F01 | Read/filter audit history | `src/services/webAuditService.js` retains a `get_web_audit_logs` client, but no active App route renders its viewer. System Logs is not this integration. |
+| F02 | List/queue outbound SMS; handset claim/report | `src/App.jsx` routes SMS Parser to `src/components/SmsOutboundConsole.jsx`; `supabase/functions/sms-gateway/index.ts` and `004_sms_outbound.sql` own the queue. Queuing/carrier submission is not recipient delivery; broader audit capture is unverified. |
+| F03 | Assign/revoke roles, create custom roles | `src/components/RbacAdmins.jsx`: `rbac_set_assignment`, `rbac_create_custom_role`; `004_rbac_foundation.sql` records RBAC changes in `rbac_audit_log`, separate from legacy `audit_private` storage. |
+| F04 | Provision verified administrator | Same component, `rbac-admin-provision` function and migration 005: new account/role and mandatory password setup. Superadmin identity approval and `email_confirm: true` do not prove mailbox ownership. |
+| F05 | Record testing inputs | `src/components/RbacTesting.jsx`: `rbac_log_test`/`rbac_list_tests`, stored test-only inputs; no real river/advisory change. |
 
-The source column names repository-relative paths under `src/`, unless specified.
-The common C01-C08 rows apply where the corresponding controls are available.
+## Access and acceptance boundaries
 
-| ID | Module / task | Proposed event | Current execution path | Source |
-| --- | --- | --- | --- | --- |
-| A01 | Attempt administrator login | `auth.login` | Supabase Auth; server/provider outcome needed, unknown actor on failed authentication | `components/Auth.jsx:16` |
-| A02 | Admit or deny administrator access | `admin.access_checked` | Wrapper verifies membership through `web_admin_access`; user/audit RPCs enforce it. Durable access-decision events remain pending | `AuthWrapper.jsx`; `services/adminSessionGate.js` |
-| A03 | Restore/revalidate a session | `admin.session_checked` | Shared gate verifies restored sessions, Auth events and window focus; initial gate acceptance reported completed, durable decision capture remains pending | `AuthWrapper.jsx`; `services/adminSessionGate.js` |
-| A04 | Sign out | `auth.logout` | Supabase Auth; distinguish explicit user logout from rejection during login | `components/Header.jsx:6` |
-| D01 | Export dashboard analytics | `dashboard.export_requested`, `dashboard.export_generated` | Browser CSV from static data; generation is not proof of a saved download | `components/Dashboard.jsx:539` |
-| D02 | Refresh dashboard | `module.refreshed` | Timer updates displayed time; no data fetch | `components/Dashboard.jsx:530` |
-| M01 | List/refresh monitoring stations; sort or change summary | C02, C04, C05, C08 | Supabase read plus local display controls | `components/MonitoringStations.jsx:42` |
-| M02 | Select river station/date range; refresh readings | C02, C05, C08 | Reads `monitoring_stations` and `river_level_history` | `components/RiverLevel.jsx:98` |
-| P01 | Select live/simulation input and request a prediction | `prediction.requested`, `prediction.completed` | Browser calls configured external endpoint; link input change to request/outcome | `components/InundationPrediction.jsx:157`; `services/prepInundationApi.js:4` |
-| P02 | Run the prediction modal | `prediction.simulation_run` | Local timer and hardcoded output, explicitly simulation | `components/Modals.jsx:433` |
-| R01 | Approve report | `report.approved` | Deployed atomic guarded RPC integrated in web; receipt validation, identical retry and current-state refetch tested locally; live acceptance pending | `services/reportsModerationController.js`; `services/reportsModerationService.js`; `database/migrations/002_report_moderation_audit.sql` |
-| R02 | Reject report | `report.rejected` | Same RPC/integration status; decision reason is not currently collected | `services/reportsModerationController.js`; `database/migrations/002_report_moderation_audit.sql` |
-| R03 | Resolve report | `report.resolved` | Same RPC/integration status | `services/reportsModerationController.js`; `database/migrations/002_report_moderation_audit.sql` |
-| U01 | List/refresh users and review a profile | `users.listed`, C03, C05 | Guarded directory RPC records read/count; local profile selection and intentional refresh still need client capture | `components/UserManagement.jsx:48` |
-| U02 | Edit a user | `user.updated` | Guarded RPC records changed field names and outcome atomically; omitted fields are preserved | `components/UserManagement.jsx:153` |
-| U03 | Suspend/reactivate a user | `user.status_changed` | Guarded RPC audits the profile flag; directory still omits status and enforcement is not established | `components/UserManagement.jsx:119` |
-| U04 | Delete a user | `user.deleted` | Guarded RPC audits successful account deletion atomically; existing membership FK restrictions remain | `components/UserManagement.jsx:137` |
-| U05 | Notify a user | `notification.simulation_run` | Browser alert only; cannot assert actual dispatch | `components/UserManagement.jsx:170` |
-| V01 | Create an advisory | `advisory.created` | Direct insert into `advisories` | `components/Advisories.jsx:319` |
-| V02 | Publish from the advisory modal | `advisory.created` | Separate direct insert; needs the same capture contract as V01 | `components/Modals.jsx:156` |
-| V03 | Edit an advisory | `advisory.updated` | Direct update; capture database before/after | `components/Advisories.jsx:354` |
-| V04 | Archive/reactivate an advisory | `advisory.archived`, `advisory.reactivated` | Direct status update | `components/Advisories.jsx:268` |
-| V05 | Duplicate an advisory | `advisory.duplicated` | Direct insert; record originating advisory ID | `components/Advisories.jsx:282` |
-| V06 | Delete an advisory | `advisory.deleted` | Direct delete after confirmation | `components/Advisories.jsx:257` |
-| V07 | Copy generated advisory text | `advisory.copy_requested` | Clipboard request; current code does not await its result; never log the copied text | `components/Modals.jsx:150` |
-| E01 | Create/edit an evacuation center | `evacuation_center.created`, `evacuation_center.updated` | Local state/cache precedes Supabase write; confirmed outcome must be corrected | `components/EvacuationCenters.jsx:1062` |
-| E02 | Upload an evacuation image | `asset.upload_requested`, `asset.upload_completed` | Cloudinary upload; form upload alone does not attach/publish the image | `components/EvacuationCenters.jsx:756`; `utils/cloudinary.js:12` |
-| E03 | Attach/replace a center image | `evacuation_center.image_changed` | Direct-card upload can issue multiple writes; group under one operation ID | `components/EvacuationCenters.jsx:780` |
-| E04 | Synchronize cached center data | `evacuation_center.cache_sync` | Implicit writes during fetching; original author of cached data is unknown | `components/EvacuationCenters.jsx:898` |
-| H01 | Add an emergency hotline | `hotline.created` | Direct `emergency_hotlines` insert | `components/EmergencyHotlines.jsx:91` |
-| S01 | Submit system configuration | `settings.save_requested` | Local state and success timer; no persisted update or effective configuration evidence | `components/SystemSettings.jsx:9` |
-| N01 | Run broadcast modal | `notification.simulation_run` | Local progress timer; no provider dispatch | `components/Modals.jsx:305` |
-| L01 | Open System Logs or Documentation | `module.opened` | Static screens; report the module interaction accurately | `App.jsx:82` |
-| L02 | Open residents/SMS placeholder | `module.opened` | Active routes display placeholders; no directory access or SMS processing occurs | `App.jsx:67` |
-| B01 | Scheduled telemetry ingestion | `telemetry.sync_completed`, `telemetry.sync_failed` | Service source; history inserts and station upserts, no admin initiator in current code | `scraper/syncWorker.js:332` (outside `src/`) |
+The UI permission map is `src/rbac/access.js`. SMS Parser has no dedicated entry
+there and currently uses the `system.all` fallback. Its backend separately checks
+legacy `admin_roles`; newer RBAC assignments are not equivalent evidence of that
+membership. Reports/user RPCs require their own deployed review.
 
-## Reserved integration points
-
-The [step 2 database foundation](web-audit-foundation.md) is deployed, its supplied
-catalog report is verified, and local tests passed. Its guarded user RPCs capture U01-U04 as
-`users.listed`, `user.updated`, `user.status_changed`, and `user.deleted`.
-The client writer is integrated with audit viewing, details, filters, paging and
-refresh. Reports Moderation also captures its deliberate module/selection/media/
-search/refresh interactions and routes R01-R03 through the deployed RPC. Its live
-acceptance and wiring/acceptance of other task rows remain pending. Other mutation
-paths and durable failed/denied capture are not implemented by this foundation.
-
-These rows track the audit viewer and capabilities that still require integration.
-
-| ID | Capability | Proposed event | Current status |
-| --- | --- | --- | --- |
-| F01 | Read/filter/refresh/export audit history | `audit.viewed`, `audit.queried`, `audit.refreshed`, `audit.export_generated` | Viewer has observation capture, server filters, cursor paging and a right-side selection panel; initial viewer acceptance reported completed, export remains pending |
-| F02 | Use the full SMS console | `sms.parsed`, `notification.dispatch_requested`, provider outcome events | Component exists with native/provider/simulation paths, but active route is a placeholder |
-| F03 | Assign/revoke administrative permission | `user.permissions_changed` | No current role-management action found; schema review must identify deployed permission writers |
-| F04 | Edit/delete hotlines; persist settings; real notifications | Domain action and confirmed outcome | No active backend path for these operations was found |
-| F05 | Self-registration or alternate login | Auth/provider event | Login/Register components exist but AuthWrapper uses Auth; registration is not an active admin route |
-
-## Verification gates
-
-- [x] Supplied deployed table shapes and status/membership contracts reviewed.
-- [x] Supplied RLS, effective grants and privileged RPC bodies reviewed; access gaps documented.
-- [x] Original snapshot had no application capture; foundation v1 deployed catalog verified.
-- [ ] Live authenticated acceptance of user RPC capture and application access verified.
-- [ ] Deployed permission-writer paths and Auth log storage configuration confirmed.
-- [ ] Each C/A/D/M/P/R/U/V/E/H/S/N/L/B/F task row assigned a capture owner and test, as applicable.
-- [ ] Client-observed, backend-confirmed, simulated and service events distinguishable.
-- [ ] Common outcome vocabulary agreed: requested, succeeded, failed, denied, cancelled, no-change, pending/unknown, simulated.
-- [ ] Failed/denied capture can survive a rolled-back business transaction.
-- [ ] Shared database contracts, sensitive fields, deleted identities and retries accounted for.
-
-Successful database mutations must commit with their audit evidence. All related
-events share an operation ID; an operation may contain multiple affected records.
-Keep requested/outcome phases explicit without duplicating the same success event.
+Before claiming complete audit coverage, establish current deployed bodies,
+each task's capture owner, explicit requested/succeeded/failed/denied/cancelled/
+unknown/simulated outcomes, atomic mutation/history behavior, and retry/privacy
+rules. A static log screen, database fixture or old catalogue report cannot prove
+authenticated acceptance of those contracts.

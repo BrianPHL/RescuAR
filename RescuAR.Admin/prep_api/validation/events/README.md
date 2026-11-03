@@ -32,6 +32,10 @@ One row represents one independently sourced historical flood event or event ref
 - `ulysses_2020`: current NAMRIA-derived citywide validation reference.
 - `ondoy_2009_tumana`: Espina historical source map for Tumana; digitization pending.
 - `monsoon_2013_tumana`: Espina historical source map for Tumana; digitization pending.
+- Five MCDRRMO source-only events: Carina 2024, Falcon 2011, Crising/Habagat
+  2025, Maymay August 9–10 2026, and Southwest Monsoon August 17 2026. These
+  remain `reference_only` with source/georeference/QC work pending; see
+  [the intake rules](../MCDRRMO_EVENT_INTEGRATION.md).
 
 The Espina maps are intentionally registered as `reference_only` until their embedded figures are georeferenced, digitized, and QC-checked. The Marikina City Ecological Profile contributes contextual population, household, density, topographic, river, and hazard-inventory information; it does **not** replace an observed flood polygon.
 

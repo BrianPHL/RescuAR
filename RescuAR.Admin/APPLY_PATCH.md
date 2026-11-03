@@ -1,5 +1,10 @@
 # RescuAR RBAC / Authentication Logout Fix (26 Oct 2026)
 
+Historical ZIP instructions. The current source already includes these changes;
+the `rbac_auth_fix_patch/payload` layout referenced below is absent. Do not run
+the retained installer against this checkout. Use [README.md](README.md) for
+current setup; old test/deployment statements apply to the original snapshot.
+
 ## Scope
 
 This is a **small patch based on the exact uploaded `RescuAR.Admin(20261026-045113).zip` snapshot**. It does not modify Supabase SQL, telemetry, PREP exposure calculations, RBAC roles, or Vite environment variables.

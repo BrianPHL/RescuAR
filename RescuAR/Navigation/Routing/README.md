@@ -78,15 +78,21 @@ loop. Shared background/map navigation is a separate change.
 
 ## Validation
 
+Use the [current field procedure](../../../docs/field-testing/README.md) for
+candidate packaging, current registration/Depth policy and the two-device walk
+matrix. Earlier batch reports describe their own revisions. Select relevant host
+checks rather than treating a full regression run as required for every edit.
+
 From the repository root:
 
 ```powershell
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 python tests/routing-bundle-checks.py
 ./build/Verify-ARCoreReleaseReadiness.ps1
 ```
 
-Repeat the three field walks with full-session logs after installing the rebuilt
+For routing-bundle changes, run the Python check with Python 3.11+ available.
+Repeat the relevant field walks with full-session logs after installing the rebuilt
 app. Record app and server data identities, route result, GPS match, AR hold reason
 and arrival decision. Host checks do not verify device placement, mapped coverage
 or the deployed server.

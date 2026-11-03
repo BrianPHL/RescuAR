@@ -2,6 +2,10 @@
 
 This records the earlier `af8826eb` candidate. The subsequent field capture confirms remaining failures on that APK; see [the Samsung/Honor follow-up](2026-11-02-samsung-honor-cadence-recovery.md) for the later diagnosis and replacement candidate.
 
+The two-observation startup requirement and install/retest instructions below
+belong to that earlier APK. They are not the current Camera policy or candidate
+selection procedure. Use the [current field procedure](README.md).
+
 Base: `dev` at `9a48b90`. Changes affect shared AR heading recovery and the Camera 2D position marker. Neither routing algorithm nor its route geometry is changed.
 
 ## Recording evidence

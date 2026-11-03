@@ -1,6 +1,11 @@
-# RescuAR outbound SMS — Android SIM gateway (implementation patch)
+# RescuAR outbound SMS — Android SIM gateway setup
 
-## Files modified
+Source reviewed on 2026-11-03. Queue, function and handset source are integrated
+in this repository; deployment and carrier/device acceptance are separate.
+The general Notify Residents modal is a simulation and does not use this queue.
+The SMS Parser App route opens the real queue console where access is permitted.
+
+## Components
 - src/App.jsx: replaces SMS Parser placeholder with outbound SMS composer
 - src/components/SmsOutboundConsole.jsx + CSS: admin composer, registered-user picker, queue history
 - database/migrations/004_sms_outbound.sql: protected outbox and atomic queue claim RPC
@@ -8,7 +13,7 @@
 - android-sms-gateway/: Android Studio source for Android phone SIM sender
 
 ## Set up backend FIRST
-1. Run `database/migrations/004_sms_outbound.sql` in your existing Supabase SQL Editor.
+1. Review [database prerequisites](database/README.md) and the actual deployed schema. For an existing project missing this feature, apply `database/migrations/004_sms_outbound.sql` after confirming its prerequisites; do not blindly rerun migrations on an already configured project.
 2. Confirm your existing `public.admin_roles` and `public.get_all_users_with_roles()` function are present. This implementation assumes its rows include `id, phone_number, status, first_name, last_name`; the RPC is already used by `UserManagement.jsx`. Back-end strictly limits recipients to active registered phone numbers; verify your real onboarding consent policy before production.
 3. Generate a high-entropy gateway secret (at least 32 random bytes). Never place it in a `VITE_*` variable, browser, repository, or published docs.
 4. Set Supabase Edge Function secrets `SMS_GATEWAY_KEY` and `SMS_ADMIN_ORIGIN=https://your-admin-site.example` (no trailing slash). Deploy the `sms-gateway` function with *JWT verification disabled*, because the function performs separate device-key authorization and uses `auth.getUser()` for real admin JWT validation.
@@ -23,6 +28,19 @@
 3. Enter URL `https://<your-project-ref>.supabase.co/functions/v1/sms-gateway`, generated `SMS_GATEWAY_KEY`, and device ID `rescuar-gateway-01`. Press Start SMS gateway.
 4. Keep the phone on charge, exclude the app from battery optimization, and monitor the foreground notification. Android OS may still throttle or stop the gateway; on newer Android versions foreground data-sync services have execution limits. This is a prototype gateway, not guaranteed 24x7 delivery.
 5. In RescuAR.Admin > Community Management > SMS Parser (now outbound), pick an active registered user, enter a **one-segment** SMS, confirm, and queue. Refresh history; it should move queued -> claimed -> sent/failed/unknown.
+
+## Build the handset APK with GitHub Actions
+
+The existing [workflow](../.github/workflows/build-sms-gateway.yml) builds
+`RescuAR.Admin/android-sms-gateway/` using Java 17, Android SDK 35 and Gradle 8.9.
+It runs on pushes to `dev` and manual dispatch; it has no file-path filter.
+No patch extraction, workflow copy or repository-root gateway folder is required.
+
+In GitHub Actions, select **Build RescuAR SMS Gateway APK**, run it on the intended
+revision if needed, and download `RescuAR-SMS-Gateway-debug-APK` from a successful
+run. Its `app-debug.apk` is a debug handset package, not a MAUI app or production
+release. Record the run/revision and artifact hash before device testing. Workflow
+source alone does not prove a successful build or device operation.
 
 ## Important limitations and safety
 - `sent` means Android reports a successful SMS submission to the network, **not confirmed recipient delivery**. The gateway does not request carrier delivery receipts.
@@ -50,6 +68,6 @@
 - [ ] Test real Android 13/14/15 permissions, notifications, and background restrictions
 
 ## Deployment notes
-- Current patch has not been verified by a full Vite build or Android APK compilation in this environment.
+- Consult evidence for the exact frontend build, gateway APK and deployed function. This documentation update does not establish hosted configuration, handset operation or recipient delivery.
 - Only authorized staff should hold admin credentials. Limit access to the handset and its stored gateway key.
 - The SMS gateway uses a separate Android project, not RescuAR.MAUI. It must be installed on the SIM-equipped device.
