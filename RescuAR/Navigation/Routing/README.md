@@ -95,6 +95,14 @@ Otherwise normal acquisition applies. Acceptance seeds the new route's own
 position/progress and attempts publication immediately; it does not wait solely
 for the next GPS callback. No synthetic GPS or arrival evidence is created.
 
+Ground-anchor refinement monitors both horizontal movement and sustained yaw
+change in the same ground reference. A qualified correction invalidates the
+old world registration and requests heading/registration requalification; it
+does not infer geographic north from an anchor rotation. While a correction is
+pending, current-frame tracked motion may collect recovery evidence, but route
+publication stays held until the normal recovery requirements pass. Initial GPS
+bias and absolute compass error still require physical field measurements.
+
 The Android draw loop skips presentation when the camera background is absent,
 stale or from a different render generation. It never samples the single camera
 target during an unfinished conversion. Brief gaps retain the last presentation;
@@ -124,6 +132,7 @@ From the repository root:
 ```powershell
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
 python tests/routing-bundle-checks.py
 ./build/Verify-ARCoreReleaseReadiness.ps1
 ```

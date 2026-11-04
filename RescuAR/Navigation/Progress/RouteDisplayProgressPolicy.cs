@@ -344,7 +344,13 @@ public sealed class RouteDisplayProgressPolicy
         var estimated = new GeoCoordinate(mapPoint.Latitude + north / 6371008.8 * 180 / Math.PI,
             mapPoint.Longitude + east / (6371008.8 * Math.Cos(mapPoint.Latitude * Math.PI / 180)) * 180 / Math.PI);
         double best = double.PositiveInfinity, progress = 0;
-        for (int i = 0; i < route.Points.Count - 1; i++)
+        // Only this continuous progress interval is eligible. Locate its first
+        // segment without rescanning an entire retained route on every pose.
+        double minimumProgress = previousProgress - MaximumPdrAdvanceMeters;
+        double maximumProgress = previousProgress + MaximumPdrAdvanceMeters;
+        int firstSegment = Math.Max(0, RouteDistanceIndex.AtOrAfter(route.Points, minimumProgress) - 1);
+        for (int i = firstSegment; i < route.Points.Count - 1 &&
+             route.Points[i].DistanceFromStartMeters <= maximumProgress; i++)
         {
             var a = route.Points[i]; var b = route.Points[i + 1];
             double span = b.DistanceFromStartMeters - a.DistanceFromStartMeters;
@@ -400,7 +406,8 @@ public sealed class RouteDisplayProgressPolicy
             progress > route.Points[^1].DistanceFromStartMeters + 0.01) return false;
         progress = Math.Clamp(progress, route.Points[0].DistanceFromStartMeters,
             route.Points[^1].DistanceFromStartMeters);
-        for (int i = 0; i < route.Points.Count - 1; i++)
+        int firstSegment = Math.Max(0, RouteDistanceIndex.AtOrAfter(route.Points, progress) - 1);
+        for (int i = firstSegment; i < route.Points.Count - 1; i++)
         {
             var start = route.Points[i];
             var end = route.Points[i + 1];

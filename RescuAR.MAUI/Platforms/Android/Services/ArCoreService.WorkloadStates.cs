@@ -11,7 +11,7 @@ namespace RescuAR.MAUI.Platforms.Android.Services;
 public sealed partial class ArCoreService
 {
     private bool planeFindingEnabled = true;
-    private string? lastWorkloadStateLog;
+    private WorkloadDemandSnapshot? lastWorkloadDemand;
 
     private void LogCurrentWorkloadDemand()
     {
@@ -20,15 +20,22 @@ public sealed partial class ArCoreService
         bool routeOcclusionRequired = ARRouteRenderer.DepthOcclusionRequested &&
             powerThermalDecision.RouteDepthAllowed && route.IsAvailable &&
             ARRouteVisualPolicy.HasNearbyRoute(route.Points);
+        var demand = new WorkloadDemandSnapshot(planeFindingEnabled,
+            depthModeEnabled, depthExperimentMode, groundDepthRequested,
+            flood.IsAvailable, routeOcclusionRequired);
+        if (lastWorkloadDemand == demand) return;
+        lastWorkloadDemand = demand;
         string state =
             $"planeFinding={(planeFindingEnabled ? "ACTIVE" : "SUSPENDED")}, " +
             $"depth={(depthModeEnabled ? "ACTIVE" : "SUSPENDED")}, " +
             $"experimentMode={depthExperimentMode}, " +
             $"groundSearch={groundDepthRequested}, floodDepth={flood.IsAvailable}, " +
             $"routeOcclusion={routeOcclusionRequired}, configuration=SESSION_STABLE";
-        if (state == lastWorkloadStateLog) return;
-        lastWorkloadStateLog = state;
         if (!depthModeEnabled) ARDepthOcclusionBridge.Clear();
         Log.Info(Tag, "AR WORKLOAD STATE: " + state);
     }
+
+    private readonly record struct WorkloadDemandSnapshot(bool PlaneFinding,
+        bool Depth, string ExperimentMode, bool GroundSearch, bool FloodDepth,
+        bool RouteOcclusion);
 }

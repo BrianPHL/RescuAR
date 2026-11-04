@@ -17,6 +17,25 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--ar-audit"))
+{
+    ARWorldCorrectionChecks.Run(Check);
+    ARDepthImageDecoderChecks.Run(Check);
+    RouteDistanceLookupChecks.Run(Check);
+    ARRegistrationChecks.Run(Check);
+    MldRibbonRegistrationChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    NavigationStabilityChecks.Run(Check);
+    await ARHeadingSensorReferenceChecks.RunAsync(Check);
+    await ARHeadingRecoveryChecks.RunAsync(Check);
+    await AStarHeadingRecoveryChecks.RunAsync(Check);
+    await MldHeadingRecoveryChecks.RunAsync(Check);
+    await AStarRouteDisplayChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    await MldRoutingChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} AR audit, route lookup, depth, registration and recovery checks passed.");
+    return;
+}
 if (args.Contains("--offline-handoff"))
 {
     await OfflineHandoffChecks.RunAsync(Check);

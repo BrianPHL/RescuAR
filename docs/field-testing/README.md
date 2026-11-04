@@ -1,7 +1,9 @@
 # Current Android field procedure
 
 Aligned with source on 2026-11-04, starting at `dev` revision `cb8c760` plus the
-offline-handoff changes recorded in [the change record](../changes/2026-11-04-offline-route-handoff.md).
+offline-handoff changes recorded in [the handoff record](../changes/2026-11-04-offline-route-handoff.md)
+and the [alignment/performance audit](../changes/2026-11-04-ar-alignment-performance-audit.md),
+which starts at `62bda12`.
 This is the current procedure. Dated reports retain their own candidate results;
 none establishes acceptance of a later build.
 
@@ -75,6 +77,7 @@ For GPS/AR cadence and recovery changes, use:
 ```powershell
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
 ```
 
 Select different focused checks for other changes. A host check or successful APK
@@ -93,7 +96,11 @@ a matching screen recording and logs for each trial.
    identifies the missing input. Check AR recovery once qualified inputs return.
 3. Switch AR → 2D → AR and stop/restart guidance. Expect accepted-route continuity,
    visible measured/aged position and frame requalification. Also test background/
-   resume and a brief tracking interruption.
+   resume and a brief tracking interruption. After a world correction, expect old
+   geometry to stay hidden until heading/registration qualify in the corrected
+   frame, then recover without a permanent heading-evidence reset loop. Record
+   rotation-related corrections separately from horizontal anchor movement;
+   turning the phone alone must not be interpreted as an anchor correction.
 4. Make a safe permitted deviation. For MLD, distinguish a replacement request from
    accepted replacement geometry. Record origin/destination and observed detour in
    consented field evidence, not public issue text.
@@ -130,6 +137,12 @@ time and relevant location/heading/registration/quality log messages. Measure
 placement at known street/sidewalk references; GPS/compass consistency alone does
 not establish surveyed alignment. Sustained useful AR, recovery-time/visibility
 and placement targets remain unverified without those measurements.
+
+For performance comparisons, retain the same APK/profile, route, Depth mode and
+device conditions. Record camera gaps, frame-time distribution, managed allocation/
+GC rate and thermal state; distinguish native import/conversion waits from route
+projection and UI work. Source operation-count checks establish bounded lookup
+work, not device FPS, battery savings or a measured Vulkan bottleneck.
 
 Report actual results and matching evidence before further behavior-dependent
 fixes. The [finding matrix](../../ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md)

@@ -10941,15 +10941,14 @@ namespace RescuAR.App.Views.Camera
 
         /// <summary>
         /// Re-publishes the CURRENT short route window after ARCore performs a
-        /// sustained, multi-meter world/Anchor correction while the existing
+        /// sustained positional or rotational world/Anchor correction while the existing
         /// V5 route root is still locked to the previous X/Z frame.
         ///
         /// Unlike replacement-anchor recovery, this intentionally does NOT
         /// preserve the old route-world start. The old world coordinates are
-        /// exactly what ARCore has just corrected. Instead, the retained route
-        /// progress is projected again and shifted by the CURRENT
-        /// camera-to-anchor offset so the cyan guidance is immediately placed
-        /// back near the user in the corrected AR frame.
+        /// exactly what ARCore has just corrected. The retained route progress
+        /// is projected only after heading and geographic registration qualify
+        /// in the corrected frame; a camera offset cannot establish that alignment.
         /// </summary>
         private bool TryRebaseRouteAfterWorldCorrection(
             ARCameraPoseBridge.SpatialSnapshot spatial,
@@ -11026,8 +11025,8 @@ namespace RescuAR.App.Views.Camera
                 Log.Warn(
                     "RescuAR-AnchorRecovery",
                     "Large-world-correction rebase could not publish a usable " +
-                    "replacement route window. The existing route remains visible " +
-                    "and the request will retry while spatial tracking is healthy.");
+                    "replacement route window. AR placement remains hidden until " +
+                    "corrected-frame heading and registration qualify; recovery will retry.");
 
                 return false;
             }
@@ -11660,7 +11659,8 @@ namespace RescuAR.App.Views.Camera
                 // Unlike an ordinary floor handoff, this changes the frame in
                 // which the walking displacement was measured. Reset before
                 // acknowledging the correction, including superseded requests.
-                lock (routeProgressFusionSync) _headingRevalidationPolicy.Reset("AR world correction");
+                ObserveWorldCorrectionHeadingEvidence(spatial.Generation.SessionGeneration,
+                    worldCorrectionRequest.Generation);
                 ARRouteBridge.RouteSnapshot correctionRoute =
                     ARRouteBridge.Current;
 

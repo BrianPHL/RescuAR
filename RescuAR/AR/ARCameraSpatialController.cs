@@ -129,6 +129,8 @@ public static class ARCameraSpatialController
     private static long lastWorldCorrectionRequestedRouteVersion =
         -1;
 
+    private static readonly ARAnchorYawCorrectionPolicy anchorYawCorrections = new();
+
     private static long worldCorrectionRequestGeneration;
 
     public static long WorldFrameGeneration { get { lock (sync) return worldCorrectionRequestGeneration; } }
@@ -428,6 +430,8 @@ public static class ARCameraSpatialController
             worldCorrectionRequestGeneration =
                 0;
 
+            anchorYawCorrections.Reset();
+
             pendingWorldCorrectionRequest =
                 RouteWorldCorrectionRequest.Unavailable;
 
@@ -531,6 +535,7 @@ public static class ARCameraSpatialController
             appliedVersion = -1;
             appliedGroundReferenceGeneration = -1;
             routeRootHorizontalLocked = false;
+            anchorYawCorrections.Reset();
             hasValidRouteSpatialPlacement = false;
             pendingWorldCorrectionRequest =
                 RouteWorldCorrectionRequest.Unavailable;
@@ -615,6 +620,8 @@ public static class ARCameraSpatialController
 
             appliedGroundReferenceGeneration =
                 -1;
+
+            anchorYawCorrections.Reset();
 
             lastLoggedAnchorDriftBucket =
                 -1;
@@ -1029,6 +1036,11 @@ public static class ARCameraSpatialController
             routeRootHorizontalLocked =
                 true;
 
+            lock (sync)
+                anchorYawCorrections.SeedReference(frame.Generation.SessionGeneration,
+                    anchor.ReferenceGeneration, placement.AnchorRotation ??
+                        (anchor.HasRotation ? anchor.Rotation : null));
+
             lastLoggedAnchorDriftBucket =
                 -1;
 
@@ -1060,8 +1072,7 @@ public static class ARCameraSpatialController
         {
             MonitorRouteAnchorRefinement(
                 rendererRouteVersion,
-                frame.Version,
-                anchor);
+                frame);
         }
 
         bool routeAlignmentCorrectionPending;
@@ -1342,9 +1353,17 @@ public static class ARCameraSpatialController
 
     private static void MonitorRouteAnchorRefinement(
         long routeVersion,
-        long spatialVersion,
-        ARCameraPoseBridge.AnchorSnapshot anchor)
+        ARCameraPoseBridge.SpatialSnapshot frame)
     {
+        var anchor = frame.Anchor;
+        long spatialVersion = frame.Version;
+        long now = Environment.TickCount64;
+        bool yawCorrection;
+        float yawDriftDegrees;
+        lock (sync)
+            yawCorrection = anchorYawCorrections.Observe(frame.Generation.SessionGeneration,
+                anchor.ReferenceGeneration, frame.FrameTimestamp, now,
+                anchor.HasRotation ? anchor.Rotation : null, out yawDriftDegrees);
         float driftX =
             anchor.PositionX -
             lockedRouteRootX;
@@ -1385,7 +1404,7 @@ public static class ARCameraSpatialController
                 $"anchorDrift={horizontalAnchorDrift:F2} m");
         }
 
-        if (horizontalAnchorDrift <
+        if (!yawCorrection && horizontalAnchorDrift <
             LargeRouteWorldCorrectionThresholdMeters)
         {
             largeRouteWorldCorrectionCandidateStartedTimestamp =
@@ -1397,13 +1416,10 @@ public static class ARCameraSpatialController
             return;
         }
 
-        long now =
-            Environment.TickCount64;
-
-        if (largeRouteWorldCorrectionCandidateRouteVersion !=
+        if (!yawCorrection && (largeRouteWorldCorrectionCandidateRouteVersion !=
                 routeVersion ||
             largeRouteWorldCorrectionCandidateStartedTimestamp ==
-                long.MinValue)
+                long.MinValue))
         {
             largeRouteWorldCorrectionCandidateRouteVersion =
                 routeVersion;
@@ -1425,7 +1441,7 @@ public static class ARCameraSpatialController
 
         if (lastWorldCorrectionRequestedRouteVersion ==
                 routeVersion ||
-            now -
+            !yawCorrection && now -
                 largeRouteWorldCorrectionCandidateStartedTimestamp <
                 LargeRouteWorldCorrectionConfirmationMilliseconds)
         {
@@ -1451,7 +1467,8 @@ public static class ARCameraSpatialController
                     lockedRouteRootX,
                     lockedRouteRootZ,
                     anchor.PositionX,
-                    anchor.PositionZ);
+                    anchor.PositionZ,
+                    yawCorrection ? yawDriftDegrees : 0);
         }
 
         lastWorldCorrectionRequestedRouteVersion =
@@ -1465,7 +1482,7 @@ public static class ARCameraSpatialController
             $"spatialVersion={spatialVersion}, " +
             $"lockedRoot=({lockedRouteRootX:F2},{lockedRouteRootZ:F2}), " +
             $"liveAnchor=({anchor.PositionX:F2},{anchor.PositionZ:F2}), " +
-            $"anchorDrift={horizontalAnchorDrift:F2} m. " +
+            $"anchorDrift={horizontalAnchorDrift:F2} m; yawDrift={yawDriftDegrees:F2} deg. " +
             "Requesting immediate current-window republish; the route is hidden " +
             "until the corrected replacement version is ready.");
     }
@@ -1606,7 +1623,8 @@ public static class ARCameraSpatialController
             float lockedRootX,
             float lockedRootZ,
             float liveAnchorX,
-            float liveAnchorZ)
+            float liveAnchorZ,
+            float anchorYawDriftDegrees = 0)
         {
             Generation =
                 generation;
@@ -1634,6 +1652,8 @@ public static class ARCameraSpatialController
 
             LiveAnchorZ =
                 liveAnchorZ;
+
+            AnchorYawDriftDegrees = anchorYawDriftDegrees;
         }
 
         public long Generation { get; }
@@ -1645,6 +1665,13 @@ public static class ARCameraSpatialController
         public float LockedRootZ { get; }
         public float LiveAnchorX { get; }
         public float LiveAnchorZ { get; }
+        public float AnchorYawDriftDegrees { get; }
+
+        // A pending request rejects the old frame, not observations acquired
+        // after that frame was invalidated. Their independently qualified
+        // heading/registration may publish a replacement and finish recovery.
+        public bool AcceptsRequalificationFrame(long worldFrame, long spatialVersion) =>
+            !IsPending || worldFrame == Generation && spatialVersion > SpatialVersion;
     }
 
     private static SpatialContinuitySnapshot UpdateSpatialContinuityState(
