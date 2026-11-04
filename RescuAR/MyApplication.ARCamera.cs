@@ -46,6 +46,9 @@ public partial class MyApplication
         bool skipEvergineDraw =
             ARCameraTextureBridge.ProcessDrawThreadWork(
                 drawGraphicsGeneration);
+        var camera = ARCameraTextureBridge.Current;
+        skipEvergineDraw |= !ARCameraPresentationPolicy.CanPresent(drawGraphicsGeneration,
+            camera.Metadata, camera.Texture is not null, Environment.TickCount64);
         WasArDrawSkipped = skipEvergineDraw;
 
         /*
@@ -68,6 +71,8 @@ public partial class MyApplication
 
             base.DrawFrame(
                 gameTime);
+            if (drawGraphicsGeneration > 0)
+                ARCameraPresentationPolicy.RecordPresented(camera.Metadata, Environment.TickCount64);
         }
         finally
         {

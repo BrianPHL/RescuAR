@@ -1,6 +1,7 @@
 # Current Android field procedure
 
-Aligned with source on 2026-11-03, starting at `dev` revision `d83d797`.
+Aligned with source on 2026-11-04, starting at `dev` revision `cb8c760` plus the
+offline-handoff changes recorded in [the change record](../changes/2026-11-04-offline-route-handoff.md).
 This is the current procedure. Dated reports retain their own candidate results;
 none establishes acceptance of a later build.
 
@@ -48,13 +49,21 @@ package must explicitly use `RescuArDiagnosticBuild=false` and be checked with
   observation's freshness requirement. Pin overlap alone is not entry evidence.
 - Live tracked visual continuity is bounded by time, distance and frame/route
   ownership; it does not create geographic progress or arrival evidence.
+- Network loss switches the controller label to `A-STAR · saved MLD path`,
+  preserving the downloaded route and placement until a validated replacement.
+  Saved geometry expires after five minutes; confirmed deviation/hazard can
+  require an earlier replacement. Fresh position and normal safety checks still
+  gate acceptance. Reconnection does not automatically switch this trip back.
+- Missing camera background blocks scene presentation. Brief conversion gaps
+  must not reveal a skybox; sustained interruption shows camera recovery and
+  eventually offers 2D Map. No route change intentionally restarts ARCore.
 - Diagnostic logging does not bypass Depth crash protections. SM-A546E/API 34
   and SM-A546E or SM-A156E/API 36+ retain the baseline quarantine. A controlled
   diagnostic experiment requires `rescuar.arcore.force_depth_on`; explicit
   `force_depth_off` takes precedence. Route-depth occlusion is separately opt-in.
 
 The [November 2 cadence recovery report](2026-11-02-samsung-honor-cadence-recovery.md)
-records the latest source change and prior local candidate evidence. The earlier
+records the prior cadence change and its local candidate evidence. The earlier
 [device reliability](2026-11-02-device-reliability.md) and
 [route regression](2026-11-02-ar-route-regression.md) reports describe superseded
 startup candidates. Their field targets remain targets, not verified results.
@@ -65,6 +74,7 @@ For GPS/AR cadence and recovery changes, use:
 
 ```powershell
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
 ```
 
 Select different focused checks for other changes. A host check or successful APK
@@ -92,6 +102,14 @@ a matching screen recording and logs for each trial.
    or the existing user-arrival option when eligible.
 6. Retest camera entry/exit, ground and flood features with baseline Depth policy.
    Record any separate Depth/occlusion experiment as a different configuration.
+7. Start online MLD, then disable **all** internet transports while staying on the
+   route. Expect `A-STAR · saved MLD path` promptly after Android reports the loss,
+   unchanged saved geometry/progress, and no handoff-triggered camera restart.
+   Continue beyond five minutes: expect background local refresh with fresh GPS,
+   retained safe guidance if refresh fails, and qualified placement continuity.
+   Separately test a safe deviation before expiry and reconnect during the trip;
+   both must retain local controller ownership. Record actual placement, camera
+   gaps and recovery messages; host checks do not establish these results.
 
 After a trial, collect existing device evidence from the repository root:
 

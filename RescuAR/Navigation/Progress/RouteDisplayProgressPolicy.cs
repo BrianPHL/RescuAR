@@ -78,6 +78,44 @@ public sealed class RouteDisplayProgressPolicy
         committedAtGps = update.CommittedProgressMeters;
     }
 
+    /// <summary>A new polyline does not create a new AR world. Carry only the
+    /// qualified geographic transform, never old progress or pending corrections.
+    /// Failure leaves the previous route's registration untouched.</summary>
+    public bool TryTransferRegistration(RouteResult previous, RouteResult replacement,
+        RouteProgressTracker.RouteProgressUpdate update, DateTimeOffset at, DateTimeOffset now,
+        RouteBacktrackingPolicy.TrackedMotion acquisitionMotion)
+    {
+        if (!ReferenceEquals(currentRoute, previous) || registration is not { } retained ||
+            !TryResolveGps(replacement, update, out var position) || now < at ||
+            now - at > TimeSpan.FromSeconds(3) || !acquisitionMotion.IsValid ||
+            !TryGetRegisteredReference(previous, update.GpsCoordinate, now, acquisitionMotion,
+                out _, frameRequalificationLifetime) ||
+            RegistrationResidual(retained, new(update.GpsCoordinate, update.AccuracyMeters!.Value, at,
+                acquisitionMotion)) > retained.Accuracy + update.AccuracyMeters.Value +
+                    RoutePositionObservationPolicy.MotionAllowanceMeters)
+            return false;
+
+        var supportedAt = registrationSupportedAt;
+        var lastObservation = lastRegistrationObservation;
+        Reset();
+        ObserveGps(replacement, update, at);
+        registration = retained;
+        registrationSupportedAt = supportedAt;
+        lastRegistrationObservation = lastObservation;
+        trackedDisplayProgress = position.ProgressMeters;
+        lastDisplayMotion = acquisitionMotion;
+        LastRegistrationDecision = new("ROUTE_REFERENCE_RETAINED", 0, false);
+        return true;
+    }
+
+    public bool CanRetainRoadEntry(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
+        DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion motion) =>
+        RouteCorridorPolicy.CanEnterRoadFollowing(update.IsAccepted, update.IsOffRoute,
+            update.CrossTrackErrorMeters, update.CorridorRadiusMeters, update.MatchConfidence, update.AccuracyMeters) &&
+        TryGetRegisteredDisplayPosition(route, now, motion, out var tracked) &&
+        tracked.RoadCoordinate.DistanceTo(tracked.AlignmentCoordinate) <=
+            RouteCorridorPolicy.GetRoadFollowingEntryRadiusMeters(update.CorridorRadiusMeters);
+
     public bool TryResolvePdr(RouteResult route, double committedProgress, DateTimeOffset now,
         out DisplayPosition position)
     {

@@ -109,7 +109,7 @@ public partial class CameraPage
             string hazardStatus = hazardUpdated is not { } at ? "Hazard data unavailable"
                 : Connectivity.Current.NetworkAccess == NetworkAccess.Internet && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(15)
                     ? $"Known hazards updated {at.ToLocalTime():HH:mm}" : $"Saved hazards · {at.ToLocalTime():MMM d, HH:mm}";
-            mapRouteStatsLabel.Text = $"{NavigationRecoveryPolicy.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
+            mapRouteStatsLabel.Text = $"{offlineRouteHandoff.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
             if (GetCameraMapLocationMarker() is { } marker)
                 mapRouteStatsLabel.Text += $"\n{marker.Label}";
         }

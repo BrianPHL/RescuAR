@@ -17,6 +17,20 @@ void Check(bool condition, string name)
     passed++;
     Console.WriteLine($"PASS: {name}");
 }
+if (args.Contains("--offline-handoff"))
+{
+    await OfflineHandoffChecks.RunAsync(Check);
+    ARCameraPresentationChecks.Run(Check);
+    CameraStartupChecks.Run(Check);
+    SurfaceResizeChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    ARRegistrationChecks.Run(Check);
+    await MldRoutingChecks.RunAsync(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    await SharedCameraRoutingChecks.RunAsync(Check);
+    Console.WriteLine($"{passed} offline handoff, registration, camera and provider preservation checks passed.");
+    return;
+}
 if (args.Contains("--field-cadence"))
 {
     FieldCadenceRecoveryChecks.Run(Check);

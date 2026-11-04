@@ -28,13 +28,15 @@ public partial class CameraPage
             lifecycle.State == ArCoreLifecycleState.Running && !_arCoreService.IsSessionPaused,
             texture.Texture is not null && texture.Generation == generation,
             new CameraStartupRun(generation.SessionGeneration, generation.GraphicsGeneration),
-            TimeSpan.FromMilliseconds(cameraStartupWaitingSince.HasValue ? Math.Max(0, now - cameraStartupWaitingSince.Value) : 0), failure);
+            TimeSpan.FromMilliseconds(cameraStartupWaitingSince.HasValue ? Math.Max(0, now - cameraStartupWaitingSince.Value) : 0), failure, now,
+            ARCameraPresentationPolicy.HasRecentPresentation(generation, now));
 
         cameraStartupOverlay.IsVisible = presentation.Visible;
         cameraStartupSpinner.IsRunning = presentation.Busy;
         cameraStartupTitle.Text = presentation.Title ?? string.Empty;
         cameraStartupMessage.Text = presentation.Message ?? string.Empty;
-        if (!presentation.Visible)
+        if (!presentation.Visible) cameraStartupWaitingSince = null;
+        if (!active)
         {
             cameraStartupTimer?.Stop();
             cameraStartupWaitingSince = null;

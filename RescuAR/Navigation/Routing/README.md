@@ -60,6 +60,24 @@ route fails, so offline graph construction does not delay valid online routing.
 The primary Railway URL is the only default MLD endpoint. The historical
 `FallbackBaseUrl` declaration does not enable a second server.
 
+## Offline handoff during a trip
+
+Network loss selects the local A* controller immediately when Android reports
+the change. It preserves the downloaded route object, geometry provenance,
+progress and established AR registration. The banner/map label reads
+`A-STAR · saved MLD path` until validated A* geometry replaces the saved route;
+the original route remains owned/rendered as MLD geometry. Accurate downloaded
+geometry does not imply the API is still being contacted.
+
+The saved path expires five minutes after the offline handoff. A confirmed
+deviation, reverse walk, new hazard or changed destination can require a route
+earlier. Expiry requests a background A* replacement only with a fresh qualified
+measured position. The existing route stays active while calculation runs or a
+candidate fails validation; expiry retries are at least 30 seconds apart.
+Hazard restrictions still apply immediately. Reconnection alone does not select
+MLD again within that trip. Explicit offline selection also controls hazard
+replanning, regardless of the retained geometry's original algorithm.
+
 ## Camera navigation and AR
 
 While Camera is visible, valid geographic routes are accepted before heading
@@ -67,6 +85,24 @@ acquisition finishes. GPS progress, confirmed deviation and arrival evaluation
 continue during AR startup or pauses. Heading recovery reuses the active route
 without restarting geographic progress. AR windows still require current session
 heading, tracking, an anchor and independent road-entry evidence.
+
+A validated replacement can carry its existing geographic-to-AR transform only
+with fresh paired GPS, the same session/tracking/world/heading frame, supported
+registration and consistent position. It retains road-entry status only when
+already following the road and both measured and tracked position meet the
+existing five-metre entry limit on the new corridor.
+Otherwise normal acquisition applies. Acceptance seeds the new route's own
+position/progress and attempts publication immediately; it does not wait solely
+for the next GPS callback. No synthetic GPS or arrival evidence is created.
+
+The Android draw loop skips presentation when the camera background is absent,
+stale or from a different render generation. It never samples the single camera
+target during an unfinished conversion. Brief gaps retain the last presentation;
+sustained gaps show the existing camera overlay after two seconds of observed
+interruption, with a 2D Map fallback after 20 seconds. Recovery health uses
+completed camera draws as well as current textures, avoiding false covers when
+UI polling coincides with a conversion. This does not restart ARCore or remove
+the renderer's separate tracking/heading/ground safety gates.
 
 Online routing can continue if the offline graph fails. Arrival and mapped road
 access are held until the restriction graph is available; missing barrier data
@@ -87,6 +123,7 @@ From the repository root:
 
 ```powershell
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
 python tests/routing-bundle-checks.py
 ./build/Verify-ARCoreReleaseReadiness.ps1
 ```
