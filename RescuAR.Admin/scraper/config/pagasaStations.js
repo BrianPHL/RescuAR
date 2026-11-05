@@ -35,7 +35,7 @@ export const PAGASA_STATIONS = [
     station_code: '11104204',
     source_station_name: 'Sto Nino(MMDA)',
     display_name: 'Sto. Niño Station',
-    enabled_live: true,
+    enabled_live: false,
     include_historical: true
   },
   {
@@ -49,9 +49,9 @@ export const PAGASA_STATIONS = [
   {
     key: 'sto_nino_secondary',
     station_code: '11104201',
-    source_station_name: 'Sto Nino',
-    display_name: 'Sto. Niño Secondary',
-    enabled_live: false,
+    source_station_name: 'Sto.Nino(2nd)',
+    display_name: 'Sto. Niño (2nd) Station',
+    enabled_live: true,
     include_historical: true
   }
 ];
