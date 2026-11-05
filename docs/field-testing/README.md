@@ -1,9 +1,7 @@
 # Current Android field procedure
 
-Aligned with source on 2026-11-04, starting at `dev` revision `cb8c760` plus the
-offline-handoff changes recorded in [the handoff record](../changes/2026-11-04-offline-route-handoff.md)
-and the [alignment/performance audit](../changes/2026-11-04-ar-alignment-performance-audit.md),
-which starts at `62bda12`.
+Aligned with source on 2026-11-05, starting at `dev` revision `60986f0` plus the
+[A* continuity, arrival and exact replay changes](../changes/2026-11-05-navigation-replay-and-astar-continuity.md).
 This is the current procedure. Dated reports retain their own candidate results;
 none establishes acceptance of a later build.
 
@@ -39,16 +37,18 @@ package must explicitly use `RescuArDiagnosticBuild=false` and be checked with
 ## Current policy and expected behavior
 
 - Camera initial registration seeds from one already qualified, pose-paired
-  observation. The optional two-observation policy remains in source, but Camera
-  does not opt into it. Registration does not replace independent road-entry,
+  observation. A* replacement without retained registration requires two later
+  independent observations. Registration does not replace independent road-entry,
   heading, tracking, ground, hazard or arrival checks.
 - Fresh accepted geographic observations can update map position, guidance and
   arrival while AR placement is held. A stale map marker ages visibly and cannot
   become fresh routing or arrival evidence.
-- Automatic arrival still needs two distinct qualifying fresh observations,
+- Informational vicinity still needs two distinct qualifying fresh observations,
   precision/destination ownership and mapped-barrier checks. Current policy allows
   up to 30 seconds between qualifying observations; this does not relax each
-  observation's freshness requirement. Pin overlap alone is not entry evidence.
+  observation's freshness requirement. Held or conflicting geographic readings
+  cannot vote. Vicinity does not end guidance; only eligible explicit user arrival
+  does. Pin overlap alone is not entry evidence.
 - Live tracked visual continuity is bounded by time, distance and frame/route
   ownership; it does not create geographic progress or arrival evidence.
 - Network loss switches the controller label to `A-STAR · saved MLD path`,
@@ -56,6 +56,10 @@ package must explicitly use `RescuArDiagnosticBuild=false` and be checked with
   Saved geometry expires after five minutes; confirmed deviation/hazard can
   require an earlier replacement. Fresh position and normal safety checks still
   gate acceptance. Reconnection does not automatically switch this trip back.
+  Same-corridor A* replacement remaps progress while retaining registration
+  uncertainty and support age. An unsupported transform holds AR instead of
+  immediately reseeding from the same disputed fix. Qualified A* previews retain
+  the existing eight-second ceiling and all ownership/position/hazard gates.
 - Missing camera background blocks scene presentation. Brief conversion gaps
   must not reveal a skybox; sustained interruption shows camera recovery and
   eventually offers 2D Map. No route change intentionally restarts ARCore.
@@ -78,10 +82,15 @@ For GPS/AR cadence and recovery changes, use:
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-replay
+./tests/NavigationReplay.ExportChecks.ps1
 ```
 
 Select different focused checks for other changes. A host check or successful APK
 build does not measure street alignment, device sensor cadence or crash freedom.
+Before another physical walk, follow [exact capture and local replay](navigation-replay.md).
+The existing November 5 logs support a synthetic relative reconstruction only;
+their redacted absolute GPS cannot be recovered.
 
 ## Manual device matrix
 
@@ -103,10 +112,11 @@ a matching screen recording and logs for each trial.
    turning the phone alone must not be interpreted as an anchor correction.
 4. Make a safe permitted deviation. For MLD, distinguish a replacement request from
    accepted replacement geometry. Record origin/destination and observed detour in
-   consented field evidence, not public issue text.
+   private field evidence rather than public issue text.
 5. Approach the destination and wait for two distinct qualifying observations.
-   Expect vicinity confirmation only when its precision/radius/barrier rules pass,
-   or the existing user-arrival option when eligible.
+   Expect informational vicinity only when its precision/radius/barrier rules pass.
+   Guidance must continue. Use the user-arrival option when eligible and expect
+   only that explicit action to complete guidance.
 6. Retest camera entry/exit, ground and flood features with baseline Depth policy.
    Record any separate Depth/occlusion experiment as a different configuration.
 7. Start online MLD, then disable **all** internet transports while staying on the
@@ -125,8 +135,10 @@ After a trial, collect existing device evidence from the repository root:
 ```
 
 The collector reads existing logs/device/package information, attempts the
-installed APK checksum, and retains existing consent/redaction. It does not launch
-the app or change device settings. Use a new output directory for each trial.
+installed APK checksum, and exports exact navigation replay from diagnostic logs
+without a separate capture prompt or switch. Production builds retain redaction.
+It does not launch the app or change device settings. Use a new output directory
+for each trial.
 For a provider-controlled diagnostic trial, the retained device reliability report
 lists the launch override; record that override explicitly.
 

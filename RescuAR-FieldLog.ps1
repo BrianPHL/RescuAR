@@ -1166,6 +1166,7 @@ if ($Collect) {
     $quality = Get-FieldCaptureQuality -Paths @($logFiles.FullName) -Session $session `
         -LoggerAliveBeforeStop $captureBeforeStop.LogcatAlive -CompletionVerified $completionCaptured
     $quality | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $localSessionDir "CaptureQuality.json") -Encoding UTF8
+    & (Join-Path $PSScriptRoot 'build/Export-NavigationReplay.ps1') -LogPaths @($logFiles.FullName) -OutputDirectory $localSessionDir
     if (-not $quality.CaptureComplete -or -not $quality.HasNavigationEvidence) {
         Write-Warning "Field evidence is incomplete: loggerAlive=$($quality.LoggerAliveBeforeStop), completionVerified=$($quality.CompletionVerified), startMarker=$($quality.StartMarkerFound), endMarker=$($quality.EndMarkerFound), navigationEvents=$($quality.NavigationEvents). Last captured event: $($quality.LastLogTime)."
     }

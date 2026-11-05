@@ -29,6 +29,7 @@ public sealed class RouteDisplayProgressPolicy
     private readonly GpsRegistrationCorrectionPolicy registrationCorrections = new();
     private double? trackedDisplayProgress;
     private RouteBacktrackingPolicy.TrackedMotion? lastDisplayMotion;
+    private DateTimeOffset? aStarReplacementObservationFloor;
     public RegistrationDecision LastRegistrationDecision { get; private set; }
 
     private readonly record struct RegistrationObservation(GeoCoordinate Coordinate,
@@ -63,7 +64,45 @@ public sealed class RouteDisplayProgressPolicy
         registrationCorrections.Reset();
         trackedDisplayProgress = null;
         lastDisplayMotion = null;
+        aStarReplacementObservationFloor = null;
         LastRegistrationDecision = default;
+    }
+
+    /// <summary>A provider change is not a new geographic world. Retain its
+    /// transform, support age and correction evidence even when AR trust is held.</summary>
+    public bool RebindForAStarReplacement(RouteResult previous, RouteResult replacement,
+        AStarReplacementContinuityPolicy? continuity, RouteProgressTracker.RouteProgressUpdate update,
+        DateTimeOffset observationTime)
+    {
+        if (!AStarRouteDisplayPolicy.AppliesTo(replacement)) return false;
+        if (!ReferenceEquals(currentRoute, previous))
+        {
+            Reset();
+            currentRoute = replacement;
+            aStarReplacementObservationFloor = observationTime;
+            return false;
+        }
+        bool mapped = continuity is not null && ReferenceEquals(continuity.Previous, previous) &&
+            ReferenceEquals(continuity.Replacement, replacement);
+        if (mapped && continuity!.TryMapPosition(gpsPosition, out var gps) &&
+            continuity.TryMapProgress(committedAtGps, out double committed))
+        {
+            gpsPosition = gps;
+            committedAtGps = committed;
+        }
+        else if (TryResolveGps(replacement, update, out var observed))
+        {
+            gpsPosition = observed;
+            observedAt = observationTime;
+            committedAtGps = update.CommittedProgressMeters;
+        }
+        else observedAt = null;
+        if (mapped && trackedDisplayProgress is { } tracked &&
+            continuity!.TryMapProgress(tracked, out double display)) trackedDisplayProgress = display;
+        else { trackedDisplayProgress = null; lastDisplayMotion = null; }
+        currentRoute = replacement;
+        if (registration is null) aStarReplacementObservationFloor = observationTime;
+        return registration.HasValue;
     }
 
     public void ObserveGps(RouteResult route, RouteProgressTracker.RouteProgressUpdate update,
@@ -174,7 +213,9 @@ public sealed class RouteDisplayProgressPolicy
         bool sameFrame = registration is { } previous && SameFrame(previous.Motion, motion);
         if (registration is null)
         {
-            if (requireInitialConfirmation)
+            if (aStarReplacementObservationFloor is { } floor && at <= floor)
+                return LastRegistrationDecision = new("ASTAR_REPLACEMENT_AWAITING_NEW_OBSERVATION", double.NaN, false);
+            if (requireInitialConfirmation || aStarReplacementObservationFloor.HasValue)
             {
                 bool consistent = pendingRegistration is { } seed && SameFrame(seed.Motion, motion) &&
                     at - seed.At <= TimeSpan.FromSeconds(MaximumPdrGpsAgeSeconds) &&
@@ -198,6 +239,7 @@ public sealed class RouteDisplayProgressPolicy
             pendingRegistration = null;
             registrationConfirmations = 0;
             registrationSupportedAt = at;
+            aStarReplacementObservationFloor = null;
             return LastRegistrationDecision = new("ACQUISITION_SEEDED", 0, true);
         }
         if (!sameFrame)

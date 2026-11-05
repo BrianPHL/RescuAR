@@ -40,12 +40,13 @@ $manifest = [ordered]@{
     installedApkSha256 = $installedHash
     appVersion = @($packageInformation -split "`n" | Where-Object { $_ -match 'versionCode=|versionName=' } | Select-Object -First 2)
     arCoreVersion = @($arInformation -split "`n" | Where-Object { $_ -match 'versionCode=|versionName=' } | Select-Object -First 2)
-    collection = 'read-only; existing diagnostic consent/redaction retained'
+    collection = 'read-only; diagnostic builds include exact replay inputs; production remains redacted'
 }
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot 'trial.json') -Encoding utf8
 $filters = @('RescuAR-NavigationQuality:I', 'RescuAR-GPS:I', 'RescuAR-Heading:D',
     'RescuAR-ARCore:I', 'RescuAR-ARRoute:D', 'RescuAR-RouteProgress:D',
-    'RescuAR-Reroute:I', 'RescuAR-MLD:D', 'RescuAR-HybridRouting:D', 'RescuAR-Build:I', '*:S')
+    'RescuAR-Reroute:I', 'RescuAR-MLD:D', 'RescuAR-HybridRouting:D', 'RescuAR-Build:I', 'RescuAR-Replay:I', '*:S')
 Read-Adb (@('logcat', '-d', '-v', 'threadtime') + $filters) |
     Set-Content -LiteralPath (Join-Path $outputRoot 'navigation-logcat.txt') -Encoding utf8
+& (Join-Path $PSScriptRoot 'Export-NavigationReplay.ps1') -LogPaths (Join-Path $outputRoot 'navigation-logcat.txt') -OutputDirectory $outputRoot
 Write-Output "Navigation evidence saved: $outputRoot"

@@ -208,27 +208,19 @@ public partial class CameraPage
             LogNavigationUiState();
             return false;
         }
-        LocationReading? reading;
-        lock (routeProgressFusionSync) reading = latestRouteStartupReading;
+        var reading = GetQualifiedArrivalReading();
         TimeSpan age = reading is null ? TimeSpan.MaxValue : NavigationClock.UtcNow - reading.ObservationTime;
         bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
         if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
-        bool uncertain = positionObservationHeld || decision.IsObservationHeld ||
-            reading.AccuracyMeters > SafeZoneConfirmationService.MaximumAcceptedAccuracyMeters;
-        arrivalNoticeCategory = uncertain ? "NEAR_UNCONFIRMED_POSITION_UNCERTAIN" :
-            decision.IsCandidate ? "NEAR_CONFIRMING" : "NEAR_UNCONFIRMED";
-        string detail = uncertain
-            ? "Arrival is unconfirmed. GPS position is uncertain; check the entrance before confirming below."
-            : decision.IsCandidate && !decision.IsObservationHeld
-            ? $"Confirming arrival ({decision.ConfirmationCount}/{decision.RequiredConfirmationCount}). Stay near the entrance."
-            : decision.Reason?.StartsWith("A mapped major road", StringComparison.Ordinal) == true
+        arrivalNoticeCategory = decision.IsConfirmed ? "VICINITY_OBSERVED_GUIDANCE_ACTIVE" : "NEAR_UNCONFIRMED";
+        string detail = decision.Reason?.StartsWith("A mapped major road", StringComparison.Ordinal) == true
                 ? "Check the mapped road crossing before entering."
-                : "Look for the entrance. If you are there, confirm your arrival below.";
-        routeLocatorLabel.Text = (uncertain ? "Location suggests you're near " : "You're near ") +
-            $"{destination.Name}.\n{detail}";
+                : CanOfferUserArrival()
+                    ? "Guidance remains active. Confirm below only when you are physically at the entrance."
+                    : "Guidance remains active. Follow the mapped route and look for the entrance.";
+        routeLocatorLabel.Text = $"GPS suggests you're near {destination.Name}.\n{detail}";
         routeLocatorPanel.IsVisible = true;
-        SetTurnGuidanceVisible(false);
         LogNavigationUiState();
         return true;
     }
@@ -332,9 +324,7 @@ public partial class CameraPage
         // it never advances progress or constructs walking geometry.
         routeLocatorIcon.IsVisible = false;
         routeLocatorIcon.Rotation = 0;
-        routeLocatorLabel.Text = lastSafeZoneDecision.IsCandidate
-            ? "Confirming destination proximity. Remain near the entrance."
-            : fresh
+        routeLocatorLabel.Text = fresh
                 ? $"Destination ~{reading!.Coordinate.DistanceTo(destination.Coordinate):0} m away. Use the map to check walking access."
                 : "Waiting for accurate GPS. Use the map to check walking access.";
         var frame = ARCameraPoseBridge.CurrentFrame;

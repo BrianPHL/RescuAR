@@ -7,8 +7,39 @@ using RescuAR.Navigation.Progress;
 using RescuAR.Navigation.Projection;
 using RescuAR.Navigation.Routing;
 using RescuAR.Navigation.Hazards;
+using RescuAR.Navigation.Diagnostics;
+using RescuAR.Diagnostics;
 using System.Text.Json;
 using RescuAR.MAUI.Platforms.Android.Services;
+
+if (Array.IndexOf(args, "--replay") is int replayIndex && replayIndex >= 0)
+{
+    try
+    {
+        if (replayIndex + 1 >= args.Length) throw new ArgumentException("Provide the extracted navigation-replay.jsonl after --replay.");
+        int outputIndex = Array.IndexOf(args, "--output");
+        string output = outputIndex >= 0 && outputIndex + 1 < args.Length ? args[outputIndex + 1]
+            : Path.Combine("artifacts", "navigation-replay", "report.json");
+        var report = NavigationDecisionReplay.Run(File.ReadLines(args[replayIndex + 1]));
+        output = Path.GetFullPath(output);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        File.WriteAllText(output, JsonSerializer.Serialize(report,
+            new JsonSerializerOptions(NavigationReplayCodec.JsonOptions) { WriteIndented = true }));
+        Console.WriteLine($"Replayed {report.Records} records from {report.Captures} capture(s); " +
+            $"{report.ComparedProgressSamples} progress comparisons, {report.DifferentProgressSamples} differences, " +
+            $"{report.Issues.Count} input issues. Contiguous sequence: {report.ContiguousInput}.");
+        Console.WriteLine($"Report: {output}");
+        Console.WriteLine($"Coordinates: {report.CoordinateMode}");
+        Console.WriteLine("Policy-stage replay uses recorded readiness/PDR/user inputs; it does not simulate ARCore, video, UI or surveyed GPS truth.");
+        Environment.ExitCode = report.Issues.Count == 0 && report.ContiguousInput ? 0 : 2;
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
+    {
+        Console.Error.WriteLine("Replay could not run: " + exception.Message);
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 
 int passed = 0;
 void Check(bool condition, string name)
@@ -16,6 +47,28 @@ void Check(bool condition, string name)
     if (!condition) throw new InvalidOperationException(name);
     passed++;
     Console.WriteLine($"PASS: {name}");
+}
+if (args.Contains("--field-replay"))
+{
+    NavigationReplayCaptureChecks.Run(Check);
+    NavigationDecisionReplayChecks.Run(Check);
+    AStarReplacementContinuityChecks.Run(Check);
+    ArrivalGuidanceChecks.Run(Check);
+    await OfflineHandoffChecks.RunAsync(Check);
+    ARRegistrationChecks.Run(Check);
+    RouteDisplayProgressChecks.Run(Check);
+    MldRibbonRegistrationChecks.Run(Check);
+    await MldGuidanceOwnershipChecks.RunAsync(Check);
+    if (Array.IndexOf(args, "--write-relative-fixture") is int fixtureIndex && fixtureIndex >= 0)
+    {
+        if (fixtureIndex + 1 >= args.Length) throw new ArgumentException("Provide the synthetic fixture output path.");
+        string fixturePath = Path.GetFullPath(args[fixtureIndex + 1]);
+        Directory.CreateDirectory(Path.GetDirectoryName(fixturePath)!);
+        File.WriteAllLines(fixturePath, NavigationDecisionReplayChecks.BuildRelativeFieldReconstruction());
+        Console.WriteLine($"Synthetic relative reconstruction: {fixturePath}");
+    }
+    Console.WriteLine($"{passed} field replay, A* continuity, vicinity and MLD preservation checks passed.");
+    return;
 }
 if (args.Contains("--ar-audit"))
 {

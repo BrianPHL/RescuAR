@@ -7,6 +7,7 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Devices.Sensors;
 using RescuAR.Diagnostics;
 using RescuAR.Navigation.Models;
+using RescuAR.Navigation.Timing;
 
 namespace RescuAR.MAUI.Services.Location;
 
@@ -157,10 +158,11 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
             var reading = useAStar
                 ? await navigationLocations.GetNavigationCurrentAsync(newerThan, cancellationToken)
                 : await navigationLocations.GetCurrentAsync(CurrentLocationTimeout, cancellationToken);
+            RecordSelectedLocation(reading, useAStar ? "NAVIGATION_ACQUISITION" : "CURRENT_ACQUISITION", newerThan);
             if (reading is not null)
             {
                 reliableLocations.Observe(reading);
-                WriteLog($"CURRENT: provider={reading.Provider}; accuracy={FormatNullable(reading.AccuracyMeters)} m; " +
+                WriteLog($"CURRENT: provider={reading.Provider}; coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(reading.Coordinate.Latitude, reading.Coordinate.Longitude)}; accuracy={FormatNullable(reading.AccuracyMeters)} m; " +
                     $"courseAccuracy={FormatNullable(reading.CourseAccuracyDegrees)} deg; timestamp={reading.Timestamp:O}; acquisitionTimePreserved=True.");
             }
             return reading;
@@ -253,6 +255,7 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
     private LocationReading? GetRetainedLocation()
     {
         var reading = reliableLocations.Get();
+        RecordSelectedLocation(reading, "LAST_RELIABLE", null);
         WriteLog(reading is null ? "LAST_RELIABLE: no qualified recent location retained."
             : $"LAST_RELIABLE: accuracy={reading.AccuracyMeters:F1} m, " +
               $"age={(DateTimeOffset.UtcNow - reading.Timestamp).TotalSeconds:F1}s, " +
@@ -297,6 +300,8 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
                 location.Timestamp);
         reliableLocations.Observe(reading);
 
+        RecordSelectedLocation(reading, source, null);
+
         WriteLog(
             $"{source}: " +
             $"coordinate={DiagnosticPrivacyPolicy.FormatCoordinate(reading.Coordinate.Latitude, reading.Coordinate.Longitude)}, " +
@@ -308,6 +313,14 @@ public sealed class MauiLocationService : ILocationService, IForegroundLocationS
 
         return reading;
     }
+
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private static void RecordSelectedLocation(LocationReading? reading, string source,
+        DateTimeOffset? newerThan) => NavigationReplayCapture.Record("location.selected", new
+        {
+            source, newerThan, reading, evaluatedAtUtc = NavigationClock.UtcNow,
+            observationTimeUtc = reading?.ObservationTime
+        });
 
     private static double? NormalizeAltitude(
         double? altitude)

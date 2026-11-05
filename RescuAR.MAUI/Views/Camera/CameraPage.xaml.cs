@@ -1463,7 +1463,7 @@ namespace RescuAR.App.Views.Camera
                         previewPosition.RoadCoordinate, latestGpsTimestamp.Value, now,
                         arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
                             latestGpsCoordinate.Value, previewPosition.RoadCoordinate),
-                        initialRoadApproachPending, verifiedRecoveryConnector, CanRetainMldMappedPreview(activeRoute));
+                        initialRoadApproachPending, verifiedRecoveryConnector, CanRetainQualifiedMappedPreview(activeRoute));
                 policyConfidence = policyConfidence with
                 {
                     State = policyConfidence.State == ARGuidanceConfidencePolicy.GuidanceConfidenceState.Hidden
@@ -3208,10 +3208,6 @@ namespace RescuAR.App.Views.Camera
         {
             base.OnAppearing();
 
-#if RESCUAR_DIAGNOSTICS
-            RequestDiagnosticLocationConsent();
-#endif
-
             pageIsVisible =
                 true;
             RefreshForegroundLocationOwnership();
@@ -4048,23 +4044,16 @@ namespace RescuAR.App.Views.Camera
                 // Arrival and road access stay unavailable until its barriers are loaded.
                 _ = GetArrivalGraphSafelyAsync();
                 RoadGraph? arrivalGraph = arrivalRoadGraph;
-                var initialArrival = _safeZoneConfirmationService.Evaluate(
-                    origin, destination.Coordinate,
+                var initialArrival = EvaluateArrivalReading(
+                    locationReading, destination.Coordinate,
                     destination.SafeZoneRadiusMeters,
-                    locationReading.AccuracyMeters,
                     double.PositiveInfinity,
-                    locationReading.ObservationTime,
                     majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                         origin, destination.Coordinate),
-                    destinationVersion: destination.Version);
-                if (initialArrival.IsCandidate)
-                {
-                    pendingInitialRoute = null;
-                    routeStartupFailureMessage =
-                        ArrivalConfirmationMessage;
-                    HandleSafeZoneDecision(initialArrival);
-                    return false;
-                }
+                    trip: destination.Version);
+                // Nearby GPS evidence is informational. It must not prevent
+                // calculation of the remaining walking route to the entrance.
+                HandleSafeZoneDecision(initialArrival);
 
                 LogDetailedDebug(
                     RoutingLogTag,
@@ -4220,17 +4209,20 @@ namespace RescuAR.App.Views.Camera
                 ClearRouteHazardNotice();
                 LogAcceptedRoute(route, destination.Version, "START");
                 _routeDisplayProgressPolicy.Reset();
+                LogReplayPolicyReset("initial route registration", registration: true);
                 ResetGeographicPositionEvidence();
 
                 _gpsPdrFusionPolicy.Reset();
+                LogReplayPolicyReset("initial route fusion", fusion: true);
                 RouteProgressTracker.RouteProgressUpdate initialMatch =
                     _routeProgressTracker.Update(
                         origin,
                         locationReading.AccuracyMeters,
                         locationReading.QualifiedCourseDegrees,
                         locationReading.SpeedMetersPerSecond);
+                var initialFusionAt = NavigationClock.UtcNow;
                 var initialFusion = _gpsPdrFusionPolicy.EvaluateGps(
-                    0.0, false, initialMatch);
+                    0.0, false, initialMatch, initialFusionAt);
                 RouteProgressTracker.RouteProgressUpdate initialFused =
                     initialMatch;
                 if (initialMatch.IsAccepted &&
@@ -4245,11 +4237,18 @@ namespace RescuAR.App.Views.Camera
                 lastRouteMatchConfidence = initialMatch.MatchConfidence;
                 lastGpsConfidence = initialFusion.Confidence;
                 lastGpsReliabilityWeight = initialFusion.ReliabilityWeight;
+                double? initialMotionProgress = null;
+                bool? initialMotionHeld = null;
                 if (initialFused.IsAccepted && !initialFused.IsOffRoute)
-                    progressMotionPolicy.Filter(route, origin, locationReading.AccuracyMeters,
+                {
+                    initialMotionProgress = progressMotionPolicy.Filter(route, origin, locationReading.AccuracyMeters,
                         locationReading.ObservationTime, initialFused.CommittedProgressMeters,
                         initialFused.CommittedProgressMeters,
-                        motion: null, out _);
+                        motion: null, out bool motionHeld);
+                    initialMotionHeld = motionHeld;
+                }
+                LogReplayStartup(route, locationReading, origin, initialMatch, initialFusion,
+                    initialFused, initialFusionAt, initialMotionProgress, initialMotionHeld);
 
                 if (initialMatch.IsAccepted && !initialMatch.IsOffRoute &&
                     initialMatch.MatchConfidence >= RouteMatchConfidence.Medium &&
@@ -4883,12 +4882,14 @@ namespace RescuAR.App.Views.Camera
                 0.0;
 
             _gpsPdrFusionPolicy.Reset();
+            LogReplayPolicyReset("navigation session cleared", fusion: true);
 
             _pdrHeadingSmoother.Reset();
 
             _offRouteReroutePolicy.Reset();
             _routeBacktrackingPolicy.Reset();
             _routeDisplayProgressPolicy.Reset();
+            LogReplayPolicyReset("navigation session cleared", registration: true);
             lastBacktrackingDecision = default;
 
             _routeReplacementPolicy.Reset();
@@ -5195,17 +5196,15 @@ namespace RescuAR.App.Views.Camera
                             arrivalReading.ObservationTime <=
                                 NavigationClock.UtcNow.AddSeconds(2))
                         {
-                            var arrival = _safeZoneConfirmationService.Evaluate(
-                                arrivalReading.Coordinate,
+                            var arrival = EvaluateArrivalReading(
+                                arrivalReading,
                                 activeDestinationCoordinate.Value,
                                 activeDestinationSafeZoneRadiusMeters,
-                                arrivalReading.AccuracyMeters,
                                 double.PositiveInfinity,
-                                arrivalReading.ObservationTime,
                                 majorRoadBarrier: arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                     arrivalReading.Coordinate,
                                     activeDestinationCoordinate.Value),
-                                destinationVersion: tripDestination.Version);
+                                trip: tripDestination.Version);
                             HandleSafeZoneDecision(arrival);
                             lock (routeProgressFusionSync)
                             {
@@ -5216,18 +5215,11 @@ namespace RescuAR.App.Views.Camera
                             }
                             if (mapModeLayer != null && mapModeLayer.IsVisible)
                                 MainThread.BeginInvokeOnMainThread(() => RefreshCameraMapNavigation());
-                            if (!arrival.IsCandidate && !arrival.IsConfirmed)
-                            {
-                                if (arrivalGraph is not null)
-                                    BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
-                                RetryRouteFromRoadApproachIfReady(cancellationToken);
-                            }
-                            else ClearRoadApproachCue();
-                            if (!arrival.IsCandidate && !arrival.IsConfirmed &&
-                                routeStartupFailureMessage ==
+                            if (arrivalGraph is not null)
+                                BeginRoadApproachUpdate(arrivalReading, arrivalGraph, cancellationToken);
+                            RetryRouteFromRoadApproachIfReady(cancellationToken);
+                            if (routeStartupFailureMessage ==
                                     ArrivalConfirmationMessage &&
-                                arrival.DistanceToDestinationMeters >
-                                    arrival.ArrivalRadiusMeters &&
                                 !routeRequestInProgress)
                             {
                                 routeStartupFailureMessage = null;
@@ -5326,11 +5318,13 @@ namespace RescuAR.App.Views.Camera
                             RouteProgressTracker.ProgressSnapshot beforeGps =
                                 _routeProgressTracker.Current;
 
+                            var replayObservationMotion = GetAcquisitionMotion(reading, requireTrustedHeading: false);
+                            var replayEvaluatedAt = NavigationClock.UtcNow;
                             var observation = positionObservationPolicy.Evaluate(route, reading.Coordinate,
-                                reading.AccuracyMeters, reading.ObservationTime, NavigationClock.UtcNow,
-                                GetAcquisitionMotion(reading, requireTrustedHeading: false));
+                                reading.AccuracyMeters, reading.ObservationTime, replayEvaluatedAt,
+                                replayObservationMotion);
                             var stability = navigationStability.ObserveGeographic(route, reading.Coordinate, reading.AccuracyMeters,
-                                reading.ObservationTime, NavigationClock.UtcNow);
+                                reading.ObservationTime, replayEvaluatedAt);
                             // AR disagreement suppresses placement, not
                             // independently qualified map/text/voice/arrival GPS.
                             arPositionObservationHeld = observation.IsHeld;
@@ -5513,17 +5507,18 @@ namespace RescuAR.App.Views.Camera
                                 turnGuidanceUpdate =
                                     fusedGps;
 
-                                if (matchedGps.MatchConfidence >=
-                                        RouteMatchConfidence.Medium &&
-                                    gpsFusionDecision.Confidence >=
-                                        GpsPdrFusionPolicy.GpsConfidence.Medium &&
-                                    gpsFusionDecision.ReliabilityWeight >= 0.35 &&
-                                    !_gpsPdrFusionPolicy.IsRouteIdentitySuspended &&
-                                    reading.AccuracyMeters <= 20.0)
-                                {
-                                    ObserveVerifiedGpsPosition(route, fusedGps, reading);
-                                }
                             }
+
+                            // Record each stage in its actual evaluation order:
+                            // registration/Position.Seed runs only after this GPS stage.
+                            LogReplayObservation(route, reading, beforeGps, matchedGps, fusedGps,
+                                gpsFusionDecision, observation, stability, replayObservationMotion, replayEvaluatedAt);
+                            if (matchedGps.IsAccepted && !matchedGps.IsOffRoute &&
+                                matchedGps.MatchConfidence >= RouteMatchConfidence.Medium &&
+                                gpsFusionDecision.Confidence >= GpsPdrFusionPolicy.GpsConfidence.Medium &&
+                                gpsFusionDecision.ReliabilityWeight >= 0.35 &&
+                                !_gpsPdrFusionPolicy.IsRouteIdentitySuspended && reading.AccuracyMeters <= 20.0)
+                                ObserveVerifiedGpsPosition(route, fusedGps, reading);
 
 #if ANDROID
                             LogDetailedDebug(
@@ -5650,45 +5645,23 @@ namespace RescuAR.App.Views.Camera
 #endif
 
                                 SafeZoneConfirmationService.SafeZoneDecision decision =
-                                    _safeZoneConfirmationService.Evaluate(
-                                        reading.Coordinate,
+                                    EvaluateArrivalReading(
+                                        reading,
                                         safeZoneEvaluationCoordinate,
                                         safeZoneEvaluationRadiusMeters,
-                                        reading.AccuracyMeters,
                                         safeZoneEvaluationRemainingMeters,
-                                        reading.ObservationTime,
                                         majorRoadBarrier: !developerArrivalTest &&
                                             (arrivalGraph is null || arrivalGraph.AccessCrossesMajorRoad(
                                                 reading.Coordinate,
                                                 safeZoneEvaluationCoordinate)),
-                                        destinationVersion: tripDestination.Version);
+                                        trip: tripDestination.Version,
+                                        geographicHeld: positionObservationHeld);
 
                                 safeZoneDecision =
                                     decision;
 
-                                /*
-                                 * Arrival takes precedence over off-route
-                                 * rerouting. Evacuation centers can sit several
-                                 * meters away from the road centerline; once
-                                 * repeated destination-proximity checks begin,
-                                 * do not reroute the user away from the safe
-                                 * zone merely because the map match is noisy.
-                                 */
-                                if (decision.IsCandidate ||
-                                    decision.IsConfirmed)
-                                {
-                                    shouldStartDynamicReroute =
-                                        false;
-
-                                    _offRouteReroutePolicy.ResetConfirmation();
-                                    _routeBacktrackingPolicy.ResetEvidence();
-
-                                    lastOffRouteCandidate =
-                                        false;
-
-                                    lastOffRouteConfirmationCount =
-                                        0;
-                                }
+                                // Vicinity evidence cannot suppress navigation
+                                // or a separately confirmed route deviation.
                             }
                         }
 
@@ -6764,6 +6737,7 @@ namespace RescuAR.App.Views.Camera
                         }
                         routeAccepted = true;
                         bool wasFollowingRoad = arRouteVisualMode == ArRouteVisualMode.RoadFollowingLong;
+                        var previousRouteProgress = _routeProgressTracker.Current;
                         activeRoute = replacementRoute;
                         MldGuidanceBridge.SetRouteOwner(replacementRoute, destinationVersion);
 
@@ -6780,21 +6754,50 @@ namespace RescuAR.App.Views.Camera
                             ? _routeProgressTracker.Update(acceptedReading.Coordinate, acceptedReading.AccuracyMeters,
                                 acceptedReading.QualifiedCourseDegrees, acceptedReading.SpeedMetersPerSecond)
                             : default;
-                        bool retainedRegistration = !hazardAware && !positionObservationHeld &&
-                            !arPositionObservationHeld && IsCurrentRouteStartupLocationAcceptable(acceptedReading) &&
-                            GetAcquisitionMotion(acceptedReading!) is { } acquisitionMotion &&
-                            _routeDisplayProgressPolicy.TryTransferRegistration(routeBeforeReroute, replacementRoute,
-                                replacementMatch, acceptedReading!.ObservationTime, NavigationClock.UtcNow, acquisitionMotion);
-                        if (!retainedRegistration) _routeDisplayProgressPolicy.Reset();
-                        ResetGeographicPositionEvidence();
-                        lastRouteMatchConfidence = replacementMatch.MatchConfidence;
-                        if (acceptedReading is not null && IsCurrentRouteStartupLocationAcceptable(acceptedReading))
-                            ObserveVerifiedGpsPosition(replacementRoute, replacementMatch, acceptedReading);
-                        ARRouteBridge.Clear();
-                        bool retainRoadEntry = retainedRegistration && wasFollowingRoad &&
-                            GetTrackedRouteMotion() is { } currentMotion &&
-                            _routeDisplayProgressPolicy.CanRetainRoadEntry(replacementRoute, replacementMatch,
-                                NavigationClock.UtcNow, currentMotion);
+                        if (acceptedReading is not null)
+                            LogReplayReplacementMatch(replacementRoute, acceptedReading, replacementMatch);
+                        bool aStarReplacement = AStarRouteDisplayPolicy.AppliesTo(replacementRoute);
+                        bool retainedRegistration;
+                        bool retainRoadEntry;
+                        if (aStarReplacement)
+                        {
+                            var continuity = ApplyAStarReplacementContinuity(routeBeforeReroute, replacementRoute,
+                                previousRouteProgress, replacementMatch, acceptedReading, wasFollowingRoad, hazardAware);
+                            replacementMatch = continuity.Match;
+                            retainedRegistration = continuity.RegistrationPreserved;
+                            retainRoadEntry = continuity.RoadEntryRetained;
+                            lastRouteMatchConfidence = replacementMatch.MatchConfidence;
+                            ARRouteBridge.Clear();
+                        }
+                        else
+                        {
+                            retainedRegistration = false;
+                            if (!hazardAware && !positionObservationHeld &&
+                                !arPositionObservationHeld && IsCurrentRouteStartupLocationAcceptable(acceptedReading) &&
+                                GetAcquisitionMotion(acceptedReading!) is { } acquisitionMotion)
+                            {
+                                var transferEvaluatedAt = NavigationClock.UtcNow;
+                                retainedRegistration = _routeDisplayProgressPolicy.TryTransferRegistration(
+                                    routeBeforeReroute, replacementRoute, replacementMatch,
+                                    acceptedReading!.ObservationTime, transferEvaluatedAt, acquisitionMotion);
+                                LogReplayRegistrationTransfer(routeBeforeReroute, replacementRoute, replacementMatch,
+                                    acceptedReading, acquisitionMotion, transferEvaluatedAt, retainedRegistration);
+                            }
+                            if (!retainedRegistration)
+                            {
+                                _routeDisplayProgressPolicy.Reset();
+                                LogReplayPolicyReset("replacement registration was not transferable", registration: true);
+                            }
+                            ResetGeographicPositionEvidence();
+                            lastRouteMatchConfidence = replacementMatch.MatchConfidence;
+                            if (acceptedReading is not null && IsCurrentRouteStartupLocationAcceptable(acceptedReading))
+                                ObserveVerifiedGpsPosition(replacementRoute, replacementMatch, acceptedReading);
+                            ARRouteBridge.Clear();
+                            retainRoadEntry = retainedRegistration && wasFollowingRoad &&
+                                GetTrackedRouteMotion() is { } currentMotion &&
+                                _routeDisplayProgressPolicy.CanRetainRoadEntry(replacementRoute, replacementMatch,
+                                    NavigationClock.UtcNow, currentMotion);
+                        }
                         if (retainRoadEntry)
                         {
                             _verifiedRouteWindowHoldPolicy.Reset();
@@ -6809,7 +6812,11 @@ namespace RescuAR.App.Views.Camera
                         recoveryConnectorVerified = false;
                         Log.Info(RerouteLogTag, $"REPLACEMENT REGISTRATION retained={retainedRegistration}; roadEntryRetained={retainRoadEntry}.");
 
-                        _gpsPdrFusionPolicy.Reset();
+                        if (!aStarReplacement)
+                        {
+                            _gpsPdrFusionPolicy.Reset();
+                            LogReplayPolicyReset("non-AStar replacement fusion", fusion: true);
+                        }
 
                         _pdrHeadingSmoother.Reset();
 
@@ -8277,12 +8284,12 @@ namespace RescuAR.App.Views.Camera
             lastLoggedSafeZoneConfirmationCount =
                 decision.ConfirmationCount;
 
-            if (!decision.IsConfirmed ||
-                safeZoneConfirmed)
+            if (!ArrivalGuidancePolicy.ShouldComplete(decision, userReported, CanOfferUserArrival()))
             {
                 return;
             }
 
+            LogReplayUserArrival(decision, eligible: true);
             safeZoneConfirmed =
                 true;
             MldGuidanceBridge.MarkArrived(activeDestinationVersion);
@@ -8347,9 +8354,7 @@ namespace RescuAR.App.Views.Camera
                     SetTurnGuidanceVisible(false);
                     safeZoneDestinationLabel.Text =
                         destinationName;
-                    safeZoneTitleLabel.Text = userReported
-                        ? "Arrival Confirmed by You"
-                        : "You're Near the\nEvacuation Center";
+                    safeZoneTitleLabel.Text = "Arrival Confirmed by You";
 
                     RouteProgressTracker.ProgressSnapshot safeZoneProgress =
                         _routeProgressTracker.Current;
@@ -8376,9 +8381,7 @@ namespace RescuAR.App.Views.Camera
                         $"{elapsedMinutes} minutes";
 
                     safeZoneDetailsLabel.Text =
-                        userReported
-                            ? "You reported that you are at this destination. GPS has not verified your arrival. Follow on-site instructions and local advisories."
-                            : "Your GPS position is near the destination. Follow posted signs to its entrance and check local advisories.";
+                        "You reported that you are at this destination. GPS has not verified your arrival. Follow on-site instructions and local advisories.";
 
                     safeZoneConfirmationOverlay.IsVisible =
                         true;
@@ -8388,6 +8391,7 @@ namespace RescuAR.App.Views.Camera
         private void ResetSafeZoneConfirmation(
             string reason)
         {
+            ResetArrivalEvidence();
             Interlocked.Increment(ref arrivalSessionGeneration);
             arrivalWasUserReported = false;
             arrivalNoticeCategory = "HIDDEN";
@@ -8397,6 +8401,7 @@ namespace RescuAR.App.Views.Camera
                     0;
 
             _safeZoneConfirmationService.Reset(NavigationDestinationBridge.Current.Version);
+            LogReplayPolicyReset("arrival evidence reset", arrival: true);
             _destinationProximityReroutePolicy.Reset();
             lastArrivalHoldReason = null;
             lastArrivalHoldLogAt = default;
@@ -8438,7 +8443,7 @@ namespace RescuAR.App.Views.Camera
 
                     safeZoneDestinationLabel.Text =
                         "Evacuation Center";
-                    safeZoneTitleLabel.Text = "You're Near the\nEvacuation Center";
+                    safeZoneTitleLabel.Text = "Arrival Confirmed by You";
 
                     safeZoneDetailsLabel.Text =
                         "Follow posted signs to the entrance and check local advisories.";
@@ -10120,6 +10125,7 @@ namespace RescuAR.App.Views.Camera
             _headingRevalidationPolicy.MarkCorrectionApplied(NavigationClock.UtcNow);
             positionObservationPolicy.Reset();
             _routeDisplayProgressPolicy.Reset();
+            LogReplayPolicyReset("movement-validated heading correction", registration: true, position: true);
             verifiedPosition = null;
             _verifiedRouteWindowHoldPolicy.Reset();
             approachRoutePreviewPublished = false;
@@ -10355,6 +10361,8 @@ namespace RescuAR.App.Views.Camera
             }
 
             acceptedPdrStepCount++;
+
+            LogReplayPdr(route, fusedStepAdvanceMeters, update);
 
             UpdateTurnGuidance();
 
@@ -10765,7 +10773,7 @@ namespace RescuAR.App.Views.Camera
                 // anchor is temporarily unavailable. Retain valid mapped
                 // geometry so the independent visibility gates can hide it
                 // during the outage and restore it when tracking recovers.
-                if (CanRetainMldMappedPreview(route)) return false;
+                if (CanRetainQualifiedMappedPreview(route)) return false;
                 var preview = ARRouteBridge.Current;
                 if (approachRoutePreviewPublished && preview.IsAvailable &&
                     preview.NavigationState.VisualKind == RouteVisualKind.RouteWindow &&
@@ -10820,7 +10828,7 @@ namespace RescuAR.App.Views.Camera
             {
                 // Do not clear before the outer publisher can retain a valid
                 // same-frame preview while the next location poll completes.
-                if (allowApproachPreview && CanRetainMldMappedPreview(route)) return false;
+                if (allowApproachPreview && CanRetainQualifiedMappedPreview(route)) return false;
                 approachRoutePreviewPublished = false;
                 ARRouteBridge.Clear();
                 return false;
@@ -11185,7 +11193,7 @@ namespace RescuAR.App.Views.Camera
                     position.RoadCoordinate, fixTimestamp, NavigationClock.UtcNow,
                     arrivalRoadGraph is not null && !arrivalRoadGraph.AccessCrossesMajorRoad(
                             update.GpsCoordinate, position.RoadCoordinate),
-                    initialRoadApproachPending, recoveryConnectorVerified, CanRetainMldMappedPreview(route));
+                    initialRoadApproachPending, recoveryConnectorVerified, CanRetainQualifiedMappedPreview(route));
         }
 
         private static void LogRouteDirectionDiagnostics(
@@ -11902,7 +11910,7 @@ namespace RescuAR.App.Views.Camera
                 $"safeZoneConfirmations={lastSafeZoneDecision.ConfirmationCount}/" +
                 $"{lastSafeZoneDecision.RequiredConfirmationCount}, " +
                 $"safeZoneConfirmed={safeZoneConfirmed}, " +
-                $"arrivalSource={(safeZoneConfirmed ? (arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY") : "UNCONFIRMED")}, " +
+                $"arrivalSource={ArrivalStatusSource}, " +
                 $"safeZoneDistance=" +
                 $"{(lastSafeZoneDecision.IsAvailable && double.IsFinite(lastSafeZoneDecision.DistanceToDestinationMeters) ? lastSafeZoneDecision.DistanceToDestinationMeters.ToString("F1") : "<none>")}m, " +
                 $"devSafeZoneValidation={EnableDeveloperSafeZoneValidation}, " +

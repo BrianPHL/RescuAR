@@ -31,6 +31,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
 
     private void OnActivityStateChanged(object? sender, ActivityStateChangedEventArgs e)
     {
+        NavigationReplayCapture.Record("location.lifecycle", new { state = e.State.ToString() });
         lock (sync)
         {
             if (e.State is ActivityState.Paused or ActivityState.Stopped)
@@ -184,6 +185,8 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             }
             if (providers == 0) throw new FeatureNotEnabledException("Android location providers are disabled.");
             listening = true;
+            NavigationReplayCapture.Record("location.source", new { action = "started", precisePermission,
+                providers, requestedProviders, foregroundOwners, activeRequests });
             AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_SOURCE started; precisePermission={precisePermission}; providers={providers}; intervalMs=1000; minimumDistance=0; selection=REPORTED_ACCURACY; cloud=False.");
         }
         catch
@@ -199,6 +202,8 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         manager?.RemoveUpdates(this);
         listening = false;
         gps = network = fused = null;
+        NavigationReplayCapture.Record("location.source", new { action = "stopped", lifecycleSuspend = force,
+            foregroundOwners, activeRequests, candidatesCleared = true });
         AndroidLog.Info("RescuAR-GPS", $"NAV_LOCATION_SOURCE stopped; lifecycleSuspend={force}; owners={foregroundOwners}; requests={activeRequests}.");
     }
 
@@ -208,6 +213,7 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         if (!NavigationClock.TryMapElapsedNanoseconds(location.ElapsedRealtimeNanos,
                 SystemClock.ElapsedRealtimeNanos(), receivedAt, out long acquiredAt))
         {
+            RecordRawLocation(location, receivedAt, null, false, "INVALID_NATIVE_ACQUISITION");
             lock (sync)
             {
                 if (!listening) return;
@@ -219,7 +225,11 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         }
         DateTimeOffset timestamp;
         try { timestamp = DateTimeOffset.FromUnixTimeMilliseconds(location.Time); }
-        catch (ArgumentOutOfRangeException) { return; }
+        catch (ArgumentOutOfRangeException)
+        {
+            RecordRawLocation(location, receivedAt, acquiredAt, false, "INVALID_PROVIDER_UTC");
+            return;
+        }
         var reading = new LocationReading(new GeoCoordinate(location.Latitude, location.Longitude),
             location.HasAccuracy ? location.Accuracy : null,
             location.HasAltitude ? location.Altitude : null,
@@ -233,30 +243,59 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
         };
         lock (sync)
         {
-            if (!listening) return;
+            if (!listening)
+            {
+                RecordRawLocation(location, receivedAt, acquiredAt, false, "SOURCE_STOPPED");
+                return;
+            }
             if (reading.Provider == LocationManager.GpsProvider) gpsSamples++;
             else if (reading.Provider == LocationManager.NetworkProvider) networkSamples++;
             else if (reading.Provider == "fused") fusedSamples++;
             if (!LocationAcquisitionPolicy.IsCurrent(reading, NavigationClock.UtcNow))
             {
                 rejectedSamples++;
+                RecordRawLocation(location, receivedAt, acquiredAt, false, "NOT_CURRENT");
                 return;
             }
+            bool accepted = false;
             if (reading.Provider == LocationManager.GpsProvider)
             {
-                if (location.ElapsedRealtimeNanos > (gps?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) gps = reading;
+                if (location.ElapsedRealtimeNanos > (gps?.AcquisitionElapsedRealtimeNanoseconds ?? 0))
+                { gps = reading; accepted = true; }
             }
             else if (reading.Provider == LocationManager.NetworkProvider)
             {
-                if (location.ElapsedRealtimeNanos > (network?.AcquisitionElapsedRealtimeNanoseconds ?? 0)) network = reading;
+                if (location.ElapsedRealtimeNanos > (network?.AcquisitionElapsedRealtimeNanoseconds ?? 0))
+                { network = reading; accepted = true; }
             }
             else if (reading.Provider == "fused" && location.ElapsedRealtimeNanos > (fused?.AcquisitionElapsedRealtimeNanoseconds ?? 0))
-                fused = reading;
+            { fused = reading; accepted = true; }
+            RecordRawLocation(location, receivedAt, acquiredAt, accepted,
+                accepted ? "CANDIDATE_STORED" : "DUPLICATE_OR_UNSUPPORTED_PROVIDER");
         }
     }
 
+    [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
+    private static void RecordRawLocation(AndroidLocation location, long receivedAt,
+        long? acquiredAt, bool accepted, string reason) =>
+        NavigationReplayCapture.Record("location.raw", new
+        {
+            provider = location.Provider ?? "unavailable", latitude = location.Latitude,
+            longitude = location.Longitude, accuracyMeters = location.HasAccuracy ? (double?)location.Accuracy : null,
+            altitudeMeters = location.HasAltitude ? (double?)location.Altitude : null,
+            speedMetersPerSecond = location.HasSpeed ? (double?)location.Speed : null,
+            courseDegrees = location.HasBearing ? (double?)location.Bearing : null,
+            courseAccuracyDegrees = OperatingSystem.IsAndroidVersionAtLeast(26) && location.HasBearingAccuracy
+                ? (double?)location.BearingAccuracyDegrees : null,
+            providerUnixTimeMilliseconds = location.Time,
+            acquisitionElapsedRealtimeNanoseconds = location.ElapsedRealtimeNanos,
+            acquisitionMonotonicMilliseconds = acquiredAt, receivedMonotonicMilliseconds = receivedAt,
+            evaluatedAtUtc = NavigationClock.AtMonotonicMilliseconds(receivedAt), accepted, reason
+        }, receivedAt);
+
     public void OnProviderDisabled(string provider)
     {
+        NavigationReplayCapture.Record("location.provider", new { provider, enabled = false });
         lock (sync)
         {
             providersDirty = true;
@@ -265,7 +304,11 @@ internal sealed class AndroidNavigationLocationSource : Java.Lang.Object, ILocat
             if (provider == "fused") fused = null;
         }
     }
-    public void OnProviderEnabled(string provider) { lock (sync) providersDirty = true; }
+    public void OnProviderEnabled(string provider)
+    {
+        NavigationReplayCapture.Record("location.provider", new { provider, enabled = true });
+        lock (sync) providersDirty = true;
+    }
     public void OnStatusChanged(string? provider, Availability status, Bundle? extras) { }
 }
 #endif

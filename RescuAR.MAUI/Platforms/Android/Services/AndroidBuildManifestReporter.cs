@@ -168,6 +168,17 @@ internal static class AndroidBuildManifestReporter
                     ? ComputeSha256(nativeLibraryPath)
                     : "unavailable";
 
+            NavigationReplayCapture.Record("build", new
+            {
+                sourceRevision, configuration, diagnosticBuild, diagnosticRouteOverride,
+                locationLogPolicy, locationLogRetentionDays, compatibilityProfile,
+                appVersion = AppInfo.Current.VersionString, appBuild = AppInfo.Current.BuildString,
+                package = context.PackageName, model = global::Android.OS.Build.Model,
+                androidApi = (int)global::Android.OS.Build.VERSION.SdkInt,
+                nativeBridgeSha256 = nativeLibrarySha256, mauiVersion, evergineVersion,
+                arCoreBindingVersion, validationProfile
+            });
+
             Log.Info(
                 Tag,
                 "BUILD_MANIFEST " +

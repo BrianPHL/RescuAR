@@ -169,6 +169,44 @@ public sealed class GpsPdrFusionPolicy
         ResetRouteIdentitySuspension();
     }
 
+    /// <summary>Changes only distance coordinates for a proven A* corridor.
+    /// Timestamps, suspension and surviving confirmation evidence stay intact.</summary>
+    public void RebindForAStarReplacement(AStarReplacementContinuityPolicy? continuity)
+    {
+        if (continuity is null)
+        {
+            Reset();
+            SuspendRouteIdentity();
+            return;
+        }
+        if (lastBackwardCandidateProgressMeters is { } backward)
+        {
+            if (continuity.TryMapProgress(backward, out double mapped)) lastBackwardCandidateProgressMeters = mapped;
+            else ResetBackwardConfirmation();
+        }
+        if (lastRouteIdentityCandidateProgressMeters is { } candidate)
+        {
+            if (continuity.TryMapProgress(candidate, out double mapped) &&
+                RouteDisplayProgressPolicy.TryAtDistance(continuity.Replacement, mapped, out var position))
+            {
+                lastRouteIdentityCandidateProgressMeters = mapped;
+                lastRouteIdentityCandidateSegment = position.SegmentIndex;
+            }
+            else ResetRouteIdentityCandidate();
+        }
+        if (lastResolvedRouteIdentityProgressMeters is { } resolved)
+        {
+            if (continuity.TryMapProgress(resolved, out double mapped) &&
+                RouteDisplayProgressPolicy.TryAtDistance(continuity.Replacement, mapped, out var position))
+            {
+                lastResolvedRouteIdentityProgressMeters = mapped;
+                lastResolvedRouteIdentitySegment = position.SegmentIndex;
+            }
+            else { hasResolvedRouteIdentity = false; lastResolvedRouteIdentityProgressMeters = null;
+                lastResolvedRouteIdentitySegment = -1; lastResolvedRouteIdentityAt = null; }
+        }
+    }
+
     public GpsFusionDecision EvaluateGps(
         double previousCommittedProgressMeters,
         bool hasPreviousProgress,

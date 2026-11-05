@@ -1,15 +1,13 @@
 using System;
 using System.Globalization;
-using System.Threading;
 
 namespace RescuAR.Diagnostics;
 
 /// <summary>
-/// Build and consent boundary for AR field diagnostics. Production builds
+/// Build boundary for AR field diagnostics. Production builds
 /// cannot enable route-visibility overrides or location-bearing diagnostics.
-/// Diagnostic builds still require an explicit tester decision before a
-/// coordinate can be emitted, and accepted coordinates are quantized to
-/// roughly an 11 m grid rather than logged at GPS precision.
+/// Diagnostic field builds retain exact coordinates for local replay at the
+/// owner's request. Production builds keep location-bearing fields redacted.
 /// </summary>
 public static class DiagnosticPrivacyPolicy
 {
@@ -35,36 +33,14 @@ public static class DiagnosticPrivacyPolicy
         "Tester-controlled export; delete field bundles after evidence review " +
         "and no later than 30 days.";
 
-#if RESCUAR_DIAGNOSTICS
-    private static int locationLoggingConsent;
-#endif
-
-    public static bool HasLocationLoggingConsent
-    {
-        get
-        {
-#if RESCUAR_DIAGNOSTICS
-            return Volatile.Read(
-                ref locationLoggingConsent) ==
-                    1;
-#else
-            return false;
-#endif
-        }
-    }
+    // Retained for manifest/caller compatibility. Diagnostic capture is now
+    // automatic; the build profile, rather than an in-app prompt, is the gate.
+    public static bool HasLocationLoggingConsent => IsDiagnosticBuild;
 
     public static void SetLocationLoggingConsent(
         bool granted)
     {
-#if RESCUAR_DIAGNOSTICS
-        Volatile.Write(
-            ref locationLoggingConsent,
-            granted
-                ? 1
-                : 0);
-#else
         _ = granted;
-#endif
     }
 
     public static string FormatCoordinate(
@@ -72,11 +48,6 @@ public static class DiagnosticPrivacyPolicy
         double longitude)
     {
 #if RESCUAR_DIAGNOSTICS
-        if (!HasLocationLoggingConsent)
-        {
-            return "<location-consent-required>";
-        }
-
         if (!double.IsFinite(latitude) ||
             !double.IsFinite(longitude))
         {
@@ -85,7 +56,7 @@ public static class DiagnosticPrivacyPolicy
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"({latitude:F4},{longitude:F4})");
+            $"({latitude:R},{longitude:R})");
 #else
         _ = latitude;
         _ = longitude;
@@ -120,11 +91,6 @@ public static class DiagnosticPrivacyPolicy
         string? value)
     {
 #if RESCUAR_DIAGNOSTICS
-        if (!HasLocationLoggingConsent)
-        {
-            return "<location-consent-required>";
-        }
-
         if (string.IsNullOrWhiteSpace(value))
         {
             return "<unnamed>";
@@ -161,11 +127,6 @@ public static class DiagnosticPrivacyPolicy
             exception.GetType().Name;
 
 #if RESCUAR_DIAGNOSTICS
-        if (!HasLocationLoggingConsent)
-        {
-            return typeName;
-        }
-
         string message =
             (exception.Message ?? string.Empty)
                 .Replace(

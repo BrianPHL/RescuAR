@@ -14,6 +14,7 @@ owning source. Read detailed evidence only when it affects the task. The
 | Change UI appearance | [Visual reference](design/README.md) → platform styles/components → record any confirmed departure |
 | Document a change | [Documentation workflow](contributing/documentation-workflow.md) → owning guide → [change record](changes/README.md) |
 | Work on Android navigation/AR | [Routing](../RescuAR/Navigation/Routing/README.md) → [field procedure](field-testing/README.md) → [compatibility pins](../ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md) |
+| Recreate GPS/navigation decisions locally | [Exact capture and local replay](field-testing/navigation-replay.md) → extracted JSONL/quality → focused policies |
 | Import or activate routing data | [Dataset import](../RescuAR/Navigation/Data/QC_IMPORT.md) → relevant routing checks |
 | Work on Admin/frontend/worker configuration | [Admin guide](../RescuAR.Admin/README.md) → owning component/service source |
 | Change database or audit behavior | [Database contracts](../RescuAR.Admin/database/README.md) → [task inventory](../RescuAR.Admin/database/audit-task-inventory.md) → applicable SQL |

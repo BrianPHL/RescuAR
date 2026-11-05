@@ -10,6 +10,7 @@ Records preserve what was changed and checked at that time. Consult the
 
 | Date (Asia/Manila) | Record | Scope |
 | --- | --- | --- |
+| 2026-11-05 | [A* continuity and exact local replay](2026-11-05-navigation-replay-and-astar-continuity.md) | Preserve disputed registration/progress, keep vicinity guidance active, automatically capture exact diagnostic inputs and replay policies locally |
 | 2026-11-04 | [AR alignment and performance audit](2026-11-04-ar-alignment-performance-audit.md) | Anchor-frame recovery, bounded route lookups, bulk depth decoding, repeated-work reductions and remaining device/profiling gaps |
 | 2026-11-04 | [Offline route handoff and camera presentation](2026-11-04-offline-route-handoff.md) | Retain downloaded geometry under A* control, guarded replacement registration, missing-camera presentation and focused checks |
 | 2026-11-03 | [Agent portability and documentation organization](2026-11-03-agent-portability-and-documentation-index.md) | Shared rules, native/import entry points, task routes, catalog and document checks |
