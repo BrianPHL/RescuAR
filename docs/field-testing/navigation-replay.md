@@ -3,6 +3,65 @@
 Reviewed: 2026-11-05, starting from `dev` revision `60986f0` plus the
 [field-replay changes](../changes/2026-11-05-navigation-replay-and-astar-continuity.md).
 
+## Developer-commanded AI replay
+
+When a developer asks an AI agent to replay or locally reproduce GPS/navigation
+behavior, the agent must carry out this workflow and report the results. Giving
+the developer commands alone does not complete that request. For example:
+
+```text
+Replay Logs/YOUR_SESSION.zip locally. Investigate GPS jumps, the saved-MLD-to-A*
+handoff and arrival decisions, and report what reproduces with links to the results.
+```
+
+This is an authorized focused host policy check using existing tools and
+dependencies. It does not require another capture consent prompt. It does not
+start the Android app, a browser, a routing service or a new field recording.
+For a documentation-only request, update these instructions without running replay.
+
+1. **Identify the evidence.** Inspect repository status and record the current
+   branch/revision and any relevant working edits used by the runner. Use the
+   developer's specified ZIP, directory or JSONL. If none is named, inspect
+   available local captures; use an unambiguous match, or ask for the input when
+   selection is ambiguous or nothing usable exists. Honor an explicit request for
+   the latest capture. Do not silently substitute the synthetic fixture.
+2. **Prepare a separate run.** Preserve the original capture. Extract ZIPs into a
+   new ignored directory under `artifacts/navigation-replay/`, with a unique run
+   name. Keep real coordinates, logs and generated reports in ignored locations.
+   Identify the captured APK/source/profile from available manifests separately
+   from the current runner revision; report unavailable identity as unknown.
+3. **Check capture integrity.** Follow [Collect and extract](#collect-and-extract).
+   When raw logs exist, run the exporter into the new run directory. Otherwise
+   use the supplied JSONL and available quality metadata, noting which transport
+   checks cannot be repeated. Inspect missing/corrupt chunks, drops, sequence gaps
+   and recording boundaries. Missing exact events in an old/redacted bundle cannot
+   be reconstructed as real GPS. Partial replay may still provide evidence, but
+   its findings must identify the affected gaps.
+4. **Execute the replay.** Use the [local command](#replay-locally-before-a-new-walk)
+   with the actual input and a report path in the new run directory. Preserve the
+   command, exit code and console output there. Use existing restored dependencies;
+   do not install dependencies, run an Android build or broaden into other tests
+   solely to replay. If required tooling is unavailable, report the exact blocker
+   and the smallest next action instead of claiming a successful reproduction.
+5. **Inspect the results.** Read the generated report, not just the exit code.
+   Investigate the requested behavior using event sequences/times, provider and
+   accuracy changes, geographic versus tracked displacement, registration holds,
+   A* replacement/progress and arrival decisions. Distinguish captured inputs,
+   recomputed policy results, recorded results and any differences. A clean input
+   report or zero progress differences alone does not prove a visual fault fixed.
+6. **Deliver the evidence.** State whether the requested behavior reproduced,
+   did not reproduce, or remains inconclusive, with supporting sequences/times and
+   relevant measurements. Report capture quality, exact versus synthetic data,
+   source/build identity, input issues and replay limits. Link the local report,
+   quality metadata and command/output record. Keep raw private coordinates out
+   of committed change records. A replay request alone does not authorize code
+   fixes, device testing, commits or pushes.
+
+Use the relative reconstruction below only when that example is requested or
+explicitly identified as the input. Label it synthetic in every result. Local
+policy reproduction cannot certify surveyed GPS truth, rendered street placement
+or device performance; retain the [acceptance boundary](README.md#acceptance-boundary).
+
 ## Capture behavior
 
 At the owner's request, diagnostic builds include exact location and replay

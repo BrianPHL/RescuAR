@@ -109,3 +109,22 @@ explicit action. Actual device results are required before further tuning.
 Camera conversion/scheduling stalls, absolute heading/GPS bias, terrain handling
 and general app/server dataset parity still require device or owning-data
 evidence. No native caching or broad heading rewrite was bundled into these fixes.
+
+## Documentation follow-up: developer-commanded replay
+
+Date: 2026-11-05 (Asia/Manila). Starting source: clean `dev`, `57149cc`.
+
+- Updated root `AGENTS.md` to require executing and inspecting local replay when
+  requested by a developer. Thin host adapters continue to use that shared policy;
+  no competing agent instructions were added.
+- Expanded the owning replay guide with input selection, private extraction,
+  build/source identity, integrity checks, runner execution and an evidence-based
+  result handoff. Updated the documentation task route to point directly to it.
+  Exact captures and synthetic examples remain distinct; the request does not
+  authorize unrelated code/device changes.
+- Documentation-only follow-up: application/replay code and capture behavior are
+  unchanged. No replay, application build, unit suite, app/device interaction or
+  installed-agent discovery test was run for this update.
+- **Passed:** documentation/link/import/catalog check (92 Markdown files, 381
+  local links) and `git diff --check`. No catalog regeneration was needed because
+  no documents were added, renamed or retitled.
