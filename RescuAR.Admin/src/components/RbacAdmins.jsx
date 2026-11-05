@@ -55,6 +55,7 @@ export default function RbacAdmins() {
   const [newAdminRole, setNewAdminRole] = useState('operations_admin');
   const [oneTimeCredential, setOneTimeCredential] = useState(null);
   const [role, setRole] = useState('data_analyst');
+  const [existingPasswordMode, setExistingPasswordMode] = useState('keep');
   const [customName, setCustomName] = useState('');
   const [customLabel, setCustomLabel] = useState('');
   const [customPermissions, setCustomPermissions] = useState([]);
@@ -97,15 +98,48 @@ export default function RbacAdmins() {
     setBusy(true);
     setNotice(null);
     try {
-      const { error } = await supabase.rpc('rbac_set_assignment', {
-        p_email: normalizedEmail,
-        p_role: targetRole,
-        p_enabled: enabled,
-      });
-      if (error) throw error;
-      if (enabled) setEmail('');
-      await refresh();
-      setNotice({ type: 'success', text: enabled ? 'Administrator role assigned.' : 'Administrator role revoked.' });
+      // A temporary password for an existing Auth account REPLACES its current
+      // Supabase password, including for any mobile-app login sharing this Auth account.
+      // The server refuses to reset current administrators or the Superadmin.
+      const useTemporaryPassword = enabled && targetEmail === email && existingPasswordMode === 'temporary';
+      if (useTemporaryPassword) {
+        if (targetRole === 'superadmin') {
+          throw new Error('Temporary-password promotion cannot grant Superadmin access.');
+        }
+        const accepted = window.confirm(
+          `Reset the existing Supabase Auth password for ${normalizedEmail} and assign ${roleLabels[targetRole] || targetRole}?\n\n` +
+          'This replaces the current password, including mobile-app access for this account. ' +
+          'Only promote an account whose owner has been independently verified. Continue?'
+        );
+        if (!accepted) return;
+        setOneTimeCredential(null);
+        const { data, error } = await supabase.functions.invoke('rbac-admin-provision', {
+          body: { action: 'assign_existing_admin', email: normalizedEmail, role: targetRole },
+        });
+        if (error) {
+          let message = error.message || 'Existing-user promotion failed.';
+          try { const response = await error.context?.json?.(); if (response?.error) message = response.error; } catch { /* ignore invalid body */ }
+          throw new Error(message);
+        }
+        if (!data?.temporaryPassword || !data?.email || !data?.mustChangePassword) {
+          throw new Error('Unexpected promotion response. Verify the account in Supabase before retrying.');
+        }
+        setOneTimeCredential({ email: data.email, temporaryPassword: data.temporaryPassword, source: 'existing' });
+        setExistingPasswordMode('keep');
+        setEmail('');
+        await refresh();
+        setNotice({ type: 'success', text: 'Existing Auth user promoted. Share the temporary password securely; first-login change is mandatory.' });
+      } else {
+        const { error } = await supabase.rpc('rbac_set_assignment', {
+          p_email: normalizedEmail,
+          p_role: targetRole,
+          p_enabled: enabled,
+        });
+        if (error) throw error;
+        if (enabled) setEmail('');
+        await refresh();
+        setNotice({ type: 'success', text: enabled ? 'Administrator role assigned without changing the account password.' : 'Administrator role revoked.' });
+      }
     } catch (error) {
       setNotice({ type: 'error', text: error.message || 'Unable to update the administrator role.' });
     } finally {
@@ -136,7 +170,7 @@ export default function RbacAdmins() {
         throw new Error(message);
       }
       if (!data?.temporaryPassword || !data?.email) throw new Error('Unexpected provisioning response. Verify the new account in Supabase.');
-      setOneTimeCredential({ email: data.email, temporaryPassword: data.temporaryPassword });
+      setOneTimeCredential({ email: data.email, temporaryPassword: data.temporaryPassword, source: 'create' });
       setNewAdminEmail('');
       await refresh();
       setNotice({ type: 'success', text: 'Administrator created, assigned and marked for mandatory first-login password change.' });
@@ -227,11 +261,12 @@ export default function RbacAdmins() {
           <button className="btn-primary rbac-action-btn" type="submit" disabled={busy || !newAdminEmail.trim()}><UserPlus size={16} /> {busy ? 'Creating…' : 'Create Admin'}</button>
         </form>
         <div className="rbac-panel-help"><ShieldCheck size={15}/><span>The backend administratively confirms the email without sending an invitation. This is not proof of mailbox ownership. Share the one-time password securely; the user must change it before accessing the dashboard.</span></div>
-        {oneTimeCredential && <div className="rbac-one-time-box" role="status">
-          <div><strong>One-time temporary password</strong><p>Shown only until you dismiss this panel or leave the page. It cannot be recovered from RescuAR.</p></div>
+        {oneTimeCredential?.source === 'create' && <div className="rbac-one-time-box" role="status">
+          <div><strong>New administrator temporary password — display once</strong><p>Copy and deliver securely. The administrator must enter this credential again when setting a new password.</p></div>
           <p className="rbac-one-time-email">Account: {oneTimeCredential.email}</p>
-          <div className="rbac-one-time-actions"><input className="form-input" aria-label="Temporary administrator password" readOnly type="text" value={oneTimeCredential.temporaryPassword} autoComplete="off" spellCheck={false} /><button type="button" className="btn-secondary rbac-action-btn" onClick={copyOneTimePassword}><Copy size={15}/> Copy</button><button type="button" className="btn-secondary rbac-action-btn" onClick={() => setOneTimeCredential(null)}>Discard</button></div>
+          <div className="rbac-one-time-actions"><input className="form-input" aria-label="New administrator temporary password" readOnly type="text" value={oneTimeCredential.temporaryPassword} autoComplete="off" spellCheck={false} /><button type="button" className="btn-secondary rbac-action-btn" onClick={copyOneTimePassword}><Copy size={15}/> Copy</button><button type="button" className="btn-secondary rbac-action-btn" onClick={() => setOneTimeCredential(null)}>Discard</button></div>
         </div>}
+
       </section>
 
       <section className="rbac-panel" aria-labelledby="rbac-assign-title">
@@ -245,9 +280,20 @@ export default function RbacAdmins() {
             <label className="form-label" htmlFor="rbac-admin-role">Role</label>
             <select id="rbac-admin-role" className="form-input" value={role} onChange={(event) => setRole(event.target.value)}>{roles.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
           </div>
-          <button type="submit" className="btn-primary rbac-action-btn" disabled={busy || !email.trim()}><Plus size={16} /> {busy ? 'Saving…' : 'Assign Role'}</button>
+          <button type="submit" className="btn-primary rbac-action-btn" disabled={busy || !email.trim() || (existingPasswordMode === 'temporary' && role === 'superadmin')}><Plus size={16} /> {busy ? 'Saving…' : 'Assign Role'}</button>
         </form>
-        <div className="rbac-panel-help"><ShieldCheck size={15} /><span>Assign a role to an existing account here, or create an administrator securely using the section above. Neither action overrides database permission enforcement.</span></div>
+        <fieldset className="rbac-existing-password-options">
+          <legend className="form-label">Password when promoting an existing account</legend>
+          <label className="rbac-existing-password-choice"><input type="radio" name="existing-admin-password" value="keep" checked={existingPasswordMode === 'keep'} onChange={() => setExistingPasswordMode('keep')} disabled={busy} /><span>Keep the user's existing password (recommended)</span></label>
+          <label className="rbac-existing-password-choice"><input type="radio" name="existing-admin-password" value="temporary" checked={existingPasswordMode === 'temporary'} onChange={() => setExistingPasswordMode('temporary')} disabled={busy} /><span>Replace with generated temporary password; require password change</span></label>
+          {existingPasswordMode === 'temporary' && <p className="rbac-existing-password-warning" role="note"><AlertCircle size={16} /> The existing Supabase Auth password will be replaced for this account everywhere it is used, including the mobile app. This option works only for a verified existing Auth user who has no administrator roles yet. Superadmin promotion and resets of existing administrators are blocked.</p>}
+        </fieldset>
+        <div className="rbac-panel-help"><ShieldCheck size={15} /><span>Keep the existing password by default. Only use temporary-password promotion after independently verifying the account owner. Supabase database permission enforcement remains active.</span></div>
+        {oneTimeCredential?.source === 'existing' && <div className="rbac-one-time-box" role="status">
+          <div><strong>Temporary administrator password — display once</strong><p>Copy and deliver securely. The administrator must enter it again during mandatory password setup. Discard it after delivery.</p></div>
+          <p className="rbac-one-time-email">Account: {oneTimeCredential.email}</p>
+          <div className="rbac-one-time-actions"><input className="form-input" aria-label="Promoted administrator temporary password" readOnly type="text" value={oneTimeCredential.temporaryPassword} autoComplete="off" spellCheck={false} /><button type="button" className="btn-secondary rbac-action-btn" onClick={copyOneTimePassword}><Copy size={15}/> Copy</button><button type="button" className="btn-secondary rbac-action-btn" onClick={() => setOneTimeCredential(null)}>Discard</button></div>
+        </div>}
       </section>
 
       <section className="rbac-panel rbac-panel--flush" aria-labelledby="rbac-list-title">

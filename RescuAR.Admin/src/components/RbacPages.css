@@ -116,3 +116,11 @@
 .rbac-one-time-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .rbac-one-time-actions > input { flex: 1 1 280px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 @media (max-width: 760px) { .rbac-one-time-actions { flex-direction: column; align-items: stretch; } }
+
+/* Existing account privilege promotion: optional credential rotation */
+.rbac-existing-password-options { border: 1px solid #dce5ee; border-radius: 10px; margin: 16px 0 0; padding: 15px 17px; display: grid; gap: 10px; min-width: 0; }
+.rbac-existing-password-options legend { padding: 0 6px; }
+.rbac-existing-password-choice { display: flex; gap: 9px; align-items: center; color: #334155; font-size: 13px; cursor: pointer; }
+.rbac-existing-password-choice input { accent-color: #0891b2; }
+.rbac-existing-password-warning { display: flex; align-items: flex-start; gap: 8px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 2px 0 0; font-size: 12px; line-height: 1.5; }
+.rbac-existing-password-warning svg { flex-shrink: 0; }

@@ -70,6 +70,47 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(400, { error: 'Invalid request.' }, origin);
   }
 
+  if (body.action === 'assign_existing_admin') {
+    // Privilege promotion is deliberately separate from the public browser RPC.
+    // Only an active Superadmin can trigger a password reset, and only for a
+    // previously non-admin, confirmed Auth user. The SQL procedure rechecks all
+    // authorizations and creates an immediate pending-password gate atomically.
+    const [{ data: superadmin, error: superError }, { data: setupStatus, error: setupError }] = await Promise.all([
+      admin.from('rbac_admin_assignments').select('user_id').eq('user_id', actor).eq('role_id', 'superadmin').maybeSingle(),
+      admin.from('rbac_password_setup').select('must_change_password').eq('user_id', actor).maybeSingle(),
+    ]);
+    if (superError || setupError) return jsonResponse(503, { error: 'Unable to verify administrator permissions.' }, origin);
+    if (!superadmin || setupStatus?.must_change_password) return jsonResponse(403, { error: 'Active Superadmin access required.' }, origin);
+
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const role = typeof body.role === 'string' ? body.role : '';
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^[a-z][a-z0-9_]{2,60}$/.test(role) || role === 'superadmin') {
+      return jsonResponse(400, { error: 'A valid existing email and non-Superadmin role are required.' }, origin);
+    }
+    const password = makeTemporaryPassword();
+    const hashedPassword = await passwordSha256(password);
+    // Service-role-only SQL resolves the user by email without a privileged
+    // browser-side user listing. It rejects unconfirmed or already-admin users.
+    const { data: promotedId, error: promotionError } = await admin.rpc('rbac_prepare_existing_admin_promotion', {
+      p_email: email, p_role: role, p_actor: actor, p_password_sha256: hashedPassword,
+    });
+    if (promotionError || !promotedId) {
+      return jsonResponse(409, { error: promotionError?.message || 'Account could not be promoted; confirm it exists, is email-confirmed and has no admin role.' }, origin);
+    }
+    const { error: resetError } = await admin.auth.admin.updateUserById(promotedId, { password });
+    if (resetError) {
+      const { error: rollbackError } = await admin.rpc('rbac_abort_existing_admin_promotion', {
+        p_user_id: promotedId, p_role: role, p_actor: actor, p_password_sha256: hashedPassword,
+      });
+      if (rollbackError) {
+        console.error('Existing administrator promotion rollback failed; review database before retrying.');
+        return jsonResponse(503, { error: 'Password reset failed and rollback needs manual review. Do not retry until you inspect the account.' }, origin);
+      }
+      return jsonResponse(503, { error: 'Password reset failed; role assignment was rolled back. No account password was changed.' }, origin);
+    }
+    return jsonResponse(200, { email, role, temporaryPassword: password, mustChangePassword: true }, origin);
+  }
+
   if (body.action === 'create_admin') {
     // Never authorize creation using a client-provided role or permission claim.
     const [{ data: superadmin, error: superError }, { data: setupStatus, error: setupError }] = await Promise.all([
@@ -114,6 +155,10 @@ Deno.serve(async (req: Request) => {
     if (!setup?.must_change_password) return jsonResponse(403, { error: 'No pending password setup for this account.' }, origin);
     if (!strongPassword(body.newPassword)) {
       return jsonResponse(400, { error: 'Use 12–128 characters with uppercase, lowercase, number, and symbol.' }, origin);
+    }
+    if (typeof body.temporaryPassword !== 'string' ||
+        setup.temporary_password_sha256 !== await passwordSha256(body.temporaryPassword)) {
+      return jsonResponse(403, { error: 'The temporary password could not be verified.' }, origin);
     }
     if (setup.temporary_password_sha256 === await passwordSha256(body.newPassword)) {
       return jsonResponse(400, { error: 'New password must differ from the temporary password.' }, origin);
