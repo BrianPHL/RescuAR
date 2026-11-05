@@ -51,7 +51,7 @@ device retests; no finding is closed by this documentation update.
 | 40 | 3 | IMPLEMENTED — NEEDS FIELD VALIDATION | ELF/export/dependency/provenance verifier | Release `.so` passes alignment, export, dependency, and stripping checks. |
 | 41 | 9 | IMPLEMENTED — NEEDS FIELD VALIDATION | `ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md` | Locked stack passes controlled build and device regression run. |
 | 42 | 3 | IMPLEMENTED — NEEDS FIELD VALIDATION | Startup build manifest and package profile asset | Field archive contains commit, APK/native hashes, versions, ABI, and flags. |
-| 43 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Diagnostic privacy policy | Exported logs contain no precise unauthorized location/route data. |
+| 43 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Diagnostic build boundary and [exact replay policy](docs/field-testing/navigation-replay.md), owner-authorized on 2026-11-05 | Diagnostic exports automatically retain exact location/route replay; production-profile exports remain redacted. Verify the actual package profile and captured output. |
 | 44 | 2 | IMPLEMENTED — NEEDS FIELD VALIDATION | Pose freshness and generation rejection | Stale pose cannot render after pause, expiry, session change, or teardown. |
 | 45 | 2 | IMPLEMENTED — NEEDS FIELD VALIDATION | Flood generation/teardown invalidation | Draw thread acknowledges flood clearing in every invalidation path. |
 | 46 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Separate conditional Camera diagnostics file | Production Camera path remains free of diagnostic UI/actions. |

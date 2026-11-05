@@ -132,7 +132,7 @@ public partial class CameraPage
         var guidance = route is null ? PedestrianTurnGuidanceService.TurnGuidanceSnapshot.Unavailable
             : CameraMapPresentationPolicy.Guidance(route, progress, held);
         if (!guidance.IsAvailable || dynamicRerouteInProgress || emergencyAdvisoryVisible ||
-            safeZoneConfirmed || lastSafeZoneDecision.IsCandidate)
+            safeZoneConfirmed)
         {
             SetTurnGuidanceVisible(false);
             return;
@@ -153,7 +153,7 @@ public partial class CameraPage
 
     private bool CanSpeakCurrentRoute() => pageIsVisible && !cameraMapWindowStopped &&
         !dynamicRerouteInProgress && !emergencyAdvisoryVisible && !safeZoneConfirmed &&
-        !lastSafeZoneDecision.IsCandidate && GetCameraMapRoute() is not null &&
+        GetCameraMapRoute() is not null &&
         GetCameraMapReading() is not null &&
         HasCurrentGuidancePosition(_routeProgressTracker.Current, NavigationClock.UtcNow);
 

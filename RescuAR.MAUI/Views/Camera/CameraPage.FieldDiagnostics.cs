@@ -53,7 +53,7 @@ public partial class CameraPage
         lock (routeProgressFusionSync) noticeReading = latestRouteStartupReading;
         string key = $"trip={activeDestinationVersion}; pageActive={pageIsVisible}; mode={currentCameraModuleView}; " +
             $"arrivalOverlay={safeZoneConfirmationOverlay.IsVisible}; " +
-            $"arrivalSource={(safeZoneConfirmed ? arrivalWasUserReported ? "USER_REPORTED" : "GPS_VICINITY" : "UNCONFIRMED")}; " +
+            $"arrivalSource={ArrivalStatusSource}; " +
             $"arrivalSamples={lastSafeZoneDecision.ConfirmationCount}; userArrivalButton={confirmUserArrivalButton.IsVisible}; " +
             $"turnCard={turnGuidancePanel.IsVisible}; statusBanner={cameraModeStatusBanner.IsVisible}; " +
             $"nearPanel={routeLocatorPanel.IsVisible}; nearCategory={arrivalNoticeCategory}; " +
@@ -71,6 +71,7 @@ public partial class CameraPage
     [System.Diagnostics.Conditional("RESCUAR_DIAGNOSTICS")]
     private void LogAcceptedRoute(RouteResult route, long trip, string reason)
     {
+        LogReplayAcceptedRoute(route, trip, reason);
         AndroidLog.Info(RouteLogTag,
             $"NAV_ROUTE_ACCEPTED trip={trip}; reason={reason}; algorithm='{route.Algorithm}'; " +
             $"geometry={route.GeometryFingerprint}; points={route.Points.Count}; " +

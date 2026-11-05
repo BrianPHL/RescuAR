@@ -86,7 +86,7 @@ continue during AR startup or pauses. Heading recovery reuses the active route
 without restarting geographic progress. AR windows still require current session
 heading, tracking, an anchor and independent road-entry evidence.
 
-A validated replacement can carry its existing geographic-to-AR transform only
+A validated MLD replacement can carry its existing geographic-to-AR transform only
 with fresh paired GPS, the same session/tracking/world/heading frame, supported
 registration and consistent position. It retains road-entry status only when
 already following the road and both measured and tracked position meet the
@@ -94,6 +94,15 @@ existing five-metre entry limit on the new corridor.
 Otherwise normal acquisition applies. Acceptance seeds the new route's own
 position/progress and attempts publication immediately; it does not wait solely
 for the next GPS callback. No synthetic GPS or arrival evidence is created.
+
+A* replacements use directed common-corridor matching to remap accepted progress
+and GPS/PDR evidence. They retain existing registration uncertainty, support age
+and pending corrections rather than reseed from the disputed replacement fix.
+Missing registration requires two later independent observations. Geographic
+acceptance can therefore succeed while AR remains held. Qualified A* previews
+can bridge up to eight seconds, with trip/geometry/window/frame ownership and
+position, heading, hazard and tracking checks still enforced. MLD generation and
+projection do not use this replacement policy.
 
 Ground-anchor refinement monitors both horizontal movement and sustained yaw
 change in the same ground reference. A qualified correction invalidates the
@@ -114,8 +123,10 @@ the renderer's separate tracking/heading/ground safety gates.
 
 Online routing can continue if the offline graph fails. Arrival and mapped road
 access are held until the restriction graph is available; missing barrier data
-never authorizes automatic check-in. Arrival still requires the existing fresh,
-accurate independent GPS observations within the configured confirmation boundary.
+never authorizes check-in. GPS vicinity requires fresh, accurate independent
+observations within the configured boundary, rejects held or conflicting
+geographic evidence, and remains informational. Guidance continues until an
+eligible explicit user arrival action; vicinity alone does not complete the trip.
 
 Camera currently owns this navigation state. Leaving Camera stops its progress
 loop. Shared background/map navigation is a separate change.
@@ -133,6 +144,7 @@ From the repository root:
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-replay
 python tests/routing-bundle-checks.py
 ./build/Verify-ARCoreReleaseReadiness.ps1
 ```
@@ -142,3 +154,8 @@ Repeat the relevant field walks with full-session logs after installing the rebu
 app. Record app and server data identities, route result, GPS match, AR hold reason
 and arrival decision. Host checks do not verify device placement, mapped coverage
 or the deployed server.
+
+Diagnostic builds automatically include exact GPS and policy-stage inputs in
+ordinary logs. See [local replay](../../../docs/field-testing/navigation-replay.md)
+for extraction, quality checks and machine reproduction before another walk.
+Production-profile redaction remains enabled.

@@ -26,6 +26,12 @@ public sealed class RoutePositionObservationPolicy
         lastObservation = null;
     }
 
+    public void RebindForAStarReplacement(RouteResult previous, RouteResult replacement)
+    {
+        if (AStarRouteDisplayPolicy.AppliesTo(replacement) && ReferenceEquals(currentRoute, previous))
+            currentRoute = replacement;
+    }
+
     public void Seed(RouteResult route, GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset observedAt, DateTimeOffset now, RouteBacktrackingPolicy.TrackedMotion? motion)
     {

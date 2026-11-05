@@ -55,6 +55,11 @@ public sealed class NavigationStabilityPolicy
         Current = default;
     }
 
+    public void RebindForAStarReplacement(RouteResult previous, RouteResult replacement)
+    {
+        if (AStarRouteDisplayPolicy.AppliesTo(replacement) && ReferenceEquals(route, previous)) route = replacement;
+    }
+
     public Decision ObserveGeographic(RouteResult activeRoute, GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset at, DateTimeOffset now) =>
         Observe(activeRoute, coordinate, accuracy, at, now, motion: null, observationHeld: false);

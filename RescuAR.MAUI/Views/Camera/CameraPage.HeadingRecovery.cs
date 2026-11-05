@@ -24,6 +24,7 @@ public partial class CameraPage
             _headingRevalidationPolicy.Reset("navigation frame heading acquisition");
             _pdrHeadingSmoother.Reset();
             _routeDisplayProgressPolicy.Reset();
+            LogReplayPolicyReset("navigation heading reacquisition", registration: true);
             verifiedPosition = null;
             lastRegisteredPublication = null;
             _verifiedRouteWindowHoldPolicy.Reset();

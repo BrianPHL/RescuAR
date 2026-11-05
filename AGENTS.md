@@ -74,6 +74,13 @@ request. Repository guidance does not override higher-priority instructions.
 - Do not manually interact with the app/browser, simulate user interactions, or
   run integration/E2E checks unless explicitly authorized. A screenshot reference
   does not authorize application interaction. Static reference inspection is allowed.
+- When a developer requests local GPS/navigation replay or reproduction, execute
+  the [local replay workflow](docs/field-testing/navigation-replay.md) and inspect
+  its results; do not stop at supplying commands. The request authorizes the
+  focused host policy replay and local extraction of the identified capture.
+  Ask only for missing/ambiguous input or required host permission. Report capture
+  quality, reproduced behavior, limitations and output paths; this does not
+  authorize app/device interaction or establish physical AR acceptance.
 - On failure, investigate the immediate cause and allow at most one reasonable
   fix-and-retest cycle. Report remaining failures and distinguish existing blockers.
 - Report passed, failed and skipped checks accurately. Builds/host checks do not

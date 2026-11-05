@@ -19,6 +19,11 @@ public sealed class RouteProgressMotionPolicy
         anchorMotion = null;
     }
 
+    public void RebindForAStarReplacement(RouteResult previous, RouteResult replacement)
+    {
+        if (AStarRouteDisplayPolicy.AppliesTo(replacement) && ReferenceEquals(route, previous)) route = replacement;
+    }
+
     public double Filter(RouteResult currentRoute, GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset at, double previousProgress, double proposedProgress,
         RouteBacktrackingPolicy.TrackedMotion? motion, out bool held)

@@ -33,8 +33,6 @@ public partial class CameraPage
 
     private const double RoadLineDiagnosticRadiusMeters = 40.0;
 
-    private bool diagnosticConsentPromptShown;
-
     private static readonly bool EnableDeveloperOffRouteSimulation =
         true;
 
@@ -259,35 +257,4 @@ public partial class CameraPage
 
 
 
-    private async void RequestDiagnosticLocationConsent()
-    {
-        if (diagnosticConsentPromptShown)
-        {
-            return;
-        }
-
-        diagnosticConsentPromptShown =
-            true;
-
-        bool consent =
-            await DisplayAlert(
-                "Diagnostic location logging",
-                "This diagnostic build can include approximate location " +
-                "cells in exported field logs. Coordinates are rounded to " +
-                "about 11 meters. Export only with tester approval and " +
-                "delete the bundle after evidence review and no later than " +
-                $"{DiagnosticPrivacyPolicy.MaximumRetentionDays} days.",
-                "Allow approximate logging",
-                "Keep locations redacted");
-
-        DiagnosticPrivacyPolicy.SetLocationLoggingConsent(
-            consent);
-
-        AndroidLog.Info(
-            "RescuAR-Privacy",
-            "DIAGNOSTIC_LOCATION_CONSENT " +
-            $"granted={DiagnosticPrivacyPolicy.HasLocationLoggingConsent}; " +
-            "coordinatePolicy=quantized-F4; " +
-            $"retention='{DiagnosticPrivacyPolicy.LocationRetentionPolicy}'");
-    }
 }

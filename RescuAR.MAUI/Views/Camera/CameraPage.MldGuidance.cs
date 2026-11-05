@@ -79,6 +79,7 @@ public partial class CameraPage
                      Math.Abs(Math.IEEERemainder(old.YawDegrees - current.YawDegrees, 360)) >= .001))
                 {
                     _routeDisplayProgressPolicy.Reset();
+                    LogReplayPolicyReset("ready route changed tracking frame or heading", registration: true);
                     verifiedPosition = null;
                     lastRegisteredPublication = null;
                 }

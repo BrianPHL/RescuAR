@@ -49,6 +49,8 @@ public partial class CameraPage
             navigationStability.Reset();
             positionObservationPolicy.Reset();
             progressMotionPolicy.Reset();
+            LogReplayPolicyReset("geographic positioning evidence reset", position: true,
+                stability: true, progressMotion: true);
             verifiedPosition = null;
             acceptedGpsPosition = null;
             lastRegisteredPublication = null;
@@ -184,8 +186,10 @@ public partial class CameraPage
             // trust completes. Publication still requires all shared gates.
             if (GetAcquisitionMotion(reading, requireTrustedHeading: false) is not { } motion) return;
             _routeDisplayProgressPolicy.ObserveGps(route, update, reading.ObservationTime);
+            var registrationEvaluatedAt = NavigationClock.UtcNow;
             var registration = _routeDisplayProgressPolicy.ObserveRegistration(route, update, reading.ObservationTime,
-                NavigationClock.UtcNow, motion);
+                registrationEvaluatedAt, motion);
+            LogReplayRegistration(route, update, reading, motion, registration, registrationEvaluatedAt);
             LogDetailedDebug(ProgressLogTag,
                 $"NAV_REGISTRATION_DECISION sample={reading.ObservationTime.ToUnixTimeMilliseconds()}; " +
                 $"trip={activeDestinationVersion}; state={registration.State}; innovation={registration.InnovationMeters:F3}m; " +
@@ -267,6 +271,7 @@ public partial class CameraPage
             if (published)
             {
                 BindMldPublishedWindow(route, frame);
+                BindAStarPublishedWindow(route, frame);
                 Interlocked.Increment(ref routeWindowPublishedCount);
                 lastRegistrationRejection = null;
             }
@@ -399,6 +404,7 @@ public partial class CameraPage
                 window.NavigationState.VisualKind, window.NavigationState.WindowStartProgressMeters,
                 window.NavigationState.SourceSegmentIndex, placement);
             BindMldPublishedWindow(route, frame);
+            BindAStarPublishedWindow(route, frame);
             AndroidLog.Info("RescuAR-AnchorRecovery",
                 $"GROUND_HANDOFF_RETAINED oldReference={window.Placement.GroundReference}; " +
                 $"newReference={placement.GroundReference}; worldPositionsPreserved=True; " +
@@ -445,7 +451,7 @@ public partial class CameraPage
             if (!pageIsVisible || !ReferenceEquals(activeRoute, route) || activeDestinationVersion != trip ||
                 currentCameraModuleView != CameraModuleViewMode.ArCamera ||
                 dynamicRerouteInProgress || routeHazardBlocksGuidance ||
-                emergencyAdvisoryVisible || safeZoneConfirmed || lastSafeZoneDecision.IsCandidate) return;
+                emergencyAdvisoryVisible || safeZoneConfirmed) return;
             ApplyPrototypeTurnGuidance(guidance);
             if (positionStatus.StartsWith("Position uncertain", StringComparison.Ordinal))
                 turnInstructionLabel.Text = "Confirming your route position — check the map";
