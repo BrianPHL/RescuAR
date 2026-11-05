@@ -29,6 +29,9 @@ export function getTelemetryFreshness(observedAt, nowMs = Date.now()) {
   const timestampMs = new Date(observedAt).getTime();
   if (!Number.isFinite(timestampMs)) return unavailable('Invalid PAGASA observation timestamp', 'Invalid timestamp');
 
+  if (timestampMs > nowMs + 5 * 60 * 1000) {
+    return unavailable('PAGASA observation timestamp is unexpectedly in the future', 'Future timestamp');
+  }
   const ageMs = Math.max(0, nowMs - timestampMs);
   const ageText = formatTelemetryAge(ageMs);
 

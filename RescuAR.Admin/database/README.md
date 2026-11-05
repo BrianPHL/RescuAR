@@ -14,6 +14,7 @@ the current hosted schema has not been reinspected by this update.
 | [004_rbac_foundation.sql](migrations/004_rbac_foundation.sql) | Role-based access control (RBAC), assignments, audit log and test records. Contains an explicit bootstrap-UUID step for an existing Auth account. |
 | [004_sms_outbound.sql](migrations/004_sms_outbound.sql) | SMS queue and device claim/report functions over an existing application database. |
 | [005_rbac_admin_provisioning.sql](migrations/005_rbac_admin_provisioning.sql) | Server-managed onboarding and password-setup status; install after `004_rbac_foundation.sql`. |
+| [007_pagasa_station_auto_switch.sql](migrations/007_pagasa_station_auto_switch.sql) | Restricted PAGASA station catalog switch for the telemetry worker. Requires an existing `station_catalog` and Supabase service-role access; install before deploying the updated worker. |
 
 The two `004_*` files are separate features, not interchangeable migrations.
 Review feature prerequisites and the actual deployed schema; do not run the

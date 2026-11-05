@@ -12,6 +12,12 @@ import {
 } from 'recharts';
 
 const SOURCE_ID = 'PAGASA_FFWWS';
+const unavailableAlert = { status: 'Unavailable', label: 'Live status unavailable', color: '#b91c1c' };
+function hasVerifiedThresholds(row) {
+  return ['alert_threshold_m', 'alarm_threshold_m', 'critical_threshold_m'].every((key) =>
+    row?.[key] !== null && row?.[key] !== undefined && row?.[key] !== '' && Number.isFinite(Number(row[key]))
+  );
+}
 const RANGE_OPTIONS = {
   '24h': { label: '24-Hour', ms: 24 * 60 * 60 * 1000 },
   '7d': { label: '7-Day', ms: 7 * 24 * 60 * 60 * 1000 },
@@ -55,11 +61,11 @@ function getLevelContext(status, currentLevel, thresholds) {
   const alarm = finiteNumberOrNull(thresholds?.ALARM_2);
   const critical = finiteNumberOrNull(thresholds?.ALARM_3);
 
-  if (!Number.isFinite(currentLevel)) {
+  if (status === 'Unavailable' || !Number.isFinite(currentLevel)) {
     return {
       tone: 'unavailable',
-      title: 'Water level unavailable',
-      summary: 'No verified water-level value is currently available for this station.',
+      title: 'Live status unavailable',
+      summary: 'The latest verified reading is stale or its source thresholds are unverified; live warnings are disabled.',
       proximity: 'Threshold distance unavailable.'
     };
   }
@@ -136,29 +142,47 @@ export default function RiverLevel({ onActionClick }) {
   const [timeRange, setTimeRange] = useState('24h');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stationsList, setStationsList] = useState([]);
-  const [selectedStationCode, setSelectedStationCode] = useState('11104204');
+  const [selectedStationCode, setSelectedStationCode] = useState('');
+  const [catalogWarning, setCatalogWarning] = useState('');
   const [selectedStation, setSelectedStation] = useState(null);
   const [history, setHistory] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [nowMs, setNowMs] = useState(Date.now());
 
   const stationDisplayName = selectedStation?.station_name || 'Sto. Niño Station';
-  const currentLevel = selectedStation?.level == null ? null : Number(selectedStation.level);
-  const thresholds = getStationThresholds(stationDisplayName, sourceThresholds(selectedStation));
-  const currentAlert = calculateAlertStatus(currentLevel, stationDisplayName, sourceThresholds(selectedStation));
+  const currentLevel = finiteNumberOrNull(selectedStation?.level);
   const freshness = getTelemetryFreshness(selectedStation?.observed_at || selectedStation?.updated_at, nowMs);
-  const trend = formatTrend(selectedStation?.trend);
+  const thresholds = hasVerifiedThresholds(selectedStation)
+    ? getStationThresholds(stationDisplayName, sourceThresholds(selectedStation))
+    : { ALARM_1: null, ALARM_2: null, ALARM_3: null, source: 'Unavailable' };
+  const currentAlert = freshness.isUsableAsLive && hasVerifiedThresholds(selectedStation)
+    ? calculateAlertStatus(currentLevel, stationDisplayName, sourceThresholds(selectedStation))
+    : unavailableAlert;
+  const trend = formatTrend(freshness.isUsableAsLive ? selectedStation?.trend : 'Unknown');
   const levelContext = getLevelContext(currentAlert.status, currentLevel, thresholds);
   const dispatchActions = getDispatchActions(currentAlert.status);
 
   const fetchStations = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('monitoring_stations')
-      .select('*')
-      .eq('source', SOURCE_ID)
-      .order('station_name', { ascending: true });
+    const [{ data, error }, { data: catalog, error: catalogError }] = await Promise.all([
+      supabase.from('monitoring_stations').select('*')
+        .eq('source', SOURCE_ID).order('station_name', { ascending: true }),
+      supabase.from('station_catalog').select('station_code, enabled, is_primary')
+        .eq('source', SOURCE_ID)
+    ]);
     if (error) throw error;
-    return data || [];
+    const catalogLoaded = !catalogError && Array.isArray(catalog) && catalog.length > 0;
+    const activeCodes = new Set((catalog || []).filter((row) => row.enabled === true)
+      .map((row) => String(row.station_code).trim()));
+    const list = catalogLoaded
+      ? (data || []).filter((row) => activeCodes.has(String(row.station_code).trim()))
+      : (data || []);
+    return {
+      list: list.map((row) => ({
+        ...row,
+        isPrimary: catalog?.find((item) => String(item.station_code).trim() === String(row.station_code).trim())?.is_primary === true
+      })),
+      warning: catalogLoaded ? '' : 'Active PAGASA station catalog is unavailable; inactive station records may be displayed.'
+    };
   }, []);
 
   const fetchHistory = useCallback(async (stationCode, range) => {
@@ -181,9 +205,12 @@ export default function RiverLevel({ onActionClick }) {
     setIsRefreshing(true);
     setErrorMessage('');
     try {
-      const list = await fetchStations();
+      const { list, warning } = await fetchStations();
+      setCatalogWarning(warning);
       setStationsList(list);
-      const target = list.find((row) => String(row.station_code) === String(stationCode)) || list.find((row) => row.station_name?.includes('Sto. Niño')) || list[0] || null;
+      const target = list.find((row) => String(row.station_code) === String(stationCode)) ||
+        list.find((row) => row.isPrimary && row.station_name?.includes('Sto. Niño')) ||
+        list.find((row) => row.station_name?.includes('Sto. Niño')) || list[0] || null;
       setSelectedStation(target);
       if (!target) {
         setHistory([]);
@@ -202,7 +229,10 @@ export default function RiverLevel({ onActionClick }) {
 
   useEffect(() => {
     void loadData(selectedStationCode, timeRange);
-    const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+      void loadData(selectedStationCode, timeRange);
+    }, 60 * 1000);
     const channel = supabase
       .channel('pagasa-river-level-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => void loadData(selectedStationCode, timeRange))
@@ -254,7 +284,7 @@ export default function RiverLevel({ onActionClick }) {
           <div className="station-selector-wrapper" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label htmlFor="station-select" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b' }}>Station:</label>
             <select id="station-select" value={selectedStationCode || ''} onChange={(e) => setSelectedStationCode(e.target.value)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}>
-              {stationsList.map((station) => <option key={station.station_code} value={station.station_code}>{station.station_name} ({Number(station.level).toFixed(2)} m EL)</option>)}
+              {stationsList.map((station) => <option key={station.station_code} value={station.station_code}>{station.station_name} ({finiteNumberOrNull(station.level) !== null ? `${Number(station.level).toFixed(2)} m EL` : 'No level'})</option>)}
             </select>
           </div>
           <button className="refresh-btn" onClick={() => void loadData(selectedStationCode, timeRange)} disabled={isRefreshing}>
@@ -263,12 +293,12 @@ export default function RiverLevel({ onActionClick }) {
         </div>
       </div>
 
-      {errorMessage && <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c' }}>{errorMessage}</div>}
+      {(errorMessage || catalogWarning) && <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c' }}>{[errorMessage, catalogWarning].filter(Boolean).join(' ')}</div>}
 
       <div className="river-metrics-grid row g-3">
         <div className="col-12 col-md-6 col-xl-4">
         <div className="river-card current-level-card h-100">
-          <div className="card-top-label"><Waves size={16} className="text-brand" /><span>CURRENT VERIFIED WATER-LEVEL ELEVATION</span></div>
+          <div className="card-top-label"><Waves size={16} className="text-brand" /><span>LAST VERIFIED WATER-LEVEL ELEVATION</span></div>
           <div className="level-hero-group">
             <div className="hero-number-wrapper"><span className="hero-number">{Number.isFinite(currentLevel) ? currentLevel.toFixed(2) : '--'}</span><span className="hero-unit">m EL</span></div>
             <div className="trend-chip" style={{ color: trend.color }}><span>{trend.symbol}</span><span>{trend.label}</span></div>
@@ -277,7 +307,7 @@ export default function RiverLevel({ onActionClick }) {
             <AlertTriangle size={14} /><span>{currentAlert.label.toUpperCase()}</span>
           </div>
           <div className={`threshold-distance threshold-distance-${levelContext.tone}`}>{levelContext.proximity}</div>
-          {Number.isFinite(Number(selectedStation?.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
+          {selectedStation?.delta_30m_m != null && Number.isFinite(Number(selectedStation.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
           <div className="elevation-definition">PAGASA reports WL [EL.m] as water-level elevation at the station datum; it is not river depth.</div>
         </div>
         </div>

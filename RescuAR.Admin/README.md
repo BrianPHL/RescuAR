@@ -2,7 +2,7 @@
 
 React/Vite dashboard backed by Supabase. The PAGASA worker, PREP exposure API,
 Supabase Edge Functions and Android SIM gateway run separately from the frontend.
-Source reviewed on 2026-11-03; deployment and live acceptance were not rechecked.
+Telemetry station-switch source updated on 2026-11-05; deployment and live acceptance have not been verified.
 
 Current build blocker: `src/components/Sidebar.jsx` contains conflict markers
 already present in `d83d797`, including lines 2 and 196. Vite rejects the file.
@@ -68,11 +68,35 @@ npm ci
 npm start
 ```
 
+Before deploying this station-recovery change, review and apply
+[`database/migrations/007_pagasa_station_auto_switch.sql`](database/migrations/007_pagasa_station_auto_switch.sql)
+to the **existing** Supabase project. It provides an atomic, service-role-only
+catalog switch. The worker cannot update station codes automatically until the
+RPC is installed; it reports `STATION_MAPPING_REVIEW` instead of silently
+switching when persistence is unavailable. No new worker environment values
+are required. Never expose the service-role key in a Vite variable.
+
+The worker reads current PAGASA `table_list.do` station codes and names,
+checks `detail_list.do` for a recent timestamped water level and complete
+source warning thresholds, and only then switches a catalog mapping. Exact
+normalized names can follow a new unique code. The verified Sto. Niño
+11104201/11104204 alternates are separate gauges: switching enables the
+available code, keeps both gauge identities and their historical observations,
+and does not rewrite past readings. Unclear matches, missing catalog entries,
+old readings, incomplete thresholds, and API errors leave the existing mapping
+unchanged and report a warning. Source-name changes on an unchanged verified
+code are also reflected in the catalog.
+
 `syncWorker.js` performs an initial sync and schedules checks every five minutes.
 PAGASA observation age is separate from worker check time. The UI uses the source
 observation timestamp: Fresh up to 15 minutes, Delayed over 15 through 30, Stale
 over 30 through 60, and Unavailable over 60 or without a valid timestamp. Only
 Fresh observations are eligible as live data in the freshness policy.
+Monitoring Stations and River Level select enabled catalog station codes,
+refresh periodically when Realtime messages are unavailable, and withhold
+live warning labels for stale readings or unverified thresholds. A 30-minute
+trend is derived from historical readings only when valid observations bracket
+that interval; otherwise Unknown is intentional.
 Historical research utilities are described
 [separately](scraper/data/historical/README.md).
 

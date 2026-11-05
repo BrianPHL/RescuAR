@@ -15,6 +15,10 @@ import {
 } from './lib/pagasaClient.js';
 import { LIVE_PAGASA_STATIONS } from './config/pagasaStations.js';
 import {
+  detectStationSwitches, verifyStationSwitchData, isRecentStationObservation,
+  deriveTrendFromHistory, normalizeSourceStationName
+} from './lib/stationRecovery.js';
+import {
   matchConfiguredStations,
   isUsableNewObservation,
   hasCompleteThresholds
@@ -42,31 +46,40 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 console.log('[Telemetry] PAGASA JSON telemetry worker initialized.');
 
-async function getConfiguredLiveStations() {
+async function getConfiguredStationCatalog() {
   const { data, error } = await supabase
     .from('station_catalog')
     .select('station_code, source_station_name, display_name, enabled, is_primary')
-    .eq('source', PAGASA_SOURCE_ID)
-    .eq('enabled', true);
+    .eq('source', PAGASA_SOURCE_ID);
 
-  if (error) {
-    console.warn('[Telemetry] station_catalog could not be read; using verified code fallback:', error.message);
-    return LIVE_PAGASA_STATIONS;
+  if (error || !data?.length) {
+    console.warn('[Telemetry] station_catalog unavailable or empty; automatic switching disabled:',
+      error?.message || 'no catalog rows');
+    return { liveStations: LIVE_PAGASA_STATIONS, catalogStations: [], canSwitch: false };
   }
 
-  if (!data?.length) {
-    console.warn('[Telemetry] station_catalog has no enabled PAGASA rows; using verified code fallback.');
-    return LIVE_PAGASA_STATIONS;
-  }
-
-  return data.map((row) => ({
-    key: row.station_code,
-    station_code: String(row.station_code),
-    source_station_name: row.source_station_name,
-    display_name: row.display_name,
-    enabled_live: true,
-    is_primary: row.is_primary
+  const catalogStations = data.map((row) => ({
+    ...row,
+    station_code: String(row.station_code).trim(),
+    enabled: row.enabled === true
   }));
+  const liveStations = catalogStations.filter((row) => row.enabled);
+  if (!liveStations.length) {
+    console.warn('[Telemetry] No enabled stations in station_catalog; automatic switching disabled.');
+    return { liveStations: LIVE_PAGASA_STATIONS, catalogStations, canSwitch: false };
+  }
+  return { liveStations, catalogStations, canSwitch: true };
+}
+
+async function applyVerifiedStationSwitch(candidate) {
+  const { data, error } = await supabase.rpc('pagasa_apply_station_switch', {
+    p_old_code: String(candidate.oldStation.station_code).trim(),
+    p_new_code: String(candidate.newStation.station_code).trim(),
+    p_expected_source_name: candidate.oldStation.source_station_name,
+    p_mode: candidate.mode
+  });
+  if (error) throw new Error(`station_catalog switch RPC failed: ${error.message}`);
+  if (data !== true) throw new Error('station_catalog changed concurrently or no matching rows were found');
 }
 
 async function getLatestStoredObservationTime(stationCode) {
@@ -216,18 +229,20 @@ async function recoverMissingStation(station, ymdhm, checkedAt) {
       alert_threshold_m: latest.alert_threshold_m,
       alarm_threshold_m: latest.alarm_threshold_m,
       critical_threshold_m: latest.critical_threshold_m,
-      // No 30-minute value from the current table: trend must not be "Stable".
       water_level_30m_m: null,
       water_level_1h_m: null,
       water_level_2h_m: null,
       trend: 'Unknown',
       delta_30m_m: null
     };
+    // A recovered gauge can report a real trend when detail history contains
+    // two readings roughly 30 minutes apart; never assume Stable otherwise.
+    Object.assign(snapshot, deriveTrendFromHistory(safeHistoryRows, latest) || {});
     await persistLatestObservation(snapshot, latest, checkedAt);
     const ageMinutes = Math.round((Date.parse(checkedAt) - Date.parse(latest.observed_at)) / 60000);
     console.warn(
       `[Scraper] ${station.display_name} (${code}): RECOVERED ${newRows.length} detail observation(s), ` +
-      `newest ${latest.observed_at} (${ageMinutes} min old). Source-list entry still missing; trend Unknown.`
+      `newest ${latest.observed_at} (${ageMinutes} min old). Source-list entry still missing; trend ${snapshot.trend}.`
     );
     return latest.observed_at;
   } catch (error) {
@@ -242,10 +257,38 @@ async function fetchAndPersistPagasaTelemetry() {
   const { searchTime, ymdhm } = await fetchPagasaReferenceTime();
   console.log(`[Scraper] PAGASA reference time ${searchTime} (${ymdhm}).`);
 
-  const configuredStations = await getConfiguredLiveStations();
+  const { liveStations: configuredStations, catalogStations, canSwitch } = await getConfiguredStationCatalog();
   console.log(`[Scraper] Configured enabled station codes: ${configuredStations.map((s) => String(s.station_code).trim()).join(', ')}.`);
   const rawStationList = await fetchPagasaStationList(ymdhm);
   const { selected, missing, unexpected, duplicates } = matchConfiguredStations(rawStationList, configuredStations);
+  const mappingIssues = canSwitch ? [] : ['Station catalog unavailable; automatic switching is disabled'];
+  const switchedOldCodes = new Set();
+  const verifiedHistoryByCode = new Map();
+  if (canSwitch) {
+    const { candidates, ambiguous } = detectStationSwitches(rawStationList, configuredStations, catalogStations);
+    for (const issue of ambiguous) {
+      mappingIssues.push(`Ambiguous replacement for ${issue.oldCode}: ${issue.matches.join(', ')}`);
+    }
+    for (const candidate of candidates) {
+      const oldCode = String(candidate.oldStation.station_code).trim();
+      const newCode = String(candidate.newStation.station_code).trim();
+      try {
+        const detail = await fetchPagasaStationHistory(newCode, ymdhm);
+        if (!verifyStationSwitchData(candidate.raw, detail, checkedAt)) {
+          mappingIssues.push(`Replacement ${oldCode} -> ${newCode} rejected: missing recent detail or verified thresholds`);
+          continue;
+        }
+        await applyVerifiedStationSwitch(candidate);
+        verifiedHistoryByCode.set(newCode, detail);
+        selected.push({ raw: candidate.raw, station: candidate.newStation });
+        switchedOldCodes.add(oldCode);
+        console.warn(`[Telemetry] VERIFIED STATION SWITCH (${candidate.mode}): ${oldCode} -> ${newCode}; ` +
+          `source ${candidate.newStation.source_station_name}. Historical station codes remain unchanged.`);
+      } catch (error) {
+        mappingIssues.push(`Could not activate ${oldCode} -> ${newCode}: ${error.message}`);
+      }
+    }
+  }
   console.log(
     `[Scraper] table_list.do returned ${rawStationList.length} station(s); ` +
     `${selected.length}/${configuredStations.length} configured stations present.`
@@ -260,6 +303,10 @@ async function fetchAndPersistPagasaTelemetry() {
   }
   if (duplicates.length) {
     console.warn(`[Scraper] Duplicate configured station codes in source response: ${duplicates.join(', ')}.`);
+  }
+
+  if (mappingIssues.length) {
+    console.warn(`[Telemetry] Station mapping warnings: ${mappingIssues.join(' | ')}`);
   }
 
   let verifiedCount = 0;
@@ -279,8 +326,15 @@ async function fetchAndPersistPagasaTelemetry() {
         continue;
       }
 
-      const rawHistory = await fetchPagasaStationHistory(stationCode, ymdhm);
-      const historyRows = normalizeHistoryRows(rawHistory, station, snapshot)
+      const rawHistory = verifiedHistoryByCode.get(stationCode) ??
+        await fetchPagasaStationHistory(stationCode, ymdhm);
+      const metadata = await getLastKnownStationMetadata(stationCode);
+      const verifiedThresholds = {
+        alert_threshold_m: snapshot.alert_threshold_m ?? metadata.alert_threshold_m,
+        alarm_threshold_m: snapshot.alarm_threshold_m ?? metadata.alarm_threshold_m,
+        critical_threshold_m: snapshot.critical_threshold_m ?? metadata.critical_threshold_m
+      };
+      const historyRows = normalizeHistoryRows(rawHistory, station, verifiedThresholds)
         .filter((row) => isUsableNewObservation(row.observed_at, null, checkedAt));
       if (!historyRows.length) {
         console.warn(`[Scraper] ${station.display_name}: detail_list.do returned no valid timestamped observations.`);
@@ -297,6 +351,35 @@ async function fetchAndPersistPagasaTelemetry() {
       }
 
       const latestHistory = historyRows[historyRows.length - 1];
+      // Never classify a level as Normal when the source thresholds are absent.
+      snapshot.alert_threshold_m = latestHistory.alert_threshold_m;
+      snapshot.alarm_threshold_m = latestHistory.alarm_threshold_m;
+      snapshot.critical_threshold_m = latestHistory.critical_threshold_m;
+      if (!hasCompleteThresholds(snapshot)) {
+        console.warn(`[Telemetry] ${station.display_name}: missing source thresholds; not publishing an unverified warning status.`);
+        continue;
+      }
+      if (snapshot.trend === 'Unknown') {
+        Object.assign(snapshot, deriveTrendFromHistory(historyRows, latestHistory) || {});
+      }
+      // Source-name changes on a VERIFIED code are safe to record without
+      // changing the station identity or historical station codes.
+      const receivedName = String(raw?.obsnm || '').trim();
+      if (canSwitch && receivedName && isRecentStationObservation(latestHistory.observed_at, checkedAt) &&
+          normalizeSourceStationName(receivedName) !== normalizeSourceStationName(station.source_station_name)) {
+        const { data: renamed, error: renameError } = await supabase
+          .from('station_catalog')
+          .update({ source_station_name: receivedName })
+          .eq('source', PAGASA_SOURCE_ID)
+          .eq('station_code', stationCode)
+          .eq('source_station_name', station.source_station_name)
+          .select('station_code');
+        if (renameError || renamed?.length !== 1) {
+          mappingIssues.push(`Could not update source name for ${stationCode}: ${renameError?.message || 'concurrent change'}`);
+        } else {
+          console.log(`[Telemetry] Source station renamed for code ${stationCode}: ${station.source_station_name} -> ${receivedName}`);
+        }
+      }
       // Do not regress the dashboard to an older timestamp if PAGASA returns an old response.
       if (!lastStoredAt || new Date(latestHistory.observed_at) >= new Date(lastStoredAt)) {
         await persistLatestObservation(snapshot, latestHistory, checkedAt);
@@ -304,7 +387,7 @@ async function fetchAndPersistPagasaTelemetry() {
         console.warn(`[Scraper] ${station.display_name}: older source timestamp ignored; stored ${lastStoredAt}.`);
       }
 
-      verifiedCount += 1;
+      if (isRecentStationObservation(latestHistory.observed_at, checkedAt)) verifiedCount += 1;
       recordObservation(latestHistory.observed_at);
       console.log(
         `[Telemetry] ${station.display_name}: ${latestHistory.level.toFixed(2)}m, ` +
@@ -317,10 +400,10 @@ async function fetchAndPersistPagasaTelemetry() {
 
   // Code-specific recovery is intentionally NOT a station-name alias. We only
   // accept timestamped history returned for the already verified PAGASA code.
-  for (const station of missing) {
+  for (const station of missing.filter((item) => !switchedOldCodes.has(String(item.station_code).trim()))) {
     const recoveredAt = await recoverMissingStation(station, ymdhm, checkedAt);
     if (recoveredAt) {
-      verifiedCount += 1;
+      if (isRecentStationObservation(recoveredAt, checkedAt)) verifiedCount += 1;
       recordObservation(recoveredAt);
     }
   }
@@ -330,10 +413,13 @@ async function fetchAndPersistPagasaTelemetry() {
     ...(verifiedCount > 0 ? { last_success_at: checkedAt } : {}),
     last_observation_at: newestObservationAt,
     records_received: verifiedCount,
-    last_error_code: verifiedCount < configuredStations.length ? 'PARTIAL_STATION_DATA' : null,
-    last_error_message: verifiedCount < configuredStations.length
-      ? `Only ${verifiedCount}/${configuredStations.length} configured stations produced usable data. See station-specific logs.`
-      : null
+    last_error_code: mappingIssues.length ? 'STATION_MAPPING_REVIEW' :
+      verifiedCount < configuredStations.length ? 'PARTIAL_STATION_DATA' : null,
+    last_error_message: mappingIssues.length
+      ? mappingIssues.join(' | ').slice(0, 1000)
+      : verifiedCount < configuredStations.length
+        ? `Only ${verifiedCount}/${configuredStations.length} configured stations produced recent verified data. See station-specific logs.`
+        : null
   });
 
   console.log(`[Telemetry] Coverage: ${selected.length}/${configuredStations.length} present in source list; ${verifiedCount} verified/recovered this cycle; ${missing.length} absent from source list.`);
