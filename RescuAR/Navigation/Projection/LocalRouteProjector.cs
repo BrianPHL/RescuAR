@@ -191,19 +191,12 @@ public static class LocalRouteProjector
         const double distanceEpsilon =
             0.001;
 
-        for (int i = 0;
+        for (int i = RouteDistanceIndex.After(points, clampedStart + distanceEpsilon);
              i < points.Count;
              i++)
         {
             RoutePoint point =
                 points[i];
-
-            if (point.DistanceFromStartMeters <=
-                clampedStart +
-                    distanceEpsilon)
-            {
-                continue;
-            }
 
             if (point.DistanceFromStartMeters >=
                 targetDistance -
@@ -254,18 +247,11 @@ public static class LocalRouteProjector
             return points[0];
         }
 
-        for (int i = 1;
-             i < points.Count;
-             i++)
+        int i = Math.Max(1, RouteDistanceIndex.AtOrAfter(points, distanceMeters));
+        if (i < points.Count)
         {
             RoutePoint end =
                 points[i];
-
-            if (end.DistanceFromStartMeters <
-                distanceMeters)
-            {
-                continue;
-            }
 
             RoutePoint start =
                 points[i - 1];

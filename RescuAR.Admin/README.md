@@ -1,73 +1,127 @@
-# RescuAR RBAC UI Navigation and Styling Patch
+# RescuAR Admin
 
-## What this patch changes
+React/Vite dashboard backed by Supabase. The PAGASA worker, PREP exposure API,
+Supabase Edge Functions and Android SIM gateway run separately from the frontend.
+Source reviewed on 2026-11-03; deployment and live acceptance were not rechecked.
 
-**Administrator Management** now appears as an indented, smoothly expanding child under **Community Management → User Management**. **Testing & Simulation** now appears under **Monitoring → Flood Hazard Exposure**. The old independent links at the foot of the sidebar are removed.
+Current build blocker: `src/components/Sidebar.jsx` contains conflict markers
+already present in `d83d797`, including lines 2 and 196. Vite rejects the file.
+The commands below remain the setup/check procedure, but a complete frontend
+build requires resolving that source conflict. This documentation update does
+not change the sidebar or establish a working hosted interface.
 
-Both pages now use the same RescuAR design tokens and page layout as Dashboard/Monitoring: consistent page headers, cards, form fields, buttons, responsive tables, status messages, and mobile layouts. Testing remains clearly marked TEST ONLY.
+## Local frontend
 
-## Scope and safety
-
-- 3 modified JSX components (`Sidebar.jsx`, `RbacAdmins.jsx`, `RbacTesting.jsx`).
-- 2 new scoped CSS files (`SidebarRbac.css`, `RbacPages.css`).
-- 1 new UI regression test (Node built-in test runner).
-- No modifications to `App.jsx`, `Auth.jsx`, `AuthWrapper.jsx`, authentication, Supabase functions/SQL, production advisories, or river telemetry.
-- The original RPCs (`rbac_list_accounts`, `rbac_list_roles`, `rbac_set_assignment`, `rbac_create_custom_role`, `rbac_list_tests`, `rbac_log_test`) are retained.
-- Navigation continues to use `canView` RBAC gating. Real enforcement must remain in Supabase RLS/RPCs.
-
-## Installation (Windows / PowerShell)
-
-1. Back up or commit existing changes first. Extract this ZIP **into the root of your existing `RescuAR.Admin` folder**, preserving the `RescuAR_RBAC_UI_PATCH` folder.
-2. From a PowerShell terminal opened in `RescuAR.Admin`, run:
+Requires Node.js 22.12 or newer. In `RescuAR.Admin/`, create a local configuration
+from [.env.example](.env.example) if you do not already have `.env`, then replace
+the placeholder values:
 
 ```powershell
-& .\RescuAR_RBAC_UI_PATCH\Apply-RBAC-UI.ps1
+Copy-Item .env.example .env
+npm ci
+npm run dev
 ```
 
-The installer verifies source-file SHA256 checksums against your uploaded `RescuAR.Admin(20261026-045113).zip`, backs up the current files, and refuses to overwrite unexpected local edits. If your files have changed since that ZIP, review differences first and **only if you intentionally want to replace those local changes**, rerun:
+Preserve any existing `.env`. It is ignored by Git. Vite reads `VITE_*` values at
+startup/build time; restart the dev server or rebuild after changing them.
+
+| Variable | Consumer | Purpose |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Frontend | Supabase project URL; also constructs the SMS function URL |
+| `VITE_SUPABASE_ANON_KEY` | Frontend | Public anonymous/publishable API key for that project |
+| `VITE_PREP_EXPOSURE_API_URL` | Frontend | PREP base URL, e.g. `http://localhost:8000` |
+| `SUPABASE_URL` | Worker only | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Worker only | Privileged server key; never put it in a `VITE_*` variable |
+
+Set frontend values explicitly even though `src/supabaseClient.js` has legacy
+fallbacks: the SMS console reads Vite variables directly. The frontend and worker
+can read the same local parent `.env`, but only public `VITE_*` variables belong
+in the browser bundle. Keep privileged keys out of those variables and source.
+
+## Authentication and database prerequisites
+
+`AuthWrapper.jsx` restores Supabase Auth sessions, loads `rbac_my_access`, and
+checks `rbac_password_setup_status`. Accounts awaiting first-login password
+setup see the password-change screen before the application. View permissions
+come from `src/rbac/access.js`; hiding a view does not prove backend authorization.
+
+The current gate requires the RBAC foundation and provisioning-status RPCs.
+Reports Moderation and user operations also depend on older database contracts.
+Read [database/README.md](database/README.md) before provisioning another project.
+The SQL directory is incomplete as a database bootstrap; do not apply every file
+in filename order or rerun deployed migrations to resolve a frontend error.
+
+Administrator provisioning uses the `rbac-admin-provision` Edge Function and
+`RESCUAR_ADMIN_ALLOWED_ORIGINS` in its server environment. Its retained
+[provisioning notes](README_PATCH.md) describe the function/SQL contract; the old
+ZIP installer instructions are historical.
+
+## Telemetry worker
+
+The worker reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from
+`RescuAR.Admin/.env` locally, not `scraper/.env`. A hosted worker reads its own
+injected environment variables. Starting it writes to the configured database:
 
 ```powershell
-& .\RescuAR_RBAC_UI_PATCH\Apply-RBAC-UI.ps1 -Force
+cd scraper
+npm ci
+npm start
 ```
 
-Using `-Force` still creates backups. Do not run it without reviewing the files it will replace.
+`syncWorker.js` performs an initial sync and schedules checks every five minutes.
+PAGASA observation age is separate from worker check time. The UI uses the source
+observation timestamp: Fresh up to 15 minutes, Delayed over 15 through 30, Stale
+over 30 through 60, and Unavailable over 60 or without a valid timestamp. Only
+Fresh observations are eligible as live data in the freshness policy.
+Historical research utilities are described
+[separately](scraper/data/historical/README.md).
 
-3. Verify:
+## PREP exposure API
+
+Follow [prep_api/README_IMPLEMENTATION.md](prep_api/README_IMPLEMENTATION.md).
+Set `VITE_PREP_EXPOSURE_API_URL` on the frontend and `PREP_ALLOWED_ORIGINS` on
+the separate R service. An unset frontend URL leaves exposure requests unavailable.
+
+The API estimates exposure to reference hazard polygons; it does not predict
+live inundation or observe affected-person counts. Automatic Alert/Alarm/Critical
+mapping currently falls back to provisional rules because the frontend requests
+`GET /v1/exposure/rules`, which is absent from the checked-in API. The R metadata
+includes its rule configuration, but the frontend's dedicated rules loader does
+not consume that metadata as a replacement endpoint. File promotion alone does
+not complete this connection.
+
+## SMS and interface limitations
+
+The SMS Parser navigation entry routes to `SmsOutboundConsole`, which queues
+outbound SMS through a separately deployed function and SIM handset. Follow
+[SMS_GATEWAY_SETUP.md](SMS_GATEWAY_SETUP.md); queued/sent states do not prove
+recipient delivery. The separate Notify Residents broadcast modal is a local
+simulation, including its siren and push choices.
+
+System Settings changes are local state with a success timer, not persisted
+configuration. System Logs displays static sample entries, not an audit-history
+viewer. Residents Directory remains a placeholder. The
+[task inventory](database/audit-task-inventory.md) distinguishes active service
+calls, simulations and unverified audit capture.
+
+## Checks and hosted frontend
+
+From `RescuAR.Admin/`, run checks appropriate to the change:
 
 ```powershell
-node --test .\tests\rbac-ui-regression.test.mjs
+npm run lint
 npm run build
+npm run test:option-b
+node --test tests/rbac-ui-regression.test.mjs tests/rbac-auth-regression.test.mjs tests/rbac-admin-provisioning.test.mjs tests/rbacAccess.test.mjs tests/reportsModeration.test.mjs
 ```
 
-4. Run `npm run dev` and sign in as Superadmin. Check both nested sidebars, role-assignment UI, and test-only page. Test desktop and mobile widths.
-5. Stage **only the files actually modified**, avoiding unrelated work:
+These are local checks, not authenticated Supabase, SMS-delivery or field tests.
+Database fixture tests have missing prerequisites documented in the database
+guide. `npm run preview` serves a local build. The hosted `npm start` script uses
+the hosting shell's `$PORT`; it is not a portable Windows PowerShell preview
+command. Configure frontend `VITE_*` values before the hosted build. Deploying
+the frontend does not deploy SQL, Edge Functions, the worker, PREP or the handset.
 
-```powershell
-git add src/components/Sidebar.jsx src/components/RbacAdmins.jsx src/components/RbacTesting.jsx src/components/SidebarRbac.css src/components/RbacPages.css tests/rbac-ui-regression.test.mjs
-git commit -m "style(rbac): align admin pages and nest links in sidebar"
-git push
-```
-
-Note: The full Vite production build was not verified in the authoring Linux container because the uploaded node_modules contains a Windows-only Rolldown native binding. JSX syntax parsing and the five focused regression tests passed. Run `npm run build` on Windows before deployment.
-
-## Expected sidebar
-
-```text
-Monitoring
-  Monitoring Stations
-  Marikina River Level
-  Flood Hazard Exposure
-    Testing & Simulation          (Superadmin only)
-Community Management
-  Reports Moderation
-  User Management
-    Administrator Management      (Superadmin only)
-Content Management
-System Settings
-```
-
-The parent rows continue to open their original pages; a chevron beside each parent toggles its new child submenu. The child submenus auto-expand when their views are active.
-
-## No database migration
-
-This UI-only patch requires no new Supabase migrations, no credentials, and no permission changes. It does not implement additional RBAC hardening.
+`APPLY_PATCH.md`, `PATCH_README.md`, `README_PATCH.md` and the `Apply-*.ps1`
+files are retained patch history. Their original ZIP layouts are absent; do not
+run the installers against this integrated checkout.

@@ -1,5 +1,8 @@
 # Session default and flood-tab crash repair — 2026-10-28
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 ## Authentication
 
 The sign-in checkbox and all session/email persistence reads defaulted Remember Me to Off. The user approved default On with an Off option, and explicitly requested a checked sign-in checkbox. The checkbox now starts checked when no choice is saved and has a short explanation. An existing saved Off value is respected; check it once at the next sign-in to enable persistence.

@@ -1,5 +1,8 @@
 # RescuAR corrective batch 11
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 ## Scope and provenance
 
 Reviewed all three supplied ZIPs, using their names as version labels. Archive

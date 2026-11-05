@@ -2,6 +2,11 @@
 
 Statuses in this matrix are deliberately conservative. Code implementation does not become `RESOLVED — VERIFIED` until the required build and physical-device evidence is attached.
 
+Source-alignment note, 2026-11-03: batch labels and earlier passing counts are
+historical evidence, not a new verification run. Use the
+[current field procedure](docs/field-testing/README.md) for candidate flags and
+device retests; no finding is closed by this documentation update.
+
 | ID | Batch | Current status | Primary implementation evidence | Required closure evidence |
 |---:|---:|---|---|---|
 | 1 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | `ArCoreService.Lifecycle.cs`, `IArCoreService.cs` | Repeated single-owner start/pause/shutdown trace. |
@@ -11,7 +16,7 @@ Statuses in this matrix are deliberately conservative. Code implementation does 
 | 5 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Diagnostic build policy and Camera diagnostics split | Release APK contains no production route override. |
 | 6 | 8 | IMPLEMENTED — NEEDS FIELD VALIDATION | Conditional diagnostic compilation | Release build exposes no developer-only Camera action. |
 | 7 | 9 | IMPLEMENTED — NEEDS FIELD VALIDATION | `AndroidManifest.xml`, compatibility verifier | Store/device eligibility matches AR Required policy. |
-| 8 | 10 | PARTIALLY RESOLVED | Existing regression runner now has 476 passing checks; package and ADB validation scripts retained | Physical-device evidence is still required; see `AR_SYSTEM_AUDIT_20261016.md`. |
+| 8 | 10 | PARTIALLY RESOLVED | October 16 report recorded 476 passing checks; regression, package and ADB validation tools remain in source | Current candidate checks and physical-device evidence are still required; the October 16 count is historical. |
 | 9 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Bounded asynchronous lifecycle operations | No lifecycle stall or ANR during interruption testing. |
 | 10 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Request generation and idempotent transitions | Duplicate page/activity events do not duplicate session work. |
 | 11 | 1 | IMPLEMENTED — NEEDS FIELD VALIDATION | Generation checks and bounded gates | No stale queued work or unbounded wait under rapid transitions. |

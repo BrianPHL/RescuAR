@@ -1519,18 +1519,11 @@ public sealed class RouteProgressTracker
                 .Coordinate;
         }
 
-        for (int i = 1;
-             i < route.Points.Count;
-             i++)
+        int i = Math.Max(1, RouteDistanceIndex.AtOrAfter(route.Points, distanceMeters));
+        if (i < route.Points.Count)
         {
             RoutePoint end =
                 route.Points[i];
-
-            if (end.DistanceFromStartMeters <
-                distanceMeters)
-            {
-                continue;
-            }
 
             RoutePoint start =
                 route.Points[i - 1];
@@ -1578,19 +1571,9 @@ public sealed class RouteProgressTracker
             return -1;
         }
 
-        for (int i = 0;
-             i < route.Points.Count - 1;
-             i++)
-        {
-            if (route.Points[i + 1]
-                    .DistanceFromStartMeters >=
-                distanceMeters)
-            {
-                return i;
-            }
-        }
-
-        return route.Points.Count - 2;
+        if (double.IsNaN(distanceMeters)) return route.Points.Count - 2;
+        return Math.Clamp(RouteDistanceIndex.AtOrAfter(route.Points, distanceMeters) - 1,
+            0, route.Points.Count - 2);
     }
 
     private static string FormatNullable(

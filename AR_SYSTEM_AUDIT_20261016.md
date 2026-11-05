@@ -1,5 +1,8 @@
 # AR system audit and corrective changes — 16 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 The audit covers the shared A*/MLD navigation-to-AR pipeline, camera acquisition
 and Vulkan conversion, pose/projection and frame coherence, ground acquisition
 and recovery, route and flood rendering, sensors, arrival, lifecycle, and graphics

@@ -194,7 +194,8 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         GeoCoordinate origin,
         GeoCoordinate destination,
         IReadOnlyList<RouteHazard> hazards,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool forceOffline = false)
     {
         ArgumentNullException.ThrowIfNull(
             hazards);
@@ -203,10 +204,9 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
 
         if (hazards.Count == 0)
         {
-            return await FindRouteAsync(
-                origin,
-                destination,
-                cancellationToken);
+            return forceOffline
+                ? await FindOfflineRouteAsync(origin, destination, cancellationToken)
+                : await FindRouteAsync(origin, destination, cancellationToken);
         }
 
         if (RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
@@ -216,7 +216,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         }
 
         bool internetAvailable =
-            !requireEmbeddedPedestrianGraph && GetInternetAvailabilitySafely();
+            !forceOffline && !requireEmbeddedPedestrianGraph && GetInternetAvailabilitySafely();
 
         if (internetAvailable &&
             onlineRoutingService is IHazardAwareRoutingService hazardAwareOnline)
@@ -394,7 +394,7 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         GeoCoordinate destination,
         Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
         IReadOnlyList<RouteHazard>? hazards = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool forceOffline = false)
     {
         ArgumentNullException.ThrowIfNull(activeRoute);
         ArgumentNullException.ThrowIfNull(findRoadAccess);
@@ -404,10 +404,10 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
         {
             AndroidLog.Info(LogTag,
                 $"REPLAN_PROVIDER previous='{activeRoute.Algorithm}'; policy=HazardSafety; hazards={hazards.Count}.");
-            return FindHazardAvoidingRouteAsync(origin, destination, hazards, cancellationToken);
+            return FindHazardAvoidingRouteAsync(origin, destination, hazards, cancellationToken, forceOffline);
         }
 
-        IRoutingService provider = requireEmbeddedPedestrianGraph || IsOfflineRoute(activeRoute)
+        IRoutingService provider = forceOffline || requireEmbeddedPedestrianGraph || IsOfflineRoute(activeRoute)
             ? new OfflineTripRoutingService(this)
             : this;
         AndroidLog.Info(LogTag,
@@ -419,14 +419,14 @@ public sealed class HybridRoutingService : IHazardAwareRoutingService
     public async Task<RouteReplacementResult> FindReplacementRouteResultAsync(
         RouteResult activeRoute, GeoCoordinate origin, GeoCoordinate destination,
         Func<CancellationToken, Task<AStarRoutingService.RoadApproachTarget?>> findRoadAccess,
-        IReadOnlyList<RouteHazard>? hazards = null, CancellationToken cancellationToken = default)
+        IReadOnlyList<RouteHazard>? hazards = null, CancellationToken cancellationToken = default, bool forceOffline = false)
     {
         ArgumentNullException.ThrowIfNull(activeRoute);
         ArgumentNullException.ThrowIfNull(findRoadAccess);
         cancellationToken.ThrowIfCancellationRequested();
         if (hazards is { Count: > 0 } && RouteHazardGeometry.IsDestinationExcluded(destination, hazards))
             return new(null, RouteReplacementFailure.DestinationExcluded);
-        var route = await FindReplacementRouteAsync(activeRoute, origin, destination, findRoadAccess, hazards, cancellationToken);
+        var route = await FindReplacementRouteAsync(activeRoute, origin, destination, findRoadAccess, hazards, cancellationToken, forceOffline);
         return new(route, route is null ? RouteReplacementFailure.NoRoute : RouteReplacementFailure.None);
     }
 

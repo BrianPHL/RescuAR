@@ -1,5 +1,8 @@
 # Navigation arrows and arrival review — 2026-10-31
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Baseline: `7fbd3b6` (`fix(ar): prevent GPS registration correction starvation`).
 No tester logs or installed-APK identities accompanied this feedback. All three
 videos and four screenshots were accessible. Video evidence below comes from

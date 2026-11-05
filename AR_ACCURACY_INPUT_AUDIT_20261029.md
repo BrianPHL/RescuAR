@@ -1,5 +1,8 @@
 # AR accuracy input audit — 29 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 Reviewed checkout `e7d268f` and the complete `RescuAR_FieldTest_20261026_185849.zip` capture/recording. This work follows the removal of application ML road alignment; no ML or cloud dependency is introduced.
 
 ## Concrete acquisition defect

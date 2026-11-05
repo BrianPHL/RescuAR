@@ -30,6 +30,7 @@ public partial class CameraPage
         RouteProgressTracker.RouteProgressUpdate Update);
     private readonly RoutePositionObservationPolicy positionObservationPolicy = new();
     private readonly RouteProgressMotionPolicy progressMotionPolicy = new();
+    private readonly ARWorldCorrectionRecoveryPolicy worldCorrectionRecoveryPolicy = new();
     private volatile bool positionObservationHeld;
     private volatile bool arPositionObservationHeld;
     private readonly NavigationStabilityPolicy navigationStability;
@@ -71,6 +72,13 @@ public partial class CameraPage
             "reason=independent orientation continuity; compassRotationApplied=False.");
     }
 
+    private void ObserveWorldCorrectionHeadingEvidence(long session, long generation)
+    {
+        lock (routeProgressFusionSync)
+            if (worldCorrectionRecoveryPolicy.Observe(session, generation))
+                _headingRevalidationPolicy.Reset("AR world correction");
+    }
+
     private ARRoutePlacement CaptureRoutePlacement(ARCameraPoseBridge.SpatialSnapshot frame,
         string source, bool retainedObservation, DateTimeOffset? capturedObservation = null)
     {
@@ -110,14 +118,20 @@ public partial class CameraPage
     {
         var frame = ARCameraPoseBridge.CurrentFrame;
         var tracking = ARTrackingStateBridge.Current;
+        var correction = ARCameraSpatialController.CurrentRouteWorldCorrectionRequest;
         if (!frame.IsFresh || !frame.IsTracking || !frame.Pose.IsTracking ||
             !(requireTrustedHeading ? HasCurrentRouteHeading() : HasCurrentHeadingCandidate()) ||
             !tracking.IsRenderableFor(frame.Generation.SessionGeneration) ||
             frame.TrackingEpoch != tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount ||
             frame.WorldFrame != ARCameraSpatialController.WorldFrameGeneration ||
             !ARRenderGenerationBridge.IsCurrentSession(frame.Generation) ||
-            ARCameraSpatialController.CurrentRouteWorldCorrectionRequest.IsPending)
+            !correction.AcceptsRequalificationFrame(frame.WorldFrame, frame.Version))
             return null;
+
+        // Invalidate old walking evidence before the first new-frame sample,
+        // rather than repeatedly clearing recovery at each diagnostic tick.
+        if (correction.IsPending)
+            ObserveWorldCorrectionHeadingEvidence(frame.Generation.SessionGeneration, correction.Generation);
 
         double yaw = activeMapToArYawDegrees;
         if (!requireTrustedHeading)

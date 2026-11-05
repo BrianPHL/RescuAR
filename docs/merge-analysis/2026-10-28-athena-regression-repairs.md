@@ -1,5 +1,8 @@
 # Completed Athena regression repairs — 28 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 Completed the user's approved repair sequence in the separate integration worktree and copied each verified batch to the clean `migration/athena-modules-pt2` build checkout. No merge, push, database change or APK packaging was performed.
 
 ## User choices applied

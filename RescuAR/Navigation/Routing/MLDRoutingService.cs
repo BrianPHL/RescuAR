@@ -1146,7 +1146,9 @@ public sealed class MLDRoutingService : IHazardAwareRoutingService
 
         return
             $"{baseUrl}/route/v1/foot/{coordinatePath}" +
-            "?overview=full&geometries=geojson&steps=true" +
+            // Guidance derives turns from the retained full polyline; unused
+            // OSRM step details only inflate the response and JSON document.
+            "?overview=full&geometries=geojson&steps=false" +
             alternativesQuery + "&radiuses=" + radiuses;
     }
 

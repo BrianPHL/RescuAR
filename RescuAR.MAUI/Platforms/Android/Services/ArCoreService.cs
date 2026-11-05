@@ -554,7 +554,7 @@ public sealed partial class ArCoreService : IArCoreService
                     .Horizontal);
 
             planeFindingEnabled = true;
-            lastWorkloadStateLog = null;
+            lastWorkloadDemand = null;
 
             Log.Debug(
                 Tag,
@@ -3520,6 +3520,7 @@ public sealed partial class ArCoreService : IArCoreService
         }
 
         ushort[]? depthMillimeters = null;
+        byte[]? rawDepthBytes = null;
         bool depthBufferOwnershipTransferred = false;
 
         try
@@ -3597,50 +3598,25 @@ public sealed partial class ArCoreService : IArCoreService
                 return;
             }
 
-            int pixelCount = checked(width * height);
+            int requiredBytes = ARDepthImageDecoder.GetRequiredByteCount(
+                width, height, rowStride, pixelStride);
+            if (buffer.Limit() < requiredBytes)
+                throw new InvalidOperationException("Depth plane buffer is truncated.");
 
-            depthMillimeters =
-                System.Buffers.ArrayPool<ushort>.Shared.Rent(pixelCount);
-
-            int validDepthPixelCount = 0;
-
-            for (int y = 0;
-                 y < height;
-                 y++)
+            rawDepthBytes = System.Buffers.ArrayPool<byte>.Shared.Rent(requiredBytes);
+            // Preserve the producer's position/limit. One bulk Java call replaces
+            // two Java calls per pixel, including on a direct ByteBuffer.
+            using (Java.Nio.ByteBuffer copy = buffer.Duplicate()!)
             {
-                int rowOffset =
-                    y * rowStride;
-
-                int destinationRow =
-                    y * width;
-
-                for (int x = 0;
-                     x < width;
-                     x++)
-                {
-                    int byteIndex =
-                        rowOffset +
-                        x * pixelStride;
-
-                    // D_16 is explicitly little-endian. Read the bytes
-                    // directly so this does not depend on ByteBuffer order.
-                    byte low =
-                        unchecked((byte)buffer.Get(byteIndex));
-
-                    byte high =
-                        unchecked((byte)buffer.Get(byteIndex + 1));
-
-                    ushort depthValue =
-                        (ushort)(low | (high << 8));
-
-                    depthMillimeters[destinationRow + x] = depthValue;
-
-                    if (depthValue is >= 180 and <= 8_000)
-                    {
-                        validDepthPixelCount++;
-                    }
-                }
+                copy.Position(0);
+                copy.Get(rawDepthBytes, 0, requiredBytes);
             }
+
+            int pixelCount = checked(width * height);
+            depthMillimeters = System.Buffers.ArrayPool<ushort>.Shared.Rent(pixelCount);
+            int validDepthPixelCount = ARDepthImageDecoder.Decode(
+                rawDepthBytes.AsSpan(0, requiredBytes), width, height, rowStride,
+                pixelStride, depthMillimeters.AsSpan(0, pixelCount));
 
             int minimumValidDepthPixels = Math.Max(64, pixelCount / 100);
 
@@ -3812,6 +3788,8 @@ public sealed partial class ArCoreService : IArCoreService
         }
         finally
         {
+            if (rawDepthBytes is not null)
+                System.Buffers.ArrayPool<byte>.Shared.Return(rawDepthBytes);
             if (depthMillimeters is not null &&
                 !depthBufferOwnershipTransferred)
             {

@@ -1,5 +1,8 @@
 # Camera presentation — 2026-10-28
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 The user confirmed that the resize crash is fixed. The new completed capture `RescuAR_FieldTest_20261028_120931.zip` identifies the latest installed build `4256ada`, contains repeated AR/Flood/2D transitions and has no fatal entries. That evidence applies to the captured scenario, before these presentation changes.
 
 ## Requested changes

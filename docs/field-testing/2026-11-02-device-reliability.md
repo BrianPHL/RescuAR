@@ -1,5 +1,11 @@
 # Shared navigation reliability candidate
 
+Historical candidate at `9a48b90`. The later
+[cadence recovery report](2026-11-02-samsung-honor-cadence-recovery.md) supersedes
+its two-observation startup policy. Current Camera registration uses one already
+qualified, pose-paired observation; the original candidate description below is
+retained as history. Use the [current field procedure](README.md) for retesting.
+
 This candidate replaces provider-specific acquisition timing with a common native navigation path. GPS acquisition is mapped from Android elapsed realtime into the camera clock; original provider UTC, coordinates and reported accuracy remain unchanged. Navigation deadlines and evidence age use a stable process clock. A delayed fix is paired with its historical acquisition pose, never automatically with the current camera position. The bounded history holds 512 snapshots and avoids duplicate camera frames, so high publication rates do not evict still-eligible observations. Reusing a camera frame cannot refresh its acquisition time.
 
 Both providers now share heading recovery and a one-second polling delay between bounded navigation requests. Initial AR registration requires two spaced observations agreeing with tracked movement. The app retains the accepted geographic route, voice and arrival checks while collecting AR recovery evidence. A prolonged recovery identifies the missing input and recommends the 2D map after 15 seconds. The displayed provider comes from the actual route, including fallback, rather than network icons.

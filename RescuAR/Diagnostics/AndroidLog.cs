@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 
 namespace RescuAR.Diagnostics;
 
@@ -14,6 +15,9 @@ namespace RescuAR.Diagnostics;
 /// </summary>
 public static class AndroidLog
 {
+    private static readonly object resolutionSync = new();
+    private static LogWriters? writers;
+
     /// <summary>
     /// Detailed diagnostics are compiled only into explicit diagnostic builds.
     /// Information, warning, and error messages remain available for field
@@ -67,6 +71,29 @@ public static class AndroidLog
     {
         try
         {
+            LogWriters? resolved = Volatile.Read(ref writers) ?? ResolveWriters();
+            Func<string, string, int>? write = level switch
+            {
+                "Debug" => resolved?.Debug,
+                "Info" => resolved?.Info,
+                "Warn" => resolved?.Warn,
+                "Error" => resolved?.Error,
+                _ => null
+            };
+            write?.Invoke(tag, message);
+        }
+        catch
+        {
+            // Diagnostics must never break AR/navigation execution.
+        }
+    }
+
+    private static LogWriters? ResolveWriters()
+    {
+        lock (resolutionSync)
+        {
+            if (writers is not null) return writers;
+
             Type? logType =
                 AppDomain.CurrentDomain
                     .GetAssemblies()
@@ -81,32 +108,23 @@ public static class AndroidLog
 
             if (logType is null)
             {
-                return;
+                // The shared engine also runs on non-Android hosts. Do not
+                // cache a miss: Android may load its assembly after startup.
+                return null;
             }
 
-            MethodInfo? method =
-                logType.GetMethod(
-                    level,
-                    BindingFlags.Public |
-                    BindingFlags.Static,
-                    binder: null,
-                    types:
-                    [
-                        typeof(string),
-                        typeof(string)
-                    ],
-                    modifiers: null);
+            Func<string, string, int>? Resolve(string name) =>
+                logType.GetMethod(name, BindingFlags.Public | BindingFlags.Static,
+                    binder: null, types: [typeof(string), typeof(string)], modifiers: null)
+                    ?.CreateDelegate<Func<string, string, int>>();
 
-            method?.Invoke(
-                null,
-                [
-                    tag,
-                    message
-                ]);
-        }
-        catch
-        {
-            // Diagnostics must never break AR/navigation execution.
+            var resolved = new LogWriters(Resolve("Debug"), Resolve("Info"), Resolve("Warn"), Resolve("Error"));
+            Volatile.Write(ref writers, resolved);
+            return resolved;
         }
     }
+
+    private sealed record LogWriters(Func<string, string, int>? Debug,
+        Func<string, string, int>? Info, Func<string, string, int>? Warn,
+        Func<string, string, int>? Error);
 }

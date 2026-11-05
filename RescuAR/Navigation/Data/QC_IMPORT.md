@@ -202,10 +202,11 @@ server containing them all.
    the latest available version of each object. This compatibility path
    does not reconstruct later missing edits/deletions; prefer a fresh central snapshot. It still checks that only one version remains
    per object and that every road node exists. See [Osmium's time filter](https://docs.osmcode.org/osmium/latest/osmium-time-filter.html).
-2. On your local computer with Docker Desktop running, open PowerShell in
-   `D:\Projects\RescuAR\RescuAR\Navigation\Data\` and run (not Railway SSH):
+2. On your local computer with Docker Desktop running, start at the repository
+   root and change into the routing-data directory in PowerShell (not Railway SSH):
 
-   ```sh
+   ```powershell
+   Set-Location RescuAR/Navigation/Data
    docker build -t rescuar-mld .
    docker run --rm -p 5000:5000 rescuar-mld
    ```

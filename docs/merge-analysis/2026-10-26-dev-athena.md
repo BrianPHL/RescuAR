@@ -1,5 +1,8 @@
 # Dev and Athena integration analysis — 26 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 ## Recommendation and scope
 
 Start the eventual integration from `dev`. Preserve Athena's splash, authentication/profile screens, Safety Circle map/management/chat, and Camera 2D map experience. Adapt their shared services and state handling to preserve dev's routing, AR recovery, data, dashboard, reports, preparation modules, admin permissions, tooling, and validation evidence.

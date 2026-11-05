@@ -1,5 +1,8 @@
 # Athena integration progress — 26 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](../README.md) for present work.
+
 ## Active baseline
 
 - Integration branch: `codex/integrate-athena-modules`.

@@ -104,31 +104,12 @@ After installation, restart RStudio if necessary.
 
 # 2. Open the Project Correctly
 
-Extract the `RescuAR.Admin` folder anywhere on your computer.
-
-Example:
-
-```text
-C:/Users/YourName/Documents/RescuAR.Admin/
-```
-
-or:
-
-```text
-D:/Projects/RescuAR.Admin/
-```
-
-Open RStudio from inside the project or one of its subfolders.
-
-The scripts should be configured to locate the project root automatically.
-
-If your copy still contains a hardcoded path such as:
-
-```r
-C:/Users/Josh/Documents/Project/RescuAR/RescuAR.Admin
-```
-
-replace it before running the validation.
+Use the repository's `RescuAR.Admin/` directory, or that directory from an
+independently supplied evaluation package. Keep its relative subfolders intact.
+In RStudio, set the working directory to `RescuAR.Admin/` or one of its subfolders
+before sourcing a script. The scripts locate the project through its data markers;
+they do not require another evaluator's absolute Windows path. Review any older
+copy that hardcodes a user directory before running it.
 
 ---
 
@@ -640,13 +621,18 @@ and blocks promotion if the configured minimum event counts or holdout requireme
 prep_api/config/exposure_scenario_rules.json
 ```
 
-The PREP API exposes that mapping through:
+Source-alignment correction, 2026-11-03: the frontend currently requests:
 
 ```text
 GET /v1/exposure/rules
 ```
 
-and the Admin Flood Hazard Exposure page loads it automatically. If no approved configuration exists, the application remains explicitly labeled as using the provisional mapping.
+That endpoint is absent from the checked-in `plumber.R`. The API includes rule
+configuration in definitions/scenario metadata, but the frontend's dedicated
+rules loader does not use it as a replacement. With the checked-in API, the rules
+request fails and the page retains provisional defaults with a configuration
+error. File promotion does not deploy the service or establish automatic adoption
+by the dashboard. See the [current API guide](../README_IMPLEMENTATION.md).
 
 ## E. Optional observation-domain mask
 

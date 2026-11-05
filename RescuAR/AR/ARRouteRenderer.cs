@@ -906,14 +906,12 @@ public static class ARRouteRenderer
                 routeWidth /
                 RouteWidthMeters;
 
-            slot.Transform.LocalScale =
-                new Vector3(
-                    MathF.Max(
-                        0.18f,
-                        slot.BaseWidthMeters *
-                            widthScale),
-                    slot.Transform.LocalScale.Y,
-                    slot.Transform.LocalScale.Z);
+            Vector3 scale = slot.Transform.LocalScale;
+            float width = MathF.Max(0.18f, slot.BaseWidthMeters * widthScale);
+            // The current width policy is constant. Avoid dirtying every
+            // segment's world transform on every camera frame when it agrees.
+            if (scale.X != width)
+                slot.Transform.LocalScale = new Vector3(width, scale.Y, scale.Z);
 
             bool nearCameraExempt =
                 protectNearCameraSegments &&

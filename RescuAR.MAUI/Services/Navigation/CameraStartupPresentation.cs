@@ -31,10 +31,14 @@ internal readonly record struct CameraStartupRun(long Session, long Graphics)
 internal sealed class CameraStartupState
 {
     private CameraStartupRun? readyRun;
+    private long? missingSince;
 
     public CameraStartupPresentation Update(bool active, bool running, bool freshTexture,
-        CameraStartupRun run, TimeSpan waiting, string? failure = null)
+        CameraStartupRun run, TimeSpan waiting, string? failure = null, long? monotonicNow = null,
+        bool recentPresentation = false)
     {
+        if (!active || !running || readyRun != run || freshTexture || recentPresentation || !string.IsNullOrWhiteSpace(failure))
+            missingSince = null;
         if (!active || !running || !run.IsValid || !string.IsNullOrWhiteSpace(failure))
             readyRun = null;
         else if (freshTexture)
@@ -42,6 +46,19 @@ internal sealed class CameraStartupState
         else if (readyRun != run)
             readyRun = null;
 
+        // Keep brief GPU conversion gaps invisible. A sustained interruption
+        // needs an honest recovery cover rather than a frozen camera image.
+        if (readyRun == run && !freshTexture && !recentPresentation && monotonicNow.HasValue)
+        {
+            if (missingSince > monotonicNow) missingSince = null;
+            missingSince ??= monotonicNow;
+            long elapsed = monotonicNow.Value - missingSince.Value;
+            if (elapsed >= 20_000)
+                return new(true, false, "Camera view interrupted",
+                    "Switch to 2D Map to continue. The live view will return when ready.");
+            if (elapsed >= 2_000)
+                return new(true, true, "Recovering camera view…", "Keep the street in view while the camera recovers.");
+        }
         return CameraStartupPresentation.Resolve(active, running,
             run.IsValid && readyRun == run, waiting, failure);
     }

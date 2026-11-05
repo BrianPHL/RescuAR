@@ -1,5 +1,8 @@
 # GPS, PDR and map-matched AR guidance — 29 October 2026
 
+> **Document role:** Historical evidence. Instructions and results below belong to
+> the original revision. Use [current guidance](docs/field-testing/README.md) for present work.
+
 This change removes the application-added machine-learning road-alignment system and addresses the positioning/visibility failures diagnosed in `artifacts/field-review-20261026-1858/DIAGNOSIS.md`. Earlier visual-road reports describe historical implementations, not current dependencies or readiness requirements.
 
 ## Removed

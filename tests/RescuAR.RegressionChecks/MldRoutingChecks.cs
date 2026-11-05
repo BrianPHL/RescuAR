@@ -59,6 +59,9 @@ internal static class MldRoutingChecks
             "MLD: a genuine API NoRoute stays NoRoute rather than fabricating a straight shortcut");
         check(handler.FreshRequests.Count == handler.Urls.Count && handler.FreshRequests.All(value => value),
             "MLD: initial, replacement and hazard requests all reach the HTTP transport with cache bypass");
+        check(handler.Urls.All(uri => uri.Query.Contains("steps=false") &&
+                uri.Query.Contains("overview=full") && uri.Query.Contains("geometries=geojson")),
+            "MLD: every route request omits unused turn steps while retaining full geographic geometry");
     }
 
     private sealed class Alternatives : HttpMessageHandler
