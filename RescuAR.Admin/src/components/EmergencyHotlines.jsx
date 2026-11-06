@@ -5,108 +5,137 @@ import {
   Plus,
   X,
   Edit,
-  Archive,
+  Trash2,
   RefreshCw,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { hasPermission } from '../rbac/access';
+import { createHotline, editHotline, removeHotline } from '../services/hotlineManagement';
 
-export default function EmergencyHotlines() {
+const emptyForm = {
+  agency: '', category: '', primaryNumber: '', alternativeNumber: '',
+  email: '', availability: '', coverage: ''
+};
+
+export default function EmergencyHotlines({ session, access }) {
+  const canManage = Boolean(session?.user?.id && hasPermission(access, 'hotline.manage'));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [selectedHotline, setSelectedHotline] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState('create');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(true);
-
   const [hotlines, setHotlines] = useState([]);
-
-  const [formData, setFormData] = useState({
-    agency: '',
-    category: '',
-    primaryNumber: '',
-    alternativeNumber: '',
-    email: '',
-    availability: '',
-    coverage: ''
-  });
+  const [formData, setFormData] = useState(emptyForm);
 
   const fetchHotlines = async () => {
+    if (!canManage) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('emergency_hotlines')
         .select('*')
         .order('created_at', { ascending: true });
-
-      if (error) {
-        console.warn('Supabase fetch error:', error.message);
-      } else if (data) {
-        const mapped = data.map(item => ({
-          id: item.id,
-          agency: item.agency,
-          number: item.primary_number,
-          primaryNumber: item.primary_number,
-          category: item.category,
-          availability: item.availability || '24/7',
-          alternativeNumber: item.alternative_number || 'N/A',
-          email: item.email || 'N/A',
-          contactPerson: item.contact_person || 'N/A',
-          contactNumber: item.contact_number || 'N/A',
-          coverage: item.coverage || 'Citywide'
-        }));
-        setHotlines(mapped);
-        if (mapped.length > 0 && !selectedHotline) {
-          setSelectedHotline(mapped[0]);
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase client error:', err);
+      if (error) throw error;
+      const mapped = (data || []).map(item => ({
+        id: item.id,
+        agency: item.agency || '',
+        number: item.primary_number || '',
+        primaryNumber: item.primary_number || '',
+        category: item.category || 'Uncategorized',
+        availability: item.availability || '24/7',
+        alternativeNumber: item.alternative_number || '',
+        email: item.email || '',
+        contactPerson: item.contact_person || 'N/A',
+        contactNumber: item.contact_number || 'N/A',
+        coverage: item.coverage || 'Citywide'
+      }));
+      setHotlines(mapped);
+      setSelectedHotline(current => mapped.find(item => item.id === current?.id) || mapped[0] || null);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(`Unable to load emergency hotlines: ${error.message || 'Please retry.'}`);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!canManage) { setLoading(false); return undefined; }
     fetchHotlines();
-
     const channel = supabase
       .channel('hotlines-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_hotlines' }, () => {
-        fetchHotlines();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_hotlines' }, fetchHotlines)
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    return () => { supabase.removeChannel(channel); };
+  }, [canManage]);
 
   const filteredHotlines = hotlines.filter(h => {
-    const matchesSearch = h.agency.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      h.number.includes(searchTerm);
-    const matchesCategory = filterCategory ? h.category === filterCategory : true;
-    return matchesSearch && matchesCategory;
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = h.agency.toLowerCase().includes(term) || h.number.includes(searchTerm);
+    return matchesSearch && (!filterCategory || h.category === filterCategory);
   });
 
-  const handleSaveNew = async () => {
-    const payload = {
-      agency: formData.agency,
-      primary_number: formData.primaryNumber,
-      alternative_number: formData.alternativeNumber || null,
-      category: formData.category || 'Uncategorized',
-      availability: formData.availability || '24/7',
-      email: formData.email || null,
-      coverage: formData.coverage || 'Citywide'
-    };
+  const openCreate = () => {
+    if (!canManage) return;
+    setErrorMessage('');
+    setFormData(emptyForm);
+    setDrawerMode('create');
+    setIsDrawerOpen(true);
+  };
 
-    const { error } = await supabase.from('emergency_hotlines').insert([payload]);
-    if (error) {
-      alert('Error adding hotline: ' + error.message);
-    } else {
-      fetchHotlines();
+  const openEdit = () => {
+    if (!canManage || !selectedHotline) return;
+    const { agency, category, primaryNumber, alternativeNumber, email, availability, coverage } = selectedHotline;
+    setFormData({ agency, category, primaryNumber, alternativeNumber, email, availability, coverage });
+    setErrorMessage('');
+    setDrawerMode('edit');
+    setIsDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!canManage || saving) return;
+    setSaving(true);
+    setErrorMessage('');
+    setMessage('');
+    try {
+      if (drawerMode === 'edit') {
+        await editHotline(supabase, selectedHotline?.id, formData);
+      } else {
+        await createHotline(supabase, formData);
+      }
       setIsDrawerOpen(false);
-      setFormData({ agency: '', category: '', primaryNumber: '', alternativeNumber: '', email: '', availability: '', coverage: '' });
+      setFormData(emptyForm);
+      setMessage(drawerMode === 'edit' ? 'Hotline updated successfully.' : 'Hotline added successfully.');
+      await fetchHotlines();
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to save the hotline.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!canManage || !selectedHotline || deleting) return;
+    if (!window.confirm(`Permanently delete the hotline for ${selectedHotline.agency}? This cannot be undone.`)) return;
+    setDeleting(true);
+    setErrorMessage('');
+    setMessage('');
+    try {
+      await removeHotline(supabase, selectedHotline.id);
+      setSelectedHotline(null);
+      setMessage('Hotline deleted successfully.');
+      await fetchHotlines();
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to delete the hotline.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -153,15 +182,19 @@ export default function EmergencyHotlines() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: '0 0 4px 0' }}>Emergency Hotlines</h1>
-          <span style={{ fontSize: '13px', color: '#64748b' }}>Last updated: June 18, 2026 • 08:42 AM</span>
+          <span style={{ fontSize: '13px', color: '#64748b' }}>Manage emergency hotline contacts</span>
         </div>
         <div className="page-header-actions">
           <ExportActions title="emergency-hotlines" rows={filteredHotlines} columns={[{ label: 'ID', key: 'id' }, { label: 'Agency', key: 'agency' }, { label: 'Primary Number', key: 'primaryNumber' }, { label: 'Alternative Number', key: 'alternativeNumber' }, { label: 'Email', key: 'email' }, { label: 'Category', key: 'category' }, { label: 'Coverage', key: 'coverage' }, { label: 'Availability', key: 'availability' }, { label: 'Contact Person', key: 'contactPerson' }, { label: 'Contact Number', key: 'contactNumber' }]} disabled={loading} />
-        <button style={{ ...styles.pageBtn, padding: '8px 16px', fontWeight: '600', color: '#334155', gap: '8px' }}>
+        <button type="button" onClick={fetchHotlines} disabled={loading || !canManage} style={{ ...styles.pageBtn, padding: '8px 16px', fontWeight: '600', color: '#334155', gap: '8px' }}>
           <RefreshCw size={14} /> Refresh
         </button>
         </div>
       </div>
+
+      {!canManage && <p role="alert">You do not have permission to manage emergency hotlines.</p>}
+      {errorMessage && <p role="alert" style={{ color: '#b91c1c', marginBottom: '12px' }}>{errorMessage}</p>}
+      {message && <p role="status" style={{ color: '#047857', marginBottom: '12px' }}>{message}</p>}
 
       {/* CONTENT LAYOUT */}
       <div className="admin-responsive-panels" style={styles.panelContainer}>
@@ -170,7 +203,7 @@ export default function EmergencyHotlines() {
         <div className="admin-panel-list" style={styles.leftPanel}>
           <div className="admin-list-header" style={styles.headerFlex}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', margin: 0 }}>List of Emergency Hotlines</h2>
-            <button style={styles.addButton} onClick={() => setIsDrawerOpen(true)}>
+            <button type="button" style={styles.addButton} onClick={openCreate} disabled={!canManage || saving || deleting}>
               <Plus size={16} /> Add New Hotline
             </button>
           </div>
@@ -203,9 +236,9 @@ export default function EmergencyHotlines() {
               </tr>
             </thead>
             <tbody>
-              {filteredHotlines.map((h, i) => (
+              {filteredHotlines.map(h => (
                 <tr
-                  key={i}
+                  key={h.id}
                   style={{ ...styles.tableRow, backgroundColor: selectedHotline?.id === h.id ? '#f8fafc' : '#fff' }}
                   onClick={() => setSelectedHotline(h)}
                 >
@@ -228,7 +261,7 @@ export default function EmergencyHotlines() {
           </div>
 
           <div className="admin-pagination" style={styles.pagination}>
-            <span>1 of {filteredHotlines.length || 1} record</span>
+            <span>{filteredHotlines.length} record{filteredHotlines.length === 1 ? '' : 's'}</span>
             <div style={styles.pageControls}>
               <button style={styles.pageBtn}><ChevronLeft size={14} /></button>
               <button style={{ ...styles.pageBtn, backgroundColor: '#f1f5f9' }}>1</button>
@@ -291,8 +324,12 @@ export default function EmergencyHotlines() {
               </div>
 
               <div style={{ marginTop: '24px' }}>
-                <button style={styles.outlineBtn}><Edit size={14} /> Edit</button>
-                <button style={styles.outlineBtn}><Archive size={14} /> Archive</button>
+                {canManage && (
+                  <>
+                    <button type="button" onClick={openEdit} disabled={saving || deleting} style={styles.outlineBtn}><Edit size={14} /> Edit</button>
+                    <button type="button" onClick={handleDelete} disabled={saving || deleting} style={{ ...styles.outlineBtn, color: '#b91c1c', borderColor: '#fecaca' }}><Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete'}</button>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -304,11 +341,11 @@ export default function EmergencyHotlines() {
       </div>
 
       {/* ADD NEW HOTLINE DRAWER */}
-      {isDrawerOpen && (
+      {isDrawerOpen && canManage && (
         <div style={styles.overlay}>
           <div className="admin-form-drawer" style={styles.drawer}>
             <div style={styles.drawerHeader}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>Add New Hotline</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0 }}>{drawerMode === 'edit' ? 'Edit Hotline' : 'Add New Hotline'}</h2>
               <button
                 onClick={() => setIsDrawerOpen(false)}
                 style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer', padding: '4px' }}
@@ -325,6 +362,7 @@ export default function EmergencyHotlines() {
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#334155' }}>Category</label>
                 <select style={styles.input} value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
+                  {formData.category && !['Marikina DRRMO','PNP','BFP','Hospital'].includes(formData.category) && <option value={formData.category}>{formData.category}</option>}
                   <option value="">Category...</option>
                   <option value="Marikina DRRMO">Marikina DRRMO</option>
                   <option value="PNP">PNP</option>
@@ -347,6 +385,7 @@ export default function EmergencyHotlines() {
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#334155' }}>Availability</label>
                 <select style={styles.input} value={formData.availability} onChange={e => setFormData({ ...formData, availability: e.target.value })}>
+                  {formData.availability && !['24/7','Office Hours'].includes(formData.availability) && <option value={formData.availability}>{formData.availability}</option>}
                   <option value="">Availability...</option>
                   <option value="24/7">24/7</option>
                   <option value="Office Hours">Office Hours</option>
@@ -355,6 +394,7 @@ export default function EmergencyHotlines() {
               <div style={styles.formGroup}>
                 <label style={{ fontSize: '12px', fontWeight: '500', color: '#334155' }}>Coverage</label>
                 <select style={styles.input} value={formData.coverage} onChange={e => setFormData({ ...formData, coverage: e.target.value })}>
+                  {formData.coverage && !['Citywide','Specific Barangays'].includes(formData.coverage) && <option value={formData.coverage}>{formData.coverage}</option>}
                   <option value="">Coverage...</option>
                   <option value="Citywide">Citywide</option>
                   <option value="Specific Barangays">Specific Barangays</option>
@@ -369,8 +409,8 @@ export default function EmergencyHotlines() {
               >
                 Close
               </button>
-              <button onClick={handleSaveNew} style={styles.addButton}>
-                <Plus size={16} /> Add New Hotline
+              <button type="button" onClick={handleSave} disabled={saving || deleting} style={styles.addButton}>
+                <Plus size={16} /> {saving ? 'Saving...' : drawerMode === 'edit' ? 'Save Changes' : 'Add New Hotline'}
               </button>
             </div>
           </div>

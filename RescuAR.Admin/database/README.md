@@ -88,3 +88,11 @@ node --test tests/reportsModeration.test.mjs
 This tests synthetic service/controller behavior, not live Supabase permissions,
 deployed RPCs, concurrent sessions or persistent audit history. Authenticated
 acceptance remains separate from source and catalog verification.
+
+
+## Secure emergency hotlines (migration 008)
+
+`[008_secure_emergency_hotlines.sql](migrations/008_secure_emergency_hotlines.sql)` enables authenticated, RBAC-backed Supabase row-level security for `public.emergency_hotlines`. It requires the existing emergency_hotlines table and `004_rbac_foundation.sql` (`rbac_can`). Apply it after reviewing current table grants and row policies, **before** deploying the patched Emergency Hotlines page. It preserves existing SELECT access when enabling RLS on a table where it had previously been disabled, so mobile/public contact reads that already worked remain accessible. It does not grant new anonymous read privileges.
+
+Authenticated `operations_admin` and `superadmin` users (or a custom role with `hotline.manage`) may add/edit/delete. Other users, including anonymous visitors, must not mutate the table. Verify live writes with three distinct clients (authorized, unauthorized signed-in, anonymous), and check that previous mobile hotline reads still work. Row policy behavior was not validated against the deployed Supabase project.
+

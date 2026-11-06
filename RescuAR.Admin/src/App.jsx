@@ -126,7 +126,7 @@ export default function App({ session, access }) {
       case 'content-news':
         return <EvacuationCenters />;
       case 'content-hotlines':
-        return <EmergencyHotlines />;
+        return <EmergencyHotlines session={session} access={access} />;
       case 'system-settings':
         return <SystemSettings />;
       case 'system-logs':
