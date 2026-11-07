@@ -7,15 +7,16 @@
     x:Class="RescuAR.App.Views.Map.MapPage"
     x:DataType="vm:MapViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto, *">
-        <!-- Top Custom Header -->
+        <!-- Top Custom Header (Uniform RescuAR Primary Teal Brand Palette) -->
         <Border Grid.Row="0" 
-                BackgroundColor="#0F8068" 
-                HeightRequest="65" 
+                BackgroundColor="#0A8491" 
+                HeightRequest="60" 
                 StrokeThickness="0"
-                Padding="16,0">
+                Padding="16,0"
+                Shadow="{Shadow Brush=Black, Offset='0,2', Radius=6, Opacity=0.15}">
             <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
                 <VerticalStackLayout Grid.Column="0" VerticalOptions="Center" Spacing="2">
                     <Label Text="Evacuation Map" 
@@ -23,15 +24,17 @@
                            FontSize="18" 
                            FontAttributes="Bold" />
                     <Label Text="Static map context &amp; listed locations"
-                           TextColor="#B2DFDB" 
+                           TextColor="#CCFBF1" 
                            FontSize="11" />
                 </VerticalStackLayout>
                 
-                <!-- Active Indicator -->
-                <HorizontalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="6">
-                    <Ellipse WidthRequest="8" HeightRequest="8" Fill="#22C55E" />
-                    <Label Text="LOCAL MAP" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
-                </HorizontalStackLayout>
+                <!-- Active Indicator Pill -->
+                <Border Grid.Column="1" BackgroundColor="#065F69" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="8,5" VerticalOptions="Center">
+                    <HorizontalStackLayout VerticalOptions="Center" Spacing="6">
+                        <Ellipse WidthRequest="8" HeightRequest="8" Fill="#22C55E" />
+                        <Label Text="LOCAL MAP" TextColor="#FFFFFF" FontSize="11" FontAttributes="Bold" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </Border>
             </Grid>
         </Border>
 
@@ -44,18 +47,18 @@
             <Label Text="{Binding MapStatus}" TextColor="#334155" FontSize="12" />
         </Border>
 
-        <!-- Floating Chat Button for Safety Circle -->
+        <!-- Floating Chat Button for Safety Circle (Uniform styling with SafetyCirclePage) -->
         <Border Grid.Row="1"
-                BackgroundColor="#0F8068"
+                BackgroundColor="#0A8491"
                 StrokeThickness="0"
-                WidthRequest="56"
-                HeightRequest="56"
+                WidthRequest="54"
+                HeightRequest="54"
                 Margin="16"
                 HorizontalOptions="End"
                 VerticalOptions="End"
-                Shadow="{Shadow Brush=Black, Offset='0,4', Radius=4, Opacity=0.3}">
+                Shadow="{Shadow Brush=Black, Offset='0,6', Radius=10, Opacity=0.25}">
             <Border.StrokeShape>
-                <RoundRectangle CornerRadius="28" />
+                <RoundRectangle CornerRadius="18" />
             </Border.StrokeShape>
             <Border.GestureRecognizers>
                 <TapGestureRecognizer Command="{Binding OpenChatCommand}" />

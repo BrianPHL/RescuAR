@@ -6,12 +6,12 @@
     x:Class="RescuAR.App.Views.Authentication.OtpVerificationPage"
     x:DataType="vm:OtpVerificationViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid>
         <!-- Background Color instead of gradient -->
         <Grid.Background>
-            <SolidColorBrush Color="#F2F2F7" />
+            <SolidColorBrush Color="#F8FAFC" />
         </Grid.Background>
 
         <ScrollView>

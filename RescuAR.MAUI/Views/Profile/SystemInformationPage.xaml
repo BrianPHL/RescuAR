@@ -6,37 +6,53 @@
     x:Class="RescuAR.App.Views.Profile.SystemInformationPage"
     x:DataType="vm:SystemInformationViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto,*">
-        <!-- Top App Bar -->
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="20,15" BackgroundColor="#F2F2F7">
-            <Button
-                Grid.Column="0"
-                Text="&lt; Back"
-                FontSize="15"
-                FontAttributes="Bold"
-                TextColor="#0F172A"
-                BackgroundColor="Transparent"
-                Padding="0"
-                Command="{Binding BackCommand}" />
+        <!-- Top Custom Header Bar (Uniform RescuAR Primary Teal Brand Palette) -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0A8491"
+                HeightRequest="56"
+                StrokeThickness="0"
+                Padding="16,0"
+                ZIndex="10"
+                Shadow="{Shadow Brush=Black, Offset='0,2', Radius=6, Opacity=0.15}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
+                <!-- Back Button Pill -->
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding BackCommand}" />
+                    </Border.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="16"
+                          HeightRequest="16"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Border>
 
-            <Label
-                Grid.Column="1"
-                Text="RescuAR"
-                FontSize="16"
-                FontAttributes="Bold"
-                TextColor="#0F172A"
-                HorizontalOptions="Center"
-                VerticalOptions="Center" />
+                <!-- Page Title -->
+                <Label Grid.Column="1"
+                       Text="System Information"
+                       TextColor="#FFFFFF"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation"
+                       MaxLines="1" />
 
-            <ImageButton
-                Grid.Column="2"
-                Source="ic_notification.png"
-                WidthRequest="24"
-                HeightRequest="24"
-                BackgroundColor="Transparent" />
-        </Grid>
+                <!-- Spacer -->
+                <BoxView Grid.Column="2" WidthRequest="36" HeightRequest="36" Color="Transparent" />
+            </Grid>
+        </Border>
 
         <!-- Main Scrollable Content -->
         <ScrollView Grid.Row="1">

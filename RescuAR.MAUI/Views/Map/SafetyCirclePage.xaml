@@ -10,28 +10,32 @@
     x:Name="SafetyCircleRoot"
     x:DataType="vm:SafetyCircleViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto, *">
 
-        <!-- Top App Bar / Header -->
+        <!-- Top App Bar / Header (Uniform RescuAR Primary Teal Brand Palette) -->
         <Border Grid.Row="0"
-                BackgroundColor="White"
+                BackgroundColor="#0A8491"
                 HeightRequest="56"
                 StrokeThickness="0"
                 Padding="16,0"
                 ZIndex="10"
-                Shadow="{Shadow Brush=Black, Offset='0,2', Radius=4, Opacity=0.06}">
+                Shadow="{Shadow Brush=Black, Offset='0,2', Radius=6, Opacity=0.15}">
             <Grid ColumnDefinitions="*,Auto" VerticalOptions="Center">
-                <Label Text="RescuAR"
-                       TextColor="#0F172A"
-                       FontSize="16"
-                       FontAttributes="Bold"
-                       VerticalOptions="Center" />
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <Label Text="Safety Circle Map"
+                           TextColor="#FFFFFF"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           VerticalOptions="Center" />
+                </HorizontalStackLayout>
 
+                <!-- Notification Bell Pill (Uniform RescuAR header action button styling) -->
                 <Border Grid.Column="1"
-                        BackgroundColor="Transparent"
+                        BackgroundColor="#065F69"
                         StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
                         WidthRequest="36"
                         HeightRequest="36"
                         VerticalOptions="Center">
@@ -39,10 +43,10 @@
                         <TapGestureRecognizer Command="{Binding OpenNotificationsCommand}" />
                     </Border.GestureRecognizers>
                     <Path Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"
-                          Fill="#334155"
+                          Fill="#FFFFFF"
                           Aspect="Uniform"
-                          WidthRequest="20"
-                          HeightRequest="20"
+                          WidthRequest="18"
+                          HeightRequest="18"
                           HorizontalOptions="Center"
                           VerticalOptions="Center" />
                 </Border>
@@ -223,16 +227,17 @@
                 </Border>
             </ContentView>
 
-            <!-- Floating Zoom Controls -->
-            <Border BackgroundColor="#F8FAFC"
-                    StrokeThickness="0"
+            <!-- Floating Zoom Controls (Modern white card with brand accents) -->
+            <Border BackgroundColor="#FFFFFF"
+                    StrokeThickness="1"
+                    Stroke="#E2E8F0"
                     HorizontalOptions="Start"
                     VerticalOptions="End"
                     Margin="16,0,0,232"
                     Padding="0"
                     WidthRequest="44"
                     ZIndex="25"
-                    Shadow="{Shadow Brush=Black, Offset='0,4', Radius=8, Opacity=0.1}">
+                    Shadow="{Shadow Brush=Black, Offset='0,4', Radius=8, Opacity=0.15}">
                 <Border.StrokeShape>
                     <RoundRectangle CornerRadius="22" />
                 </Border.StrokeShape>
@@ -241,21 +246,21 @@
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding ZoomInCommand}" />
                         </Border.GestureRecognizers>
-                        <Label Text="+" TextColor="#0F172A" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Label Text="+" TextColor="#0A8491" FontSize="20" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
                     </Border>
                     <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" Margin="6,0" />
                     <Border BackgroundColor="Transparent" StrokeThickness="0" HeightRequest="40">
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding ZoomOutCommand}" />
                         </Border.GestureRecognizers>
-                        <Label Text="-" TextColor="#0F172A" FontSize="22" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0"/>
+                        <Label Text="-" TextColor="#0A8491" FontSize="24" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" Margin="0,-3,0,0"/>
                     </Border>
                     <BoxView HeightRequest="1" BackgroundColor="#E2E8F0" Margin="6,0" />
                     <Border BackgroundColor="Transparent" StrokeThickness="0" HeightRequest="40">
                         <Border.GestureRecognizers>
                             <TapGestureRecognizer Command="{Binding ZoomResetCommand}" />
                         </Border.GestureRecognizers>
-                        <Label Text="1x" TextColor="#0F172A" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Label Text="1x" TextColor="#0A8491" FontSize="12" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
                     </Border>
                 </VerticalStackLayout>
             </Border>
@@ -303,7 +308,7 @@
                     <!-- Section Title -->
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="4,0,4,8">
                         <Label Text="People"
-                               TextColor="#0D5C68"
+                               TextColor="#0A8491"
                                FontSize="20"
                                FontAttributes="Bold"
                                VerticalOptions="Center" />

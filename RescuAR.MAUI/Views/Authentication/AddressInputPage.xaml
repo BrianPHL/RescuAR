@@ -6,7 +6,7 @@
     x:Class="RescuAR.App.Views.Authentication.AddressInputPage"
     x:DataType="vm:AddressInputViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid>
         <ScrollView>

@@ -10,24 +10,34 @@
     x:Name="SafetyCircleSettingsRoot"
     x:DataType="vm:SafetyCircleSettingsViewModel"
     Shell.NavBarIsVisible="False"
-    BackgroundColor="#F2F2F7">
+    BackgroundColor="#F8FAFC">
 
     <Grid RowDefinitions="Auto,*">
-        <!-- Top App Bar -->
-        <Border Grid.Row="0" BackgroundColor="White" HeightRequest="56" StrokeThickness="0" Padding="12,0" ZIndex="10" Shadow="{Shadow Brush=Black, Offset='0,2', Radius=4, Opacity=0.06}">
+        <!-- Top App Bar / Header (Uniform RescuAR Primary Teal Brand Palette) -->
+        <Border Grid.Row="0" BackgroundColor="#0A8491" HeightRequest="56" StrokeThickness="0" Padding="14,0" ZIndex="10" Shadow="{Shadow Brush=Black, Offset='0,2', Radius=6, Opacity=0.15}">
             <Grid ColumnDefinitions="Auto, *, Auto" VerticalOptions="Center">
-                <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
-                    <HorizontalStackLayout.GestureRecognizers>
+                <Border Grid.Column="0"
+                        BackgroundColor="#065F69"
+                        StrokeThickness="0"
+                        StrokeShape="RoundRectangle 10"
+                        WidthRequest="36"
+                        HeightRequest="36"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding BackCommand}" />
-                    </HorizontalStackLayout.GestureRecognizers>
-                    <Path Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" Fill="#0F172A" Aspect="Uniform" WidthRequest="18" HeightRequest="18" VerticalOptions="Center" />
-                    <Label Text="Back" TextColor="#0F172A" FontSize="14" FontAttributes="Bold" VerticalOptions="Center" />
-                </HorizontalStackLayout>
+                    </Border.GestureRecognizers>
+                    <Path Data="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"
+                          Fill="#FFFFFF"
+                          WidthRequest="16"
+                          HeightRequest="16"
+                          Aspect="Uniform"
+                          HorizontalOptions="Center"
+                          VerticalOptions="Center" />
+                </Border>
 
-                <Label Grid.Column="1" Text="RescuAR" TextColor="#0F172A" FontSize="16" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
+                <Label Grid.Column="1" Text="Safety Circle Management" TextColor="#FFFFFF" FontSize="18" FontAttributes="Bold" HorizontalOptions="Center" VerticalOptions="Center" />
 
-                <Path Grid.Column="2" Data="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"
-                      Fill="#334155" Aspect="Uniform" WidthRequest="20" HeightRequest="20" VerticalOptions="Center" Margin="0,0,4,0" />
+                <BoxView Grid.Column="2" WidthRequest="36" HeightRequest="36" Color="Transparent" />
             </Grid>
         </Border>
 

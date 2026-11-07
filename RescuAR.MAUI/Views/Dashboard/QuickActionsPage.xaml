@@ -46,11 +46,11 @@
                         </Border.GestureRecognizers>
                         
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalOptions="Center">
-                            <!-- Icon Container -->
+                            <!-- Icon Container (Soft brand teal container) -->
                             <Border Grid.Column="0"
                                     StrokeShape="RoundRectangle 8"
                                     StrokeThickness="0"
-                                    BackgroundColor="#F2F2F7"
+                                    BackgroundColor="#E6F4F2"
                                     WidthRequest="40"
                                     HeightRequest="40"
                                     VerticalOptions="Center">

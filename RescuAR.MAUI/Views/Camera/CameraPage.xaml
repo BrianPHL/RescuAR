@@ -10,9 +10,9 @@
     BackgroundColor="White"
     Shell.NavBarIsVisible="False"
     Shell.TabBarBackgroundColor="White"
-    Shell.TabBarForegroundColor="#078F99"
-    Shell.TabBarTitleColor="#078F99"
-    Shell.TabBarUnselectedColor="#7D7D7D">
+    Shell.TabBarForegroundColor="#0A8491"
+    Shell.TabBarTitleColor="#0A8491"
+    Shell.TabBarUnselectedColor="#7F7F7F">
 
     <!--
         Camera module UI refinement aligned to the supplied Figma prototype.
