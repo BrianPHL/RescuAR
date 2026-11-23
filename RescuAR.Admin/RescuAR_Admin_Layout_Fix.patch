@@ -1,0 +1,287 @@
+diff --git a/src/components/Dashboard.jsx b/src/components/Dashboard.jsx
+--- a/src/components/Dashboard.jsx
++++ b/src/components/Dashboard.jsx
+@@ -26,7 +26,7 @@
+ 
+ const injectedStyles = `
+   /* Global Layout - Fix for white space on zoom */
+-  :root {
++  .dashboard-container {
+     --primary: #4f46e5;
+     --primary-hover: #4338ca;
+     --bg-main: #f8fafc;
+@@ -39,15 +39,6 @@
+     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+   }
+ 
+-  /* Reset body margins to prevent white borders on zoom out */
+-  html, body {
+-    margin: 0;
+-    padding: 0;
+-    width: 100%;
+-    min-height: 100vh;
+-    background-color: var(--bg-main);
+-  }
+-
+   .dashboard-container {
+     padding: 2rem;
+     background-color: var(--bg-main);
+@@ -61,7 +52,9 @@
+     overflow-x: hidden;
+   }
+   
+-  * { margin: 0; padding: 0; box-sizing: inherit; }
++  /* Do not reset every element in the app: the advisory dialog is a sibling. */
++  .dashboard-container,
++  .dashboard-container * { box-sizing: border-box; }
+ 
+   /* Header Section */
+   .header-section {
+@@ -125,7 +118,7 @@
+     display: flex;
+     gap: 1rem;
+   }
+-  .btn-outline {
++  .dashboard-container .btn-outline {
+     display: flex;
+     align-items: center;
+     gap: 0.5rem;
+@@ -140,13 +133,13 @@
+     box-shadow: var(--shadow-sm);
+     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+   }
+-  .btn-outline:hover { 
++  .dashboard-container .btn-outline:hover {
+     background-color: #f1f5f9; 
+     border-color: #cbd5e1; 
+     transform: translateY(-1px);
+     box-shadow: var(--shadow-md);
+   }
+-  .btn-primary {
++  .dashboard-container .btn-primary {
+     display: flex;
+     align-items: center;
+     gap: 0.5rem;
+@@ -161,7 +154,7 @@
+     box-shadow: var(--shadow-md);
+     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+   }
+-  .btn-primary:hover {
++  .dashboard-container .btn-primary:hover {
+     background-color: var(--primary-hover);
+     transform: translateY(-1px);
+     box-shadow: var(--shadow-lg);
+@@ -170,10 +163,12 @@
+   /* Stats Grid */
+   .stats-grid {
+     display: grid;
+-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
++    grid-template-columns: repeat(3, minmax(0, 1fr));
+     gap: 1.5rem;
++    width: 100%;
+     margin-bottom: 2.5rem;
+   }
++  .stats-grid > * { min-width: 0; }
+   .stat-card {
+     position: relative;
+     background: var(--surface);
+@@ -455,6 +450,9 @@
+   /* Responsiveness */
+   @media (max-width: 1200px) {
+     .main-layout { grid-template-columns: 1fr; }
++  }
++  @media (max-width: 1100px) {
++    .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+   }
+   @media (max-width: 768px) {
+     .header-section { flex-direction: column; align-items: flex-start; gap: 1.5rem; }
+@@ -636,9 +634,9 @@
+       )}
+ 
+       {/* Top Stats Grid */}
+-      <div className="stats-grid row g-3">
++      <div className="stats-grid" aria-label="Dashboard overview">
+         {analytics.map((stat, idx) => (
+-          <div key={idx} className="col-12 col-md-6 col-xxl-3">
++          <div key={idx} className="stat-card-cell">
+             <button type="button" disabled={!canView(access, stat.target)} onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100" style={{ textAlign: 'left', cursor: canView(access, stat.target) ? 'pointer' : 'default' }}>
+               <div className={`stat-icon-wrapper ${stat.colorClass}`}>
+                 {stat.icon}
+diff --git a/src/components/Modals.jsx b/src/components/Modals.jsx
+--- a/src/components/Modals.jsx
++++ b/src/components/Modals.jsx
+@@ -2,12 +2,12 @@
+ import { X, Copy, Check, Send, Play, AlertTriangle } from 'lucide-react';
+ 
+ /* --- MODAL WRAPPER COMPONENT --- */
+-function BaseModal({ isOpen, onClose, title, children }) {
++function BaseModal({ isOpen, onClose, title, children, className = '' }) {
+   if (!isOpen) return null;
+ 
+   return (
+     <div className="modal-backdrop" onClick={onClose}>
+-      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
++      <div className={`modal-container${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+         <div className="modal-header">
+           <span className="modal-title">{title}</span>
+           <button className="btn-close-modal" onClick={onClose}>
+@@ -198,9 +198,9 @@
+   };
+ 
+   return (
+-    <BaseModal isOpen={isOpen} onClose={onClose} title="Generate & Publish Advisory">
++    <BaseModal isOpen={isOpen} onClose={onClose} title="Generate & Publish Advisory" className="advisory-modal">
+       <div className="modal-body">
+-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
++        <div className="form-group advisory-form-row" style={{ marginBottom: '12px' }}>
+           <div>
+             <label className="form-label">Category</label>
+             <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+diff --git a/src/responsive.css b/src/responsive.css
+--- a/src/responsive.css
++++ b/src/responsive.css
+@@ -336,3 +336,105 @@
+     width: 100vw !important;
+   }
+ }
++
++/* -------------------------------------------------------------------------
++ * Dashboard layout / sidebar / advisory dialog containment
++ * ------------------------------------------------------------------------- */
++/* Use all of the available workspace for the three dashboard overview cards.
++ * These cards use CSS Grid, not Bootstrap's four-column .col-xxl-3 layout. */
++.dashboard-container .stats-grid {
++  width: 100%;
++  min-width: 0;
++}
++.dashboard-container .stat-card-cell { min-width: 0; }
++
++/* Scroll navigation links instead of cutting off expanded groups at the
++ * bottom of the fixed sidebar. Keep the sidebar's right border in view. */
++.app-sidebar { box-sizing: border-box; }
++.app-sidebar .sidebar-menu-list {
++  flex: 1 1 auto;
++  min-height: 0;
++  min-width: 0;
++  overflow-x: hidden;
++  overflow-y: auto;
++  overscroll-behavior-y: contain;
++}
++.app-sidebar .sidebar-link,
++.app-sidebar .menu-group-header,
++.app-sidebar .menu-group-sublist,
++.app-sidebar .sidebar-parent-row {
++  box-sizing: border-box;
++  min-width: 0;
++  max-width: 100%;
++}
++.app-sidebar .sidebar-link span,
++.app-sidebar .menu-group-title span {
++  min-width: 0;
++  overflow-wrap: anywhere;
++}
++.app-sidebar .sidebar-link svg,
++.app-sidebar .menu-group-title svg { flex-shrink: 0; }
++.app-sidebar .sidebar-footer { flex: 0 0 auto; }
++
++/* The dashboard previously injected a page-wide content-box rule, making
++ * textarea width:100% spill past its border. Keep modal sizing self-contained. */
++.modal-container,
++.modal-container * { box-sizing: border-box; }
++.modal-container { min-width: 0; }
++.modal-container .modal-body,
++.modal-container .modal-footer { min-width: 0; }
++
++/* Provide sufficient room for the generated advisory text, including the
++ * border and scrollbar, without allowing the dialog to exceed the viewport. */
++.modal-container.advisory-modal {
++  width: min(640px, calc(100vw - 32px));
++  max-width: calc(100vw - 32px);
++}
++.advisory-modal .modal-body {
++  overflow-x: hidden;
++  max-height: min(65dvh, 560px);
++}
++.advisory-modal .form-group,
++.advisory-modal .form-group > div { min-width: 0; max-width: 100%; }
++.advisory-modal .form-input,
++.advisory-modal .form-textarea {
++  width: 100%;
++  min-width: 0;
++  max-width: 100%;
++  box-sizing: border-box;
++}
++.advisory-modal .advisory-form-row {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 12px;
++}
++.advisory-modal .modal-footer {
++  flex-wrap: wrap;
++  gap: 10px;
++}
++.advisory-modal .modal-footer .btn-primary {
++  background-color: #4f46e5;
++  color: #fff;
++  border: 0;
++  border-radius: 12px;
++  padding: 12px 18px;
++}
++.advisory-modal .modal-footer .btn-primary:hover { background-color: #4338ca; }
++.advisory-modal .modal-footer button {
++  max-width: 100%;
++  white-space: normal;
++  overflow-wrap: anywhere;
++  justify-content: center;
++}
++
++@media (max-width: 991.98px) {
++  /* On mobile, the entire sidebar drawer scrolls as one unit. */
++  .app-sidebar .sidebar-menu-list {
++    flex: 1 0 auto;
++    overflow-y: visible;
++  }
++}
++@media (max-width: 600px) {
++  .advisory-modal .advisory-form-row { grid-template-columns: minmax(0, 1fr); }
++  .advisory-modal .modal-footer button { flex: 1 1 100%; }
++}
+diff --git a/tests/dashboardLayout.test.mjs b/tests/dashboardLayout.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/dashboardLayout.test.mjs
+@@ -0,0 +1,34 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++
++const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
++const dashboard = read('src/components/Dashboard.jsx');
++const modals = read('src/components/Modals.jsx');
++const responsive = read('src/responsive.css');
++
++test('overview cards use three equal grid columns without Bootstrap four-column widths', () => {
++  assert.match(dashboard, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
++  assert.match(dashboard, /className="stats-grid"/);
++  assert.match(dashboard, /className="stat-card-cell"/);
++  assert.doesNotMatch(dashboard, /col-xxl-3|className="stats-grid row/);
++});
++
++test('dashboard injected styles no longer override all app box sizing', () => {
++  assert.doesNotMatch(dashboard, /\*\s*\{\s*margin:\s*0;\s*padding:\s*0;\s*box-sizing:\s*inherit/);
++  assert.match(dashboard, /\.dashboard-container \*\s*\{\s*box-sizing:\s*border-box/);
++  assert.match(dashboard, /\.dashboard-container \.btn-primary/);
++});
++
++test('advisory modal is styled independently and has responsive fields', () => {
++  assert.match(modals, /className="advisory-modal"/);
++  assert.match(modals, /className="form-group advisory-form-row"/);
++  assert.match(responsive, /\.modal-container \*\s*\{ box-sizing:\s*border-box;/);
++  assert.match(responsive, /\.advisory-modal \.form-textarea\s*\{[\s\S]*?max-width:\s*100%/);
++  assert.match(responsive, /\.advisory-modal \.advisory-form-row\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
++});
++
++test('sidebar menu can scroll rather than clipping expanded items', () => {
++  assert.match(responsive, /\.app-sidebar \.sidebar-menu-list\s*\{[\s\S]*?overflow-y:\s*auto/);
++  assert.match(responsive, /\.app-sidebar \.sidebar-link span[\s\S]*?overflow-wrap:\s*anywhere/);
++});

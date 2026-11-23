@@ -1,74 +1,63 @@
-# RescuAR Admin — PAGASA Telemetry Status Clarity Patch
+# RescuAR Admin — Dashboard / Sidebar / Advisory Layout Fix
 
-Source baseline: `RescuAR.Admin(20261123-070940).zip`.
-
-## Purpose
-
-Make monitoring status understandable without mistaking a missing/old reading or unverified threshold for an active flood emergency.
+Based on the November 23, 2026 RescuAR.Admin project and compatible with the Telemetry Status Clarity update.
 
 ## Changes
 
-- **Monitoring Stations**: separate source check, worker check, observation age, and independently verified flood-risk assessment. The hydrological summary cannot report every station as Normal while any threshold is unverified. Hide zero-change trends when there is insufficient fresh evidence.
-- **Marikina River Level**: show the connection and observation state separately. Use neutral pending/unknown assessments instead of red emergency indicators for unavailable data. Never enable flood-advisory dispatch based on stale readings or unverified thresholds.
-- **Flood Hazard Exposure / PAGASA context**: follow the enabled Sto. Niño gauge in `station_catalog` rather than using the archived MMDA station unconditionally. Missing thresholds now suspend automatic reference-exposure scenario selection; the current gauge is shown explicitly.
-- **Presentation and stylesheet**: avoid red badges for data gaps. Preserve red only for verified critical flood-risk alerts.
-- **Tests**: add `tests/telemetryPresentation.test.mjs` with regression coverage for source timestamps, status labels, thresholds, gauge switching, risk assessment and automatic exposure gating.
+1. **Dashboard overview**: removes Bootstrap's four-column width (`col-xxl-3`) from the three metrics cards. The overview now uses a full-width, responsive 3/2/1-column CSS grid.
+2. **Advisory modal**: fixes clipped right-hand borders by eliminating the dashboard's global `box-sizing: inherit` override. Keeps the two textareas, form controls, and footer buttons within the dialog; widens the advisory dialog on desktop and stacks controls on small screens.
+3. **Sidebar**: allows the menu itself to scroll when groups expand; prevents nested text/buttons from overflowing or being cut off. The footer stays visible on desktop and the mobile drawer can scroll normally.
+4. **CSS isolation**: confines dashboard theme/button styling to the dashboard and keeps the existing purple advisory Publish button.
 
-## Observation age labels (underlying gates unchanged)
+No database changes, new dependencies, or monitoring/business-logic changes.
 
-| Observation age | Label | Use for live flood-risk assessment? |
-|---|---|---|
-| 0–15 minutes | Updated | Yes, only if thresholds are verified |
-| >15–30 minutes | Awaiting PAGASA Update | No |
-| >30–60 minutes | Outdated Reading | No |
-| >60 minutes or missing/invalid | Data Unavailable | No |
+## Preferred installation (Git patch)
 
-Connected means a successful worker/source check recorded within 15 minutes. A recorded `healthy` flag without a recent check is instead shown as **Connection Not Confirmed**.
-
-Thresholds must have all three numeric values ordered Alert < Alarm < Critical. Without valid thresholds, the water-level measurement is displayed as **Thresholds Not Verified**, not Normal. **An old reading is never relabeled as live merely to avoid a warning.**
-
-## Installation (PowerShell from your RescuAR.Admin repository root)
-
-1. Back up or commit any unsaved local changes in the eight affected files listed below.
-2. Extract this ZIP **outside** the repository (e.g. Downloads). Copy `RescuAR_Telemetry_Status_Clarity.patch` into the repository root.
-3. Run:
+Extract this ZIP **outside** your RescuAR.Admin repository. Copy `RescuAR_Admin_Layout_Fix.patch` into the root folder (beside `package.json`). Run these commands in PowerShell from the project root:
 
 ```powershell
-git apply --check .\RescuAR_Telemetry_Status_Clarity.patch
-git apply .\RescuAR_Telemetry_Status_Clarity.patch
-node --test tests/telemetryFreshness.test.mjs tests/telemetryPresentation.test.mjs tests/provisionalExposureScenario.test.mjs
+git apply --check .\RescuAR_Admin_Layout_Fix.patch
+git apply .\RescuAR_Admin_Layout_Fix.patch
+node --test tests/dashboardLayout.test.mjs
 npm.cmd run build
 npm.cmd run dev
 ```
 
-Run **`git apply` only once**. If it says patches are already applied, inspect `git diff` or run `git apply --reverse --check` first; don't force it.
+If `git apply --check` fails due to line-ending differences, you can retry the same commands with `--ignore-space-change`:
 
-If Git reports a context mismatch, **do not run `git apply --reject` automatically**. Compare your local edited files to `Direct_Copy/` and merge the relevant changes; the Direct_Copy folder includes complete replacements for the uploaded baseline.
+```powershell
+git apply --check --ignore-space-change .\RescuAR_Admin_Layout_Fix.patch
+git apply --ignore-space-change .\RescuAR_Admin_Layout_Fix.patch
+```
 
-## Files changed
+Do not apply the patch twice. If it was already applied, `git apply --check` will report that it cannot apply again.
 
-- `src/components/MonitoringStations.jsx`
-- `src/components/RiverLevel.jsx`
-- `src/components/HazardExposure.jsx`
-- `src/index.css`
-- `src/utils/telemetryFreshness.js`
-- `src/utils/telemetryPresentation.js` (new)
-- `src/utils/provisionalExposureScenario.js`
-- `tests/telemetryPresentation.test.mjs` (new)
+## Direct-copy fallback
 
-## Manual acceptance checklist
+Only if the Git patch cannot be applied: back up your local copies of the following files and copy matching files from `direct-copy/` into the repository:
 
-1. With reachable PAGASA and a recent worker check, source shows `Connected`, even if the most recent measurement is >15 minutes old; the observation shows `Awaiting PAGASA Update` independently.
-2. If the last check is older than 15 minutes, the connection is **not** shown as Connected even if Supabase has a stale `healthy` flag.
-3. Without complete official thresholds, the level is visible but the risk shows `Thresholds Not Verified` (no confirmed Normal or Alert).
-4. With a fresh valid reading and ordered thresholds, genuine `Normal`, `Alert`, `Alarm`, and `Critical` outcomes still appear.
-5. For observations older than 15 minutes, trend and risk are not presented as live. On River Level, advisory and notification actions remain disabled.
-6. Hazard Exposure references the enabled Sto. Niño gauge from `station_catalog`, not the archived one, and automatic reference-exposure mapping stays suspended when inputs are unverified.
+- `src/components/Dashboard.jsx`
+- `src/components/Modals.jsx`
+- `src/responsive.css`
+- `tests/dashboardLayout.test.mjs`
 
-## Verification limits
+**Important:** direct-copy replacement could overwrite more recent changes to those files. Prefer Git patch if you have made further edits since the source ZIP.
 
-77 Node tests passed locally; the three edited JSX files were checked with a JSX parser. An end-to-end browser test against live Supabase and a full Vite production build must be run in your environment. The uploaded archive contains Windows-native build dependencies, so a Linux-native build was not available here. No SQL migration is required.
+## Manual checks
 
-Suggested commit:
+- At a desktop width (e.g. 1440px), the three dashboard cards fill the entire usable content area with no fourth blank column.
+- Open Generate & Publish Advisory: both textarea right borders and the Publish button remain fully visible.
+- Narrow the browser: advisory fields and buttons wrap instead of clipping.
+- Expand several sidebar groups: navigation scrolls; icons, text, and right border remain visible.
+- Confirm Monitoring Stations and Marikina River Level still display and function as before.
 
-`fix(admin): clarify PAGASA observation, connection, and flood-risk statuses`
+## Validation performed
+
+- Git patch checked against the provided source with the Telemetry Status Clarity updates.
+- 81/81 local Node tests passed (4 new layout regression tests and 77 existing tests).
+- Responsive stylesheet and dashboard-injected CSS parse without errors.
+- Full interactive browser validation and Vite production build still need to be performed in your local environment.
+
+## Suggested commit message
+
+`fix(admin): prevent sidebar and advisory clipping and expand dashboard overview`

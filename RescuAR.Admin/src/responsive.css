@@ -336,3 +336,105 @@
     width: 100vw !important;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Dashboard layout / sidebar / advisory dialog containment
+ * ------------------------------------------------------------------------- */
+/* Use all of the available workspace for the three dashboard overview cards.
+ * These cards use CSS Grid, not Bootstrap's four-column .col-xxl-3 layout. */
+.dashboard-container .stats-grid {
+  width: 100%;
+  min-width: 0;
+}
+.dashboard-container .stat-card-cell { min-width: 0; }
+
+/* Scroll navigation links instead of cutting off expanded groups at the
+ * bottom of the fixed sidebar. Keep the sidebar's right border in view. */
+.app-sidebar { box-sizing: border-box; }
+.app-sidebar .sidebar-menu-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.app-sidebar .sidebar-link,
+.app-sidebar .menu-group-header,
+.app-sidebar .menu-group-sublist,
+.app-sidebar .sidebar-parent-row {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.app-sidebar .sidebar-link span,
+.app-sidebar .menu-group-title span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.app-sidebar .sidebar-link svg,
+.app-sidebar .menu-group-title svg { flex-shrink: 0; }
+.app-sidebar .sidebar-footer { flex: 0 0 auto; }
+
+/* The dashboard previously injected a page-wide content-box rule, making
+ * textarea width:100% spill past its border. Keep modal sizing self-contained. */
+.modal-container,
+.modal-container * { box-sizing: border-box; }
+.modal-container { min-width: 0; }
+.modal-container .modal-body,
+.modal-container .modal-footer { min-width: 0; }
+
+/* Provide sufficient room for the generated advisory text, including the
+ * border and scrollbar, without allowing the dialog to exceed the viewport. */
+.modal-container.advisory-modal {
+  width: min(640px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+}
+.advisory-modal .modal-body {
+  overflow-x: hidden;
+  max-height: min(65dvh, 560px);
+}
+.advisory-modal .form-group,
+.advisory-modal .form-group > div { min-width: 0; max-width: 100%; }
+.advisory-modal .form-input,
+.advisory-modal .form-textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.advisory-modal .advisory-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.advisory-modal .modal-footer {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.advisory-modal .modal-footer .btn-primary {
+  background-color: #4f46e5;
+  color: #fff;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+}
+.advisory-modal .modal-footer .btn-primary:hover { background-color: #4338ca; }
+.advisory-modal .modal-footer button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  justify-content: center;
+}
+
+@media (max-width: 991.98px) {
+  /* On mobile, the entire sidebar drawer scrolls as one unit. */
+  .app-sidebar .sidebar-menu-list {
+    flex: 1 0 auto;
+    overflow-y: visible;
+  }
+}
+@media (max-width: 600px) {
+  .advisory-modal .advisory-form-row { grid-template-columns: minmax(0, 1fr); }
+  .advisory-modal .modal-footer button { flex: 1 1 100%; }
+}

@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Send, Play, AlertTriangle } from 'lucide-react';
 
 /* --- MODAL WRAPPER COMPONENT --- */
-function BaseModal({ isOpen, onClose, title, children }) {
+function BaseModal({ isOpen, onClose, title, children, className = '' }) {
   if (!isOpen) return null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-container${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">{title}</span>
           <button className="btn-close-modal" onClick={onClose}>
@@ -198,9 +198,9 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} title="Generate & Publish Advisory">
+    <BaseModal isOpen={isOpen} onClose={onClose} title="Generate & Publish Advisory" className="advisory-modal">
       <div className="modal-body">
-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+        <div className="form-group advisory-form-row" style={{ marginBottom: '12px' }}>
           <div>
             <label className="form-label">Category</label>
             <select className="form-input" value={category} onChange={(e) => setCategory(e.target.value)}>

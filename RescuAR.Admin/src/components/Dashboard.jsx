@@ -26,7 +26,7 @@ import {
 
 const injectedStyles = `
   /* Global Layout - Fix for white space on zoom */
-  :root {
+  .dashboard-container {
     --primary: #4f46e5;
     --primary-hover: #4338ca;
     --bg-main: #f8fafc;
@@ -37,15 +37,6 @@ const injectedStyles = `
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  }
-
-  /* Reset body margins to prevent white borders on zoom out */
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    min-height: 100vh;
-    background-color: var(--bg-main);
   }
 
   .dashboard-container {
@@ -61,7 +52,9 @@ const injectedStyles = `
     overflow-x: hidden;
   }
   
-  * { margin: 0; padding: 0; box-sizing: inherit; }
+  /* Do not reset every element in the app: the advisory dialog is a sibling. */
+  .dashboard-container,
+  .dashboard-container * { box-sizing: border-box; }
 
   /* Header Section */
   .header-section {
@@ -125,7 +118,7 @@ const injectedStyles = `
     display: flex;
     gap: 1rem;
   }
-  .btn-outline {
+  .dashboard-container .btn-outline {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -140,13 +133,13 @@ const injectedStyles = `
     box-shadow: var(--shadow-sm);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .btn-outline:hover { 
+  .dashboard-container .btn-outline:hover {
     background-color: #f1f5f9; 
     border-color: #cbd5e1; 
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
   }
-  .btn-primary {
+  .dashboard-container .btn-primary {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -161,7 +154,7 @@ const injectedStyles = `
     box-shadow: var(--shadow-md);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .btn-primary:hover {
+  .dashboard-container .btn-primary:hover {
     background-color: var(--primary-hover);
     transform: translateY(-1px);
     box-shadow: var(--shadow-lg);
@@ -170,10 +163,12 @@ const injectedStyles = `
   /* Stats Grid */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1.5rem;
+    width: 100%;
     margin-bottom: 2.5rem;
   }
+  .stats-grid > * { min-width: 0; }
   .stat-card {
     position: relative;
     background: var(--surface);
@@ -456,6 +451,9 @@ const injectedStyles = `
   @media (max-width: 1200px) {
     .main-layout { grid-template-columns: 1fr; }
   }
+  @media (max-width: 1100px) {
+    .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   @media (max-width: 768px) {
     .header-section { flex-direction: column; align-items: flex-start; gap: 1.5rem; }
     .header-actions { width: 100%; justify-content: space-between; }
@@ -636,9 +634,9 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
       )}
 
       {/* Top Stats Grid */}
-      <div className="stats-grid row g-3">
+      <div className="stats-grid" aria-label="Dashboard overview">
         {analytics.map((stat, idx) => (
-          <div key={idx} className="col-12 col-md-6 col-xxl-3">
+          <div key={idx} className="stat-card-cell">
             <button type="button" disabled={!canView(access, stat.target)} onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100" style={{ textAlign: 'left', cursor: canView(access, stat.target) ? 'pointer' : 'default' }}>
               <div className={`stat-icon-wrapper ${stat.colorClass}`}>
                 {stat.icon}
