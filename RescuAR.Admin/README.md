@@ -1,73 +1,119 @@
-# RescuAR Admin — Unified Dashboard and Analytics
+# RescuAR Admin — Phase 1 Safety + Phase 2 Audit Foundation
 
-**Base archive:** `RescuAR.Admin(20261123-120955).zip` (November 23, 2026).
+**Source baseline:** `RescuAR.Admin(20261123-124354).zip` (November 23, 2026).
 
-## Included improvements
+Two *sequential* patches, **not** an entire repository replacement. Work on your own development branch, not directly on production.
 
-The existing RescuAR Command Center now has five tabs:
-
-- **Overview:** Existing live KPIs, last-24-hour community report chart, geolocated reports/evacuation centers and recent report/advisory activity. Unchanged Supabase data logic.
-- **Flood:** Active PAGASA station levels/freshness and selected-gauge historical trend (24 hours, 7 days, 30 days or 6 months). Uses the existing `pagasa_river_chart` Supabase function; historical gaps are preserved. The historical MMDA gauge remains separate in the River Level module. There is a link to PREP Exposure Analysis, but no invented exposure totals.
-- **Community:** Live report submission trends, moderation statuses and categories for 7/30/90 days.
-- **Users:** Resident registrations and account statuses for 30/90/180 days, based on the existing authorized `get_all_users_with_roles` RPC. Only aggregate statistics are displayed or exported. Account status is not user engagement.
-- **Resources:** Recorded evacuation center capacity/occupancy, available places, advisory statuses and active advisory records.
-
-Detailed tab code is loaded only on opening an analytics tab (`React.lazy`), and its Supabase requests are made only while selected. Overview's preexisting 60-second polling and subscription continue to work. All tabs support manual refresh; detailed tabs include period controls when applicable and aggregated CSV exports.
-
-Dashboard tabs are only shown to roles that can view their corresponding management modules. Access to the underlying tables and RPCs must still be enforced by Supabase/RLS.
-
-The unused, mock-data-only `src/components/Analytics.jsx` file is removed by the patch (it was not routed in App.jsx).
-
-## Installation (recommended: Git patch)
-
-1. Extract this ZIP **outside** your RescuAR.Admin project.
-2. Copy `RescuAR_Unified_Dashboard_Analytics.patch` into the RescuAR.Admin project root (alongside `package.json`).
-3. From PowerShell in that project directory:
+## 0. Back up and verify branch
 
 ```powershell
 git status --short
-git apply --check .\RescuAR_Unified_Dashboard_Analytics.patch
-git apply .\RescuAR_Unified_Dashboard_Analytics.patch
-node --test tests/dashboardInsights.test.mjs
-node --test tests/*.test.mjs
+git branch --show-current
+```
+
+Commit or stash your existing local changes to the affected files before applying. Extract this ZIP OUTSIDE your repository, then copy the two `.patch` files to the RescuAR.Admin repository root. Do not copy an old version of the source tree over your current code.
+
+## 1. Install Phase 1 FIRST — safety corrections (no SQL)
+
+```powershell
+git apply --check .\01_Safety_Corrections.patch
+git apply .\01_Safety_Corrections.patch
+node --test tests/operationalSafety.test.mjs
 npm.cmd run build
 npm.cmd run dev
 ```
 
-4. Open **Dashboard** and test each tab using authorized admin roles. In the Flood tab, choose an enabled PAGASA station and observe that data gaps and outdated observations are shown honestly. Verify Users and Resources only appear when authorized.
-5. After checking the local UI and production configuration, commit and push to the branch tracked by Railway.
+**Behavior changes:**
 
-**Commit message:**
+- Notify Residents can no longer fake SMS/push/siren transmissions, a recipient count, or a success result. River Level no longer offers it as an enabled dispatch action.
+- System Settings is read-only. Fake global flood thresholds, fake receiver endpoint, fake SMS key, and non-persistent Save button are removed. Existing worker cron remains **every five minutes**, as configured in `scraper/syncWorker.js`.
+- Quick Generate Advisory never invents 16.2m, 2nd Alarm, affected barangays, an MCDRRMO signature, or a mandatory evacuation. It creates **Draft** only.
+- Main Advisories creation and duplication default to Draft. Manual publishing/reactivation requires an explicit confirmation. Date of publication is only shown when a timestamp exists.
+- Legacy Inundation Simulation dialog no longer claims to have computed a prediction.
 
-```text
-feat(admin): integrate live analytics into unified tabbed command dashboard
+### Required live checks before Phase 2
+
+1. **Local UI:** Open Dashboard → New Advisory with no station data. Confirm reading is *Unavailable*, areas are blank, and no evacuation order appears. Save and inspect that the Supabase row is `status='Draft'`, and `published_at` is NULL. An actual SMS must not be sent.
+2. **River Level:** With a recent verified observation, use Generate Advisory and confirm it is a **draft**. With old/unverified readings, auto-dispatch must remain unavailable; no false warnings should be published.
+3. **Notify Residents:** Check that River Level's direct dispatch action is disabled, and any other place that opens Notify Residents clearly says broadcasting is disabled. No fake progress, delivered count, SMS row, push message, or siren should occur.
+4. **System Settings:** Confirm no Save button or editable global thresholds; no false confirmation. Check Railway telemetry worker still polls every five minutes. Check Monitoring Stations still accurately shows PAGASA freshness/threshold verification.
+5. **Manual Advisory publishing:** Create/duplicate a draft; changing it to Active requires explicit confirmation. Only authorized personnel should be able to perform this action; **client confirmation alone is not a security control**. Verify Supabase policies for advisories before production use.
+6. **Integration regression:** Confirm Reports, RBAC, analytics dashboard, historical river level and station status still render. The independent SMS Composer is NOT disabled by Phase 1 and needs separate authorization/delivery checks.
+7. **Production safety review:** Check that older published advisories, mobile app consumption, existing SMS queues and Railway configuration have not been changed by the patch. Roll out only after a dry run using non-emergency draft data.
+
+If your deployed Supabase advisory schema rejects the `Draft` status or a NULL `published_at`, **stop and inspect its schema/constraints**. Do not change the DB blindly to make tests pass.
+
+## 2. After Phase 1 is validated: audit foundation code
+
+```powershell
+git apply --check .\02_System_Audit_Foundation.patch
+git apply .\02_System_Audit_Foundation.patch
+node --test tests/systemAuditFoundation.test.mjs
+node --test tests/*.test.mjs
+npm.cmd run build
 ```
 
-### Direct-copy alternative
+### Database setup is mandatory for System Logs
 
-If `git apply` fails because your local source has drifted from the base archive, review the differences before overwriting your changes. The `direct_copy/` directory has the complete changed/new files in their intended paths. Back up your existing `Dashboard.jsx` before copying. Delete `src/components/Analytics.jsx` only if it is still the same unused mock-data file from the archive. Do not mix partial versions of these files.
+**Before applying SQL**, run in Supabase SQL Editor (as a project owner):
 
-## Data sources / safeguards
+```sql
+SELECT
+  to_regclass('public.advisories') AS advisories,
+  to_regclass('public.rbac_audit_log') AS rbac_audit_log,
+  to_regprocedure('public.rbac_can(text)') AS rbac_permission_check;
+```
 
-| Tab | Existing source | Limitation |
-| --- | --- | --- |
-| Overview | Supabase reports, advisories, centers and PAGASA stations | Report map pins are **not** verified flood hazard polygons; recent activity is **not** the full audit trail |
-| Flood | `monitoring_stations`, `station_catalog`, `pagasa_river_chart` RPC | No risk status inferred from levels without verified thresholds; archived gauge not merged |
-| Community | `community_reports` | Latest 1,000 reports per selected window; truncation is disclosed |
-| Users | `get_all_users_with_roles` RPC | No logins/session engagement or barangay distribution without verified fields |
-| Resources | `evacuation_centers`, `advisories` | Limit 500 centers / 1,000 advisories; capacity totals include only complete records |
+All three must be present. Then inspect and run **`database/migrations/009_web_admin_audit_foundation.sql`** from the extracted patch source or the standalone file included in this ZIP. Run against the **correct Supabase project** (local/test first, then production after verification).
 
-A denied or failed query is displayed as unavailable or a data limitation, not as a fake zero. The feature uses existing migrations; **no new SQL migration is required** for the patch itself. The existing `pagasa_river_chart` function must be installed and accessible for Flood history.
+The migration creates:
 
-## Verification performed
+- `public.web_admin_audit_events`: protected, indexed table; browser roles have no direct read or write permissions.
+- Server-side triggers for committed `advisories` INSERT/UPDATE/DELETE and `rbac_audit_log` INSERT. Captures actor UUID where present, module, action, record ID, status changes or changed role ID — not full advisory content.
+- `public.web_admin_audit_list(...)`: read-only, paginated RPC restricted to authenticated users with `system.all` permission.
+- System Logs page with actual records, server-side filters, paging, and export of the **currently loaded page only**. No fictitious diagnostic entries or claims of cryptographic signing.
 
-- Git patch applied cleanly to a fresh copy of the exact uploaded project.
-- **93/93 automated tests passed**, including 12 new dashboard analytics tests.
-- Browser rendering and production build were **not** verified in the execution environment (the uploaded project contains Windows-only native dependencies). Run `npm.cmd run build` and manually test the UI on your development computer before deployment.
+### Audit validation after SQL migration
 
-## Unfinished work intentionally kept separate
+1. Refresh Supabase API schema cache if needed (`NOTIFY pgrst, 'reload schema'` is in the migration).
+2. In the local admin, sign in as an account with `system.all`, open **System → System Logs**. Initially, an empty list is normal.
+3. Create a **non-emergency test advisory as Draft**. Refresh System Logs: expect an `advisory.created` event, actual authenticated actor UUID, and `outcome='succeeded'`.
+4. Update the draft, check `advisory.updated`. Test a legitimate role assignment through the existing RBAC UI, and check `rbac.assignment_changed` (where the existing RPC inserts its RBAC audit row).
+5. Use the module, event type, and optional actor filters. Test page navigation and current-page export.
+6. Sign in as a role **without** `system.all`. Verify the System Logs page is inaccessible, and a direct call to `web_admin_audit_list` rejects access. Verify no direct INSERT/UPDATE/DELETE/SELECT permissions on the audit table for browser roles.
+7. Confirm no passwords, contact numbers, message bodies, or sensitive personal records appear in the log rows. Unknown actors should be shown as *Not attributable*, not fabricated names.
+8. Monitor Supabase errors during authorized advisory saves; if the migration fails, it is wrapped in a transaction. Do not simply bypass the audit trigger to hide write failures.
 
-- Full administrative System Audit Logs (not replaced with a simulated activity feed)
-- Persisted PREP exposure scenario analytics and verified model validation
-- Accurate session engagement tracking and structured barangay-based user statistics
-- Real notification/SMS dispatch testing and persisted system settings
+### Read-only audit check (project owner SQL editor)
+
+```sql
+SELECT id, recorded_at, actor_id, module, event_type, outcome, target_id, source
+FROM public.web_admin_audit_events
+ORDER BY id DESC LIMIT 15;
+```
+
+**Limitations to disclose during defense:** Events start when the SQL migration is installed; historical entries are not backfilled. This foundation does not yet capture login attempts, failed/denied operations, report moderation events in the legacy private audit store, hotline/evacuation/user edits, or gateway delivery results. Existing report moderation has a separate audit mechanism and should be integrated deliberately after verifying its deployed schema. This audit history is database-backed, **not cryptographically signed** or fully tamper-proof.
+
+## Commits
+
+Phase 1:
+
+```powershell
+git add src/components/Modals.jsx src/components/Advisories.jsx src/components/RiverLevel.jsx src/components/SystemSettings.jsx src/components/Documentation.jsx src/App.jsx src/utils/advisorySafety.js tests/operationalSafety.test.mjs
+git commit -m "fix(admin): prevent simulated alerts, unsafe advisory defaults and false settings saves"
+```
+
+Phase 2:
+
+```powershell
+git add database/migrations/009_web_admin_audit_foundation.sql src/components/SystemLogs.jsx src/components/AuditLogs.jsx src/services/systemAuditService.js tests/systemAuditFoundation.test.mjs
+git commit -m "feat(admin): establish protected audit event storage and real system logs"
+```
+
+**Validation performed in the patch environment:** Both patches applied sequentially to the exact source baseline; 105/105 Node tests passed. A live Supabase migration, production build/browser render, and recipient-delivery tests were not executed. Do not claim the feature is deployed until those are complete.
+
+**Secrets:** This patch ZIP intentionally excludes `.env`, Supabase keys, credentials, `node_modules`, generated assets and your full project archive.
+
+## Direct-copy fallback
+
+If `git apply --check` fails because your repository contains additional changes, **do not force it**. This package includes `phase1_direct_copy/` and `phase2_direct_copy/` with the changed files in matching relative folders. Compare each file with your current version and merge carefully; otherwise you could overwrite newer work. Apply Phase 1 files first, validate them, and only then merge Phase 2 files. The Phase 2 SQL migration remains necessary and must be run separately in the correct Supabase project.

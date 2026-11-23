@@ -1,0 +1,1043 @@
+From e8b35935e8dd00746281ebd6b34e042820be3454 Mon Sep 17 00:00:00 2001
+From: RescuAR Patch <patch@example.invalid>
+Date: Mon, 23 Nov 2026 13:01:21 +0000
+Subject: [PATCH] fix(admin): stop simulated broadcasts and unsafe
+ advisory/settings claims
+
+---
+ src/App.jsx                       |   6 +-
+ src/components/Advisories.jsx     |  24 +-
+ src/components/Documentation.jsx  | 110 ++++-----
+ src/components/Modals.jsx         | 388 ++++--------------------------
+ src/components/RiverLevel.jsx     |  10 +-
+ src/components/SystemSettings.jsx | 176 +++++---------
+ src/utils/advisorySafety.js       |  39 +++
+ tests/operationalSafety.test.mjs  |  64 +++++
+ 8 files changed, 295 insertions(+), 522 deletions(-)
+ create mode 100644 src/utils/advisorySafety.js
+ create mode 100644 tests/operationalSafety.test.mjs
+
+diff --git a/src/App.jsx b/src/App.jsx
+index 1d2dde0..6abbbe7 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -88,7 +88,7 @@ export default function App({ session, access }) {
+ 
+   const handleActionClick = (actionType, data = null) => {
+     if (actionType === 'advisory') {
+-      if (data) setActiveStationData(data);
++      setActiveStationData(data ?? null);
+       setIsAdvisoryOpen(true);
+     } else if (actionType === 'notify') {
+       setIsNotifyOpen(true);
+@@ -188,6 +188,10 @@ export default function App({ session, access }) {
+       <NotifyModal
+         isOpen={isNotifyOpen}
+         onClose={() => setIsNotifyOpen(false)}
++        onOpenSmsConsole={canView(access, 'community-sms-parser') ? () => {
++          setIsNotifyOpen(false);
++          navigateTo('community-sms-parser');
++        } : null}
+       />
+     </div>
+   );
+diff --git a/src/components/Advisories.jsx b/src/components/Advisories.jsx
+index 446c19d..f6da011 100644
+--- a/src/components/Advisories.jsx
++++ b/src/components/Advisories.jsx
+@@ -49,7 +49,7 @@ export default function Advisories() {
+     title: '',
+     category: 'Weather',
+     severity: 'Low',
+-    status: 'Active',
++    status: 'Draft',
+     affectedAreas: '',
+     description: '',
+     recommendedAction: '',
+@@ -77,7 +77,7 @@ export default function Advisories() {
+           category: item.category,
+           severity: item.severity,
+           status: item.status,
+-          published: new Date(item.published_at || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
++          published: item.published_at ? new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Not confirmed',
+           description: item.description || '',
+           recommendedAction: item.recommended_action || '',
+           escalationActions: item.escalation_actions || '',
+@@ -213,7 +213,7 @@ export default function Advisories() {
+       title: '',
+       category: 'Weather',
+       severity: 'Low',
+-      status: 'Active',
++      status: 'Draft',
+       affectedAreas: '',
+       description: '',
+       recommendedAction: '',
+@@ -268,9 +268,10 @@ export default function Advisories() {
+ 
+   const handleArchive = async (id, currentStatus) => {
+     const newStatus = currentStatus === 'Archived' ? 'Active' : 'Archived';
++    if (newStatus === 'Active' && !window.confirm('Reactivate this public advisory? Verify that its information is still current. This does not notify residents.')) return;
+     const { error } = await supabase
+       .from('advisories')
+-      .update({ status: newStatus })
++      .update({ status: newStatus, ...(newStatus === 'Active' ? { published_at: new Date().toISOString() } : {}) })
+       .eq('id', id);
+ 
+     if (error) {
+@@ -285,7 +286,7 @@ export default function Advisories() {
+       title: `${adv.title} (Copy)`,
+       category: adv.category,
+       severity: adv.severity,
+-      status: 'Active',
++      status: 'Draft',
+       description: adv.description,
+       recommended_action: adv.recommendedAction,
+       escalation_actions: adv.escalationActions || '',
+@@ -344,6 +345,17 @@ export default function Advisories() {
+       duration_end: durationEnd
+     };
+ 
++    if (payload.status === 'Active' && !window.confirm('Publish this advisory publicly? Confirm that the source measurements, affected areas, severity, and any evacuation instructions were independently verified by authorized personnel. This action does not send resident notifications.')) {
++      return;
++    }
++
++    if (payload.status === 'Active') {
++      const previousStatus = advisories.find((entry) => entry.id === formState.id)?.status;
++      if (modalMode === 'create' || previousStatus !== 'Active') {
++        payload.published_at = new Date().toISOString();
++      }
++    }
++
+     if (modalMode === 'create') {
+       const { error } = await supabase.from('advisories').insert([payload]);
+       if (error) {
+@@ -368,7 +380,7 @@ export default function Advisories() {
+       <div className="view-header">
+         <div className="view-title-container">
+           <h1>Advisories</h1>
+-          <span className="view-subtitle">Live Public Emergency Broadcasting</span>
++          <span className="view-subtitle">Advisory Drafts, Review and Publication — Not SMS Delivery</span>
+         </div>
+         <div className="page-header-actions">
+           <ExportActions title="advisories" rows={filteredAdvisories} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Category', key: 'category' }, { label: 'Severity', key: 'severity' }, { label: 'Status', key: 'status' }, { label: 'Published', key: 'published' }, { label: 'Description', key: 'description' }, { label: 'Recommended Action', key: 'recommendedAction' }, { label: 'Escalation Actions', key: 'escalationActions' }, { label: 'Affected Areas', key: 'affectedAreas' }, { label: 'Starts', key: 'durationStart' }, { label: 'Ends', key: 'durationEnd' }]} disabled={loading} />
+diff --git a/src/components/Documentation.jsx b/src/components/Documentation.jsx
+index 66cc175..2fc2389 100644
+--- a/src/components/Documentation.jsx
++++ b/src/components/Documentation.jsx
+@@ -1,55 +1,55 @@
+-import React from 'react';
+-import { BookOpen } from 'lucide-react';
+-
+-export default function Documentation() {
+-  return (
+-    <div className="main-view">
+-      <div className="view-header">
+-        <div className="view-title-container">
+-          <h1>System Documentation</h1>
+-          <span className="view-subtitle">Current monitoring, exposure and messaging behavior</span>
+-        </div>
+-      </div>
+-
+-      <div className="stations-card" style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-muted)' }}>
+-        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+-          <BookOpen size={18} style={{ color: 'var(--color-brand)' }} />
+-          <span>System Operating Guide</span>
+-        </h2>
+-
+-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+-          <div>
+-            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>1. Water Level Updates and Freshness</h3>
+-            <p>
+-              The telemetry worker checks PAGASA every five minutes. Reading age is measured from the source observation time, not the latest check. A reading is Fresh up to 15 minutes old, Delayed over 15 through 30 minutes, Stale over 30 through 60 minutes, and Unavailable over 60 minutes or without a valid observation time. Only Fresh readings are treated as live. Worker health and reading freshness are shown separately.
+-            </p>
+-          </div>
+-
+-          <div>
+-            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>2. Alert Levels and Hazard Exposure</h3>
+-            <p>
+-              Monitoring classifies readings as Normal, Alert, Alarm or Critical using station-specific PAGASA thresholds when available, with stored fallback thresholds otherwise. Read the selected station&apos;s thresholds and freshness together. A status change does not automatically issue an evacuation order or activate a siren. Follow the responsible authority&apos;s confirmed instructions.
+-            </p>
+-            <p>
+-              Flood Hazard Exposure estimates population and facilities within selected reference hazard maps. It is not a live inundation forecast or an observed count of affected residents. Automatic mappings use provisional rules unless an approved configuration is loaded; check the page&apos;s configuration and data warnings before interpreting an estimate.
+-            </p>
+-          </div>
+-
+-          <div>
+-            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>3. SMS Queue and Broadcast Simulation</h3>
+-            <p>
+-              Where your account has access, SMS Parser opens the Outbound SMS Gateway. It queues messages for a separately configured SIM handset. Queued means waiting for processing; sent means the handset reported submission to the network, not confirmed recipient delivery. The separate Notify Residents broadcast window is a simulation: its SMS, push and siren choices do not send alerts.
+-            </p>
+-          </div>
+-
+-          <div>
+-            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>4. Settings and Logs</h3>
+-            <p>
+-              System Settings currently keeps changes on screen without saving them to the server or changing telemetry collection. System Logs displays sample entries rather than live operational or audit history. Use confirmed service and gateway records to establish what actually occurred.
+-            </p>
+-          </div>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
++import React from 'react';
++import { BookOpen } from 'lucide-react';
++
++export default function Documentation() {
++  return (
++    <div className="main-view">
++      <div className="view-header">
++        <div className="view-title-container">
++          <h1>System Documentation</h1>
++          <span className="view-subtitle">Current monitoring, exposure and messaging behavior</span>
++        </div>
++      </div>
++
++      <div className="stations-card" style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-muted)' }}>
++        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
++          <BookOpen size={18} style={{ color: 'var(--color-brand)' }} />
++          <span>System Operating Guide</span>
++        </h2>
++
++        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
++          <div>
++            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>1. Water Level Updates and Freshness</h3>
++            <p>
++              The telemetry worker checks PAGASA every five minutes. Reading age is measured from the source observation time, not the latest check. A reading is Fresh up to 15 minutes old, Delayed over 15 through 30 minutes, Stale over 30 through 60 minutes, and Unavailable over 60 minutes or without a valid observation time. Only Fresh readings are treated as live. Worker health and reading freshness are shown separately.
++            </p>
++          </div>
++
++          <div>
++            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>2. Alert Levels and Hazard Exposure</h3>
++            <p>
++              Monitoring classifies readings as Normal, Alert, Alarm or Critical using station-specific PAGASA thresholds when available, with stored fallback thresholds otherwise. Read the selected station&apos;s thresholds and freshness together. A status change does not automatically issue an evacuation order or activate a siren. Follow the responsible authority&apos;s confirmed instructions.
++            </p>
++            <p>
++              Flood Hazard Exposure estimates population and facilities within selected reference hazard maps. It is not a live inundation forecast or an observed count of affected residents. Automatic mappings use provisional rules unless an approved configuration is loaded; check the page&apos;s configuration and data warnings before interpreting an estimate.
++            </p>
++          </div>
++
++          <div>
++            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>3. SMS Queue and Broadcast Simulation</h3>
++            <p>
++              Where your account has access, SMS Parser opens the Outbound SMS Gateway. It queues messages for a separately configured SIM handset. Queued means waiting for processing; sent means the handset reported submission to the network, not confirmed recipient delivery. The separate Notify Residents broadcast window is disabled pending verified recipient, authorization, and delivery integration. It sends no alerts.
++            </p>
++          </div>
++
++          <div>
++            <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>4. Settings and Logs</h3>
++            <p>
++              System Settings currently keeps changes on screen without saving them to the server or changing telemetry collection. System Logs displays sample entries rather than live operational or audit history. Use confirmed service and gateway records to establish what actually occurred.
++            </p>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/Modals.jsx b/src/components/Modals.jsx
+index 0a32c83..6999df6 100644
+--- a/src/components/Modals.jsx
++++ b/src/components/Modals.jsx
+@@ -1,5 +1,6 @@
+ import React, { useState, useEffect } from 'react';
+-import { X, Copy, Check, Send, Play, AlertTriangle } from 'lucide-react';
++import { X, Copy, Check, Send } from 'lucide-react';
++import { buildSafeAdvisoryDraft } from '../utils/advisorySafety.js';
+ 
+ /* --- MODAL WRAPPER COMPONENT --- */
+ function BaseModal({ isOpen, onClose, title, children, className = '' }) {
+@@ -28,123 +29,22 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+   const [isSubmitting, setIsSubmitting] = useState(false);
+   const [category, setCategory] = useState('Flood Risk');
+   const [severity, setSeverity] = useState('High');
+-  const [affectedAreas, setAffectedAreas] = useState('Tumana, Nangka, Malanday');
++  const [affectedAreas, setAffectedAreas] = useState('');
+   const [subject, setSubject] = useState('');
+   const [message, setMessage] = useState('');
+   const [escalationActions, setEscalationActions] = useState('');
+ 
+-  // Prefill default template dynamically when modal opens or stationData updates
++  // Build a neutral, review-only draft. Never invent a gauge reading, affected
++  // barangay, risk classification, or official evacuation instruction.
+   useEffect(() => {
+-    if (isOpen) {
+-      const rawStationName = stationData?.stationName || 'Sto. Niño';
+-      const cleanStationName = rawStationName.replace(/ Station/gi, '').trim();
+-      const displayStationTitle = `${cleanStationName} Station`;
+-      const level = stationData?.level !== undefined ? Number(stationData.level).toFixed(1) : '16.2';
+-      const alertStatus = stationData?.alertStatus || '2nd Alarm';
+-      const alertLabel = stationData?.alertLabel || '2nd Alarm (Preparation)';
+-
+-      // Automate Affected Areas mapping based on station location & alert severity
+-      let computedAreas = [];
+-      let computedSeverity = 'Low';
+-
+-      const is3rd = alertStatus.includes('3rd') || Number(level) >= 18;
+-      const is2nd = alertStatus.includes('2nd') || (Number(level) >= 16 && Number(level) < 18);
+-      const is1st = alertStatus.includes('1st') || (Number(level) >= 15 && Number(level) < 16);
+-
+-      if (is3rd) {
+-        computedSeverity = 'Critical';
+-      } else if (is2nd) {
+-        computedSeverity = 'High';
+-      } else if (is1st) {
+-        computedSeverity = 'Medium';
+-      } else {
+-        computedSeverity = 'Low';
+-      }
+-
+-      const nameLower = cleanStationName.toLowerCase();
+-
+-      if (nameLower.includes('nangka')) {
+-        if (is3rd) {
+-          computedAreas = ['Nangka', 'Tumana', 'Concepcion I', 'Banaba Boundary'];
+-        } else if (is2nd) {
+-          computedAreas = ['Nangka', 'Tumana Riverside'];
+-        } else {
+-          computedAreas = ['Nangka Low-Lying Zones'];
+-        }
+-      } else if (nameLower.includes('tumana')) {
+-        if (is3rd) {
+-          computedAreas = ['Tumana', 'Malanday', 'Nangka', 'Concepcion I'];
+-        } else if (is2nd) {
+-          computedAreas = ['Tumana', 'Malanday Riverside'];
+-        } else {
+-          computedAreas = ['Tumana Low-Lying Zones'];
+-        }
+-      } else if (nameLower.includes('sto') || nameLower.includes('nino')) {
+-        if (is3rd) {
+-          computedAreas = ['Sto. Niño', 'Malanday', 'Tumana', 'Jesus dela Peña', 'Kalumpang', 'San Roque'];
+-        } else if (is2nd) {
+-          computedAreas = ['Sto. Niño', 'Malanday', 'Tumana', 'Jesus dela Peña'];
+-        } else if (is1st) {
+-          computedAreas = ['Sto. Niño', 'Malanday Riverside'];
+-        } else {
+-          computedAreas = ['Sto. Niño Low-Lying Zones'];
+-        }
+-      } else if (nameLower.includes('rodriguez')) {
+-        if (is3rd || is2nd) {
+-          computedAreas = ['Upper Marikina Basin', 'Nangka Floodway Entrance', 'Tumana Floodplain'];
+-        } else {
+-          computedAreas = ['Upper Marikina Basin Corridor'];
+-        }
+-      } else if (nameLower.includes('san jose')) {
+-        if (is3rd || is2nd) {
+-          computedAreas = ['San Jose Flood Control Zone', 'Nangka Area', 'Tumana Riverbanks'];
+-        } else {
+-          computedAreas = ['San Jose Stream Gauge Perimeter'];
+-        }
+-      } else if (nameLower.includes('batasan')) {
+-        if (is3rd || is2nd) {
+-          computedAreas = ['Batasan Hills Boundary', 'Tumana', 'Malanday Spillway Zone'];
+-        } else {
+-          computedAreas = ['Batasan Stream Corridor'];
+-        }
+-      } else {
+-        if (is3rd) {
+-          computedAreas = ['Barangka', 'Jesus dela Peña', 'Malanday', 'Nangka', 'Sto. Niño', 'Tumana'];
+-        } else if (is2nd) {
+-          computedAreas = ['Tumana', 'Nangka', 'Malanday', 'Sto. Niño'];
+-        } else {
+-          computedAreas = ['Riverbank Low-Lying Barangays'];
+-        }
+-      }
+-
+-      const affectedString = computedAreas.join(', ');
+-      setAffectedAreas(affectedString);
+-      setSeverity(computedSeverity);
+-
+-      const generatedSubject = `FLOOD WARNING: ${displayStationTitle} reached ${alertStatus.toUpperCase()} (${level}m)`;
+-      
+-      let actionInstructions = '';
+-      let computedEscalation = '';
+-      if (is3rd) {
+-        actionInstructions = `CRITICAL ACTION REQUIRED:\n1. Immediate mandatory evacuation is in effect for identified danger zones in ${affectedString}.\n2. Proceed to designated evacuation centers immediately.\n3. Turn off main electric switches before evacuating.`;
+-        computedEscalation = 'Evacuate immediately when instructed and proceed to the designated safe area; Do not cross floodwaters or return until authorities say it is safe; Shut off main electrical breaker and LPG gas valve; Contact emergency hotlines for rescue assistance.';
+-      } else if (is2nd) {
+-        actionInstructions = `PREPARATION REQUIRED:\n1. Residents in ${affectedString} must secure emergency go-bags and vital documents.\n2. Move electrical appliances and vehicles to higher ground.\n3. Stand by for potential mandatory evacuation orders (Alert Level 3).`;
+-        computedEscalation = 'Prepare to evacuate and move important belongings to a higher place; Keep evacuation routes clear; Standby for Alert Level 3 mandatory evacuation orders; Keep PASS Go-Bag ready.';
+-      } else if (is1st) {
+-        actionInstructions = `MONITORING ADVISORY:\n1. Communities in ${affectedString} should monitor river level updates closely.\n2. Keep emergency communications active and charge electronic devices.`;
+-        computedEscalation = 'Monitor official river and weather updates closely; Prepare medicines, documents, food, water, and emergency supplies; Move vehicles to safe higher ground.';
+-      } else {
+-        actionInstructions = `ROUTINE NOTICE:\n1. Water level at ${displayStationTitle} is within normal bounds (${level}m).\n2. No immediate threat of overflow in ${affectedString}.`;
+-        computedEscalation = 'Continue monitoring official updates; Keep emergency kit updated.';
+-      }
+-
+-      const generatedMessage = `AUTOMATIC PUBLIC WATER LEVEL ADVISORY:\n\nPlease be advised that the ${displayStationTitle} has registered a water gauge reading of ${level} meters (${alertLabel}).\n\nDirectly Affected Barangays / Sectors:\n${affectedString}\n\n${actionInstructions}\n\n- Marikina Disaster Risk Reduction & Management Office (MCDRRMO)`;
+-
+-      setSubject(generatedSubject);
+-      setMessage(generatedMessage);
+-      setEscalationActions(computedEscalation);
+-    }
++    if (!isOpen) return;
++    const draft = buildSafeAdvisoryDraft(stationData);
++    setCategory('Flood Risk');
++    setSeverity(draft.severity);
++    setAffectedAreas(draft.affectedAreas);
++    setSubject(draft.subject);
++    setMessage(draft.message);
++    setEscalationActions(draft.escalationActions);
+   }, [isOpen, stationData]);
+ 
+   const handleCopy = () => {
+@@ -168,13 +68,13 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+             title: subject,
+             category: category,
+             severity: severity,
+-            status: 'Active',
++            status: 'Draft',
+             description: message,
+             recommended_action: 'Monitor river levels, keep emergency kits ready, and obey local LGU instructions.',
+             escalation_actions: escalationActions,
+             affected_areas: affectedAreas,
+-            duration_start: new Date().toISOString(),
+-            published_at: new Date().toISOString()
++            duration_start: null,
++            published_at: null
+           }
+         ])
+         .select();
+@@ -183,7 +83,7 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+         console.error('Error inserting advisory to Supabase:', error);
+         alert(`Could not publish advisory to database: ${error.message}`);
+       } else {
+-        alert('✅ Advisory created and published directly to the Advisories page!');
++        alert('Advisory draft saved for manual review. No public notification was sent.');
+         if (onViewAdvisories) {
+           onViewAdvisories();
+         }
+@@ -198,8 +98,11 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+   };
+ 
+   return (
+-    <BaseModal isOpen={isOpen} onClose={onClose} title="Generate & Publish Advisory" className="advisory-modal">
++    <BaseModal isOpen={isOpen} onClose={onClose} title="Prepare Advisory Draft" className="advisory-modal">
+       <div className="modal-body">
++        <div role="status" style={{ padding: '12px', marginBottom: '14px', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '8px', fontSize: '13px' }}>
++          <strong>Internal draft only.</strong> The water level and geographical impact must be verified before publication. Saving this draft does not issue an official alert, evacuation order, or resident notification.
++        </div>
+         <div className="form-group advisory-form-row" style={{ marginBottom: '12px' }}>
+           <div>
+             <label className="form-label">Category</label>
+@@ -279,7 +182,7 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+           style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+         >
+           <Send size={14} />
+-          <span>{isSubmitting ? 'Publishing...' : 'Publish to Advisories Page'}</span>
++          <span>{isSubmitting ? 'Saving draft...' : 'Save Draft for Review'}</span>
+         </button>
+       </div>
+     </BaseModal>
+@@ -287,238 +190,47 @@ export function AdvisoryModal({ isOpen, onClose, stationData, onViewAdvisories }
+ }
+ 
+ /* --- NOTIFY RESIDENTS MODAL --- */
+-export function NotifyModal({ isOpen, onClose }) {
+-  const [sectors, setSectors] = useState({
+-    Tumana: true,
+-    Nangka: true,
+-    Malanday: false,
+-    Provident: false
+-  });
+-  const [channel, setChannel] = useState('SMS');
+-  const [sendingState, setSendingState] = useState('idle'); // idle, sending, done
+-  const [progress, setProgress] = useState(0);
+-
+-  const handleSectorChange = (sector) => {
+-    setSectors(prev => ({ ...prev, [sector]: !prev[sector] }));
+-  };
+-
+-  const startBroadcast = () => {
+-    setSendingState('sending');
+-    setProgress(0);
+-  };
+-
+-  useEffect(() => {
+-    let interval;
+-    if (sendingState === 'sending') {
+-      interval = setInterval(() => {
+-        setProgress(prev => {
+-          if (prev >= 100) {
+-            clearInterval(interval);
+-            setSendingState('done');
+-            return 100;
+-          }
+-          return prev + 5;
+-        });
+-      }, 100);
+-    }
+-    return () => clearInterval(interval);
+-  }, [sendingState]);
+-
+-  const targetCount = Object.values(sectors).filter(Boolean).length;
+-
++// Intentionally no dispatch call: existing UI had a simulated success animation.
++// Real delivery must use the separately authorized SMS queue and delivery receipts.
++export function NotifyModal({ isOpen, onClose, onOpenSmsConsole }) {
+   return (
+-    <BaseModal isOpen={isOpen} onClose={onClose} title="Notify Residents Broadcast">
++    <BaseModal isOpen={isOpen} onClose={onClose} title="Notify Residents — Not Yet Connected">
+       <div className="modal-body">
+-        {sendingState === 'idle' && (
+-          <>
+-            <div className="form-group">
+-              <label className="form-label">Target Barangay Sectors</label>
+-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+-                {Object.keys(sectors).map((sector) => (
+-                  <label key={sector} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+-                    <input 
+-                      type="checkbox" 
+-                      checked={sectors[sector]} 
+-                      onChange={() => handleSectorChange(sector)} 
+-                      style={{ width: '16px', height: '16px' }}
+-                    />
+-                    <span>Barangay {sector}</span>
+-                  </label>
+-                ))}
+-              </div>
+-            </div>
+-
+-            <div className="form-group">
+-              <label className="form-label">Broadcast Delivery Channel</label>
+-              <select 
+-                className="form-input" 
+-                value={channel} 
+-                onChange={(e) => setChannel(e.target.value)}
+-                style={{ backgroundColor: '#ffffff', cursor: 'pointer' }}
+-              >
+-                <option value="SMS">Emergency SMS Broadcast</option>
+-                <option value="Push">Mobile App Push Notification</option>
+-                <option value="Siren">LGU Voice Siren Alert Trigger</option>
+-              </select>
+-            </div>
+-            
+-            <div style={{ fontSize: '12px', color: 'var(--text-light)', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+-              You are preparing to broadcast warning triggers to residents in <strong>{targetCount}</strong> sector(s) using the <strong>{channel}</strong> gateway.
+-            </div>
+-          </>
+-        )}
+-
+-        {sendingState === 'sending' && (
+-          <div className="simulation-box">
+-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '600' }}>
+-              <span>Transmitting alert packets...</span>
+-              <span>{progress}%</span>
+-            </div>
+-            <div className="progress-bar-container">
+-              <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
+-            </div>
+-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+-              Queue batch processing: Sending SMS to {Math.round(progress * 12.4)} / 1240 subscribers.
+-            </div>
+-          </div>
+-        )}
+-
+-        {sendingState === 'done' && (
+-          <div style={{ textAlign: 'center', padding: '16px 0', display: 'flex', flexDirection: 'column', align: 'center', gap: '12px' }}>
+-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: 'var(--color-online-bg)', color: 'var(--color-online)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+-                <Check size={28} />
+-              </div>
+-            </div>
+-            <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Broadcast Completed!</h3>
+-            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+-              SMS transmission logs have been saved. A total of 1,240 coordinators and residents have been alerted.
+-            </p>
+-          </div>
+-        )}
++        <div role="alert" style={{ padding: '16px', background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: '8px' }}>
++          <strong>Broadcasting from this panel is disabled.</strong>
++          <p style={{ marginTop: '8px', marginBottom: 0 }}>
++            This page is not connected to a verified recipient list or delivery gateway.
++            No SMS, push notification, or siren command has been sent. Do not use
++            this panel to confirm that residents were notified.
++          </p>
++        </div>
++        <p style={{ marginTop: '14px', fontSize: '13px', color: 'var(--text-muted)' }}>
++          Use only the separately authorized SMS Composer for controlled tests.
++          A queued message is not proof that a resident received it.
++        </p>
+       </div>
+-      
+       <div className="modal-footer">
+-        {sendingState === 'idle' && (
+-          <>
+-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+-            <button 
+-              className="btn-primary" 
+-              onClick={startBroadcast} 
+-              disabled={targetCount === 0}
+-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+-            >
+-              <Send size={14} />
+-              <span>Send Warning Alerts</span>
+-            </button>
+-          </>
+-        )}
+-        {sendingState === 'sending' && (
+-          <button className="btn-secondary" disabled>Sending...</button>
+-        )}
+-        {sendingState === 'done' && (
+-          <button className="btn-primary" onClick={onClose}>Done</button>
+-        )}
++        <button className="btn-secondary" type="button" onClick={onClose}>Close</button>
++        {onOpenSmsConsole && <button className="btn-primary" type="button" onClick={onOpenSmsConsole}>Open SMS Composer</button>}
+       </div>
+     </BaseModal>
+   );
+ }
+ 
+-/* --- RUN INUNDATION MODAL --- */
++/* --- LEGACY INUNDATION SIMULATION MODAL --- */
++// The prior animation fabricated measurements and projected flood impacts.
++// Never present demonstration values as a real flood prediction.
+ export function PredictModal({ isOpen, onClose }) {
+-  const [progress, setProgress] = useState(0);
+-  const [running, setRunning] = useState('idle'); // idle, running, done
+-  const [log, setLog] = useState([]);
+-
+-  const startSimulation = () => {
+-    setRunning('running');
+-    setProgress(0);
+-    setLog(['Initializing simulation engine...', 'Syncing water levels at 16.2m...']);
+-  };
+-
+-  useEffect(() => {
+-    let interval;
+-    if (running === 'running') {
+-      interval = setInterval(() => {
+-        setProgress(prev => {
+-          if (prev >= 100) {
+-            clearInterval(interval);
+-            setRunning('done');
+-            setLog(logs => [...logs, 'Calculation completed.', 'Identified critical threats: Barangays Tumana, Provident.']);
+-            return 100;
+-          }
+-          
+-          if (prev === 20) {
+-            setLog(logs => [...logs, 'Loading topographical height meshes...']);
+-          } else if (prev === 50) {
+-            setLog(logs => [...logs, 'Simulating flood front velocity paths...']);
+-          } else if (prev === 80) {
+-            setLog(logs => [...logs, 'Evaluating risk factor ratios for residential grids...']);
+-          }
+-          return prev + 10;
+-        });
+-      }, 200);
+-    }
+-    return () => clearInterval(interval);
+-  }, [running]);
+-
+   return (
+-    <BaseModal isOpen={isOpen} onClose={onClose} title="Hydrologic Inundation Simulation">
++    <BaseModal isOpen={isOpen} onClose={onClose} title="Inundation Simulation Unavailable">
+       <div className="modal-body">
+-        {running === 'idle' && (
+-          <>
+-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+-              <AlertTriangle size={24} style={{ color: 'var(--color-alert-2)', flexShrink: 0 }} />
+-              <div style={{ fontSize: '13px', lineHeight: '1.4', color: 'var(--text-muted)' }}>
+-                You are about to execute the <strong>Inundation Prediction Simulation</strong>. This uses real-time telemetry elevations to compute flooding boundaries along the river basin.
+-              </div>
+-            </div>
+-            <div className="form-group">
+-              <label className="form-label">Simulation Time Horizon</label>
+-              <select className="form-input" style={{ backgroundColor: 'white' }}>
+-                <option>Next 6 Hours (Standard)</option>
+-                <option>Next 12 Hours (Extended)</option>
+-                <option>Next 24 Hours (Full forecast)</option>
+-              </select>
+-            </div>
+-          </>
+-        )}
+-
+-        {(running === 'running' || running === 'done') && (
+-          <div className="simulation-box">
+-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '600' }}>
+-              <span>Hydro-Modeling Engine</span>
+-              <span>{progress}%</span>
+-            </div>
+-            <div className="progress-bar-container">
+-              <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
+-            </div>
+-            <div className="simulation-log">
+-              {log.map((entry, idx) => (
+-                <div key={idx} style={{ marginBottom: '2px' }}>&gt; {entry}</div>
+-              ))}
+-            </div>
+-          </div>
+-        )}
+-      </div>
+-      
+-      <div className="modal-footer">
+-        {running === 'idle' && (
+-          <>
+-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+-            <button className="btn-primary" onClick={startSimulation} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-              <Play size={14} fill="white" />
+-              <span>Start Simulation</span>
+-            </button>
+-          </>
+-        )}
+-        {running === 'running' && (
+-          <button className="btn-secondary" disabled>Simulating...</button>
+-        )}
+-        {running === 'done' && (
+-          <button className="btn-primary" onClick={onClose}>Close Simulation</button>
+-        )}
++        <div role="alert" style={{ padding: '16px', border: '1px solid #f59e0b', borderRadius: '8px', background: '#fffbeb' }}>
++          No verified live inundation simulation is connected to this dialog.
++          No prediction has been calculated. Use the Flood Hazard Exposure module
++          for its separately labeled reference scenarios and limitations.
++        </div>
+       </div>
++      <div className="modal-footer"><button className="btn-secondary" type="button" onClick={onClose}>Close</button></div>
+     </BaseModal>
+   );
+ }
+diff --git a/src/components/RiverLevel.jsx b/src/components/RiverLevel.jsx
+index 5f3d99a..b894ff0 100644
+--- a/src/components/RiverLevel.jsx
++++ b/src/components/RiverLevel.jsx
+@@ -121,27 +121,27 @@ function getDispatchActions(status) {
+   if (status === 'Critical') {
+     return {
+       advisory: { enabled: true, title: 'Issue Emergency Advisory', subtitle: 'Draft an urgent public flood warning' },
+-      notify: { enabled: true, title: 'Notify Residents Now', subtitle: 'Send SMS & push emergency broadcast' },
++      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
+       exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure immediately' }
+     };
+   }
+   if (status === 'Alarm') {
+     return {
+       advisory: { enabled: true, title: 'Generate Flood Advisory', subtitle: 'Draft an escalated public flood warning' },
+-      notify: { enabled: true, title: 'Notify Residents', subtitle: 'Send SMS & push broadcast' },
++      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
+       exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
+     };
+   }
+   if (status === 'Alert') {
+     return {
+       advisory: { enabled: true, title: 'Generate Advisory', subtitle: 'Draft an Alert-level public notice' },
+-      notify: { enabled: true, title: 'Prepare Resident Notification', subtitle: 'Review SMS & push broadcast before dispatch' },
++      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
+       exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
+     };
+   }
+   return {
+     advisory: { enabled: false, title: 'Generate Advisory', subtitle: 'Enabled when PAGASA Alert level is reached' },
+-    notify: { enabled: false, title: 'Notify Residents', subtitle: 'Enabled when PAGASA Alert level is reached' },
++    notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
+     exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure' }
+   };
+ }
+@@ -383,7 +383,7 @@ export default function RiverLevel({ onActionClick }) {
+               className={`action-tile advisory ${dispatchActions.advisory.enabled ? '' : 'action-tile-disabled'}`}
+               disabled={!dispatchActions.advisory.enabled}
+               aria-disabled={!dispatchActions.advisory.enabled}
+-              onClick={() => dispatchActions.advisory.enabled && onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}
++              onClick={() => dispatchActions.advisory.enabled && onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, observedAt: selectedStation?.observed_at, thresholdVerified: thresholdsVerified, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}
+             ><div className="tile-icon-box blue"><Megaphone size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.advisory.title}</span><span className="tile-sub">{dispatchActions.advisory.subtitle}</span></div>{dispatchActions.advisory.enabled && <ChevronRight size={16} className="tile-arrow" />}</button>
+             <button
+               className={`action-tile notify ${dispatchActions.notify.enabled ? '' : 'action-tile-disabled'}`}
+diff --git a/src/components/SystemSettings.jsx b/src/components/SystemSettings.jsx
+index f18fd77..bfffe2f 100644
+--- a/src/components/SystemSettings.jsx
++++ b/src/components/SystemSettings.jsx
+@@ -1,117 +1,59 @@
+-import React, { useState } from 'react';
+-import { Sliders, Settings, Save } from 'lucide-react';
+-
+-export default function SystemSettings() {
+-  const [thresholds, setThresholds] = useState({ lvl1: 15.0, lvl2: 16.0, lvl3: 18.0 });
+-  const [frequency, setFrequency] = useState(10);
+-  const [saved, setSaved] = useState(false);
+-
+-  const handleSave = () => {
+-    setSaved(true);
+-    setTimeout(() => setSaved(false), 2000);
+-  };
+-
+-  return (
+-    <div className="main-view">
+-      <div className="view-header">
+-        <div className="view-title-container">
+-          <h1>System Configuration</h1>
+-          <span className="view-subtitle">Adjust core thresholds and telemetry configurations</span>
+-        </div>
+-      </div>
+-
+-      <div className="stations-split-layout">
+-        <div className="stations-card">
+-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-            <Sliders size={18} style={{ color: 'var(--color-brand)' }} />
+-            <span>Alert Threshold Parameters</span>
+-          </h2>
+-
+-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
+-            <div className="form-group">
+-              <label className="form-label">Alert Level 1 (meters)</label>
+-              <input
+-                type="number"
+-                className="form-input"
+-                value={thresholds.lvl1}
+-                onChange={(e) => setThresholds({ ...thresholds, lvl1: parseFloat(e.target.value) })}
+-              />
+-            </div>
+-
+-            <div className="form-group">
+-              <label className="form-label">Alert Level 2 (meters)</label>
+-              <input
+-                type="number"
+-                className="form-input"
+-                value={thresholds.lvl2}
+-                onChange={(e) => setThresholds({ ...thresholds, lvl2: parseFloat(e.target.value) })}
+-              />
+-            </div>
+-
+-            <div className="form-group">
+-              <label className="form-label">Alert Level 3 (meters)</label>
+-              <input
+-                type="number"
+-                className="form-input"
+-                value={thresholds.lvl3}
+-                onChange={(e) => setThresholds({ ...thresholds, lvl3: parseFloat(e.target.value) })}
+-              />
+-            </div>
+-
+-            <button className="btn-primary" onClick={handleSave} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
+-              <Save size={16} />
+-              <span>{saved ? 'Settings Saved!' : 'Save Configuration'}</span>
+-            </button>
+-          </div>
+-        </div>
+-
+-        <div className="stations-card">
+-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-            <Settings size={18} style={{ color: 'var(--color-brand)' }} />
+-            <span>Telemetry Server Configurations</span>
+-          </h2>
+-
+-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
+-            <div className="form-group">
+-              <label className="form-label">Data Query Frequency (Minutes)</label>
+-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+-                <input
+-                  type="range"
+-                  min="5"
+-                  max="60"
+-                  step="5"
+-                  value={frequency}
+-                  onChange={(e) => setFrequency(parseInt(e.target.value))}
+-                  style={{ flex: 1 }}
+-                />
+-                <span style={{ fontWeight: '700', fontSize: '14px', width: '50px' }}>{frequency}m</span>
+-              </div>
+-            </div>
+-
+-            <div className="form-group">
+-              <label className="form-label">Telemetry Receiver Webhook URL</label>
+-              <input
+-                type="text"
+-                className="form-input"
+-                value="https://api.rescuar.net/v1/telemetry/receiver"
+-                readOnly
+-                style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}
+-              />
+-            </div>
+-
+-            <div className="form-group">
+-              <label className="form-label">SMS Gateway API Key</label>
+-              <input
+-                type="password"
+-                className="form-input"
+-                value="••••••••••••••••••••••••••••••••"
+-                readOnly
+-                style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}
+-              />
+-            </div>
+-          </div>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
++import React from 'react';
++import { Settings, ShieldAlert, Activity } from 'lucide-react';
++
++// Phase 1: Do not expose controls that cannot persist or apply to the worker.
++// Effective thresholds must be verified separately for each PAGASA gauge.
++export default function SystemSettings() {
++  return (
++    <div className="main-view">
++      <div className="view-header">
++        <div className="view-title-container">
++          <h1>System Configuration</h1>
++          <span className="view-subtitle">Operational configuration — read-only until validated backend updates are available</span>
++        </div>
++      </div>
++      <div className="stations-split-layout">
++        <div className="stations-card">
++          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
++            <ShieldAlert size={18} /> Alert Thresholds
++          </h2>
++          <div role="status" style={{ padding: '12px', border: '1px solid #f59e0b', borderRadius: '8px', background: '#fffbeb' }}>
++            No editable global thresholds are available. PAGASA alert, alarm, and critical
++            elevations must be verified <strong>for each station</strong> before they can
++            be used for a flood-risk classification.
++          </div>
++          <p style={{ fontSize: '13px', marginTop: '12px' }}>
++            Refer to Monitoring Stations for the actual recorded measurements and
++            per-gauge threshold verification state. A missing threshold is not a
++            Normal or safe condition.
++          </p>
++        </div>
++        <div className="stations-card">
++          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
++            <Activity size={18} /> PAGASA Telemetry Worker
++          </h2>
++          <dl style={{ fontSize: '13px' }}>
++            <dt>Configured polling schedule</dt>
++            <dd>Every 5 minutes (worker source configuration)</dd>
++            <dt>Change method</dt>
++            <dd>Update the Railway worker configuration/code, redeploy, and verify its logs.</dd>
++            <dt>Actual connection and latest observation</dt>
++            <dd>See Monitoring Stations; this page does not claim live connectivity.</dd>
++          </dl>
++          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
++            API keys and service-role secrets are managed through server-side environment
++            variables; they are not viewable or editable in this browser.
++          </p>
++        </div>
++      </div>
++      <div className="stations-card" style={{ marginTop: '16px' }}>
++        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Settings size={18} /> Configuration Updates</h2>
++        <p style={{ fontSize: '13px' }}>
++          Saving configuration from this page is disabled until protected persistence,
++          approval, worker acknowledgment, and audit logging are implemented. No changes
++          can be applied from this screen in the current version.
++        </p>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/utils/advisorySafety.js b/src/utils/advisorySafety.js
+new file mode 100644
+index 0000000..f8fb4e5
+--- /dev/null
++++ b/src/utils/advisorySafety.js
+@@ -0,0 +1,39 @@
++import { getTelemetryFreshness } from './telemetryFreshness.js';
++
++// A reading may be included in an internal draft, but cannot itself establish
++// affected barangays, an evacuation order, or authorization to publish.
++export function buildSafeAdvisoryDraft(stationData, nowMs = Date.now()) {
++  const stationName = typeof stationData?.stationName === 'string' && stationData.stationName.trim()
++    ? stationData.stationName.trim() : 'Unspecified monitoring station';
++  const rawLevel = stationData?.level;
++  const level = rawLevel === null || rawLevel === undefined || rawLevel === '' ? NaN : Number(rawLevel);
++  const hasLevel = Number.isFinite(level) && level >= 0;
++  const freshness = getTelemetryFreshness(stationData?.observedAt, nowMs);
++  const sourceVerified = stationData?.thresholdVerified === true;
++  const assessment = sourceVerified && freshness.isUsableAsLive && hasLevel
++    ? (['Alert', 'Alarm', 'Critical', 'Normal'].includes(stationData?.alertStatus)
++        ? stationData.alertStatus : 'Not assessed')
++    : 'Not assessed';
++
++  const timeLabel = stationData?.observedAt && Number.isFinite(Date.parse(stationData.observedAt))
++    ? new Date(stationData.observedAt).toISOString() : 'Unavailable';
++  const readingLabel = hasLevel ? `${level.toFixed(2)} m` : 'Unavailable';
++  return {
++    subject: `DRAFT — Water-level information (${stationName})`,
++    severity: 'Low', // Never infer the severity of an official advisory from a loose measurement.
++    affectedAreas: '', // Geographical impact requires independent verification.
++    message: [
++      'INTERNAL DRAFT — NOT AN OFFICIAL FLOOD WARNING OR EVACUATION ORDER.',
++      `Station: ${stationName}`,
++      `Recorded water level: ${readingLabel}`,
++      `PAGASA observation time (UTC): ${timeLabel}`,
++      `Observation freshness: ${freshness.label}`,
++      `Threshold-based assessment: ${assessment}`,
++      '',
++      'Affected areas: To be verified by authorized personnel.',
++      'Review the official PAGASA data and LGU guidance before publishing.',
++      'A water-level observation does not itself establish an evacuation order.'
++    ].join('\n'),
++    escalationActions: 'Follow instructions issued and verified by authorized local disaster-response officials.',
++  };
++}
+diff --git a/tests/operationalSafety.test.mjs b/tests/operationalSafety.test.mjs
+new file mode 100644
+index 0000000..369e3a5
+--- /dev/null
++++ b/tests/operationalSafety.test.mjs
+@@ -0,0 +1,64 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import { buildSafeAdvisoryDraft } from '../src/utils/advisorySafety.js';
++
++const read = (relative) => fs.readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
++
++test('missing observation never becomes fabricated warning, flood location or evacuation', () => {
++  const result = buildSafeAdvisoryDraft(null);
++  assert.match(result.message, /Unavailable/);
++  assert.match(result.message, /NOT AN OFFICIAL/);
++  assert.doesNotMatch(result.message, /16\.2 m|mandatory evacuation is in effect|Directly Affected/);
++  assert.equal(result.affectedAreas, '');
++});
++
++test('unverified or stale readings are not classified as official risk', () => {
++  const stale = buildSafeAdvisoryDraft({ stationName: 'Sto. Niño', level: 18.2, alertStatus: 'Critical', observedAt: '2026-10-01T00:00:00Z', thresholdVerified: true }, Date.parse('2026-11-23T00:00:00Z'));
++  assert.match(stale.message, /Threshold-based assessment: Not assessed/);
++  const unverified = buildSafeAdvisoryDraft({ level: 18.2, alertStatus: 'Critical', observedAt: '2026-11-23T00:00:00Z' }, Date.parse('2026-11-23T00:05:00Z'));
++  assert.match(unverified.message, /Threshold-based assessment: Not assessed/);
++});
++
++test('verified current reading is presented only as a reviewable draft', () => {
++  const result = buildSafeAdvisoryDraft({ stationName: 'Nangka', level: 16, alertStatus: 'Alarm', observedAt: '2026-11-23T00:00:00Z', thresholdVerified: true }, Date.parse('2026-11-23T00:05:00Z'));
++  assert.match(result.message, /Threshold-based assessment: Alarm/);
++  assert.match(result.message, /INTERNAL DRAFT/);
++  assert.equal(result.affectedAreas, '');
++});
++
++test('broadcast modal contains no simulation timer or fabricated confirmation', () => {
++  const src = read('src/components/Modals.jsx');
++  const modal = src.split('/* --- NOTIFY RESIDENTS MODAL --- */')[1].split('/* --- RUN INUNDATION MODAL --- */')[0];
++  assert.doesNotMatch(modal, /setInterval|Transmitting alert packets|1,240|sendingState|Broadcast Completed/);
++  assert.match(modal, /Broadcasting from this panel is disabled/);
++});
++
++test('settings do not expose fake saving, thresholds, endpoint or key', () => {
++  const src = read('src/components/SystemSettings.jsx');
++  assert.doesNotMatch(src, /Settings Saved!|setSaved|Save Configuration|16\.0|api\.rescuar\.net|••••/);
++  assert.match(src, /read-only/);
++});
++
++test('advisory creation and duplication default to Draft with explicit manual publish confirmation', () => {
++  const src = read('src/components/Advisories.jsx');
++  assert.match(src, /status: 'Draft'/);
++  assert.match(src, /Publish this advisory publicly/);
++  const modal = read('src/components/Modals.jsx');
++  assert.match(modal, /status: 'Draft'/);
++  assert.doesNotMatch(modal, /mandatory evacuation is in effect/);
++  assert.match(src, /payload\.published_at = new Date\(\)\.toISOString\(\)/);
++});
++
++test('old inundation demonstration cannot claim fabricated computation', () => {
++  const src = read('src/components/Modals.jsx');
++  const prediction = src.split('/* --- LEGACY INUNDATION SIMULATION MODAL --- */')[1];
++  assert.doesNotMatch(prediction, /setInterval|16\.2m|Simulating flood front velocity|Calculation completed/);
++  assert.match(prediction, /No prediction has been calculated/);
++});
++
++test('river monitoring never offers unverified direct resident broadcasts', () => {
++  const src = read('src/components/RiverLevel.jsx');
++  assert.doesNotMatch(src, /notify: \{ enabled: true/);
++  assert.match(src, /Resident Broadcast Unavailable/);
++});
+-- 
+2.47.3
+

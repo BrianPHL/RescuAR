@@ -1,0 +1,682 @@
+From 0400fc5f68beb8ce1848b7e04857f9e07e866cd1 Mon Sep 17 00:00:00 2001
+From: RescuAR Patch <patch@example.invalid>
+Date: Mon, 23 Nov 2026 13:06:13 +0000
+Subject: [PATCH] feat(admin): add protected audit event foundation and real
+ System Logs viewer
+
+---
+ .../009_web_admin_audit_foundation.sql        | 139 +++++++++++
+ src/components/AuditLogs.jsx                  | 232 +-----------------
+ src/components/SystemLogs.jsx                 | 192 +++++++++++----
+ src/services/systemAuditService.js            |  29 +++
+ tests/systemAuditFoundation.test.mjs          |  42 ++++
+ 5 files changed, 353 insertions(+), 281 deletions(-)
+ create mode 100644 database/migrations/009_web_admin_audit_foundation.sql
+ create mode 100644 src/services/systemAuditService.js
+ create mode 100644 tests/systemAuditFoundation.test.mjs
+
+diff --git a/database/migrations/009_web_admin_audit_foundation.sql b/database/migrations/009_web_admin_audit_foundation.sql
+new file mode 100644
+index 0000000..a68f681
+--- /dev/null
++++ b/database/migrations/009_web_admin_audit_foundation.sql
+@@ -0,0 +1,139 @@
++-- Phase 2: read-only server-backed System Logs foundation.
++-- Apply as a privileged project owner from Supabase SQL Editor, AFTER the
++-- RBAC foundation and only after confirming the tables below exist.
++-- Captures committed advisory and RBAC changes; does not log failed/denied
++-- attempts, SMS deliveries, or user login events. These require additional
++-- server-side integrations. No browser-supplied "audit write" RPC is exposed.
++BEGIN;
++
++DO $preflight$
++BEGIN
++  IF pg_catalog.to_regclass('public.advisories') IS NULL
++    OR pg_catalog.to_regclass('public.rbac_audit_log') IS NULL
++    OR pg_catalog.to_regprocedure('public.rbac_can(text)') IS NULL THEN
++    RAISE EXCEPTION 'Audit prerequisites absent: advisories, rbac_audit_log and rbac_can(text) are required';
++  END IF;
++END
++$preflight$;
++
++CREATE TABLE IF NOT EXISTS public.web_admin_audit_events (
++  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
++  recorded_at timestamptz NOT NULL DEFAULT now(),
++  actor_id uuid NULL,
++  source text NOT NULL CHECK (source IN ('authenticated-db-trigger', 'service-role', 'unattributed')),
++  module text NOT NULL CHECK (char_length(module) BETWEEN 1 AND 90),
++  event_type text NOT NULL CHECK (char_length(event_type) BETWEEN 1 AND 100),
++  outcome text NOT NULL DEFAULT 'succeeded' CHECK (outcome IN ('succeeded')),
++  target_type text NOT NULL,
++  target_id text NULL,
++  details jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(details) = 'object')
++);
++CREATE INDEX IF NOT EXISTS web_admin_audit_events_created_idx ON public.web_admin_audit_events (id DESC);
++CREATE INDEX IF NOT EXISTS web_admin_audit_events_module_idx ON public.web_admin_audit_events (module, id DESC);
++
++ALTER TABLE public.web_admin_audit_events ENABLE ROW LEVEL SECURITY;
++REVOKE ALL ON public.web_admin_audit_events FROM PUBLIC, anon, authenticated;
++REVOKE ALL ON SEQUENCE public.web_admin_audit_events_id_seq FROM PUBLIC, anon, authenticated;
++-- Supabase Edge/worker service-role writes do not need direct access. Audit
++-- entries are inserted only from SECURITY DEFINER database triggers.
++
++CREATE OR REPLACE FUNCTION public.web_admin_audit_capture()
++RETURNS trigger
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $function$
++DECLARE
++  action_name text;
++  audit_module text;
++  entity_type text;
++  entity_id text;
++  event_actor uuid;
++  event_source text;
++  event_details jsonb;
++BEGIN
++  event_actor := auth.uid();
++  event_source := CASE
++    WHEN event_actor IS NOT NULL THEN 'authenticated-db-trigger'
++    WHEN auth.role() = 'service_role' THEN 'service-role'
++    ELSE 'unattributed' END;
++
++  IF TG_TABLE_NAME = 'advisories' THEN
++    IF TG_OP = 'UPDATE' AND pg_catalog.to_jsonb(OLD) = pg_catalog.to_jsonb(NEW) THEN RETURN NEW; END IF;
++    action_name := CASE TG_OP WHEN 'INSERT' THEN 'advisory.created'
++      WHEN 'UPDATE' THEN 'advisory.updated' ELSE 'advisory.deleted' END;
++    audit_module := 'content-advisories';
++    entity_type := 'advisory';
++    entity_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.id::text ELSE NEW.id::text END;
++    -- No advisory text, phone numbers, passwords, or other sensitive content.
++    event_details := pg_catalog.jsonb_build_object(
++      'status_before', CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.status END,
++      'status_after', CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE NEW.status END);
++  ELSIF TG_TABLE_NAME = 'rbac_audit_log' AND TG_OP = 'INSERT' THEN
++    action_name := 'rbac.' || NEW.action;
++    audit_module := 'rbac-admins';
++    entity_type := 'administrator';
++    entity_id := NEW.target_user::text;
++    event_actor := NEW.actor;
++    event_source := CASE WHEN event_actor IS NULL THEN 'unattributed' ELSE 'authenticated-db-trigger' END;
++    event_details := pg_catalog.jsonb_build_object(
++      'role', NEW.detail ->> 'role',
++      'enabled', NEW.detail ->> 'enabled');
++  ELSE
++    RAISE EXCEPTION 'Unsupported audit trigger target: %', TG_TABLE_NAME;
++  END IF;
++
++  INSERT INTO public.web_admin_audit_events (
++    actor_id, source, module, event_type, target_type, target_id, details
++  ) VALUES (event_actor, event_source, audit_module, action_name, entity_type, entity_id, event_details);
++  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
++END
++$function$;
++REVOKE ALL ON FUNCTION public.web_admin_audit_capture() FROM PUBLIC, anon, authenticated;
++
++DROP TRIGGER IF EXISTS web_admin_audit_advisories ON public.advisories;
++CREATE TRIGGER web_admin_audit_advisories
++AFTER INSERT OR UPDATE OR DELETE ON public.advisories
++FOR EACH ROW EXECUTE FUNCTION public.web_admin_audit_capture();
++
++DROP TRIGGER IF EXISTS web_admin_audit_rbac ON public.rbac_audit_log;
++CREATE TRIGGER web_admin_audit_rbac
++AFTER INSERT ON public.rbac_audit_log
++FOR EACH ROW EXECUTE FUNCTION public.web_admin_audit_capture();
++
++CREATE OR REPLACE FUNCTION public.web_admin_audit_list(
++  p_limit integer DEFAULT 26,
++  p_before_id bigint DEFAULT NULL,
++  p_module text DEFAULT NULL,
++  p_event_type text DEFAULT NULL,
++  p_actor_id uuid DEFAULT NULL
++)
++RETURNS TABLE(
++  id bigint, recorded_at timestamptz, actor_id uuid, source text,
++  module text, event_type text, outcome text, target_type text,
++  target_id text, details jsonb
++)
++LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $function$
++BEGIN
++  IF auth.uid() IS NULL OR NOT public.rbac_can('system.all') THEN
++    RAISE EXCEPTION 'Administrator audit access required' USING ERRCODE = '42501';
++  END IF;
++  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 OR (p_before_id IS NOT NULL AND p_before_id < 1) THEN
++    RAISE EXCEPTION 'Invalid audit pagination request' USING ERRCODE = '22023';
++  END IF;
++  RETURN QUERY
++  SELECT e.id, e.recorded_at, e.actor_id, e.source, e.module, e.event_type,
++    e.outcome, e.target_type, e.target_id, e.details
++  FROM public.web_admin_audit_events e
++  WHERE (p_before_id IS NULL OR e.id < p_before_id)
++    AND (p_module IS NULL OR e.module = p_module)
++    AND (p_event_type IS NULL OR e.event_type = p_event_type)
++    AND (p_actor_id IS NULL OR e.actor_id = p_actor_id)
++  ORDER BY e.id DESC
++  LIMIT p_limit;
++END
++$function$;
++REVOKE ALL ON FUNCTION public.web_admin_audit_list(integer,bigint,text,text,uuid) FROM PUBLIC, anon, authenticated;
++GRANT EXECUTE ON FUNCTION public.web_admin_audit_list(integer,bigint,text,text,uuid) TO authenticated;
++
++COMMENT ON TABLE public.web_admin_audit_events IS
++  'Committed advisory and RBAC changes from trusted database triggers; never an SMS delivery log.';
++NOTIFY pgrst, 'reload schema';
++COMMIT;
+diff --git a/src/components/AuditLogs.jsx b/src/components/AuditLogs.jsx
+index ef3c2dd..4d0bccc 100644
+--- a/src/components/AuditLogs.jsx
++++ b/src/components/AuditLogs.jsx
+@@ -1,229 +1,3 @@
+-import React, { useState } from 'react';
+-import { 
+-  Search, 
+-  History, 
+-  FileText, 
+-  CheckCircle, 
+-  AlertTriangle, 
+-  User, 
+-  Server, 
+-  ChevronLeft, 
+-  ChevronRight,
+-  ShieldCheck,
+-  RefreshCw
+-} from 'lucide-react';
+-
+-const INITIAL_LOGS = [
+-  {
+-    id: 'EVT-9045',
+-    timestamp: '2026-07-22 08:42:01',
+-    operator: 'Brian Pasco (LGU)',
+-    category: 'Advisory',
+-    details: 'Published Alert Level 2 warning advisory for Tumana & Nangka sectors.',
+-    ip: '192.168.12.44',
+-    hash: '8f7a9d...2c5b'
+-  },
+-  {
+-    id: 'EVT-9044',
+-    timestamp: '2026-07-22 08:30:15',
+-    operator: 'System Gateway',
+-    category: 'Broadcast',
+-    details: 'SMS broadcast transmitted to 1,240 subscribers. Delivery confirmation rate: 98.4%.',
+-    ip: 'Cloud-Agent',
+-    hash: 'a1b2c3...f4e5'
+-  },
+-  {
+-    id: 'EVT-9043',
+-    timestamp: '2026-07-22 08:15:00',
+-    operator: 'Telemetry Daemon',
+-    category: 'System',
+-    details: 'Low battery warning triggered for Station 4 (Provident) - battery at 12%.',
+-    ip: '10.0.4.12',
+-    hash: 'e6d7c8...a9b0'
+-  },
+-  {
+-    id: 'EVT-9042',
+-    timestamp: '2026-07-22 08:12:30',
+-    operator: 'Brian Pasco (LGU)',
+-    category: 'Configuration',
+-    details: 'Updated Alert Level 2 threshold from 16.0m to 16.2m.',
+-    ip: '192.168.12.44',
+-    hash: 'c4d5e6...7f8a'
+-  },
+-  {
+-    id: 'EVT-9041',
+-    timestamp: '2026-07-22 07:45:00',
+-    operator: 'System Gateway',
+-    category: 'Broadcast',
+-    details: 'SMS broadcast test packet sent to 4 quick coordinators. Status: Delivered.',
+-    ip: 'Cloud-Agent',
+-    hash: '3f4e5d...6c7b'
+-  },
+-  {
+-    id: 'EVT-9040',
+-    timestamp: '2026-07-22 07:00:00',
+-    operator: 'System Daemon',
+-    category: 'System',
+-    details: 'Daily diagnostic check complete. All telemetry registers synchronized.',
+-    ip: 'Localhost',
+-    hash: '9a8b7c...6d5e'
+-  }
+-];
+-
+-export default function AuditLogs() {
+-  const [logs, setLogs] = useState(INITIAL_LOGS);
+-  const [searchQuery, setSearchQuery] = useState('');
+-  const [categoryFilter, setCategoryFilter] = useState('');
+-  const [isRefreshSpinning, setIsRefreshSpinning] = useState(false);
+-
+-  const handleRefresh = () => {
+-    setIsRefreshSpinning(true);
+-    setTimeout(() => {
+-      setIsRefreshSpinning(false);
+-    }, 800);
+-  };
+-
+-  const filteredLogs = logs.filter(log => {
+-    const matchesSearch = log.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
+-                          log.operator.toLowerCase().includes(searchQuery.toLowerCase()) ||
+-                          log.details.toLowerCase().includes(searchQuery.toLowerCase());
+-    const matchesCategory = categoryFilter ? log.category === categoryFilter : true;
+-    return matchesSearch && matchesCategory;
+-  });
+-
+-  const getCategoryStyle = (cat) => {
+-    switch (cat) {
+-      case 'Advisory': return { color: '#ea580c', bg: '#fff7ed' };
+-      case 'Broadcast': return { color: '#16a34a', bg: '#f0fdf4' };
+-      case 'System': return { color: '#dc2626', bg: '#fef2f2' };
+-      case 'Configuration': return { color: '#0284c7', bg: '#f0f9ff' };
+-      default: return { color: '#4b5563', bg: '#f3f4f6' };
+-    }
+-  };
+-
+-  return (
+-    <div className="main-view">
+-      {/* View Header */}
+-      <div className="view-header">
+-        <div className="view-title-container">
+-          <h1>Audit Logs</h1>
+-          <span className="view-subtitle">Cryptographically signed chronological trace of operator actions and warning telemetry dispatches</span>
+-        </div>
+-        <button className="btn-refresh" onClick={handleRefresh}>
+-          <RefreshCw size={13} className={isRefreshSpinning ? 'spin-icon' : ''} />
+-          <span>Refresh</span>
+-        </button>
+-      </div>
+-
+-      {/* Filter and stats row */}
+-      <div className="stations-card">
+-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+-          <div className="search-input-wrapper" style={{ flex: 1, minWidth: '250px' }}>
+-            <input 
+-              type="text" 
+-              placeholder="Search audit logs by ID, operator, details..." 
+-              value={searchQuery}
+-              onChange={(e) => setSearchQuery(e.target.value)}
+-            />
+-          </div>
+-
+-          <select 
+-            value={categoryFilter}
+-            onChange={(e) => setCategoryFilter(e.target.value)}
+-            className="time-range-select"
+-            style={{ padding: '10px 14px', borderRadius: '10px', width: '160px', fontSize: '13px' }}
+-          >
+-            <option value="">All Categories</option>
+-            <option value="Advisory">Advisory Updates</option>
+-            <option value="Broadcast">Broadcast Logs</option>
+-            <option value="System">System Traces</option>
+-            <option value="Configuration">Configurations</option>
+-          </select>
+-        </div>
+-      </div>
+-
+-      {/* Main Table Card */}
+-      <div className="stations-card" style={{ padding: '20px' }}>
+-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-            <History size={18} style={{ color: 'var(--color-brand)' }} />
+-            <span>Audit Trail</span>
+-          </h2>
+-          <span style={{ fontSize: '12px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
+-            <ShieldCheck size={14} />
+-            Integrity Check: Valid
+-          </span>
+-        </div>
+-
+-        {/* Audit Logs Table */}
+-        <div className="table-container">
+-          <table className="data-table">
+-            <thead>
+-              <tr>
+-                <th>Log ID</th>
+-                <th>Timestamp</th>
+-                <th>Operator / Source</th>
+-                <th>Category</th>
+-                <th>Action Details</th>
+-                <th>Origin IP</th>
+-                <th>SHA-256 Checksum</th>
+-              </tr>
+-            </thead>
+-            <tbody>
+-              {filteredLogs.length === 0 ? (
+-                <tr>
+-                  <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-light)' }}>
+-                    No audit logs match your search.
+-                  </td>
+-                </tr>
+-              ) : (
+-                filteredLogs.map(log => {
+-                  const catStyle = getCategoryStyle(log.category);
+-                  return (
+-                    <tr key={log.id} style={{ cursor: 'default' }}>
+-                      <td style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-main)' }}>{log.id}</td>
+-                      <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{log.timestamp}</td>
+-                      <td style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '14px 16px', fontWeight: '500' }}>
+-                        {log.operator.includes('System') || log.operator.includes('Telemetry') ? (
+-                          <Server size={12} style={{ color: 'var(--text-light)' }} />
+-                        ) : (
+-                          <User size={12} style={{ color: 'var(--color-brand)' }} />
+-                        )}
+-                        <span>{log.operator}</span>
+-                      </td>
+-                      <td>
+-                        <span style={{ 
+-                          color: catStyle.color, 
+-                          backgroundColor: catStyle.bg, 
+-                          padding: '3px 8px', 
+-                          borderRadius: '12px', 
+-                          fontSize: '11px', 
+-                          fontWeight: '700' 
+-                        }}>
+-                          {log.category}
+-                        </span>
+-                      </td>
+-                      <td style={{ maxWidth: '300px', wordWrap: 'break-word' }}>{log.details}</td>
+-                      <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{log.ip}</td>
+-                      <td style={{ fontFamily: 'monospace', color: 'var(--text-light)', fontSize: '11px' }}>{log.hash}</td>
+-                    </tr>
+-                  );
+-                })
+-              )}
+-            </tbody>
+-          </table>
+-        </div>
+-
+-        {/* Pagination controls */}
+-        <div className="table-footer">
+-          <span>Showing {filteredLogs.length} of {logs.length} logs</span>
+-          <div className="pagination-controls">
+-            <button className="pagination-btn" disabled><ChevronLeft size={14} /></button>
+-            <button className="pagination-btn active">1</button>
+-            <button className="pagination-btn" disabled><ChevronRight size={14} /></button>
+-          </div>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
++// Legacy entry point: the old example audit entries were fictional.
++// Keep compatibility, but always render the protected database-backed viewer.
++export { default } from './SystemLogs.jsx';
+diff --git a/src/components/SystemLogs.jsx b/src/components/SystemLogs.jsx
+index 521be93..1509421 100644
+--- a/src/components/SystemLogs.jsx
++++ b/src/components/SystemLogs.jsx
+@@ -1,52 +1,140 @@
+-import React from 'react';
+-import { History } from 'lucide-react';
+-
+-export default function SystemLogs() {
+-  const logs = [
+-    '[08:42:01] INFO [TelemetryProcessor] Received reading from Station 1: 16.20m',
+-    '[08:42:01] WARNING [AlertEngine] Level 16.20m exceeds threshold Level 2 (16.00m)',
+-    '[08:41:30] INFO [TelemetryProcessor] Received reading from Station 2: 15.40m',
+-    '[08:40:02] INFO [DBSync] Database sync successful (12ms write delay)',
+-    '[08:37:15] INFO [TelemetryProcessor] Received reading from Station 3: 14.90m',
+-    '[08:30:00] INFO [Scheduler] Broadcast job queue checked - 0 active, 1 completed',
+-    '[08:15:05] ERROR [TelemetryReceiver] Connection timeout on Station 4. Device offline.'
+-  ];
+-
+-  return (
+-    <div className="main-view">
+-      <div className="view-header">
+-        <div className="view-title-container">
+-          <h1>System Logs</h1>
+-          <span className="view-subtitle">Raw diagnostics console of early warning processes</span>
+-        </div>
+-      </div>
+-
+-      <div className="stations-card">
+-        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-          <History size={18} style={{ color: 'var(--color-brand)' }} />
+-          <span>Receiver Diagnostics Console</span>
+-        </h2>
+-        <div
+-          style={{
+-            backgroundColor: '#0f172a',
+-            color: '#38bdf8',
+-            fontFamily: 'monospace',
+-            fontSize: '12px',
+-            padding: '20px',
+-            borderRadius: 'var(--radius-md)',
+-            maxHeight: '400px',
+-            overflowY: 'auto',
+-            textAlign: 'left',
+-            lineHeight: '1.6'
+-          }}
+-        >
+-          {logs.map((log, i) => (
+-            <div key={i} style={{ borderBottom: '1px solid #1e293b', paddingBottom: '4px', marginBottom: '4px' }}>
+-              {log}
+-            </div>
+-          ))}
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
++import React, { useCallback, useEffect, useState } from 'react';
++import { History, RefreshCw, ShieldCheck } from 'lucide-react';
++import { supabase } from '../supabaseClient';
++import { createSystemAuditService, SYSTEM_AUDIT_PAGE_SIZE } from '../services/systemAuditService.js';
++import ExportActions from './ExportActions';
++
++const auditService = createSystemAuditService(supabase);
++const moduleOptions = [
++  ['', 'All covered modules'],
++  ['content-advisories', 'Advisories'],
++  ['rbac-admins', 'Admin roles']
++];
++
++export default function SystemLogs() {
++  const [module, setModule] = useState('');
++  const [eventType, setEventType] = useState('');
++  const [actorId, setActorId] = useState('');
++  const [filters, setFilters] = useState({ module: '', eventType: '', actorId: '' });
++  const [pages, setPages] = useState([null]);
++  const [pageIndex, setPageIndex] = useState(0);
++  const [rows, setRows] = useState([]);
++  const [hasMore, setHasMore] = useState(false);
++  const [nextId, setNextId] = useState(null);
++  const [loading, setLoading] = useState(false);
++  const [errorText, setErrorText] = useState('');
++  const [refreshToken, setRefreshToken] = useState(0);
++
++  const refresh = useCallback(() => { setPages([null]); setPageIndex(0); setRefreshToken((x) => x + 1); }, []);
++  useEffect(() => {
++    let active = true;
++    setLoading(true);
++    setErrorText('');
++    auditService.list({ ...filters, beforeId: pages[pageIndex] })
++      .then(({ rows: nextRows, hasMore: more, nextId: cursor }) => {
++        if (!active) return;
++        setRows(nextRows);
++        setHasMore(more);
++        setNextId(cursor);
++      })
++      .catch((error) => {
++        if (!active) return;
++        setRows([]);
++        setHasMore(false);
++        setErrorText(error.message || 'Audit history unavailable.');
++      })
++      .finally(() => { if (active) setLoading(false); });
++    return () => { active = false; };
++  }, [filters, pages, pageIndex, refreshToken]);
++
++  function applyFilters(e) {
++    e.preventDefault();
++    setPages([null]);
++    setPageIndex(0);
++    setFilters({ module, eventType, actorId });
++    setRefreshToken((n) => n + 1);
++  }
++
++  const exportRows = rows.map((row) => ({
++    id: row.id, time: row.recorded_at, actor: row.actor_id || 'Unknown',
++    module: row.module, event: row.event_type, outcome: row.outcome,
++    target: row.target_id || '—', source: row.source,
++  }));
++
++  return (
++    <div className="main-view">
++      <div className="view-header">
++        <div className="view-title-container">
++          <h1>System Audit Logs</h1>
++          <span className="view-subtitle">Recorded administrator changes — not a live telemetry diagnostic or SMS delivery log</span>
++        </div>
++        <button className="btn-refresh" type="button" onClick={refresh} disabled={loading}>
++          <RefreshCw size={14} /> Refresh
++        </button>
++      </div>
++      <div className="stations-card" style={{ marginBottom: '16px' }}>
++        <p role="status" style={{ fontSize: '13px', marginBottom: '12px' }}>
++          <ShieldCheck size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
++          Initial audit coverage: committed Advisory changes and RBAC role actions from the database.
++          Prior historical actions are not backfilled; unsuccessful attempts and notification delivery are not yet captured.
++        </p>
++        <form onSubmit={applyFilters} style={{ display: 'flex', alignItems: 'end', gap: '10px', flexWrap: 'wrap' }}>
++          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
++            Module
++            <select className="form-input" value={module} onChange={(e) => setModule(e.target.value)}>
++              {moduleOptions.map(([value, name]) => <option value={value} key={value}>{name}</option>)}
++            </select>
++          </label>
++          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
++            Action type
++            <input className="form-input" value={eventType} onChange={(e) => setEventType(e.target.value)} placeholder="e.g. advisory.created" />
++          </label>
++          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', flex: 1, minWidth: '190px' }}>
++            Administrator UUID (optional)
++            <input className="form-input" value={actorId} onChange={(e) => setActorId(e.target.value)} placeholder="Authenticated account ID" />
++          </label>
++          <button type="submit" className="btn-primary" disabled={loading}>Apply Filters</button>
++          <ExportActions title="rescuar_audit_current_page" rows={exportRows} columns={[
++            { label: 'ID', key: 'id' }, { label: 'Timestamp', key: 'time' },
++            { label: 'Actor UUID', key: 'actor' }, { label: 'Module', key: 'module' },
++            { label: 'Action', key: 'event' }, { label: 'Outcome', key: 'outcome' },
++            { label: 'Target ID', key: 'target' }, { label: 'Source', key: 'source' }
++          ]} disabled={loading || !rows.length} />
++        </form>
++      </div>
++      <div className="stations-card">
++        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
++          <History size={18} /> Database Audit Events
++        </h2>
++        {errorText && <p role="alert" style={{ color: '#b91c1c', padding: '12px' }}>{errorText}</p>}
++        <div className="table-container" style={{ overflowX: 'auto' }}>
++          <table className="data-table">
++            <thead>
++              <tr><th>Time (PH)</th><th>Actor UUID</th><th>Module</th><th>Action</th><th>Outcome</th><th>Target</th><th>Source</th></tr>
++            </thead>
++            <tbody>
++              {loading ? <tr><td colSpan="7">Loading actual audit records...</td></tr>
++                : !rows.length ? <tr><td colSpan="7">{errorText ? 'Records could not be loaded.' : 'No audit events recorded for these filters.'}</td></tr>
++                  : rows.map((row) => <tr key={row.id}>
++                    <td style={{ whiteSpace: 'nowrap' }}>{new Date(row.recorded_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</td>
++                    <td style={{ fontSize: '12px' }}>{row.actor_id || 'Not attributable'}</td>
++                    <td>{row.module}</td><td>{row.event_type}</td><td>{row.outcome}</td>
++                    <td>{row.target_id || '—'}</td><td>{row.source}</td>
++                  </tr>)}
++            </tbody>
++          </table>
++        </div>
++        <div className="table-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
++          <span>Page {pageIndex + 1} · Up to {SYSTEM_AUDIT_PAGE_SIZE} records per page · Export includes only this page</span>
++          <div className="pagination-controls">
++            <button className="pagination-btn" type="button" disabled={loading || pageIndex === 0} onClick={() => setPageIndex((n) => n - 1)}>Previous</button>
++            <button className="pagination-btn" type="button" disabled={loading || !hasMore} onClick={() => {
++              setPages((previous) => [...previous.slice(0, pageIndex + 1), nextId]);
++              setPageIndex((n) => n + 1);
++            }}>Next</button>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/services/systemAuditService.js b/src/services/systemAuditService.js
+new file mode 100644
+index 0000000..d5ad818
+--- /dev/null
++++ b/src/services/systemAuditService.js
+@@ -0,0 +1,29 @@
++export const SYSTEM_AUDIT_PAGE_SIZE = 25;
++const uuidPattern = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
++
++export function createSystemAuditService(client) {
++  return {
++    async list({ beforeId = null, module = '', eventType = '', actorId = '' } = {}) {
++      const cleanActor = actorId.trim();
++      if (cleanActor && !uuidPattern.test(cleanActor)) throw new Error('Enter a valid administrator UUID.');
++      const { data, error } = await client.rpc('web_admin_audit_list', {
++        p_limit: SYSTEM_AUDIT_PAGE_SIZE + 1,
++        p_before_id: beforeId,
++        p_module: module.trim() || null,
++        p_event_type: eventType.trim() || null,
++        p_actor_id: cleanActor || null,
++      });
++      if (error) {
++        if (error.code === '42501') throw new Error('Access denied. System Logs requires system administrator permissions.');
++        throw new Error(`Could not load audit history: ${error.message}`);
++      }
++      if (!Array.isArray(data)) throw new Error('Unexpected audit response from Supabase.');
++      const rows = data.slice(0, SYSTEM_AUDIT_PAGE_SIZE);
++      if (rows.some((r) => !Number.isSafeInteger(Number(r?.id)) || !r?.event_type || !r?.recorded_at)) {
++        throw new Error('Invalid audit records returned by server.');
++      }
++      const hasMore = data.length > SYSTEM_AUDIT_PAGE_SIZE;
++      return { rows, hasMore, nextId: hasMore ? rows.at(-1).id : null };
++    }
++  };
++}
+diff --git a/tests/systemAuditFoundation.test.mjs b/tests/systemAuditFoundation.test.mjs
+new file mode 100644
+index 0000000..df16c66
+--- /dev/null
++++ b/tests/systemAuditFoundation.test.mjs
+@@ -0,0 +1,42 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import { createSystemAuditService, SYSTEM_AUDIT_PAGE_SIZE } from '../src/services/systemAuditService.js';
++
++const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
++
++test('viewer never renders synthetic audit records', () => {
++  const src = read('src/components/SystemLogs.jsx');
++  assert.doesNotMatch(src, /TelemetryProcessor\] Received reading|8f7a9d|Brian Pasco/);
++  assert.match(src, /Loading actual audit records/);
++  const legacy = read('src/components/AuditLogs.jsx');
++  assert.match(legacy, /SystemLogs/);
++});
++
++test('audit service paginates and requests backend filters', async () => {
++  let args;
++  const s = createSystemAuditService({ rpc: async (name, values) => { args = [name, values]; return { data: Array.from({ length: 26 }, (_, i) => ({ id: 50 - i, event_type: 'advisory.created', recorded_at: new Date().toISOString() })) }; } });
++  const page = await s.list({ module: 'content-advisories', beforeId: 123 });
++  assert.equal(args[0], 'web_admin_audit_list');
++  assert.equal(args[1].p_limit, SYSTEM_AUDIT_PAGE_SIZE + 1);
++  assert.equal(args[1].p_before_id, 123);
++  assert.equal(page.rows.length, SYSTEM_AUDIT_PAGE_SIZE);
++  assert.equal(page.hasMore, true);
++  assert.equal(page.nextId, 26);
++});
++
++test('audit service rejects invalid actor filter and denied results', async () => {
++  const s = createSystemAuditService({ rpc: async () => ({ error: { code: '42501', message: 'Forbidden' } }) });
++  await assert.rejects(() => s.list({ actorId: 'not-a-uuid' }), /valid administrator UUID/);
++  await assert.rejects(() => s.list(), /Access denied/);
++});
++
++test('migration restricts audit read RPC and direct DML', () => {
++  const sql = read('database/migrations/009_web_admin_audit_foundation.sql');
++  assert.match(sql, /REVOKE ALL ON public\.web_admin_audit_events FROM PUBLIC, anon, authenticated/);
++  assert.match(sql, /auth\.uid\(\) IS NULL OR NOT public\.rbac_can\('system\.all'\)/);
++  assert.match(sql, /AFTER INSERT OR UPDATE OR DELETE ON public\.advisories/);
++  assert.match(sql, /AFTER INSERT ON public\.rbac_audit_log/);
++  assert.doesNotMatch(sql, /GRANT INSERT ON public\.web_admin_audit_events TO authenticated/);
++  assert.doesNotMatch(sql, /CREATE OR REPLACE FUNCTION public\.record_web_audit_event/);
++});
+-- 
+2.47.3
+
