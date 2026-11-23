@@ -18,8 +18,8 @@ export function formatTelemetryAge(ageMs) {
 
 function unavailable(description, ageText = 'No timestamp') {
   return {
-    status: 'unavailable', label: 'Unavailable', description, ageMs: null, ageText,
-    color: '#b91c1c', backgroundColor: '#fef2f2', borderColor: '#fecaca', dotColor: '#dc2626',
+    status: 'unavailable', label: 'Data Unavailable', description, ageMs: null, ageText,
+    color: '#475569', backgroundColor: '#f8fafc', borderColor: '#cbd5e1', dotColor: '#64748b',
     isFresh: false, isUsableAsLive: false
   };
 }
@@ -36,18 +36,18 @@ export function getTelemetryFreshness(observedAt, nowMs = Date.now()) {
   const ageText = formatTelemetryAge(ageMs);
 
   if (ageMs <= TELEMETRY_FRESH_MAX_MS) {
-    return { status: 'fresh', label: 'Fresh', description: 'Within the expected PAGASA publication window', ageMs, ageText,
+    return { status: 'fresh', label: 'Updated', description: 'Latest verified observation is within the current 15-minute display window', ageMs, ageText,
       color: '#15803d', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', dotColor: '#16a34a', isFresh: true, isUsableAsLive: true };
   }
   if (ageMs <= TELEMETRY_DELAYED_MAX_MS) {
-    return { status: 'delayed', label: 'Delayed', description: 'Observation is older than one expected PAGASA publication cycle', ageMs, ageText,
+    return { status: 'delayed', label: 'Awaiting PAGASA Update', description: 'The latest verified observation is 15–30 minutes old; this does not itself indicate rising flood risk', ageMs, ageText,
       color: '#a16207', backgroundColor: '#fefce8', borderColor: '#fde68a', dotColor: '#ca8a04', isFresh: false, isUsableAsLive: false };
   }
   if (ageMs <= TELEMETRY_STALE_MAX_MS) {
-    return { status: 'stale', label: 'Stale', description: 'No recent verified PAGASA observation', ageMs, ageText,
-      color: '#c2410c', backgroundColor: '#fff7ed', borderColor: '#fed7aa', dotColor: '#ea580c', isFresh: false, isUsableAsLive: false };
+    return { status: 'stale', label: 'Outdated Reading', description: 'The latest verified observation is 30–60 minutes old; do not treat it as a current flood-risk reading', ageMs, ageText,
+      color: '#92400e', backgroundColor: '#fffbeb', borderColor: '#fde68a', dotColor: '#d97706', isFresh: false, isUsableAsLive: false };
   }
 
-  return { status: 'unavailable', label: 'Unavailable', description: 'No verified PAGASA observation for more than one hour', ageMs, ageText,
-    color: '#b91c1c', backgroundColor: '#fef2f2', borderColor: '#fecaca', dotColor: '#dc2626', isFresh: false, isUsableAsLive: false };
+  return { status: 'unavailable', label: 'Data Unavailable', description: 'No verified PAGASA observation within the last hour; this does not establish current flood conditions', ageMs, ageText,
+    color: '#475569', backgroundColor: '#f8fafc', borderColor: '#cbd5e1', dotColor: '#64748b', isFresh: false, isUsableAsLive: false };
 }

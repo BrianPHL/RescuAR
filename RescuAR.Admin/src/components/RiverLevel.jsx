@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { calculateAlertStatus, getStationThresholds, formatTrend } from '../utils/waterLevelUtils';
+import { calculateAlertStatus, getStationThresholds } from '../utils/waterLevelUtils';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
+import { getTelemetryConnectionState, getMonitoringLevelAssessment, getMonitoringTrend, hasRecordedStationThresholds } from '../utils/telemetryPresentation';
 import {
   RefreshCw, ChevronRight, AlertTriangle, ShieldAlert, Megaphone, Bell,
-  Compass, Waves, Activity, Zap
+  Compass, Waves, Activity, Zap, Info
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -17,12 +18,6 @@ const STO_NINO_GAUGES = {
   '11104201': 'Sto. Niño (2nd) · 11104201',
   '11104204': 'Sto. Niño (MMDA) · 11104204'
 };
-const unavailableAlert = { status: 'Unavailable', label: 'Live status unavailable', color: '#b91c1c' };
-function hasVerifiedThresholds(row) {
-  return ['alert_threshold_m', 'alarm_threshold_m', 'critical_threshold_m'].every((key) =>
-    row?.[key] !== null && row?.[key] !== undefined && row?.[key] !== '' && Number.isFinite(Number(row[key]))
-  );
-}
 const RANGE_OPTIONS = {
   '24h': { label: '24-Hour', ms: 24 * 60 * 60 * 1000 },
   '7d': { label: '7-Day', ms: 7 * 24 * 60 * 60 * 1000 },
@@ -43,7 +38,7 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Invalid timestamp';
   return date.toLocaleString('en-PH', {
-    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
   });
 }
 
@@ -66,12 +61,20 @@ function getLevelContext(status, currentLevel, thresholds) {
   const alarm = finiteNumberOrNull(thresholds?.ALARM_2);
   const critical = finiteNumberOrNull(thresholds?.ALARM_3);
 
+  if (status === 'Unverified') {
+    return {
+      tone: 'unverified',
+      title: 'Flood-risk classification pending',
+      summary: 'A water-level reading is recorded, but this gauge does not have a verified set of PAGASA thresholds. Do not interpret the measurement as Normal, Alert, Alarm, or Critical.',
+      proximity: 'Threshold distance not verified.'
+    };
+  }
   if (status === 'Unavailable' || !Number.isFinite(currentLevel)) {
     return {
       tone: 'unavailable',
-      title: 'Live status unavailable',
-      summary: 'The latest verified reading is stale or its source thresholds are unverified; live warnings are disabled.',
-      proximity: 'Threshold distance unavailable.'
+      title: 'Current flood risk not assessed',
+      summary: 'The observation is missing or outside the 15-minute window used for current flood-risk classification. This is a data-timeliness notice, not a flood warning.',
+      proximity: 'Current threshold distance unavailable.'
     };
   }
 
@@ -149,6 +152,8 @@ export default function RiverLevel({ onActionClick }) {
   const [stationsList, setStationsList] = useState([]);
   const [selectedStationCode, setSelectedStationCode] = useState('');
   const [catalogWarning, setCatalogWarning] = useState('');
+  const [sourceStatus, setSourceStatus] = useState(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [selectedStation, setSelectedStation] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyGaugeOverride, setHistoryGaugeOverride] = useState('');
@@ -164,25 +169,30 @@ export default function RiverLevel({ onActionClick }) {
   const isHistoricalGauge = Boolean(historyGaugeCode && historyGaugeCode !== activeGaugeCode);
   const historyGaugeName = STO_NINO_GAUGES[historyGaugeCode] || stationDisplayName;
   const currentLevel = finiteNumberOrNull(selectedStation?.level);
-  const freshness = getTelemetryFreshness(selectedStation?.observed_at || selectedStation?.updated_at, nowMs);
-  const thresholds = hasVerifiedThresholds(selectedStation)
+  const freshness = getTelemetryFreshness(selectedStation?.observed_at, nowMs);
+  const thresholdsVerified = hasRecordedStationThresholds(selectedStation);
+  const thresholds = thresholdsVerified
     ? getStationThresholds(stationDisplayName, sourceThresholds(selectedStation))
-    : { ALARM_1: null, ALARM_2: null, ALARM_3: null, source: 'Unavailable' };
-  const currentAlert = freshness.isUsableAsLive && hasVerifiedThresholds(selectedStation)
-    ? calculateAlertStatus(currentLevel, stationDisplayName, sourceThresholds(selectedStation))
-    : unavailableAlert;
-  const trend = formatTrend(freshness.isUsableAsLive ? selectedStation?.trend : 'Unknown');
+    : { ALARM_1: null, ALARM_2: null, ALARM_3: null, source: 'Not verified' };
+  const currentAlert = getMonitoringLevelAssessment(
+    currentLevel, freshness, thresholdsVerified,
+    calculateAlertStatus(currentLevel, stationDisplayName, sourceThresholds(selectedStation))
+  );
+  const trend = getMonitoringTrend(selectedStation?.trend, freshness);
+  const sourceState = getTelemetryConnectionState(sourceStatus, nowMs);
   const levelContext = getLevelContext(currentAlert.status, currentLevel, thresholds);
   const dispatchActions = getDispatchActions(currentAlert.status);
 
   const fetchStations = useCallback(async () => {
-    const [{ data, error }, { data: catalog, error: catalogError }] = await Promise.all([
+    const [{ data, error }, { data: catalog, error: catalogError }, { data: sourceRows, error: sourceError }] = await Promise.all([
       supabase.from('monitoring_stations').select('*')
         .eq('source', SOURCE_ID).order('station_name', { ascending: true }),
       supabase.from('station_catalog').select('station_code, enabled, is_primary')
-        .eq('source', SOURCE_ID)
+        .eq('source', SOURCE_ID),
+      supabase.from('telemetry_source_status').select('*').eq('source', SOURCE_ID).limit(1)
     ]);
     if (error) throw error;
+    if (sourceError) console.warn('PAGASA source health could not be loaded:', sourceError.message);
     const catalogLoaded = !catalogError && Array.isArray(catalog) && catalog.length > 0;
     const activeCodes = new Set((catalog || []).filter((row) => row.enabled === true)
       .map((row) => String(row.station_code).trim()));
@@ -194,7 +204,8 @@ export default function RiverLevel({ onActionClick }) {
         ...row,
         isPrimary: catalog?.find((item) => String(item.station_code).trim() === String(row.station_code).trim())?.is_primary === true
       })),
-      warning: catalogLoaded ? '' : 'Active PAGASA station catalog is unavailable; inactive station records may be displayed.'
+      warning: catalogLoaded ? '' : 'Active PAGASA station catalog is unavailable; inactive station records may be displayed.',
+      sourceRow: sourceError ? null : sourceRows?.[0] || null
     };
   }, []);
 
@@ -218,8 +229,9 @@ export default function RiverLevel({ onActionClick }) {
     setIsRefreshing(true);
     setErrorMessage('');
     try {
-      const { list, warning } = await fetchStations();
+      const { list, warning, sourceRow } = await fetchStations();
       setCatalogWarning(warning);
+      setSourceStatus(sourceRow);
       setStationsList(list);
       const target = list.find((row) => String(row.station_code) === String(stationCode)) ||
         list.find((row) => row.isPrimary && row.station_name?.includes('Sto. Niño')) ||
@@ -239,8 +251,10 @@ export default function RiverLevel({ onActionClick }) {
     } catch (error) {
       console.error('River telemetry load failed:', error);
       setErrorMessage('Verified PAGASA river telemetry could not be loaded. Confirm the Supabase migration and telemetry worker are active.');
+      setSourceStatus(null);
     } finally {
       setIsRefreshing(false);
+      setHasLoaded(true);
     }
   }, [fetchHistory, fetchStations, selectedStationCode, timeRange, historyGaugeOverride]);
 
@@ -295,10 +309,11 @@ export default function RiverLevel({ onActionClick }) {
           <div className="title-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <h1 className="river-title">{stationDisplayName} Level</h1>
             <span className="live-telemetry-badge" style={{ color: freshness.color, borderColor: freshness.borderColor, backgroundColor: freshness.backgroundColor }}>
-              <span className="pulse-dot-green" style={{ backgroundColor: freshness.dotColor }}></span>{freshness.label} Telemetry
+              <span className={`pulse-dot-green ${freshness.status}`} style={{ backgroundColor: freshness.dotColor }}></span>{freshness.label} Observation
             </span>
           </div>
-          <p className="river-subtitle">Last verified PAGASA observation: {formatDateTime(selectedStation?.observed_at || selectedStation?.updated_at)} • {freshness.ageText}</p>
+          <p className="river-subtitle">Last verified PAGASA observation: {formatDateTime(selectedStation?.observed_at)} • {freshness.ageText}</p>
+          <p className="river-subtitle" style={{ marginTop: 4 }}>PAGASA source: <strong>{hasLoaded ? sourceState.sourceLabel : 'Checking...'}</strong> • Worker: <strong>{hasLoaded ? sourceState.workerLabel : 'Checking...'}</strong> • Last source check: {hasLoaded ? sourceState.checkAgeText : 'Checking...'}</p>
         </div>
         <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="station-selector-wrapper" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -313,7 +328,14 @@ export default function RiverLevel({ onActionClick }) {
         </div>
       </div>
 
-      {(errorMessage || catalogWarning) && <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c' }}>{[errorMessage, catalogWarning].filter(Boolean).join(' ')}</div>}
+      {(errorMessage || catalogWarning || (hasLoaded && sourceState.needsAttention)) && (
+        <div role="status" style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#fff7ed', border: '1px solid #fde68a', color: '#92400e' }}>
+          <strong>Monitoring data requires review — not a flood warning.</strong> {[errorMessage, catalogWarning, (hasLoaded && sourceState.needsAttention) && sourceState.detail].filter(Boolean).join(' ')}
+        </div>
+      )}
+      <div role="note" style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 8, background: '#eff6ff', color: '#334155', fontSize: 12, lineHeight: 1.5 }}>
+        <strong>Status guide:</strong> Source connection indicates a recent successful check; observation status indicates measurement age; flood-risk classification is shown only with recent observations and verified thresholds. Missing or late observations are not flood alerts.
+      </div>
 
       <div className="river-metrics-grid row g-3">
         <div className="col-12 col-md-6 col-xl-4">
@@ -324,10 +346,10 @@ export default function RiverLevel({ onActionClick }) {
             <div className="trend-chip" style={{ color: trend.color }}><span>{trend.symbol}</span><span>{trend.label}</span></div>
           </div>
           <div className="level-status-pill" style={{ backgroundColor: `${currentAlert.color}15`, color: currentAlert.color, borderColor: `${currentAlert.color}40`, fontWeight: 700 }}>
-            <AlertTriangle size={14} /><span>{currentAlert.label.toUpperCase()}</span>
+            {['Alert', 'Alarm', 'Critical'].includes(currentAlert.status) ? <AlertTriangle size={14} /> : <Info size={14} />}<span>{currentAlert.label.toUpperCase()}</span>
           </div>
           <div className={`threshold-distance threshold-distance-${levelContext.tone}`}>{levelContext.proximity}</div>
-          {selectedStation?.delta_30m_m != null && Number.isFinite(Number(selectedStation.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
+          {trend.available && selectedStation?.delta_30m_m != null && Number.isFinite(Number(selectedStation.delta_30m_m)) && <div className="level-change-note">30-minute change: {Number(selectedStation.delta_30m_m) >= 0 ? '+' : ''}{Number(selectedStation.delta_30m_m).toFixed(2)} m</div>}
           <div className="elevation-definition">PAGASA reports WL [EL.m] as water-level elevation at the station datum; it is not river depth.</div>
         </div>
         </div>
@@ -343,7 +365,9 @@ export default function RiverLevel({ onActionClick }) {
               </div>
             )) : <div style={{ color: '#64748b', fontSize: 13 }}>PAGASA did not provide warning thresholds for this station.</div>}
           </div>
-          <div style={{ marginTop: 10, color: '#64748b', fontSize: 12 }}>Threshold source: {thresholds.source}</div>
+          <div style={{ marginTop: 10, color: thresholdsVerified ? '#64748b' : '#92400e', fontSize: 12 }}>
+            Threshold verification: {thresholdsVerified ? 'Recorded PAGASA thresholds available' : 'Pending — no flood-risk status can be determined from this gauge'}
+          </div>
         </div>
         </div>
 

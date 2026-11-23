@@ -30,6 +30,7 @@ import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup } from 'react-lea
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 import { getTelemetryFreshness } from '../utils/telemetryFreshness';
+import { getTelemetryConnectionState, getMonitoringLevelAssessment, getMonitoringTrend, hasRecordedStationThresholds, selectActiveStoNinoGauge, STO_NINO_KNOWN_CODES } from '../utils/telemetryPresentation';
 import { calculateAlertStatus } from '../utils/waterLevelUtils';
 import {
   deriveProvisionalExposureScenario,
@@ -47,7 +48,7 @@ import barangayBoundaries from '../data/marikinaBarangays.json';
 import facilityDirectory from '../data/marikinaFacilities.json';
 
 const SOURCE_ID = 'PAGASA_FFWWS';
-const STO_NINO_CODE = '11104204';
+// Match the enabled catalog gauge; do not classify the archived MMDA gauge as live.
 const MARIKINA_CENTER = [14.6488, 121.1029];
 
 const CHOROPLETH_BUCKETS = [
@@ -197,13 +198,17 @@ export default function HazardExposure() {
   const loadTelemetryContext = async () => {
     setTelemetryError('');
     try {
-      const [{ data: station, error: stationError }, { data: status, error: statusError }] = await Promise.all([
+      const [{ data: stationRows, error: stationError }, { data: catalog, error: catalogError }, { data: status, error: statusError }] = await Promise.all([
         supabase
           .from('monitoring_stations')
           .select('station_code,station_name,source_station_name,level,status,trend,observed_at,source_checked_at,alert_threshold_m,alarm_threshold_m,critical_threshold_m,source')
           .eq('source', SOURCE_ID)
-          .eq('station_code', STO_NINO_CODE)
-          .maybeSingle(),
+          .in('station_code', STO_NINO_KNOWN_CODES),
+        supabase
+          .from('station_catalog')
+          .select('station_code,enabled,is_primary')
+          .eq('source', SOURCE_ID)
+          .in('station_code', STO_NINO_KNOWN_CODES),
         supabase
           .from('telemetry_source_status')
           .select('*')
@@ -212,9 +217,14 @@ export default function HazardExposure() {
       ]);
 
       if (stationError) throw stationError;
+      if (catalogError) throw catalogError;
       if (statusError) throw statusError;
 
-      setLiveTelemetry(station || null);
+      const activeStation = selectActiveStoNinoGauge(catalog, stationRows);
+      if (!activeStation) {
+        setTelemetryError('No enabled Sto. Niño gauge with a verified catalog mapping and stored observation is available. Live flood-risk classification is withheld.');
+      }
+      setLiveTelemetry(activeStation);
       setSourceStatus(status || null);
       setNowMs(Date.now());
     } catch (requestError) {
@@ -232,7 +242,8 @@ export default function HazardExposure() {
     const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
     const channel = supabase
       .channel('exposure-live-context')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations', filter: `station_code=eq.${STO_NINO_CODE}` }, () => void loadTelemetryContext())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monitoring_stations' }, () => void loadTelemetryContext())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'station_catalog' }, () => void loadTelemetryContext())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry_source_status', filter: `source=eq.${SOURCE_ID}` }, () => void loadTelemetryContext())
       .subscribe();
     return () => {
@@ -243,7 +254,12 @@ export default function HazardExposure() {
 
   const freshness = getTelemetryFreshness(liveTelemetry?.observed_at, nowMs);
   const liveLevel = numberFrom(liveTelemetry?.level);
-  const alert = calculateAlertStatus(liveLevel, liveTelemetry?.station_name, liveTelemetry);
+  const alert = getMonitoringLevelAssessment(
+    liveLevel, freshness, hasRecordedStationThresholds(liveTelemetry),
+    calculateAlertStatus(liveLevel, liveTelemetry?.station_name, liveTelemetry)
+  );
+  const trend = getMonitoringTrend(liveTelemetry?.trend, freshness);
+  const sourceState = getTelemetryConnectionState(sourceStatus, nowMs);
   const automaticScenario = useMemo(() => deriveProvisionalExposureScenario({
     telemetry: liveTelemetry,
     freshness,
@@ -563,10 +579,10 @@ export default function HazardExposure() {
           <div style={{ padding: 22 }}>
             <div className="inundation-context-grid row g-3">
               <div className="col-12 col-md-6"><div className="h-100" style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
-                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>STO. NIÑO (MMDA)</div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>{liveTelemetry?.station_name || 'STO. NIÑO (ACTIVE GAUGE UNCONFIRMED)'}</div>
                 <div style={{ fontSize: 34, fontWeight: 800, marginTop: 5 }}>{liveLevel == null ? '--' : `${liveLevel.toFixed(2)} m EL`}</div>
                 <div style={{ marginTop: 8, color: alert.color, fontWeight: 700 }}>{alert.label}</div>
-                <div style={{ marginTop: 6, color: '#64748b', fontSize: 12 }}>Trend: {liveTelemetry?.trend || 'Unknown'}</div>
+                <div style={{ marginTop: 6, color: '#64748b', fontSize: 12 }}>Trend: {trend.label}</div>
               </div></div>
               <div className="col-12 col-md-6"><div className="h-100" style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 12 }}>
                 <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>OBSERVATION FRESHNESS</div>
@@ -578,7 +594,8 @@ export default function HazardExposure() {
 
             <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13, color: '#475569' }}>
               <strong>Last verified observation:</strong> {formatObservedAt(liveTelemetry?.observed_at)}<br />
-              <strong>PAGASA source:</strong> {sourceStatus?.source_status || 'unknown'} • <strong>Worker:</strong> {sourceStatus?.worker_status || 'unknown'}
+              <strong>PAGASA source:</strong> {sourceState.sourceLabel} • <strong>Worker:</strong> {sourceState.workerLabel} • <strong>Last check:</strong> {sourceState.checkAgeText}<br />
+              <strong>Interpretation:</strong> Observation age and source connection are separate from flood-risk status; unverified thresholds cannot establish Normal/Alert/Alarm/Critical.
               {telemetryError && <><br /><strong>Telemetry error:</strong> {telemetryError}</>}
               {ruleConfigError && <><br /><strong>Rule config:</strong> using provisional fallback ({ruleConfigError})</>}
             </div>

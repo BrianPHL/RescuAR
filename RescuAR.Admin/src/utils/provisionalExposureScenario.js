@@ -1,4 +1,5 @@
 import { calculateAlertStatus } from './waterLevelUtils.js';
+import { hasRecordedStationThresholds } from './telemetryPresentation.js';
 
 // Safe fallback only. An approved PREP calibration configuration can replace
 // these mappings at runtime through GET /v1/exposure/rules.
@@ -93,6 +94,19 @@ export function deriveProvisionalExposureScenario({
     };
   }
 
+  if (!hasRecordedStationThresholds(telemetry)) {
+    return {
+      active: false,
+      state: 'suspended',
+      status: 'Unverified',
+      returnPeriod: null,
+      minimumHazard: null,
+      shortLabel: 'Threshold verification pending',
+      calibrated: normalizedConfig.approved,
+      reason: 'The active gauge has no complete, ordered PAGASA thresholds. Automatic exposure selection is suspended; no flood-risk level is inferred.'
+    };
+  }
+
   const workerHealthy = sourceStatus?.worker_status === 'healthy';
   const sourceReachable = sourceStatus?.source_status === 'reachable';
   const telemetryFresh = Boolean(freshness?.isUsableAsLive);
@@ -119,7 +133,7 @@ export function deriveProvisionalExposureScenario({
       minimumHazard: null,
       shortLabel: 'Automatic mapping suspended',
       calibrated: normalizedConfig.approved,
-      reason: `Automatic scenario selection requires Fresh telemetry. Current freshness: ${freshness?.label || 'Unavailable'}.`
+      reason: `Automatic scenario selection requires a recent verified observation. Current freshness: ${freshness?.label || 'Unavailable'}.`
     };
   }
 

@@ -1,26 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { calculateAlertStatus, formatTrend } from '../utils/waterLevelUtils';
-import { getTelemetryFreshness, formatTelemetryAge } from '../utils/telemetryFreshness';
+import { calculateAlertStatus } from '../utils/waterLevelUtils';
+import { getTelemetryFreshness } from '../utils/telemetryFreshness';
+import { getTelemetryConnectionState, getMonitoringLevelAssessment, getMonitoringTrend, hasRecordedStationThresholds } from '../utils/telemetryPresentation';
 import {
-  RefreshCw, Droplet, Waves, AlertTriangle, Info, BarChart2,
-  ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, WifiOff
+  RefreshCw, Droplet, Waves, Info, BarChart2,
+  ArrowUpDown, ArrowUp, ArrowDown, WifiOff
 } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
 } from 'recharts';
 
 const SOURCE_ID = 'PAGASA_FFWWS';
-const unavailableAlert = {
-  status: 'Unavailable', label: 'Unverified thresholds', color: '#b91c1c'
-};
-
-function hasVerifiedThresholds(row) {
-  return ['alert_threshold_m', 'alarm_threshold_m', 'critical_threshold_m'].every((key) =>
-    row[key] !== null && row[key] !== undefined && row[key] !== '' && Number.isFinite(Number(row[key]))
-  );
-}
-
 function thresholdPayload(row) {
   return {
     alert_threshold_m: row.alert_threshold_m,
@@ -34,7 +25,7 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Invalid timestamp';
   return date.toLocaleString('en-PH', {
-    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
   });
 }
 
@@ -42,6 +33,8 @@ export default function MonitoringStations() {
   const [stations, setStations] = useState([]);
   const [sourceStatus, setSourceStatus] = useState(null);
   const [catalogWarning, setCatalogWarning] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSummary, setShowSummary] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
@@ -87,16 +80,12 @@ export default function MonitoringStations() {
       const formatted = visibleRows.map((row, index) => {
         const level = Number(row.level);
         const validLevel = row.level !== null && row.level !== undefined && row.level !== '' && Number.isFinite(level);
-        const observedAt = row.observed_at || row.updated_at;
-        const alertInfo = hasVerifiedThresholds(row) && getTelemetryFreshness(observedAt).isUsableAsLive
-          ? calculateAlertStatus(validLevel ? level : null, row.station_name, thresholdPayload(row))
-          : unavailableAlert;
+        const observedAt = row.observed_at;
         return {
           ...row,
           id: row.id || row.station_code || index + 1,
           name: row.station_name,
           level: validLevel ? level : null,
-          alertInfo,
           observedAt,
           sourceCheckedAt: row.source_checked_at,
           isPrimary: catalogRows?.find((item) => String(item.station_code).trim() === String(row.station_code).trim())?.is_primary === true
@@ -106,10 +95,14 @@ export default function MonitoringStations() {
       setStations(formatted);
       setSourceStatus(sourceRows?.[0] || null);
       setNowMs(Date.now());
+      setLoadError('');
     } catch (error) {
       console.error('Monitoring telemetry load failed:', error);
+      setLoadError('Monitoring data could not be refreshed. Any displayed measurements are previously loaded readings.');
+      setSourceStatus(null);
     } finally {
       setIsRefreshing(false);
+      setHasLoaded(true);
     }
   };
 
@@ -133,13 +126,9 @@ export default function MonitoringStations() {
   }, []);
 
   const latestObservation = useMemo(() => {
-    const times = stations.map((s) => new Date(s.observedAt).getTime()).filter(Number.isFinite);
+    const times = stations.filter((s) => s.observedAt).map((s) => new Date(s.observedAt).getTime()).filter(Number.isFinite);
     return times.length ? new Date(Math.max(...times)).toISOString() : null;
   }, [stations]);
-
-  const sourceCheckAge = sourceStatus?.last_check_at
-    ? formatTelemetryAge(Math.max(0, nowMs - new Date(sourceStatus.last_check_at).getTime()))
-    : 'No source check recorded';
 
   const handleSort = (key) => {
     setSortConfig((previous) => {
@@ -170,18 +159,25 @@ export default function MonitoringStations() {
 
   const freshnessRows = stations.map((station) => getTelemetryFreshness(station.observedAt, nowMs));
   const unavailableCount = freshnessRows.filter((item) => item.status === 'unavailable').length;
-  const delayedCount = freshnessRows.filter((item) => ['delayed', 'stale'].includes(item.status)).length;
-  const warningCount = stations.filter((station) => !['Normal', 'Unavailable'].includes(station.alertInfo.status)).length;
-
-  const sourceHealthy = sourceStatus?.worker_status === 'healthy' && sourceStatus?.source_status === 'reachable';
+  const olderCount = freshnessRows.filter((item) => ['delayed', 'stale'].includes(item.status)).length;
+  const pendingThresholdCount = stations.filter((station) => !hasRecordedStationThresholds(station)).length;
+  const assessments = stations.map((station) => getMonitoringLevelAssessment(
+    station.level,
+    getTelemetryFreshness(station.observedAt, nowMs),
+    hasRecordedStationThresholds(station),
+    calculateAlertStatus(station.level, station.name, thresholdPayload(station))
+  ));
+  const warningCount = assessments.filter((assessment) => ['Alert', 'Alarm', 'Critical'].includes(assessment.status)).length;
+  const sourceState = getTelemetryConnectionState(sourceStatus, nowMs);
 
   const hydrologicalSummary = () => {
-    if (!stations.length) return 'No verified PAGASA station rows are available yet.';
-    if (!sourceHealthy) return `The telemetry worker is not reporting a healthy PAGASA source connection${sourceStatus?.last_error_message ? `: ${sourceStatus.last_error_message}` : '.'}`;
-    if (unavailableCount === stations.length) return 'PAGASA is reachable, but the latest verified measurements are too old to treat as live.';
-    if (delayedCount || unavailableCount) return `${delayedCount} delayed/stale and ${unavailableCount} unavailable station reading(s). Values remain the last verified PAGASA observations.`;
-    if (warningCount) return `${warningCount} station(s) currently meet a source-provided Alert, Alarm, or Critical threshold.`;
-    return 'Verified PAGASA telemetry is current across the configured stations and all source-provided thresholds remain in the normal range.';
+    if (!stations.length) return 'No active PAGASA station readings are available to summarize.';
+    if (sourceState.needsAttention) return `${sourceState.detail} Current flood-risk classifications must be interpreted with the observation timestamps.`;
+    if (unavailableCount === stations.length) return 'PAGASA is connected, but there are no sufficiently recent verified observations for current flood-risk classification.';
+    if (warningCount) return `${warningCount} station(s) meet a PAGASA threshold using recent observations and recorded thresholds. Verify the official advisory before dispatch.`;
+    if (pendingThresholdCount) return `${pendingThresholdCount} station(s) have thresholds that are not verified. Water-level measurements can be shown, but flood-risk classification is withheld for those stations.`;
+    if (olderCount || unavailableCount) return `${olderCount} observation(s) awaiting updates or outdated; ${unavailableCount} unavailable. These conditions describe data age, not flood severity.`;
+    return 'PAGASA observations are recent and the connected stations with verified thresholds are below the Alert level. Continue routine monitoring.';
   };
 
   const getStation = (fragment) => [...stations]
@@ -189,11 +185,14 @@ export default function MonitoringStations() {
     .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))[0];
 
   const renderPointCard = (title, station, Icon) => {
-    const fallback = { name: title, level: null, alertInfo: calculateAlertStatus(null), observedAt: null, trend: 'Unknown' };
-    const item = station || fallback;
+    const item = station || { name: title, level: null, observedAt: null, trend: null };
     const freshness = getTelemetryFreshness(item.observedAt, nowMs);
-    const trend = formatTrend(freshness.isUsableAsLive ? item.trend : 'Unknown');
-    const isCritical = item.alertInfo.status === 'Critical';
+    const assessment = getMonitoringLevelAssessment(
+      item.level, freshness, hasRecordedStationThresholds(item),
+      calculateAlertStatus(item.level, item.name, thresholdPayload(item))
+    );
+    const trend = getMonitoringTrend(item.trend, freshness);
+    const isCritical = assessment.status === 'Critical';
 
     return (
       <div className="point-card" style={freshness.status === 'unavailable' ? { backgroundColor: '#f8fafc' } : {}}>
@@ -203,8 +202,8 @@ export default function MonitoringStations() {
             {Number.isFinite(item.level) ? `${item.level.toFixed(2)} m` : '--'}
           </span>
           <div className="point-card-badge-row">
-            <span className="status-badge-pill" style={{ backgroundColor: `${item.alertInfo.color}20`, color: item.alertInfo.color, border: `1px solid ${item.alertInfo.color}40` }}>
-              {item.alertInfo.label}
+            <span title={assessment.explanation || 'Flood-risk classification from current PAGASA thresholds'} className="status-badge-pill" style={{ backgroundColor: `${assessment.color}15`, color: assessment.color, border: `1px solid ${assessment.color}40` }}>
+              {assessment.label}
             </span>
             <span className={`telemetry-state-badge compact ${freshness.status}`} title={freshness.description}>
               <span className={`telemetry-state-dot ${freshness.status}`}></span>
@@ -212,7 +211,7 @@ export default function MonitoringStations() {
             </span>
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: trend.color, fontWeight: 700 }}>
-            {trend.symbol} {trend.label}{item.delta_30m_m !== null && item.delta_30m_m !== undefined && Number.isFinite(Number(item.delta_30m_m)) ? ` (${Number(item.delta_30m_m) >= 0 ? '+' : ''}${Number(item.delta_30m_m).toFixed(2)} m / 30 min)` : ''}
+            {trend.symbol} {trend.label}{trend.available && item.delta_30m_m !== null && item.delta_30m_m !== undefined && Number.isFinite(Number(item.delta_30m_m)) ? ` (${Number(item.delta_30m_m) >= 0 ? '+' : ''}${Number(item.delta_30m_m).toFixed(2)} m / 30 min)` : ''}
           </div>
         </div>
         <div className="point-card-right">
@@ -236,9 +235,9 @@ export default function MonitoringStations() {
           <h1>Monitoring Stations</h1>
           <span className="view-subtitle">Latest verified observation: {formatDateTime(latestObservation)}</span>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6, fontSize: 12, color: '#64748b' }}>
-            <span><strong>PAGASA source:</strong> {sourceStatus?.source_status || 'unknown'}</span>
-            <span><strong>Worker:</strong> {sourceStatus?.worker_status || 'unknown'}</span>
-            <span><strong>Last source check:</strong> {sourceCheckAge}</span>
+            <span><strong>PAGASA source:</strong> {hasLoaded ? sourceState.sourceLabel : 'Checking...'}</span>
+            <span><strong>Worker:</strong> {hasLoaded ? sourceState.workerLabel : 'Checking...'}</span>
+            <span><strong>Last source check:</strong> {hasLoaded ? sourceState.checkAgeText : 'Checking...'}</span>
           </div>
         </div>
         <button className="btn-refresh" onClick={() => void loadData()} disabled={isRefreshing}>
@@ -247,24 +246,27 @@ export default function MonitoringStations() {
         </button>
       </div>
 
-      {(!sourceHealthy || sourceStatus?.last_error_code || catalogWarning) && (
-        <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <WifiOff size={18} style={{ marginTop: 1 }} />
-          <div><strong>PAGASA monitoring requires attention.</strong><div style={{ marginTop: 2, fontSize: 13 }}>{[sourceStatus?.last_error_message, catalogWarning].filter(Boolean).join(' ') || 'No recent healthy PAGASA observation cycle is available.'}</div></div>
+      {((hasLoaded && sourceState.needsAttention) || catalogWarning || loadError) && (
+        <div role="status" style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#92400e', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <WifiOff size={18} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div><strong>Monitoring data needs review — this is not a flood alert.</strong><div style={{ marginTop: 2, fontSize: 13 }}>{[(hasLoaded && sourceState.needsAttention) && sourceState.detail, catalogWarning, loadError].filter(Boolean).join(' ')}</div></div>
         </div>
       )}
+      <div role="note" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#eff6ff', color: '#334155', fontSize: 12, lineHeight: 1.55 }}>
+        <strong>How to read the statuses:</strong> Connection describes whether PAGASA was reached recently; Observation describes the age of the last verified measurement; Water-level status is based on verified thresholds and recent measurements. An older observation or missing threshold is <strong>not</strong> a flood warning.
+      </div>
 
       <div className="station-points-grid row g-3">
         <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('TUMANA MONITORING POINT', getStation('Tumana'), Droplet)}</div>
         <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('NANGKA MONITORING POINT', getStation('Nangka'), Waves)}</div>
-        <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('STO. NIÑO (MAIN NODE)', getStation('Sto. Niño'), AlertTriangle)}</div>
+        <div className="col-12 col-md-6 col-xxl-4">{renderPointCard('STO. NIÑO (MAIN NODE)', getStation('Sto. Niño'), Waves)}</div>
       </div>
 
       <div className="stations-split-layout monitoring-stations-layout row g-3">
         <div className="col-12 col-xl-7">
         <div className="stations-card h-100">
           <h2 className="stations-card-title">Current Verified Station Water Levels</h2>
-          {!chartData.length && <div style={{ fontSize: 12, color: '#9a3412', marginTop: 8 }}>No fresh, verified readings are available for the chart. Historical values remain in the table with their observation age.</div>}
+          {!chartData.length && <div style={{ fontSize: 12, color: '#9a3412', marginTop: 8 }}>No observations within the current 15-minute display window. Older verified values remain in the table with their recorded age.</div>}
           <div className="chart-container-wrapper" style={{ height: 300, marginTop: 16 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
@@ -301,21 +303,22 @@ export default function MonitoringStations() {
                   <th onClick={() => handleSort('name')} className="sortable-header"><div className="header-cell-content"><span>STATION</span>{getSortIcon('name')}</div></th>
                   <th onClick={() => handleSort('level')} className="sortable-header"><div className="header-cell-content"><span>LEVEL</span>{getSortIcon('level')}</div></th>
                   <th>TREND</th>
-                  <th>OBSERVATION</th>
-                  <th onClick={() => handleSort('status')} className="sortable-header"><div className="header-cell-content"><span>STATUS</span>{getSortIcon('status')}</div></th>
+                  <th>OBSERVATION AGE</th>
+                  <th><span>WATER-LEVEL STATUS</span></th>
                 </tr>
               </thead>
               <tbody>
                 {sortedStations.map((station) => {
                   const freshness = getTelemetryFreshness(station.observedAt, nowMs);
-                  const trend = formatTrend(freshness.isUsableAsLive ? station.trend : 'Unknown');
+                  const trend = getMonitoringTrend(station.trend, freshness);
+                  const assessment = getMonitoringLevelAssessment(station.level, freshness, hasRecordedStationThresholds(station), calculateAlertStatus(station.level, station.name, thresholdPayload(station)));
                   return (
                     <tr key={station.id} className="table-row-hover">
                       <td style={{ fontWeight: 600 }}>{station.name}<div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{station.station_code}</div></td>
                       <td style={{ fontWeight: 700 }}>{Number.isFinite(station.level) ? `${station.level.toFixed(2)} m` : '--'}</td>
                       <td style={{ color: trend.color, fontWeight: 700 }}>{trend.symbol} {trend.label}</td>
                       <td><span className={`telemetry-state-badge compact ${freshness.status}`} title={freshness.description}><span className={`telemetry-state-dot ${freshness.status}`}></span>{freshness.label} • {freshness.ageText}</span></td>
-                      <td><span className="status-badge-pill" style={{ backgroundColor: `${station.alertInfo.color}20`, color: station.alertInfo.color, border: `1px solid ${station.alertInfo.color}40`, fontWeight: 700 }}>{station.alertInfo.status}</span></td>
+                      <td><span className="status-badge-pill" style={{ backgroundColor: `${assessment.color}15`, color: assessment.color, border: `1px solid ${assessment.color}40`, fontWeight: 700 }} title={assessment.explanation || 'Verified PAGASA threshold assessment'}>{assessment.label}</span></td>
                     </tr>
                   );
                 })}

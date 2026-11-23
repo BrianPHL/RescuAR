@@ -3718,15 +3718,15 @@ textarea {
 }
 
 .telemetry-state-badge.stale {
-  color: #c2410c;
-  background: #fff7ed;
-  border-color: #fed7aa;
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .telemetry-state-badge.unavailable {
-  color: #b91c1c;
-  background: #fef2f2;
-  border-color: #fecaca;
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
 .telemetry-state-dot {
@@ -3747,11 +3747,11 @@ textarea {
 }
 
 .telemetry-state-dot.stale {
-  background: #ea580c;
+  background: #d97706;
 }
 
 .telemetry-state-dot.unavailable {
-  background: #dc2626;
+  background: #64748b;
 }
 
 /* ========================================================================== 
@@ -4010,11 +4010,22 @@ textarea {
   border-color: #fed7aa;
 }
 
-.threshold-distance-critical,
-.threshold-distance-unavailable {
+.threshold-distance-critical {
   color: #991b1b;
   background: #fef2f2;
   border-color: #fecaca;
+}
+
+.threshold-distance-unverified {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.threshold-distance-unavailable {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
 .level-change-note {
@@ -4068,11 +4079,22 @@ textarea {
   color: #9a3412;
 }
 
-.dispatch-condition-critical,
-.dispatch-condition-unavailable {
+.dispatch-condition-critical {
   background: #fef2f2;
   border-color: #fecaca;
   color: #991b1b;
+}
+
+.dispatch-condition-unverified {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.dispatch-condition-unavailable {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
 }
 
 .action-tile.action-tile-disabled,
@@ -4403,4 +4425,10 @@ textarea {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+/* Do not animate the river-level freshness indicator unless the observation is current. */
+.live-telemetry-badge .pulse-dot-green:not(.fresh) {
+  box-shadow: none;
+  animation: none;
 }
