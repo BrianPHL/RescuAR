@@ -121,27 +121,27 @@ function getDispatchActions(status) {
   if (status === 'Critical') {
     return {
       advisory: { enabled: true, title: 'Issue Emergency Advisory', subtitle: 'Draft an urgent public flood warning' },
-      notify: { enabled: true, title: 'Notify Residents Now', subtitle: 'Send SMS & push emergency broadcast' },
+      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
       exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure immediately' }
     };
   }
   if (status === 'Alarm') {
     return {
       advisory: { enabled: true, title: 'Generate Flood Advisory', subtitle: 'Draft an escalated public flood warning' },
-      notify: { enabled: true, title: 'Notify Residents', subtitle: 'Send SMS & push broadcast' },
+      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
       exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
     };
   }
   if (status === 'Alert') {
     return {
       advisory: { enabled: true, title: 'Generate Advisory', subtitle: 'Draft an Alert-level public notice' },
-      notify: { enabled: true, title: 'Prepare Resident Notification', subtitle: 'Review SMS & push broadcast before dispatch' },
+      notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
       exposure: { enabled: true, title: 'Review Exposure Analysis', subtitle: 'Review reference flood exposure' }
     };
   }
   return {
     advisory: { enabled: false, title: 'Generate Advisory', subtitle: 'Enabled when PAGASA Alert level is reached' },
-    notify: { enabled: false, title: 'Notify Residents', subtitle: 'Enabled when PAGASA Alert level is reached' },
+    notify: { enabled: false, title: 'Resident Broadcast Unavailable', subtitle: 'Delivery integration has not been verified' },
     exposure: { enabled: true, title: 'Open Exposure Analysis', subtitle: 'Review reference flood exposure' }
   };
 }
@@ -383,7 +383,7 @@ export default function RiverLevel({ onActionClick }) {
               className={`action-tile advisory ${dispatchActions.advisory.enabled ? '' : 'action-tile-disabled'}`}
               disabled={!dispatchActions.advisory.enabled}
               aria-disabled={!dispatchActions.advisory.enabled}
-              onClick={() => dispatchActions.advisory.enabled && onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}
+              onClick={() => dispatchActions.advisory.enabled && onActionClick?.('advisory', { stationName: stationDisplayName, level: currentLevel, observedAt: selectedStation?.observed_at, thresholdVerified: thresholdsVerified, alertStatus: currentAlert.status, alertLabel: currentAlert.label })}
             ><div className="tile-icon-box blue"><Megaphone size={16} /></div><div className="tile-text"><span className="tile-title">{dispatchActions.advisory.title}</span><span className="tile-sub">{dispatchActions.advisory.subtitle}</span></div>{dispatchActions.advisory.enabled && <ChevronRight size={16} className="tile-arrow" />}</button>
             <button
               className={`action-tile notify ${dispatchActions.notify.enabled ? '' : 'action-tile-disabled'}`}

@@ -1,116 +1,58 @@
-import React, { useState } from 'react';
-import { Sliders, Settings, Save } from 'lucide-react';
+import React from 'react';
+import { Settings, ShieldAlert, Activity } from 'lucide-react';
 
+// Phase 1: Do not expose controls that cannot persist or apply to the worker.
+// Effective thresholds must be verified separately for each PAGASA gauge.
 export default function SystemSettings() {
-  const [thresholds, setThresholds] = useState({ lvl1: 15.0, lvl2: 16.0, lvl3: 18.0 });
-  const [frequency, setFrequency] = useState(10);
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
   return (
     <div className="main-view">
       <div className="view-header">
         <div className="view-title-container">
           <h1>System Configuration</h1>
-          <span className="view-subtitle">Adjust core thresholds and telemetry configurations</span>
+          <span className="view-subtitle">Operational configuration — read-only until validated backend updates are available</span>
         </div>
       </div>
-
       <div className="stations-split-layout">
         <div className="stations-card">
           <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Sliders size={18} style={{ color: 'var(--color-brand)' }} />
-            <span>Alert Threshold Parameters</span>
+            <ShieldAlert size={18} /> Alert Thresholds
           </h2>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
-            <div className="form-group">
-              <label className="form-label">Alert Level 1 (meters)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={thresholds.lvl1}
-                onChange={(e) => setThresholds({ ...thresholds, lvl1: parseFloat(e.target.value) })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Alert Level 2 (meters)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={thresholds.lvl2}
-                onChange={(e) => setThresholds({ ...thresholds, lvl2: parseFloat(e.target.value) })}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Alert Level 3 (meters)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={thresholds.lvl3}
-                onChange={(e) => setThresholds({ ...thresholds, lvl3: parseFloat(e.target.value) })}
-              />
-            </div>
-
-            <button className="btn-primary" onClick={handleSave} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
-              <Save size={16} />
-              <span>{saved ? 'Settings Saved!' : 'Save Configuration'}</span>
-            </button>
+          <div role="status" style={{ padding: '12px', border: '1px solid #f59e0b', borderRadius: '8px', background: '#fffbeb' }}>
+            No editable global thresholds are available. PAGASA alert, alarm, and critical
+            elevations must be verified <strong>for each station</strong> before they can
+            be used for a flood-risk classification.
           </div>
+          <p style={{ fontSize: '13px', marginTop: '12px' }}>
+            Refer to Monitoring Stations for the actual recorded measurements and
+            per-gauge threshold verification state. A missing threshold is not a
+            Normal or safe condition.
+          </p>
         </div>
-
         <div className="stations-card">
           <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Settings size={18} style={{ color: 'var(--color-brand)' }} />
-            <span>Telemetry Server Configurations</span>
+            <Activity size={18} /> PAGASA Telemetry Worker
           </h2>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
-            <div className="form-group">
-              <label className="form-label">Data Query Frequency (Minutes)</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input
-                  type="range"
-                  min="5"
-                  max="60"
-                  step="5"
-                  value={frequency}
-                  onChange={(e) => setFrequency(parseInt(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontWeight: '700', fontSize: '14px', width: '50px' }}>{frequency}m</span>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Telemetry Receiver Webhook URL</label>
-              <input
-                type="text"
-                className="form-input"
-                value="https://api.rescuar.net/v1/telemetry/receiver"
-                readOnly
-                style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">SMS Gateway API Key</label>
-              <input
-                type="password"
-                className="form-input"
-                value="••••••••••••••••••••••••••••••••"
-                readOnly
-                style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}
-              />
-            </div>
-          </div>
+          <dl style={{ fontSize: '13px' }}>
+            <dt>Configured polling schedule</dt>
+            <dd>Every 5 minutes (worker source configuration)</dd>
+            <dt>Change method</dt>
+            <dd>Update the Railway worker configuration/code, redeploy, and verify its logs.</dd>
+            <dt>Actual connection and latest observation</dt>
+            <dd>See Monitoring Stations; this page does not claim live connectivity.</dd>
+          </dl>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            API keys and service-role secrets are managed through server-side environment
+            variables; they are not viewable or editable in this browser.
+          </p>
         </div>
+      </div>
+      <div className="stations-card" style={{ marginTop: '16px' }}>
+        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Settings size={18} /> Configuration Updates</h2>
+        <p style={{ fontSize: '13px' }}>
+          Saving configuration from this page is disabled until protected persistence,
+          approval, worker acknowledgment, and audit logging are implemented. No changes
+          can be applied from this screen in the current version.
+        </p>
       </div>
     </div>
   );

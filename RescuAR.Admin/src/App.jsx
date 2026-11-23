@@ -88,7 +88,7 @@ export default function App({ session, access }) {
 
   const handleActionClick = (actionType, data = null) => {
     if (actionType === 'advisory') {
-      if (data) setActiveStationData(data);
+      setActiveStationData(data ?? null);
       setIsAdvisoryOpen(true);
     } else if (actionType === 'notify') {
       setIsNotifyOpen(true);
@@ -188,6 +188,10 @@ export default function App({ session, access }) {
       <NotifyModal
         isOpen={isNotifyOpen}
         onClose={() => setIsNotifyOpen(false)}
+        onOpenSmsConsole={canView(access, 'community-sms-parser') ? () => {
+          setIsNotifyOpen(false);
+          navigateTo('community-sms-parser');
+        } : null}
       />
     </div>
   );

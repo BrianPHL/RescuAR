@@ -38,7 +38,7 @@ export default function Documentation() {
           <div>
             <h3 style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>3. SMS Queue and Broadcast Simulation</h3>
             <p>
-              Where your account has access, SMS Parser opens the Outbound SMS Gateway. It queues messages for a separately configured SIM handset. Queued means waiting for processing; sent means the handset reported submission to the network, not confirmed recipient delivery. The separate Notify Residents broadcast window is a simulation: its SMS, push and siren choices do not send alerts.
+              Where your account has access, SMS Parser opens the Outbound SMS Gateway. It queues messages for a separately configured SIM handset. Queued means waiting for processing; sent means the handset reported submission to the network, not confirmed recipient delivery. The separate Notify Residents broadcast window is disabled pending verified recipient, authorization, and delivery integration. It sends no alerts.
             </p>
           </div>
 

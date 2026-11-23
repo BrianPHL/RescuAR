@@ -49,7 +49,7 @@ export default function Advisories() {
     title: '',
     category: 'Weather',
     severity: 'Low',
-    status: 'Active',
+    status: 'Draft',
     affectedAreas: '',
     description: '',
     recommendedAction: '',
@@ -77,7 +77,7 @@ export default function Advisories() {
           category: item.category,
           severity: item.severity,
           status: item.status,
-          published: new Date(item.published_at || item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          published: item.published_at ? new Date(item.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Not confirmed',
           description: item.description || '',
           recommendedAction: item.recommended_action || '',
           escalationActions: item.escalation_actions || '',
@@ -213,7 +213,7 @@ export default function Advisories() {
       title: '',
       category: 'Weather',
       severity: 'Low',
-      status: 'Active',
+      status: 'Draft',
       affectedAreas: '',
       description: '',
       recommendedAction: '',
@@ -268,9 +268,10 @@ export default function Advisories() {
 
   const handleArchive = async (id, currentStatus) => {
     const newStatus = currentStatus === 'Archived' ? 'Active' : 'Archived';
+    if (newStatus === 'Active' && !window.confirm('Reactivate this public advisory? Verify that its information is still current. This does not notify residents.')) return;
     const { error } = await supabase
       .from('advisories')
-      .update({ status: newStatus })
+      .update({ status: newStatus, ...(newStatus === 'Active' ? { published_at: new Date().toISOString() } : {}) })
       .eq('id', id);
 
     if (error) {
@@ -285,7 +286,7 @@ export default function Advisories() {
       title: `${adv.title} (Copy)`,
       category: adv.category,
       severity: adv.severity,
-      status: 'Active',
+      status: 'Draft',
       description: adv.description,
       recommended_action: adv.recommendedAction,
       escalation_actions: adv.escalationActions || '',
@@ -344,6 +345,17 @@ export default function Advisories() {
       duration_end: durationEnd
     };
 
+    if (payload.status === 'Active' && !window.confirm('Publish this advisory publicly? Confirm that the source measurements, affected areas, severity, and any evacuation instructions were independently verified by authorized personnel. This action does not send resident notifications.')) {
+      return;
+    }
+
+    if (payload.status === 'Active') {
+      const previousStatus = advisories.find((entry) => entry.id === formState.id)?.status;
+      if (modalMode === 'create' || previousStatus !== 'Active') {
+        payload.published_at = new Date().toISOString();
+      }
+    }
+
     if (modalMode === 'create') {
       const { error } = await supabase.from('advisories').insert([payload]);
       if (error) {
@@ -368,7 +380,7 @@ export default function Advisories() {
       <div className="view-header">
         <div className="view-title-container">
           <h1>Advisories</h1>
-          <span className="view-subtitle">Live Public Emergency Broadcasting</span>
+          <span className="view-subtitle">Advisory Drafts, Review and Publication — Not SMS Delivery</span>
         </div>
         <div className="page-header-actions">
           <ExportActions title="advisories" rows={filteredAdvisories} columns={[{ label: 'ID', key: 'id' }, { label: 'Title', key: 'title' }, { label: 'Category', key: 'category' }, { label: 'Severity', key: 'severity' }, { label: 'Status', key: 'status' }, { label: 'Published', key: 'published' }, { label: 'Description', key: 'description' }, { label: 'Recommended Action', key: 'recommendedAction' }, { label: 'Escalation Actions', key: 'escalationActions' }, { label: 'Affected Areas', key: 'affectedAreas' }, { label: 'Starts', key: 'durationStart' }, { label: 'Ends', key: 'durationEnd' }]} disabled={loading} />
