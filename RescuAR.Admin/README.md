@@ -1,63 +1,73 @@
-# RescuAR Admin — Dashboard / Sidebar / Advisory Layout Fix
+# RescuAR Admin — Unified Dashboard and Analytics
 
-Based on the November 23, 2026 RescuAR.Admin project and compatible with the Telemetry Status Clarity update.
+**Base archive:** `RescuAR.Admin(20261123-120955).zip` (November 23, 2026).
 
-## Changes
+## Included improvements
 
-1. **Dashboard overview**: removes Bootstrap's four-column width (`col-xxl-3`) from the three metrics cards. The overview now uses a full-width, responsive 3/2/1-column CSS grid.
-2. **Advisory modal**: fixes clipped right-hand borders by eliminating the dashboard's global `box-sizing: inherit` override. Keeps the two textareas, form controls, and footer buttons within the dialog; widens the advisory dialog on desktop and stacks controls on small screens.
-3. **Sidebar**: allows the menu itself to scroll when groups expand; prevents nested text/buttons from overflowing or being cut off. The footer stays visible on desktop and the mobile drawer can scroll normally.
-4. **CSS isolation**: confines dashboard theme/button styling to the dashboard and keeps the existing purple advisory Publish button.
+The existing RescuAR Command Center now has five tabs:
 
-No database changes, new dependencies, or monitoring/business-logic changes.
+- **Overview:** Existing live KPIs, last-24-hour community report chart, geolocated reports/evacuation centers and recent report/advisory activity. Unchanged Supabase data logic.
+- **Flood:** Active PAGASA station levels/freshness and selected-gauge historical trend (24 hours, 7 days, 30 days or 6 months). Uses the existing `pagasa_river_chart` Supabase function; historical gaps are preserved. The historical MMDA gauge remains separate in the River Level module. There is a link to PREP Exposure Analysis, but no invented exposure totals.
+- **Community:** Live report submission trends, moderation statuses and categories for 7/30/90 days.
+- **Users:** Resident registrations and account statuses for 30/90/180 days, based on the existing authorized `get_all_users_with_roles` RPC. Only aggregate statistics are displayed or exported. Account status is not user engagement.
+- **Resources:** Recorded evacuation center capacity/occupancy, available places, advisory statuses and active advisory records.
 
-## Preferred installation (Git patch)
+Detailed tab code is loaded only on opening an analytics tab (`React.lazy`), and its Supabase requests are made only while selected. Overview's preexisting 60-second polling and subscription continue to work. All tabs support manual refresh; detailed tabs include period controls when applicable and aggregated CSV exports.
 
-Extract this ZIP **outside** your RescuAR.Admin repository. Copy `RescuAR_Admin_Layout_Fix.patch` into the root folder (beside `package.json`). Run these commands in PowerShell from the project root:
+Dashboard tabs are only shown to roles that can view their corresponding management modules. Access to the underlying tables and RPCs must still be enforced by Supabase/RLS.
+
+The unused, mock-data-only `src/components/Analytics.jsx` file is removed by the patch (it was not routed in App.jsx).
+
+## Installation (recommended: Git patch)
+
+1. Extract this ZIP **outside** your RescuAR.Admin project.
+2. Copy `RescuAR_Unified_Dashboard_Analytics.patch` into the RescuAR.Admin project root (alongside `package.json`).
+3. From PowerShell in that project directory:
 
 ```powershell
-git apply --check .\RescuAR_Admin_Layout_Fix.patch
-git apply .\RescuAR_Admin_Layout_Fix.patch
-node --test tests/dashboardLayout.test.mjs
+git status --short
+git apply --check .\RescuAR_Unified_Dashboard_Analytics.patch
+git apply .\RescuAR_Unified_Dashboard_Analytics.patch
+node --test tests/dashboardInsights.test.mjs
+node --test tests/*.test.mjs
 npm.cmd run build
 npm.cmd run dev
 ```
 
-If `git apply --check` fails due to line-ending differences, you can retry the same commands with `--ignore-space-change`:
+4. Open **Dashboard** and test each tab using authorized admin roles. In the Flood tab, choose an enabled PAGASA station and observe that data gaps and outdated observations are shown honestly. Verify Users and Resources only appear when authorized.
+5. After checking the local UI and production configuration, commit and push to the branch tracked by Railway.
 
-```powershell
-git apply --check --ignore-space-change .\RescuAR_Admin_Layout_Fix.patch
-git apply --ignore-space-change .\RescuAR_Admin_Layout_Fix.patch
+**Commit message:**
+
+```text
+feat(admin): integrate live analytics into unified tabbed command dashboard
 ```
 
-Do not apply the patch twice. If it was already applied, `git apply --check` will report that it cannot apply again.
+### Direct-copy alternative
 
-## Direct-copy fallback
+If `git apply` fails because your local source has drifted from the base archive, review the differences before overwriting your changes. The `direct_copy/` directory has the complete changed/new files in their intended paths. Back up your existing `Dashboard.jsx` before copying. Delete `src/components/Analytics.jsx` only if it is still the same unused mock-data file from the archive. Do not mix partial versions of these files.
 
-Only if the Git patch cannot be applied: back up your local copies of the following files and copy matching files from `direct-copy/` into the repository:
+## Data sources / safeguards
 
-- `src/components/Dashboard.jsx`
-- `src/components/Modals.jsx`
-- `src/responsive.css`
-- `tests/dashboardLayout.test.mjs`
+| Tab | Existing source | Limitation |
+| --- | --- | --- |
+| Overview | Supabase reports, advisories, centers and PAGASA stations | Report map pins are **not** verified flood hazard polygons; recent activity is **not** the full audit trail |
+| Flood | `monitoring_stations`, `station_catalog`, `pagasa_river_chart` RPC | No risk status inferred from levels without verified thresholds; archived gauge not merged |
+| Community | `community_reports` | Latest 1,000 reports per selected window; truncation is disclosed |
+| Users | `get_all_users_with_roles` RPC | No logins/session engagement or barangay distribution without verified fields |
+| Resources | `evacuation_centers`, `advisories` | Limit 500 centers / 1,000 advisories; capacity totals include only complete records |
 
-**Important:** direct-copy replacement could overwrite more recent changes to those files. Prefer Git patch if you have made further edits since the source ZIP.
+A denied or failed query is displayed as unavailable or a data limitation, not as a fake zero. The feature uses existing migrations; **no new SQL migration is required** for the patch itself. The existing `pagasa_river_chart` function must be installed and accessible for Flood history.
 
-## Manual checks
+## Verification performed
 
-- At a desktop width (e.g. 1440px), the three dashboard cards fill the entire usable content area with no fourth blank column.
-- Open Generate & Publish Advisory: both textarea right borders and the Publish button remain fully visible.
-- Narrow the browser: advisory fields and buttons wrap instead of clipping.
-- Expand several sidebar groups: navigation scrolls; icons, text, and right border remain visible.
-- Confirm Monitoring Stations and Marikina River Level still display and function as before.
+- Git patch applied cleanly to a fresh copy of the exact uploaded project.
+- **93/93 automated tests passed**, including 12 new dashboard analytics tests.
+- Browser rendering and production build were **not** verified in the execution environment (the uploaded project contains Windows-only native dependencies). Run `npm.cmd run build` and manually test the UI on your development computer before deployment.
 
-## Validation performed
+## Unfinished work intentionally kept separate
 
-- Git patch checked against the provided source with the Telemetry Status Clarity updates.
-- 81/81 local Node tests passed (4 new layout regression tests and 77 existing tests).
-- Responsive stylesheet and dashboard-injected CSS parse without errors.
-- Full interactive browser validation and Vite production build still need to be performed in your local environment.
-
-## Suggested commit message
-
-`fix(admin): prevent sidebar and advisory clipping and expand dashboard overview`
+- Full administrative System Audit Logs (not replaced with a simulated activity feed)
+- Persisted PREP exposure scenario analytics and verified model validation
+- Accurate session engagement tracking and structured barangay-based user statistics
+- Real notification/SMS dispatch testing and persisted system settings

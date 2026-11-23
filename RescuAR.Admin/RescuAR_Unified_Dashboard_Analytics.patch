@@ -1,0 +1,1071 @@
+diff --git a/src/components/Analytics.jsx b/src/components/Analytics.jsx
+deleted file mode 100644
+index 4a7865c..0000000
+--- a/src/components/Analytics.jsx
++++ /dev/null
+@@ -1,211 +0,0 @@
+-import React from 'react';
+-import { 
+-  ResponsiveContainer, 
+-  LineChart, 
+-  Line, 
+-  XAxis, 
+-  YAxis, 
+-  CartesianGrid, 
+-  Tooltip, 
+-  Legend, 
+-  BarChart, 
+-  Bar, 
+-  PieChart, 
+-  Pie, 
+-  Cell 
+-} from 'recharts';
+-import { 
+-  TrendingUp, 
+-  Users, 
+-  Send, 
+-  ShieldAlert, 
+-  ArrowUpRight, 
+-  Clock, 
+-  MapPin, 
+-  Smartphone 
+-} from 'lucide-react';
+-
+-// Mock Data
+-const HYDROLOGY_DATA = [
+-  { time: '10:00 PM', level: 13.5 },
+-  { time: '11:00 PM', level: 13.8 },
+-  { time: '12:00 AM', level: 14.1 },
+-  { time: '01:00 AM', level: 14.2 },
+-  { time: '02:00 AM', level: 14.5 },
+-  { time: '03:00 AM', level: 14.8 },
+-  { time: '04:00 AM', level: 15.1 },
+-  { time: '05:00 AM', level: 15.3 },
+-  { time: '06:00 AM', level: 15.6 },
+-  { time: '07:00 AM', level: 15.8 },
+-  { time: '08:00 AM', level: 16.0 },
+-  { time: '08:42 AM', level: 16.2 }
+-];
+-
+-const OCCUPANCY_DATA = [
+-  { name: 'Malanday ES', Occupancy: 320, Capacity: 500 },
+-  { name: 'Nangka HS', Occupancy: 215, Capacity: 300 },
+-  { name: 'Sports Center', Occupancy: 1000, Capacity: 1000 }
+-];
+-
+-const BROADCAST_DATA = [
+-  { name: 'Delivered', value: 1240, color: '#16a34a' },
+-  { name: 'Pending', value: 15, color: '#eab308' },
+-  { name: 'Failed', value: 5, color: '#dc2626' }
+-];
+-
+-export default function Analytics() {
+-  const totalCapacity = OCCUPANCY_DATA.reduce((sum, item) => sum + item.Capacity, 0);
+-  const totalOccupancy = OCCUPANCY_DATA.reduce((sum, item) => sum + item.Occupancy, 0);
+-  const overallOccupancyPercent = Math.round((totalOccupancy / totalCapacity) * 100);
+-
+-  return (
+-    <div className="main-view">
+-      {/* View Header */}
+-      <div className="view-header">
+-        <div className="view-title-container">
+-          <h1>Analytics Dashboard</h1>
+-          <span className="view-subtitle">Detailed hydrology telemetry, evacuation distribution, and communication reach analysis</span>
+-        </div>
+-      </div>
+-
+-      {/* Top Cards Row */}
+-      <div className="dashboard-grid">
+-        {/* Metric 1 */}
+-        <div className="dashboard-card">
+-          <div className="dashboard-card-icon" style={{ backgroundColor: 'rgba(234, 88, 12, 0.1)', color: '#ea580c' }}>
+-            <TrendingUp size={24} />
+-          </div>
+-          <div className="dashboard-card-info">
+-            <span className="dashboard-card-num">16.2m</span>
+-            <span className="dashboard-card-lbl" style={{ fontWeight: '600', color: '#1f2937', marginBottom: '2px' }}>Current Hydrology Level</span>
+-            <span className="dashboard-card-lbl" style={{ color: '#ea580c', fontWeight: '700' }}>Alert Level 2 (Rising)</span>
+-          </div>
+-        </div>
+-
+-        {/* Metric 2 */}
+-        <div className="dashboard-card">
+-          <div className="dashboard-card-icon" style={{ backgroundColor: 'rgba(2, 132, 199, 0.1)', color: '#0284c7' }}>
+-            <Users size={24} />
+-          </div>
+-          <div className="dashboard-card-info">
+-            <span className="dashboard-card-num">{overallOccupancyPercent}%</span>
+-            <span className="dashboard-card-lbl" style={{ fontWeight: '600', color: '#1f2937', marginBottom: '2px' }}>Evacuation Occupancy</span>
+-            <span className="dashboard-card-lbl">{totalOccupancy} of {totalCapacity} beds filled</span>
+-          </div>
+-        </div>
+-
+-        {/* Metric 3 */}
+-        <div className="dashboard-card">
+-          <div className="dashboard-card-icon" style={{ backgroundColor: 'rgba(22, 163, 74, 0.1)', color: '#16a34a' }}>
+-            <Send size={24} />
+-          </div>
+-          <div className="dashboard-card-info">
+-            <span className="dashboard-card-num">98.4%</span>
+-            <span className="dashboard-card-lbl" style={{ fontWeight: '600', color: '#1f2937', marginBottom: '2px' }}>SMS Transmission Rate</span>
+-            <span className="dashboard-card-lbl">1,240 delivered broadcasts</span>
+-          </div>
+-        </div>
+-      </div>
+-
+-      {/* Grid: Charts Section */}
+-      <div className="stations-split-layout" style={{ gridTemplateColumns: '1.8fr 1fr' }}>
+-        
+-        {/* Left Side: Hydrology Trend Line Chart */}
+-        <div className="stations-card">
+-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-            <Clock size={18} style={{ color: 'var(--color-brand)' }} />
+-            <span>Marikina River Level Trend (Last 12 Hours)</span>
+-          </h2>
+-          <div className="chart-container-wrapper" style={{ height: '320px', width: '100%' }}>
+-            <ResponsiveContainer width="100%" height="100%">
+-              <LineChart data={HYDROLOGY_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+-                <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} />
+-                <YAxis domain={[12, 20]} stroke="#94a3b8" fontSize={11} />
+-                <Tooltip 
+-                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: 'white' }}
+-                  labelStyle={{ fontWeight: '700' }}
+-                />
+-                <Legend verticalAlign="top" height={36} />
+-                <Line 
+-                  name="Water level (m)" 
+-                  type="monotone" 
+-                  dataKey="level" 
+-                  stroke="#ea580c" 
+-                  strokeWidth={3} 
+-                  activeDot={{ r: 6 }} 
+-                />
+-              </LineChart>
+-            </ResponsiveContainer>
+-          </div>
+-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: '11px', flexWrap: 'wrap', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px' }}>
+-            <span style={{ color: '#ca8a04', fontWeight: '700' }}>⚠️ Level 1 threshold: 15.0m</span>
+-            <span style={{ color: '#ea580c', fontWeight: '700' }}>⚠️ Level 2 threshold: 16.0m</span>
+-            <span style={{ color: '#dc2626', fontWeight: '700' }}>🚨 Level 3 evacuation: 18.0m</span>
+-          </div>
+-        </div>
+-
+-        {/* Right Side: SMS Broadcast Status Pie Chart */}
+-        <div className="stations-card">
+-          <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-            <Smartphone size={18} style={{ color: 'var(--color-brand)' }} />
+-            <span>SMS Transmission Summary</span>
+-          </h2>
+-          <div style={{ display: 'flex', justifyContent: 'center', height: '220px', alignItems: 'center' }}>
+-            <ResponsiveContainer width="100%" height="100%">
+-              <PieChart>
+-                <Pie
+-                  data={BROADCAST_DATA}
+-                  cx="50%"
+-                  cy="50%"
+-                  innerRadius={60}
+-                  outerRadius={80}
+-                  paddingAngle={5}
+-                  dataKey="value"
+-                >
+-                  {BROADCAST_DATA.map((entry, index) => (
+-                    <Cell key={`cell-${index}`} fill={entry.color} />
+-                  ))}
+-                </Pie>
+-                <Tooltip />
+-              </PieChart>
+-            </ResponsiveContainer>
+-          </div>
+-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px' }}>
+-            {BROADCAST_DATA.map((item, idx) => (
+-              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: item.color }}></div>
+-                  <span style={{ color: 'var(--text-muted)' }}>{item.name}</span>
+-                </div>
+-                <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{item.value} SMS</span>
+-              </div>
+-            ))}
+-          </div>
+-        </div>
+-
+-      </div>
+-
+-      {/* Row 2: Evacuation Center Occupancy Chart */}
+-      <div className="stations-card">
+-        <h2 className="stations-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+-          <MapPin size={18} style={{ color: 'var(--color-brand)' }} />
+-          <span>Evacuation Center Capacity Allocation</span>
+-        </h2>
+-        <div className="chart-container-wrapper" style={{ height: '300px' }}>
+-          <ResponsiveContainer width="100%" height="100%">
+-            <BarChart data={OCCUPANCY_DATA} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+-              <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
+-              <YAxis stroke="#94a3b8" fontSize={11} />
+-              <Tooltip />
+-              <Legend verticalAlign="top" height={36} />
+-              <Bar dataKey="Occupancy" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+-              <Bar dataKey="Capacity" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+-            </BarChart>
+-          </ResponsiveContainer>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+diff --git a/src/components/Dashboard.jsx b/src/components/Dashboard.jsx
+index 5f8563e..32b067c 100644
+--- a/src/components/Dashboard.jsx
++++ b/src/components/Dashboard.jsx
+@@ -15,6 +15,7 @@ import {
+ } from 'lucide-react';
+ import { MapContainer, TileLayer, CircleMarker, Popup, LayersControl } from 'react-leaflet';
+ import 'leaflet/dist/leaflet.css';
++import './dashboardInsights.css';
+ import { supabase } from '../supabaseClient';
+ import { canView } from '../rbac/access';
+ import { exportCsv } from '../utils/exportData';
+@@ -462,6 +463,9 @@ const injectedStyles = `
+   }
+ `;
+ 
++// Analytics code and queries are loaded only when a detailed tab is opened.
++const DashboardInsightsPanel = React.lazy(() => import('./DashboardInsightsPanel.jsx'));
++
+ const CustomTooltip = ({ active, payload, label }) => {
+   if (active && payload && payload.length) {
+     return (
+@@ -479,12 +483,14 @@ const CustomTooltip = ({ active, payload, label }) => {
+ };
+ 
+ export default function Dashboard({ onViewChange = () => { }, onActionClick = () => { }, access }) {
++  const [activeTab, setActiveTab] = useState('overview');
+   const [refreshVersion, setRefreshVersion] = useState(0);
+   const [isRefreshing, setIsRefreshing] = useState(true);
+   const [dashboard, setDashboard] = useState(null);
+   const lastRealtimeRefresh = useRef(0);
+ 
+   useEffect(() => {
++    if (activeTab !== 'overview') { setIsRefreshing(false); return undefined; }
+     let cancelled = false;
+     setIsRefreshing(true);
+     void fetchDashboardData(supabase).then((data) => {
+@@ -498,7 +504,7 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
+       }
+     }).finally(() => { if (!cancelled) setIsRefreshing(false); });
+     return () => { cancelled = true; };
+-  }, [refreshVersion]);
++  }, [refreshVersion, activeTab]);
+ 
+   useEffect(() => {
+     const refresh = () => setRefreshVersion((version) => version + 1);
+@@ -518,6 +524,14 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
+   }, []);
+ 
+   const handleRefresh = () => setRefreshVersion((version) => version + 1);
++  const tabs = [
++    { key: 'overview', label: 'Overview', accessible: true },
++    { key: 'flood', label: 'Flood', accessible: canView(access, 'monitoring-river-level') },
++    { key: 'community', label: 'Community', accessible: canView(access, 'community-reports-moderation') },
++    { key: 'users', label: 'Users', accessible: canView(access, 'community-user-management') },
++    { key: 'resources', label: 'Resources', accessible: canView(access, 'content-evacuation') || canView(access, 'content-advisories') },
++  ].filter((tab) => tab.accessible);
++
+   const metrics = dashboard?.metrics || {};
+   const reportData = dashboard?.incidents;
+   const resourceData = dashboard?.resourceData;
+@@ -604,27 +618,27 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
+         <div className="header-left">
+           <div className="title-row">
+             <h1>RescuAR Command Center</h1>
+-            <div className="status-badge" aria-live="polite" style={(!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {}}>
+-              <div className="status-dot" style={hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' }}></div>
+-              {statusLabel}
++            <div className="status-badge" aria-live="polite" style={activeTab !== 'overview' ? { background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' } : ((!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {})}>
++              <div className="status-dot" style={activeTab !== 'overview' ? { background: '#64748b', animation: 'none' } : (hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' })}></div>
++              {activeTab === 'overview' ? statusLabel : 'Detailed Analytics'}
+             </div>
+           </div>
+-          <p className="last-updated">Last successful fetch: {hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds</p>
++          <p className="last-updated">{activeTab === 'overview' ? `Last successful fetch: ${hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds` : 'Detailed analytics loads when its tab is selected · Refresh every 60 seconds'}</p>
+         </div>
+ 
+         <div className="header-actions">
+-          <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
++          {activeTab === 'overview' && <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
+             <Download size={18} />
+             Export Report
+-          </button>
+-          <button onClick={handleRefresh} className="btn-primary" disabled={isRefreshing}>
+-            <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+-            {isRefreshing ? 'Syncing...' : 'Sync Data'}
++          </button>}
++          <button onClick={handleRefresh} className="btn-primary" disabled={activeTab === 'overview' && isRefreshing}>
++            <RefreshCw size={18} className={activeTab === 'overview' && isRefreshing ? 'animate-spin' : ''} />
++            {activeTab === 'overview' && isRefreshing ? 'Syncing...' : 'Sync Data'}
+           </button>
+         </div>
+       </div>
+ 
+-      {Boolean(dashboard?.warnings?.length) && (
++      {activeTab === 'overview' && Boolean(dashboard?.warnings?.length) && (
+         <div role="alert" style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.75rem', color: '#92400e', fontSize: '0.88rem' }}>
+           <strong>Data notice:</strong> Some sources may be unavailable or incomplete.
+           <ul style={{ margin: '0.35rem 0 0 1.25rem', padding: 0 }}>
+@@ -633,6 +647,15 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
+         </div>
+       )}
+ 
++      <nav className="dashboard-tab-bar" role="tablist" aria-label="RescuAR dashboard analytics">
++        {tabs.map((tab) => <button type="button" key={tab.key}
++          role="tab" className="dashboard-tab" aria-selected={activeTab === tab.key}
++          aria-controls="dashboard-tab-panel" onClick={() => setActiveTab(tab.key)}>
++          {tab.label}
++        </button>)}
++      </nav>
++
++      {activeTab === 'overview' ? <div id="dashboard-tab-panel" role="tabpanel" aria-label="Overview dashboard">
+       {/* Top Stats Grid */}
+       <div className="stats-grid" aria-label="Dashboard overview">
+         {analytics.map((stat, idx) => (
+@@ -830,6 +853,10 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
+         </div>
+ 
+       </div>
++      </div> : <React.Suspense fallback={<div className="insight-loading" role="status">Loading analytics interface…</div>}>
++        <DashboardInsightsPanel key={activeTab} tab={activeTab} access={access}
++          onViewChange={onViewChange} refreshVersion={refreshVersion} />
++      </React.Suspense>}
+     </div>
+   );
+ }
+diff --git a/src/components/DashboardInsightsPanel.jsx b/src/components/DashboardInsightsPanel.jsx
+new file mode 100644
+index 0000000..f0a2f6e
+--- /dev/null
++++ b/src/components/DashboardInsightsPanel.jsx
+@@ -0,0 +1,277 @@
++import React, { useEffect, useState } from 'react';
++import { Activity, ArrowUpRight, ClipboardList, Download, MapPin, ShieldCheck, Users, Waves } from 'lucide-react';
++import {
++  ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip, LineChart, Line, BarChart, Bar,
++} from 'recharts';
++import { supabase } from '../supabaseClient';
++import { canView } from '../rbac/access';
++import { exportCsv } from '../utils/exportData';
++import { formatDashboardTimestamp } from '../services/dashboardDataService';
++import { fetchDashboardInsights } from '../services/dashboardInsightsService';
++import './dashboardInsights.css';
++
++const PERIOD_OPTIONS = {
++  flood: [{ days: 1, label: '24 hours' }, { days: 7, label: '7 days' }, { days: 30, label: '30 days' }, { days: 180, label: '6 months' }],
++  community: [{ days: 7, label: '7 days' }, { days: 30, label: '30 days' }, { days: 90, label: '90 days' }],
++  users: [{ days: 30, label: '30 days' }, { days: 90, label: '90 days' }, { days: 180, label: '6 months' }],
++};
++const fmt = (value) => value === null || value === undefined ? '—' : (Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-PH') : String(value));
++const textOrNoData = (items) => Array.isArray(items) && items.length > 0;
++
++function InsightMetric({ label, value, note }) {
++  return <div className="insight-metric">
++    <span className="insight-metric-label">{label}</span>
++    <strong className="insight-metric-value">{fmt(value)}</strong>
++    {note && <span className="insight-metric-note">{note}</span>}
++  </div>;
++}
++
++function InsightPanel({ title, icon: Icon, children, note }) {
++  return <section className="insight-panel">
++    <h2><Icon size={19} aria-hidden="true" />{title}</h2>
++    {note && <p className="insight-muted">{note}</p>}
++    {children}
++  </section>;
++}
++
++function SimpleBars({ data, dataKey = 'value', label = 'Records' }) {
++  if (!Array.isArray(data)) return <p className="insight-empty">Data source unavailable.</p>;
++  if (!textOrNoData(data)) return <p className="insight-empty">No records in this category.</p>;
++  return <div className="insight-chart" role="img" aria-label={`${label} by category`}>
++    <ResponsiveContainer width="100%" height="100%">
++      <BarChart data={data} margin={{ top: 10, right: 15, left: -10, bottom: 12 }}>
++        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
++        <XAxis dataKey="name" interval={0} angle={-25} textAnchor="end" height={76} fontSize={11} />
++        <YAxis allowDecimals={false} fontSize={11} />
++        <Tooltip />
++        <Bar dataKey={dataKey} name={label} fill="#4f46e5" maxBarSize={46} radius={[5, 5, 0, 0]} />
++      </BarChart>
++    </ResponsiveContainer>
++  </div>;
++}
++
++function DailyLine({ data, label }) {
++  if (!Array.isArray(data)) return <p className="insight-empty">Data source unavailable.</p>;
++  if (!data.some((point) => point.count > 0)) return <p className="insight-empty">No recorded events in this period.</p>;
++  return <div className="insight-chart" role="img" aria-label={label}>
++    <ResponsiveContainer width="100%" height="100%">
++      <LineChart data={data} margin={{ top: 10, right: 18, left: -20, bottom: 0 }}>
++        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
++        <XAxis dataKey="date" tickFormatter={(value) => value.slice(5)} fontSize={11} minTickGap={16} />
++        <YAxis allowDecimals={false} fontSize={11} />
++        <Tooltip />
++        <Line type="monotone" dataKey="count" name={label} stroke="#4f46e5" strokeWidth={2.5} dot={false} connectNulls={false} />
++      </LineChart>
++    </ResponsiveContainer>
++  </div>;
++}
++
++function PanelLink({ enabled, onClick, children }) {
++  if (!enabled) return null;
++  return <button type="button" className="insight-link" onClick={onClick}>
++    {children} <ArrowUpRight size={15} aria-hidden="true" />
++  </button>;
++}
++
++function FloodContent({ data, stationCode, setStationCode, access, onViewChange }) {
++  const station = data.stations.find((item) => item.code === data.selectedStationCode);
++  const levels = data.history;
++  return <>
++    <div className="insight-metrics insight-metrics-3">
++      <InsightMetric label="Enabled PAGASA stations" value={data.stations.length} note="From the active station catalog" />
++      <InsightMetric label="Selected station level" value={station?.level === null || !station ? null : `${station.level.toFixed(2)} m EL`} note="Water-level elevation, not river depth" />
++      <InsightMetric label="Observation age" value={station?.freshness?.ageText || '—'} note={station?.freshness?.label || 'No verified timestamp'} />
++    </div>
++    <div className="insight-two-col">
++      <InsightPanel title="PAGASA level history" icon={Waves} note="Recorded observations only. Missing days remain gaps; no estimated readings are inserted.">
++        <label className="insight-input-label" htmlFor="insights-gauge">Monitoring station</label>
++        <select id="insights-gauge" className="insight-select" value={stationCode || data.selectedStationCode} onChange={(event) => setStationCode(event.target.value)} disabled={!data.stations.length}>
++          {data.stations.length ? data.stations.map((entry) => <option key={entry.code} value={entry.code}>{entry.name}</option>) : <option value="">No active station available</option>}
++        </select>
++        {levels === null ? <p className="insight-empty">Historical chart unavailable. Check the `pagasa_river_chart` function and permissions.</p>
++          : !levels.some((point) => point.level !== null) ? <p className="insight-empty">No saved readings for this station and period.</p>
++          : <div className="insight-chart insight-chart-tall" role="img" aria-label="Recorded PAGASA water levels">
++            <ResponsiveContainer width="100%" height="100%">
++              <LineChart data={levels} margin={{ top: 15, right: 16, left: -10, bottom: 0 }}>
++                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
++                <XAxis dataKey="label" minTickGap={20} fontSize={11} />
++                <YAxis fontSize={11} domain={['auto', 'auto']} unit=" m" />
++                <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.time ? formatDashboardTimestamp(payload[0].payload.time) : 'Observation'} />
++                <Line type="monotone" dataKey="level" stroke="#0284c7" name="Level (m EL)" strokeWidth={2.5} dot={false} connectNulls={false} />
++              </LineChart>
++            </ResponsiveContainer>
++          </div>}
++      </InsightPanel>
++      <InsightPanel title="Station freshness" icon={Activity} note="Observation freshness is separate from verified flood risk.">
++        <div className="insight-station-list">
++          {data.stations.length ? data.stations.map((entry) => <div className="insight-station" key={entry.code}>
++            <div><strong>{entry.name}</strong><small>{entry.level === null ? 'Level unavailable' : `${entry.level.toFixed(2)} m EL`} · {entry.freshness.ageText}</small></div>
++            <span className={`insight-state insight-state-${entry.freshness.status}`}>{entry.freshness.label}</span>
++          </div>) : <p className="insight-empty">Active station catalog unavailable or empty.</p>}
++        </div>
++        <p className="insight-disclaimer">The chart does not infer Alert, Alarm or Critical conditions. Verified thresholds must be checked in the monitoring module.</p>
++        <PanelLink enabled={canView(access, 'monitoring-river-level')} onClick={() => onViewChange('monitoring-river-level')}>Open river monitoring</PanelLink>
++        <PanelLink enabled={canView(access, 'monitoring-hazard-exposure')} onClick={() => onViewChange('monitoring-hazard-exposure')}>Open PREP flood exposure analysis</PanelLink>
++      </InsightPanel>
++    </div>
++  </>;
++}
++
++function CommunityContent({ data, access, onViewChange }) {
++  return <>
++    <div className="insight-metrics">
++      <InsightMetric label="Reports in selected period" value={data.reportsTotal} note="Includes all moderation statuses" />
++      <InsightMetric label="Pending review" value={data.pending} note="Not yet validated by administrators" />
++    </div>
++    <div className="insight-two-col">
++      <InsightPanel title="Reports submitted over time" icon={Activity}><DailyLine data={data.trend} label="Submitted reports" /></InsightPanel>
++      <InsightPanel title="Moderation status" icon={ShieldCheck}><SimpleBars data={data.statuses} label="Reports" /></InsightPanel>
++    </div>
++    <InsightPanel title="Report categories" icon={ClipboardList} note="Categories are based on submitted records, not verified flood hazard severity.">
++      <SimpleBars data={data.categories} label="Reports" />
++      <PanelLink enabled={canView(access, 'community-reports-moderation')} onClick={() => onViewChange('community-reports-moderation')}>Review community reports</PanelLink>
++    </InsightPanel>
++  </>;
++}
++
++function UsersContent({ data, access, onViewChange }) {
++  const value = data.summary;
++  if (!value) return <p className="insight-empty">User statistics are unavailable. Check access to the authorized user management RPC.</p>;
++  return <>
++    <div className="insight-metrics">
++      <InsightMetric label="Registered resident accounts" value={value.total} note="Excludes administrator-role accounts" />
++      <InsightMetric label="Active account status" value={value.activeAccounts} note="Status only; not a live session count" />
++      <InsightMetric label="Suspended accounts" value={value.suspendedAccounts} />
++      <InsightMetric label="New registrations" value={value.newRegistrations} note="Within selected period" />
++    </div>
++    <div className="insight-two-col">
++      <InsightPanel title="Registration trend" icon={Users}><DailyLine data={value.registrations} label="Registrations" /></InsightPanel>
++      <InsightPanel title="Account status distribution" icon={ShieldCheck}><SimpleBars data={value.statuses} label="Accounts" /></InsightPanel>
++    </div>
++    <p className="insight-disclaimer">Activity and barangay distributions are not shown: this version has no verified login-activity analytics or structured barangay field. Account status must not be interpreted as engagement.</p>
++    <PanelLink enabled={canView(access, 'community-user-management')} onClick={() => onViewChange('community-user-management')}>Open User Management</PanelLink>
++  </>;
++}
++
++function ResourcesContent({ data, access, onViewChange }) {
++  const value = data.summary;
++  return <>
++    <div className="insight-metrics">
++      <InsightMetric label="Recorded centers" value={value.totalCenters} />
++      <InsightMetric label="Centers with capacity data" value={value.totalCenters === null ? null : value.measuredCenters} note="Capacity and occupancy both recorded" />
++      <InsightMetric label="Recorded evacuees" value={value.occupancy} note="Only centers with complete occupancy data" />
++      <InsightMetric label="Available places" value={value.available} note="Based on capacity records, not safety clearance" />
++      <InsightMetric label="Active advisory records" value={value.activeAdvisories} />
++    </div>
++    <div className="insight-two-col">
++      <InsightPanel title="Evacuation capacity" icon={MapPin} note="Shows the largest six centers with complete capacity and occupancy records.">
++        {!Array.isArray(value.centers) ? <p className="insight-empty">Evacuation center data unavailable or access restricted.</p>
++          : !value.centers.length ? <p className="insight-empty">No centers have both capacity and occupancy recorded.</p>
++          : <div className="insight-chart insight-chart-tall" role="img" aria-label="Evacuation center occupancy">
++            <ResponsiveContainer width="100%" height="100%">
++              <BarChart data={value.centers} margin={{ top: 15, right: 10, left: -10, bottom: 15 }}>
++                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
++                <XAxis dataKey="name" fontSize={10} angle={-25} textAnchor="end" interval={0} height={75} tickFormatter={(name) => name.length > 13 ? `${name.slice(0, 12)}…` : name} />
++                <YAxis fontSize={11} allowDecimals={false} />
++                <Tooltip /><Bar dataKey="used" name="Current evacuees" stackId="space" fill="#4f46e5" />
++                <Bar dataKey="available" name="Available places" stackId="space" fill="#94a3b8" />
++              </BarChart>
++            </ResponsiveContainer>
++          </div>}
++        <PanelLink enabled={canView(access, 'content-evacuation')} onClick={() => onViewChange('content-evacuation')}>Manage evacuation centers</PanelLink>
++      </InsightPanel>
++      <InsightPanel title="Advisory status" icon={ClipboardList} note="Records by publishing status; no SMS delivery claims.">
++        <SimpleBars data={value.advisories} label="Advisories" />
++        <PanelLink enabled={canView(access, 'content-advisories')} onClick={() => onViewChange('content-advisories')}>Open advisories</PanelLink>
++      </InsightPanel>
++    </div>
++  </>;
++}
++
++// Protect CSV spreadsheet viewers from treating user-controlled categories as formulas.
++const csvSafe = (value) => {
++  const str = String(value ?? '');
++  return /^[\s]*[=+@-]/.test(str) ? `'${str}` : str;
++};
++function exportRows(tab, data) {
++  const rows = [];
++  const add = (label, value, time = '', details = '') => rows.push({
++    section: tab, label: csvSafe(label), value: typeof value === 'string' ? csvSafe(value) : value,
++    time: csvSafe(time), details: csvSafe(details),
++  });
++  if (tab === 'flood') {
++    for (const station of data.stations) add(station.name, station.level ?? '', station.observedAt, station.freshness.label);
++    for (const item of data.history || []) if (item.level !== null) add('Historical observation (m EL)', item.level, item.time, data.selectedStationCode);
++  }
++  if (tab === 'community') {
++    add('Reports in period', data.reportsTotal); add('Pending review', data.pending);
++    for (const point of data.trend || []) add('Reports submitted', point.count, point.date);
++    for (const point of data.statuses || []) add(`Status: ${point.name}`, point.value);
++    for (const point of data.categories || []) add(`Category: ${point.name}`, point.value);
++  }
++  if (tab === 'users' && data.summary) {
++    const { total, activeAccounts, suspendedAccounts, newRegistrations, registrations, statuses } = data.summary;
++    add('Resident accounts', total); add('Active account status', activeAccounts); add('Suspended', suspendedAccounts); add('New registrations', newRegistrations);
++    for (const point of registrations) add('Registrations', point.count, point.date);
++    for (const point of statuses) add(`Status: ${point.name}`, point.value);
++  }
++  if (tab === 'resources') {
++    const { totalCenters, measuredCenters, occupancy, available, activeAdvisories, centers, advisories } = data.summary;
++    add('Centers', totalCenters); add('Centers with recorded capacity', measuredCenters);
++    add('Recorded evacuees', occupancy); add('Available places', available); add('Active advisories', activeAdvisories);
++    for (const item of centers || []) add(item.name, item.used, '', `Recorded capacity: ${item.capacity}; available places: ${item.available}`);
++    for (const point of advisories || []) add(`Advisory status: ${point.name}`, point.value);
++  }
++  return rows;
++}
++
++export default function DashboardInsightsPanel({ tab, access, onViewChange, refreshVersion }) {
++  const [days, setDays] = useState(tab === 'flood' ? 7 : 30);
++  const [stationCode, setStationCode] = useState('');
++  const [data, setData] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++  const allowCenters = canView(access, 'content-evacuation');
++  const allowAdvisories = canView(access, 'content-advisories');
++
++  useEffect(() => {
++    let mounted = true;
++    setLoading(true);
++    setError('');
++    fetchDashboardInsights(supabase, tab, { days, stationCode, allowCenters, allowAdvisories })
++      .then((result) => { if (mounted) setData(result); })
++      .catch((reason) => { if (mounted) { setData(null); setError(reason?.message || 'Analytics request failed'); } })
++      .finally(() => { if (mounted) setLoading(false); });
++    return () => { mounted = false; };
++  }, [tab, days, stationCode, refreshVersion, allowCenters, allowAdvisories]);
++
++  return <div className="insight-content" id="dashboard-tab-panel" role="tabpanel" aria-label={`${tab} analytics`}>
++    <div className="insight-toolbar">
++      <div>
++        <h2>{({ flood: 'Flood Monitoring', community: 'Community Reports', users: 'User Analytics', resources: 'Resources & Advisories' })[tab]}</h2>
++        <p>Live records only · Last loaded: {data ? formatDashboardTimestamp(data.fetchedAt) : 'Not available'}</p>
++      </div>
++      <div className="insight-filters">
++        {PERIOD_OPTIONS[tab] && <label htmlFor="dashboard-period">Period
++          <select id="dashboard-period" className="insight-select" value={days} onChange={(event) => setDays(Number(event.target.value))}>
++            {PERIOD_OPTIONS[tab].map((opt) => <option key={opt.days} value={opt.days}>{opt.label}</option>)}
++          </select>
++        </label>}
++        <button className="btn-outline insight-export" type="button" disabled={loading || !data} onClick={() => exportCsv(`rescuar-${tab}-analytics`, exportRows(tab, data), [
++          { label: 'Section', key: 'section' }, { label: 'Metric', key: 'label' }, { label: 'Value', key: 'value' }, { label: 'Time', key: 'time' }, { label: 'Details', key: 'details' },
++        ])}><Download size={16} /> Export this tab</button>
++      </div>
++    </div>
++    {loading && <p className="insight-loading" role="status">Loading {tab} records from Supabase…</p>}
++    {error && <p className="insight-warning" role="alert">Unable to retrieve analytics: {error}</p>}
++    {data?.warnings?.length > 0 && <div className="insight-warning" role="status"><strong>Data limitations:</strong>
++      <ul>{data.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
++    </div>}
++    {!loading && data && <div className="insight-panels">
++      {tab === 'flood' && <FloodContent data={data} stationCode={stationCode} setStationCode={setStationCode} access={access} onViewChange={onViewChange} />}
++      {tab === 'community' && <CommunityContent data={data} access={access} onViewChange={onViewChange} />}
++      {tab === 'users' && <UsersContent data={data} access={access} onViewChange={onViewChange} />}
++      {tab === 'resources' && <ResourcesContent data={data} access={access} onViewChange={onViewChange} />}
++    </div>}
++  </div>;
++}
+diff --git a/src/components/dashboardInsights.css b/src/components/dashboardInsights.css
+new file mode 100644
+index 0000000..52067fc
+--- /dev/null
++++ b/src/components/dashboardInsights.css
+@@ -0,0 +1,81 @@
++.dashboard-container .dashboard-tab-bar {
++  display: flex;
++  flex-wrap: wrap;
++  gap: .45rem;
++  padding: .45rem;
++  background: #eef2f7;
++  border: 1px solid #dbe2eb;
++  border-radius: .9rem;
++  margin-bottom: 1.75rem;
++  width: 100%;
++}
++.dashboard-container .dashboard-tab {
++  min-width: 0;
++  border: 1px solid transparent;
++  background: transparent;
++  padding: .8rem 1.15rem;
++  border-radius: .7rem;
++  font-size: .9rem;
++  font-weight: 650;
++  color: #475569;
++  cursor: pointer;
++}
++.dashboard-container .dashboard-tab:hover { background: #e2e8f0; }
++.dashboard-container .dashboard-tab[aria-selected="true"] {
++  background: white;
++  border-color: #cbd5e1;
++  color: #312e81;
++  box-shadow: 0 1px 3px #0f172a19;
++}
++.dashboard-container .dashboard-tab:focus-visible,
++.dashboard-container .insight-link:focus-visible,
++.dashboard-container .insight-select:focus-visible { outline: 3px solid #818cf8; outline-offset: 2px; }
++.dashboard-container .insight-content { min-width: 0; width: 100%; }
++.dashboard-container .insight-toolbar {
++  display: flex; gap: 1rem; align-items: center; justify-content: space-between;
++  margin-bottom: 1.3rem;
++}
++.dashboard-container .insight-toolbar h2 { margin: 0; font-size: 1.25rem; font-weight: 750; }
++.dashboard-container .insight-toolbar p { margin: .4rem 0 0; color: #64748b; font-size: .83rem; }
++.dashboard-container .insight-filters { display: flex; align-items: end; gap: .65rem; flex-wrap: wrap; }
++.dashboard-container .insight-filters label, .dashboard-container .insight-input-label { display: flex; gap: .4rem; flex-direction: column; font-size: .78rem; color: #475569; font-weight: 700; }
++.dashboard-container .insight-select { max-width: 100%; min-width: 130px; border: 1px solid #cbd5e1; border-radius: .6rem; background: #fff; padding: .65rem .8rem; color: #0f172a; }
++.dashboard-container .insight-export { white-space: nowrap; }
++.dashboard-container .insight-panels { display: flex; flex-direction: column; gap: 1.3rem; width: 100%; min-width: 0; }
++.dashboard-container .insight-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
++.dashboard-container .insight-metrics-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
++.dashboard-container .insight-metric { background: #fff; border: 1px solid #e2e8f0; border-radius: 1rem; padding: 1.2rem; display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
++.dashboard-container .insight-metric-label { font-size: .9rem; color: #475569; font-weight: 650; }
++.dashboard-container .insight-metric-value { font-size: 1.8rem; font-weight: 800; overflow-wrap: anywhere; }
++.dashboard-container .insight-metric-note { font-size: .78rem; color: #64748b; }
++.dashboard-container .insight-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.3rem; }
++.dashboard-container .insight-panel { min-width: 0; border-radius: 1rem; background: #fff; border: 1px solid #e2e8f0; padding: 1.25rem; }
++.dashboard-container .insight-panel h2 { margin: 0 0 1rem; font-size: 1.05rem; display: flex; align-items: center; gap: .6rem; color: #0f172a; }
++.dashboard-container .insight-panel h2 svg { color: #4f46e5; flex: none; }
++.dashboard-container .insight-muted { margin: -.4rem 0 1rem; color: #64748b; font-size: .83rem; line-height: 1.5; }
++.dashboard-container .insight-chart { height: 280px; width: 100%; min-width: 0; }
++.dashboard-container .insight-chart-tall { height: 340px; }
++.dashboard-container .insight-empty { color: #64748b; font-size: .92rem; padding: 1rem 0; }
++.dashboard-container .insight-warning { padding: 1rem; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: .7rem; margin-bottom: 1rem; }
++.dashboard-container .insight-warning ul { margin: .5rem 0 0 1rem; padding: 0; }
++.dashboard-container .insight-loading { padding: 1rem; color: #475569; }
++.dashboard-container .insight-disclaimer { padding: .9rem 1rem; border-left: 3px solid #94a3b8; color: #475569; background: #f8fafc; line-height: 1.5; font-size: .82rem; margin-top: 1rem; }
++.dashboard-container .insight-link { display: inline-flex; gap: .5rem; align-items: center; margin: .8rem .8rem 0 0; background: #eef2ff; color: #3730a3; border: 0; border-radius: .65rem; padding: .65rem .85rem; font-weight: 700; cursor: pointer; }
++.dashboard-container .insight-link:hover { background: #e0e7ff; }
++.dashboard-container .insight-station-list { display: flex; flex-direction: column; gap: .5rem; }
++.dashboard-container .insight-station { display: flex; align-items: center; justify-content: space-between; gap: .6rem; border-bottom: 1px solid #e2e8f0; padding: .6rem 0; }
++.dashboard-container .insight-station strong { display: block; color: #334155; font-size: .85rem; }
++.dashboard-container .insight-station small { display: block; color: #64748b; margin-top: .3rem; }
++.dashboard-container .insight-state { font-size: .72rem; font-weight: 700; background: #f1f5f9; color: #475569; border-radius: 999px; padding: .3rem .5rem; white-space: nowrap; }
++.dashboard-container .insight-state-fresh { background: #f0fdf4; color: #15803d; }
++.dashboard-container .insight-state-delayed, .dashboard-container .insight-state-stale { background: #fffbeb; color: #a16207; }
++@media (max-width: 950px) {
++  .dashboard-container .insight-two-col { grid-template-columns: minmax(0, 1fr); }
++  .dashboard-container .insight-metrics-3 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
++}
++@media (max-width: 650px) {
++  .dashboard-container .insight-toolbar { align-items: start; flex-direction: column; }
++  .dashboard-container .dashboard-tab { flex: 1 1 auto; }
++  .dashboard-container .insight-station { align-items: start; flex-direction: column; }
++  .dashboard-container .insight-metric-value { font-size: 1.5rem; }
++}
+diff --git a/src/services/dashboardInsightsService.js b/src/services/dashboardInsightsService.js
+new file mode 100644
+index 0000000..abed81d
+--- /dev/null
++++ b/src/services/dashboardInsightsService.js
+@@ -0,0 +1,199 @@
++import { getTelemetryFreshness } from '../utils/telemetryFreshness.js';
++import { buildCapacityChart } from './dashboardDataService.js';
++
++const DAY_MS = 86_400_000;
++const ROW_LIMIT = 1000;
++const PH_DATE_PARTS = new Intl.DateTimeFormat('en-GB', {
++  timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
++});
++const isoDate = (value) => {
++  const ms = new Date(value).getTime();
++  if (!Number.isFinite(ms)) return null;
++  const parts = Object.fromEntries(PH_DATE_PARTS.formatToParts(new Date(ms))
++    .filter(({ type }) => type !== 'literal').map(({ type, value: part }) => [type, part]));
++  return `${parts.year}-${parts.month}-${parts.day}`;
++};
++const asFinite = (value) => value === null || value === undefined || String(value).trim() === ''
++  ? null : (Number.isFinite(Number(value)) ? Number(value) : null);
++const nonnegative = (value) => { const n = asFinite(value); return n !== null && n >= 0 ? n : null; };
++const safeError = (error) => error?.message || 'Source could not be read';
++const success = (response) => !response?.error;
++const dateSince = (nowMs, days) => new Date(nowMs - days * DAY_MS).toISOString();
++
++export function dailyTrend(rows, days, nowMs = Date.now()) {
++  const window = Math.max(1, Math.min(180, Math.floor(days)));
++  const daysList = Array.from({ length: window }, (_, index) => ({
++    date: isoDate(nowMs - (window - index - 1) * DAY_MS), count: 0,
++  }));
++  const indexByDate = new Map(daysList.map((entry) => [entry.date, entry]));
++  for (const row of rows || []) {
++    const point = indexByDate.get(isoDate(row.created_at));
++    if (point) point.count += 1;
++  }
++  return daysList;
++}
++
++export function distribution(rows, field, maxGroups = 6) {
++  const totals = new Map();
++  for (const row of rows || []) {
++    const label = String(row?.[field] ?? '').trim() || 'Not specified';
++    totals.set(label, (totals.get(label) || 0) + 1);
++  }
++  const ordered = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
++  if (ordered.length <= maxGroups) return ordered.map(([name, value]) => ({ name, value }));
++  return [
++    ...ordered.slice(0, maxGroups - 1).map(([name, value]) => ({ name, value })),
++    { name: 'Other', value: ordered.slice(maxGroups - 1).reduce((sum, [, value]) => sum + value, 0) },
++  ];
++}
++
++export function summarizeUsers(rows, days = 30, nowMs = Date.now()) {
++  const regularUsers = (rows || []).filter((row) => String(row.role || 'user').toLowerCase() === 'user');
++  const active = regularUsers.filter((row) => String(row.status || '').toLowerCase() === 'active').length;
++  const suspended = regularUsers.filter((row) => String(row.status || '').toLowerCase() === 'suspended').length;
++  return {
++    total: regularUsers.length,
++    activeAccounts: active,
++    suspendedAccounts: suspended,
++    newRegistrations: regularUsers.filter((row) => {
++      const ms = Date.parse(row.created_at || '');
++      return Number.isFinite(ms) && ms >= nowMs - days * DAY_MS && ms <= nowMs;
++    }).length,
++    registrations: dailyTrend(regularUsers, days, nowMs),
++    statuses: distribution(regularUsers, 'status'),
++  };
++}
++
++export function summarizeResources(centers, advisories) {
++  const valid = (centers || []).filter((center) =>
++    nonnegative(center.capacity) !== null && nonnegative(center.current_evacuees) !== null);
++  const capacity = valid.reduce((sum, center) => sum + nonnegative(center.capacity), 0);
++  const occupancy = valid.reduce((sum, center) => sum + nonnegative(center.current_evacuees), 0);
++  return {
++    totalCenters: centers?.length ?? null,
++    measuredCenters: valid.length,
++    capacity: valid.length ? capacity : null,
++    occupancy: valid.length ? occupancy : null,
++    // Exceeding capacity is not converted into negative available spaces.
++    available: valid.length ? valid.reduce((sum, center) =>
++      sum + Math.max(0, nonnegative(center.capacity) - nonnegative(center.current_evacuees)), 0) : null,
++    centers: centers ? buildCapacityChart(centers) : null,
++    advisories: advisories ? distribution(advisories, 'status') : null,
++    activeAdvisories: advisories ? advisories.filter((a) => a.status === 'Active').length : null,
++  };
++}
++
++export function buildFloodStations(catalog, stations, nowMs = Date.now()) {
++  const enabled = new Map((catalog || []).filter((row) => row.enabled === true)
++    .map((row) => [String(row.station_code).trim(), row]));
++  return (stations || []).filter((row) => enabled.has(String(row.station_code).trim()))
++    .map((row) => ({
++      code: String(row.station_code).trim(),
++      name: row.station_name || String(row.station_code),
++      level: asFinite(row.level),
++      observedAt: row.observed_at || null,
++      freshness: getTelemetryFreshness(row.observed_at, nowMs),
++      primary: enabled.get(String(row.station_code).trim())?.is_primary === true,
++    })).sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name));
++}
++
++async function read(query, source, warnings) {
++  try {
++    const result = await query;
++    if (!success(result)) {
++      warnings.push(`${source}: ${safeError(result.error)}`);
++      return null;
++    }
++    return result.data || [];
++  } catch (error) {
++    warnings.push(`${source}: ${safeError(error)}`);
++    return null;
++  }
++}
++
++async function floodInsights(client, { days, stationCode, nowMs }) {
++  const warnings = [];
++  const [catalog, observations] = await Promise.all([
++    read(client.from('station_catalog').select('station_code,enabled,is_primary')
++      .eq('source', 'PAGASA_FFWWS').limit(300), 'Station catalog', warnings),
++    read(client.from('monitoring_stations').select('station_code,station_name,level,observed_at')
++      .eq('source', 'PAGASA_FFWWS').limit(300), 'Station observations', warnings),
++  ]);
++  // A missing catalog must not silently reactivate archived stations.
++  const stations = catalog && observations ? buildFloodStations(catalog, observations, nowMs) : [];
++  const selected = stations.find((station) => station.code === stationCode) || stations[0] || null;
++  let history = null;
++  if (selected) {
++    const bucket = days <= 1 ? 'hour' : 'day';
++    const rows = await read(client.rpc('pagasa_river_chart', {
++      p_station_code: selected.code,
++      p_since: dateSince(nowMs, days),
++      p_until: new Date(nowMs).toISOString(),
++      p_bucket: bucket,
++    }), 'PAGASA historical chart', warnings);
++    history = rows?.map((row) => ({
++      time: row.observed_at,
++      label: days <= 1 ? new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }).format(new Date(row.observed_at)) : isoDate(row.observed_at),
++      level: asFinite(row.level),
++    })) ?? null;
++  }
++  return { stations, selectedStationCode: selected?.code || '', history, warnings, fetchedAt: new Date().toISOString() };
++}
++
++async function communityInsights(client, { days, nowMs }) {
++  const warnings = [];
++  const reports = await read(client.from('community_reports')
++    .select('id,created_at,status,category')
++    .gte('created_at', dateSince(nowMs, days))
++    .lte('created_at', new Date(nowMs).toISOString())
++    .order('created_at', { ascending: false }).limit(ROW_LIMIT), 'Community reports', warnings);
++  if (reports?.length === ROW_LIMIT) warnings.push(`Community analytics is limited to the latest ${ROW_LIMIT} reports for this period; counts may be incomplete.`);
++  return {
++    reportsTotal: reports?.length ?? null,
++    pending: reports ? reports.filter((row) => !row.status || String(row.status).toLowerCase() === 'pending').length : null,
++    trend: reports ? dailyTrend(reports, days, nowMs) : null,
++    statuses: reports ? distribution(reports, 'status') : null,
++    categories: reports ? distribution(reports, 'category') : null,
++    warnings, fetchedAt: new Date().toISOString(),
++  };
++}
++
++async function userInsights(client, { days, nowMs }) {
++  const warnings = [];
++  let rows = null;
++  try {
++    const result = await client.rpc('get_all_users_with_roles');
++    if (result.error) warnings.push(`User records: ${safeError(result.error)}`);
++    else if (Array.isArray(result.data)) rows = result.data;
++    else warnings.push('User records: unexpected response format.');
++  } catch (error) {
++    warnings.push(`User records: ${safeError(error)}`);
++  }
++  // Only aggregated fields leave this function. The UI never renders user PII.
++  return { summary: rows ? summarizeUsers(rows, days, nowMs) : null, warnings, fetchedAt: new Date().toISOString() };
++}
++
++async function resourceInsights(client, { allowCenters, allowAdvisories }) {
++  const warnings = [];
++  const [centers, advisories] = await Promise.all([
++    allowCenters ? read(client.from('evacuation_centers')
++      .select('id,name,status,capacity,current_evacuees')
++      .order('name', { ascending: true }).limit(500), 'Evacuation centers', warnings) : Promise.resolve(null),
++    allowAdvisories ? read(client.from('advisories')
++      .select('id,status,category,severity,created_at')
++      .order('created_at', { ascending: false }).limit(ROW_LIMIT), 'Advisories', warnings) : Promise.resolve(null),
++  ]);
++  if (centers?.length === 500) warnings.push('Center figures are limited to the first 500 records.');
++  if (advisories?.length === ROW_LIMIT) warnings.push('Advisory figures are limited to the latest 1,000 records.');
++  return { summary: summarizeResources(centers, advisories), warnings, fetchedAt: new Date().toISOString() };
++}
++
++export async function fetchDashboardInsights(client, tab, options = {}) {
++  const days = [1, 7, 30, 90, 180].includes(Number(options.days)) ? Number(options.days) : 30;
++  const nowMs = options.nowMs ?? Date.now();
++  if (tab === 'flood') return floodInsights(client, { days, stationCode: options.stationCode, nowMs });
++  if (tab === 'community') return communityInsights(client, { days, nowMs });
++  if (tab === 'users') return userInsights(client, { days, nowMs });
++  if (tab === 'resources') return resourceInsights(client, options);
++  throw new Error('Unknown analytics tab');
++}
+diff --git a/tests/dashboardInsights.test.mjs b/tests/dashboardInsights.test.mjs
+new file mode 100644
+index 0000000..aa5ffca
+--- /dev/null
++++ b/tests/dashboardInsights.test.mjs
+@@ -0,0 +1,147 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import {
++  dailyTrend, distribution, summarizeUsers, summarizeResources,
++  buildFloodStations, fetchDashboardInsights,
++} from '../src/services/dashboardInsightsService.js';
++
++const now = Date.parse('2026-11-23T07:00:00.000Z');
++const iso = (delta) => new Date(now + delta).toISOString();
++
++const query = (table, fixtures, calls) => ({
++  select(columns) { this.columns = columns; return this; },
++  eq(column, value) { this.filters = [...(this.filters || []), ['eq', column, value]]; return this; },
++  gte(column, value) { this.filters = [...(this.filters || []), ['gte', column, value]]; return this; },
++  lte(column, value) { this.filters = [...(this.filters || []), ['lte', column, value]]; return this; },
++  order(column, options) { this.filters = [...(this.filters || []), ['order', column, options]]; return this; },
++  limit(value) { this.limitCount = value; return this; },
++  then(resolve, reject) { calls.push({ table, columns: this.columns, filters: this.filters || [] }); return Promise.resolve(fixtures[table] || { data: [], error: null }).then(resolve, reject); },
++});
++const client = (fixtures) => {
++  const calls = [];
++  return { calls, from(table) { return query(table, fixtures, calls); }, rpc(name, args) {
++    calls.push({ rpc: name, args });
++    return Promise.resolve(fixtures[name] || { data: [], error: null });
++  } };
++};
++
++test('day trend uses real timestamps, keeps missing days at zero and ignores outside dates', () => {
++  const trend = dailyTrend([
++    { created_at: iso(-120_000) }, { created_at: iso(-120_000) },
++    { created_at: iso(-8 * 86_400_000) }, { created_at: 'invalid' },
++  ], 7, now);
++  assert.equal(trend.length, 7);
++  assert.equal(trend[6].count, 2);
++  assert.equal(trend.reduce((sum, row) => sum + row.count, 0), 2);
++});
++
++test('status distribution groups only observed values, preserving missing status as Not specified', () => {
++  const result = distribution([{ status: 'Pending' }, { status: 'Pending' }, { status: null }], 'status');
++  assert.deepEqual(result, [{ name: 'Pending', value: 2 }, { name: 'Not specified', value: 1 }]);
++});
++
++test('user analytics excludes admins, does not claim active sessions and respects period', () => {
++  const result = summarizeUsers([
++    { role: 'admin', status: 'active', created_at: iso(-50_000) },
++    { role: 'user', status: 'active', created_at: iso(-50_000) },
++    { role: 'user', status: 'suspended', created_at: iso(-50 * 86_400_000) },
++  ], 30, now);
++  assert.equal(result.total, 2);
++  assert.equal(result.activeAccounts, 1);
++  assert.equal(result.suspendedAccounts, 1);
++  assert.equal(result.newRegistrations, 1);
++});
++
++test('resources only aggregates real complete occupancy and never invents missing capacity', () => {
++  const result = summarizeResources([
++    { name: 'A', capacity: 100, current_evacuees: 20 },
++    { name: 'B', capacity: 50, current_evacuees: null },
++  ], [{ status: 'Active' }, { status: 'Archived' }]);
++  assert.equal(result.totalCenters, 2);
++  assert.equal(result.measuredCenters, 1);
++  assert.equal(result.occupancy, 20);
++  assert.equal(result.available, 80);
++  assert.equal(result.activeAdvisories, 1);
++});
++
++test('flood stations use only enabled codes; archived gauge stays excluded', () => {
++  const result = buildFloodStations([
++    { station_code: '11104201', enabled: true, is_primary: true },
++    { station_code: '11104204', enabled: false },
++  ], [
++    { station_code: '11104201', station_name: 'Sto. Niño (2nd)', level: 12.09, observed_at: iso(-600_000) },
++    { station_code: '11104204', station_name: 'Archived', level: 11.88, observed_at: iso(-900_000) },
++  ], now);
++  assert.equal(result.length, 1);
++  assert.equal(result[0].code, '11104201');
++  assert.equal(result[0].freshness.label, 'Updated');
++});
++
++test('community tab loads only its own table and groups actual report records', async () => {
++  const db = client({ community_reports: { data: [
++    { id: 1, created_at: iso(-60_000), status: 'Pending', category: 'Flood' },
++    { id: 2, created_at: iso(-60_000), status: 'Approved', category: 'Flood' },
++  ], error: null } });
++  const output = await fetchDashboardInsights(db, 'community', { days: 7, nowMs: now });
++  assert.equal(output.reportsTotal, 2);
++  assert.equal(output.pending, 1);
++  assert.equal(output.categories[0].value, 2);
++  assert.deepEqual(db.calls.map((call) => call.table), ['community_reports']);
++});
++
++test('users tab calls existing admin-only RPC and returns aggregate data', async () => {
++  const db = client({ get_all_users_with_roles: { data: [{ role: 'user', status: 'active', created_at: iso(-60_000), email: 'private@example.com' }], error: null } });
++  const output = await fetchDashboardInsights(db, 'users', { days: 30, nowMs: now });
++  assert.equal(output.summary.total, 1);
++  assert.equal(JSON.stringify(output).includes('private@example.com'), false);
++  assert.deepEqual(db.calls.map((call) => call.rpc), ['get_all_users_with_roles']);
++});
++
++test('failed user RPC yields unavailable rather than fabricated zeros', async () => {
++  const db = client({ get_all_users_with_roles: { data: null, error: { message: 'permission denied' } } });
++  const output = await fetchDashboardInsights(db, 'users', { days: 30, nowMs: now });
++  assert.equal(output.summary, null);
++  assert.match(output.warnings[0], /permission denied/);
++});
++
++test('resources respect module permissions and do not query restricted tables', async () => {
++  const db = client({ advisories: { data: [{ status: 'Active' }], error: null } });
++  const output = await fetchDashboardInsights(db, 'resources', { allowCenters: false, allowAdvisories: true });
++  assert.equal(output.summary.totalCenters, null);
++  assert.equal(output.summary.activeAdvisories, 1);
++  assert.deepEqual(db.calls.map((call) => call.table), ['advisories']);
++});
++
++test('missing flood catalog suppresses readings for potentially archived gauges', async () => {
++  const db = client({
++    station_catalog: { data: null, error: { message: 'denied' } },
++    monitoring_stations: { data: [{ station_code: '11104204', level: 11.88 }], error: null },
++  });
++  const output = await fetchDashboardInsights(db, 'flood', { nowMs: now, days: 7 });
++  assert.equal(output.stations.length, 0);
++  assert.equal(output.history, null);
++  assert.equal(db.calls.some((call) => call.rpc === 'pagasa_river_chart'), false);
++});
++
++test('flood history preserves missing daily values and selects only verified active gauge', async () => {
++  const db = client({
++    station_catalog: { data: [{ station_code: '11104201', enabled: true, is_primary: true }], error: null },
++    monitoring_stations: { data: [{ station_code: '11104201', level: 12.09, observed_at: iso(-100_000) }], error: null },
++    pagasa_river_chart: { data: [{ observed_at: iso(-DAY()), level: 12.5 }, { observed_at: iso(0), level: null }], error: null },
++  });
++  function DAY() { return 86_400_000; }
++  const output = await fetchDashboardInsights(db, 'flood', { days: 7, nowMs: now });
++  assert.equal(output.selectedStationCode, '11104201');
++  assert.deepEqual(output.history.map((row) => row.level), [12.5, null]);
++  assert.equal(db.calls.find((call) => call.rpc)?.args.p_station_code, '11104201');
++});
++
++test('dashboard tabs are code split and role-checked, not a new mock analytics route', () => {
++  const source = readFileSync(new URL('../src/components/Dashboard.jsx', import.meta.url), 'utf8');
++  assert.match(source, /React\.lazy\(\(\) => import\('\.\/DashboardInsightsPanel\.jsx'\)\)/);
++  for (const tab of ['overview', 'flood', 'community', 'users', 'resources']) assert.match(source, new RegExp(`key: '${tab}'`));
++  assert.match(source, /canView\(access, 'community-user-management'\)/);
++  assert.match(source, /activeTab === 'overview' \? /);
++  assert.doesNotMatch(source, /<Analytics\s*\/>/);
++});

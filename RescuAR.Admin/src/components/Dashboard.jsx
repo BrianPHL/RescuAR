@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Popup, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import './dashboardInsights.css';
 import { supabase } from '../supabaseClient';
 import { canView } from '../rbac/access';
 import { exportCsv } from '../utils/exportData';
@@ -462,6 +463,9 @@ const injectedStyles = `
   }
 `;
 
+// Analytics code and queries are loaded only when a detailed tab is opened.
+const DashboardInsightsPanel = React.lazy(() => import('./DashboardInsightsPanel.jsx'));
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
@@ -479,12 +483,14 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function Dashboard({ onViewChange = () => { }, onActionClick = () => { }, access }) {
+  const [activeTab, setActiveTab] = useState('overview');
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [dashboard, setDashboard] = useState(null);
   const lastRealtimeRefresh = useRef(0);
 
   useEffect(() => {
+    if (activeTab !== 'overview') { setIsRefreshing(false); return undefined; }
     let cancelled = false;
     setIsRefreshing(true);
     void fetchDashboardData(supabase).then((data) => {
@@ -498,7 +504,7 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
       }
     }).finally(() => { if (!cancelled) setIsRefreshing(false); });
     return () => { cancelled = true; };
-  }, [refreshVersion]);
+  }, [refreshVersion, activeTab]);
 
   useEffect(() => {
     const refresh = () => setRefreshVersion((version) => version + 1);
@@ -518,6 +524,14 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
   }, []);
 
   const handleRefresh = () => setRefreshVersion((version) => version + 1);
+  const tabs = [
+    { key: 'overview', label: 'Overview', accessible: true },
+    { key: 'flood', label: 'Flood', accessible: canView(access, 'monitoring-river-level') },
+    { key: 'community', label: 'Community', accessible: canView(access, 'community-reports-moderation') },
+    { key: 'users', label: 'Users', accessible: canView(access, 'community-user-management') },
+    { key: 'resources', label: 'Resources', accessible: canView(access, 'content-evacuation') || canView(access, 'content-advisories') },
+  ].filter((tab) => tab.accessible);
+
   const metrics = dashboard?.metrics || {};
   const reportData = dashboard?.incidents;
   const resourceData = dashboard?.resourceData;
@@ -604,27 +618,27 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
         <div className="header-left">
           <div className="title-row">
             <h1>RescuAR Command Center</h1>
-            <div className="status-badge" aria-live="polite" style={(!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {}}>
-              <div className="status-dot" style={hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' }}></div>
-              {statusLabel}
+            <div className="status-badge" aria-live="polite" style={activeTab !== 'overview' ? { background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' } : ((!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {})}>
+              <div className="status-dot" style={activeTab !== 'overview' ? { background: '#64748b', animation: 'none' } : (hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' })}></div>
+              {activeTab === 'overview' ? statusLabel : 'Detailed Analytics'}
             </div>
           </div>
-          <p className="last-updated">Last successful fetch: {hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds</p>
+          <p className="last-updated">{activeTab === 'overview' ? `Last successful fetch: ${hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds` : 'Detailed analytics loads when its tab is selected · Refresh every 60 seconds'}</p>
         </div>
 
         <div className="header-actions">
-          <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
+          {activeTab === 'overview' && <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
             <Download size={18} />
             Export Report
-          </button>
-          <button onClick={handleRefresh} className="btn-primary" disabled={isRefreshing}>
-            <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
-            {isRefreshing ? 'Syncing...' : 'Sync Data'}
+          </button>}
+          <button onClick={handleRefresh} className="btn-primary" disabled={activeTab === 'overview' && isRefreshing}>
+            <RefreshCw size={18} className={activeTab === 'overview' && isRefreshing ? 'animate-spin' : ''} />
+            {activeTab === 'overview' && isRefreshing ? 'Syncing...' : 'Sync Data'}
           </button>
         </div>
       </div>
 
-      {Boolean(dashboard?.warnings?.length) && (
+      {activeTab === 'overview' && Boolean(dashboard?.warnings?.length) && (
         <div role="alert" style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.75rem', color: '#92400e', fontSize: '0.88rem' }}>
           <strong>Data notice:</strong> Some sources may be unavailable or incomplete.
           <ul style={{ margin: '0.35rem 0 0 1.25rem', padding: 0 }}>
@@ -633,6 +647,15 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
         </div>
       )}
 
+      <nav className="dashboard-tab-bar" role="tablist" aria-label="RescuAR dashboard analytics">
+        {tabs.map((tab) => <button type="button" key={tab.key}
+          role="tab" className="dashboard-tab" aria-selected={activeTab === tab.key}
+          aria-controls="dashboard-tab-panel" onClick={() => setActiveTab(tab.key)}>
+          {tab.label}
+        </button>)}
+      </nav>
+
+      {activeTab === 'overview' ? <div id="dashboard-tab-panel" role="tabpanel" aria-label="Overview dashboard">
       {/* Top Stats Grid */}
       <div className="stats-grid" aria-label="Dashboard overview">
         {analytics.map((stat, idx) => (
@@ -830,6 +853,10 @@ export default function Dashboard({ onViewChange = () => { }, onActionClick = ()
         </div>
 
       </div>
+      </div> : <React.Suspense fallback={<div className="insight-loading" role="status">Loading analytics interface…</div>}>
+        <DashboardInsightsPanel key={activeTab} tab={activeTab} access={access}
+          onViewChange={onViewChange} refreshVersion={refreshVersion} />
+      </React.Suspense>}
     </div>
   );
 }
