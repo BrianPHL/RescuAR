@@ -18,7 +18,11 @@ import { createClient } from '@supabase/supabase-js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const COLLECTOR = path.join(ROOT, 'scripts', 'collectHistoricalPagasa.js');
 const PROCESSED = path.join(ROOT, 'data', 'historical', 'processed');
-const LIVE_STATIONS = 'rodriguez,montalban,nangka,tumana,sto_nino_mmda';
+// Default retained for backwards compatibility; --stations can include the new gauge.
+const DEFAULT_STATIONS = 'rodriguez,montalban,nangka,tumana,sto_nino_mmda';
+const ALLOWED_STATIONS = new Set([
+  'rodriguez', 'montalban', 'nangka', 'tumana', 'sto_nino_mmda', 'sto_nino_secondary'
+]);
 const SOURCE_ID = 'PAGASA_FFWWS';
 
 function manilaString(date) {
@@ -41,12 +45,12 @@ function parseDate(input) {
   return date;
 }
 function argsFromCli(tokens) {
-  const opts = { end: 'now', stepHours: 12, delayMs: 600, dryRun: false };
+  const opts = { end: 'now', stepHours: 12, delayMs: 600, dryRun: false, stations: DEFAULT_STATIONS };
   for (let i = 0; i < tokens.length; i++) {
     const arg = tokens[i];
-    if (['--start', '--end', '--lookback-days', '--step-hours', '--delay-ms'].includes(arg)) {
+    if (['--start', '--end', '--lookback-days', '--step-hours', '--delay-ms', '--stations'].includes(arg)) {
       if (tokens[i + 1] == null) throw new Error(`Missing value for ${arg}`);
-      opts[{'--start':'start','--end':'end','--lookback-days':'lookbackDays','--step-hours':'stepHours','--delay-ms':'delayMs'}[arg]] = tokens[++i];
+      opts[{'--start':'start','--end':'end','--lookback-days':'lookbackDays','--step-hours':'stepHours','--delay-ms':'delayMs','--stations':'stations'}[arg]] = tokens[++i];
     } else if (arg === '--dry-run') opts.dryRun = true;
     else throw new Error(`Unknown option: ${arg}`);
   }
@@ -58,6 +62,11 @@ function argsFromCli(tokens) {
   }
   if (opts.lookbackDays !== undefined && opts.lookbackDays <= 0) throw new Error('--lookback-days must be positive.');
   if (opts.stepHours <= 0 || opts.stepHours > 24) throw new Error('--step-hours must be in (0,24].');
+  const requested = String(opts.stations || '').split(',').map((part) => part.trim()).filter(Boolean);
+  if (!requested.length || requested.some((station) => !ALLOWED_STATIONS.has(station))) {
+    throw new Error(`--stations must be a comma-separated set of known station keys: ${[...ALLOWED_STATIONS].join(', ')}`);
+  }
+  opts.stations = [...new Set(requested)].join(',');
   return opts;
 }
 function monthlyWindows(first, last) {
@@ -138,7 +147,7 @@ async function main() {
   if (end > new Date(Date.now() + 60000)) throw new Error('End cannot be in the future.');
   const windows = monthlyWindows(start, end);
   console.log(`[Backfill] ${manilaString(start)} through ${manilaString(end)} Asia/Manila; ${windows.length} batch(es).`);
-  console.log(`[Backfill] Stations: ${LIVE_STATIONS}`);
+  console.log(`[Backfill] Stations: ${opts.stations}`);
   for (const w of windows) console.log(`  ${manilaString(w.from)} -> ${manilaString(w.to)}`);
   if (opts.dryRun) { console.log('[Backfill] Dry-run finished. No download or database writes.'); return; }
 
@@ -158,7 +167,7 @@ async function main() {
       ...process.execArgv.filter((arg) => arg === '--use-system-ca'),
       COLLECTOR, '--event', event,
       '--start', manilaString(from), '--end', manilaString(to),
-      '--stations', LIVE_STATIONS,
+      '--stations', opts.stations,
       '--step-hours', String(opts.stepHours), '--delay-ms', String(opts.delayMs)
     ];
     console.log(`[Backfill] Collecting ${event}`);
@@ -173,6 +182,6 @@ async function main() {
     totalProcessed += imported.count;
     console.log(`[Backfill] ${event}: ${imported.count} valid unique rows processed (existing duplicates skipped).`);
   }
-  console.log(`[Backfill] COMPLETE: ${totalProcessed} rows processed across all 5 stations. Check database coverage with SQL.`);
+  console.log(`[Backfill] COMPLETE: ${totalProcessed} rows processed for ${opts.stations}. Check database coverage with SQL.`);
 }
 main().catch((err) => { console.error('[Backfill] FAILED:', err.message); process.exitCode = 1; });

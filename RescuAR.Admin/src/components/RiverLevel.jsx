@@ -12,6 +12,11 @@ import {
 } from 'recharts';
 
 const SOURCE_ID = 'PAGASA_FFWWS';
+// PAGASA lists these as distinct gauges; their readings must not be merged.
+const STO_NINO_GAUGES = {
+  '11104201': 'Sto. Niño (2nd) · 11104201',
+  '11104204': 'Sto. Niño (MMDA) · 11104204'
+};
 const unavailableAlert = { status: 'Unavailable', label: 'Live status unavailable', color: '#b91c1c' };
 function hasVerifiedThresholds(row) {
   return ['alert_threshold_m', 'alarm_threshold_m', 'critical_threshold_m'].every((key) =>
@@ -146,10 +151,18 @@ export default function RiverLevel({ onActionClick }) {
   const [catalogWarning, setCatalogWarning] = useState('');
   const [selectedStation, setSelectedStation] = useState(null);
   const [history, setHistory] = useState([]);
+  const [historyGaugeOverride, setHistoryGaugeOverride] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [nowMs, setNowMs] = useState(Date.now());
 
   const stationDisplayName = selectedStation?.station_name || 'Sto. Niño Station';
+  const activeGaugeCode = String(selectedStation?.station_code || '');
+  const hasStoNinoArchive = Object.hasOwn(STO_NINO_GAUGES, activeGaugeCode);
+  // Override is only allowed within the two explicitly verified Sto. Niño codes.
+  const historyGaugeCode = hasStoNinoArchive && Object.hasOwn(STO_NINO_GAUGES, historyGaugeOverride)
+    ? historyGaugeOverride : activeGaugeCode;
+  const isHistoricalGauge = Boolean(historyGaugeCode && historyGaugeCode !== activeGaugeCode);
+  const historyGaugeName = STO_NINO_GAUGES[historyGaugeCode] || stationDisplayName;
   const currentLevel = finiteNumberOrNull(selectedStation?.level);
   const freshness = getTelemetryFreshness(selectedStation?.observed_at || selectedStation?.updated_at, nowMs);
   const thresholds = hasVerifiedThresholds(selectedStation)
@@ -217,7 +230,11 @@ export default function RiverLevel({ onActionClick }) {
         return;
       }
       setSelectedStationCode(target.station_code);
-      setHistory(await fetchHistory(target.station_code, range));
+      const selectedCode = String(target.station_code);
+      const historyCode = Object.hasOwn(STO_NINO_GAUGES, selectedCode) &&
+        Object.hasOwn(STO_NINO_GAUGES, historyGaugeOverride)
+        ? historyGaugeOverride : selectedCode;
+      setHistory(await fetchHistory(historyCode, range));
       setNowMs(Date.now());
     } catch (error) {
       console.error('River telemetry load failed:', error);
@@ -225,7 +242,7 @@ export default function RiverLevel({ onActionClick }) {
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchHistory, fetchStations, selectedStationCode, timeRange]);
+  }, [fetchHistory, fetchStations, selectedStationCode, timeRange, historyGaugeOverride]);
 
   useEffect(() => {
     void loadData(selectedStationCode, timeRange);
@@ -242,7 +259,7 @@ export default function RiverLevel({ onActionClick }) {
       clearInterval(timer);
       supabase.removeChannel(channel);
     };
-  }, [selectedStationCode, timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStationCode, timeRange, historyGaugeOverride]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chartData = useMemo(() => {
     return history.map((row) => ({
@@ -252,15 +269,18 @@ export default function RiverLevel({ onActionClick }) {
     }));
   }, [history, timeRange]);
 
-  const hasMeasurements = chartData.some((row) => Number.isFinite(row.observed));
+  const measurementDays = chartData.filter((row) => Number.isFinite(row.observed)).length;
+  const hasMeasurements = measurementDays > 0;
 
   const yDomain = useMemo(() => {
     const values = chartData.map((row) => row.observed).filter(Number.isFinite);
-    const thresholdValues = [thresholds.ALARM_1, thresholds.ALARM_2, thresholds.ALARM_3].filter(Number.isFinite);
+    // Active station warning thresholds must not be drawn over an independent gauge.
+    const thresholdValues = isHistoricalGauge ? [] :
+      [thresholds.ALARM_1, thresholds.ALARM_2, thresholds.ALARM_3].filter(Number.isFinite);
     const all = [...values, ...thresholdValues];
     if (!all.length) return ['auto', 'auto'];
     return [Math.max(0, Math.floor(Math.min(...all) - 2)), Math.ceil(Math.max(...all) + 2)];
-  }, [chartData, thresholds]);
+  }, [chartData, thresholds, isHistoricalGauge]);
 
   const thresholdRows = [
     ['Alert', thresholds.ALARM_1, '#ca8a04'],
@@ -355,11 +375,29 @@ export default function RiverLevel({ onActionClick }) {
 
       <div className="river-card chart-main-card">
         <div className="chart-header-row">
-          <div className="chart-title-group"><Activity size={18} className="text-brand" /><div><h2 className="chart-heading">Verified PAGASA River Level History</h2><span className="chart-subheading">{stationDisplayName} • official observation timestamps • normal/below-threshold readings retained for trend monitoring</span></div></div>
+          <div className="chart-title-group"><Activity size={18} className="text-brand" /><div><h2 className="chart-heading">Verified PAGASA River Level History</h2><span className="chart-subheading">{historyGaugeName} • official observation timestamps • {measurementDays} recorded time bucket(s) in this range</span></div></div>
           <div className="chart-controls"><div className="pill-selector">{Object.entries(RANGE_OPTIONS).map(([key, option]) => <button key={key} className={`pill-btn ${timeRange === key ? 'active' : ''}`} onClick={() => setTimeRange(key)}>{option.label}</button>)}</div></div>
         </div>
+        {hasStoNinoArchive && (
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, margin: '8px 0 14px' }}>
+            <label htmlFor="history-station-select" style={{ fontWeight: 600, fontSize: 13, color: '#475569' }}>Historical gauge</label>
+            <select id="history-station-select" value={isHistoricalGauge ? historyGaugeOverride : ''} onChange={(event) => setHistoryGaugeOverride(event.target.value)}
+              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', color: '#334155' }}>
+              <option value="">Live selected gauge ({STO_NINO_GAUGES[activeGaugeCode]})</option>
+              {Object.entries(STO_NINO_GAUGES).filter(([code]) => code !== activeGaugeCode).map(([code, name]) => (
+                <option key={code} value={code}>Archived independent gauge ({name})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {isHistoricalGauge && (
+          <p role="status" style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>
+            Showing a separate PAGASA gauge, not a continuation of the live station. Its elevation reference
+            and warning thresholds must be verified independently; the live station thresholds are hidden.
+          </p>
+        )}
         <div className="chart-canvas-container">
-          {!hasMeasurements ? <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No verified PAGASA observations are available for this range.</div> : (
+          {!hasMeasurements ? <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', textAlign: 'center', padding: 16 }}>No stored verified PAGASA observations for {historyGaugeName} in this range. Check Supabase coverage and source-backed backfill.</div> : (
             <ResponsiveContainer width="100%" height={380}>
               <AreaChart data={chartData} margin={{ top: 20, right: 65, left: 0, bottom: 10 }}>
                 <defs><linearGradient id="gradientObserved" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284c7" stopOpacity={0.4} /><stop offset="95%" stopColor="#0284c7" stopOpacity={0.02} /></linearGradient></defs>
@@ -367,10 +405,10 @@ export default function RiverLevel({ onActionClick }) {
                 <XAxis dataKey="time" tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} minTickGap={20} />
                 <YAxis domain={yDomain} tickFormatter={(value) => `${value} m EL`} tickLine={false} axisLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }} />
                 <Tooltip formatter={(value) => [`${Number(value).toFixed(2)} m EL`, 'Observed']} />
-                {Number.isFinite(thresholds.ALARM_3) && <ReferenceArea y1={thresholds.ALARM_3} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.04} />}
-                {Number.isFinite(thresholds.ALARM_1) && <ReferenceLine y={thresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" label={{ value: `ALERT ${thresholds.ALARM_1.toFixed(1)} m EL`, position: 'right', fill: '#ca8a04', fontSize: 10 }} />}
-                {Number.isFinite(thresholds.ALARM_2) && <ReferenceLine y={thresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" label={{ value: `ALARM ${thresholds.ALARM_2.toFixed(1)} m EL`, position: 'right', fill: '#ea580c', fontSize: 10 }} />}
-                {Number.isFinite(thresholds.ALARM_3) && <ReferenceLine y={thresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" label={{ value: `CRITICAL ${thresholds.ALARM_3.toFixed(1)} m EL`, position: 'right', fill: '#dc2626', fontSize: 10 }} />}
+                {!isHistoricalGauge && Number.isFinite(thresholds.ALARM_3) && <ReferenceArea y1={thresholds.ALARM_3} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.04} />}
+                {!isHistoricalGauge && Number.isFinite(thresholds.ALARM_1) && <ReferenceLine y={thresholds.ALARM_1} stroke="#ca8a04" strokeDasharray="6 4" label={{ value: `ALERT ${thresholds.ALARM_1.toFixed(1)} m EL`, position: 'right', fill: '#ca8a04', fontSize: 10 }} />}
+                {!isHistoricalGauge && Number.isFinite(thresholds.ALARM_2) && <ReferenceLine y={thresholds.ALARM_2} stroke="#ea580c" strokeDasharray="6 4" label={{ value: `ALARM ${thresholds.ALARM_2.toFixed(1)} m EL`, position: 'right', fill: '#ea580c', fontSize: 10 }} />}
+                {!isHistoricalGauge && Number.isFinite(thresholds.ALARM_3) && <ReferenceLine y={thresholds.ALARM_3} stroke="#dc2626" strokeDasharray="6 4" label={{ value: `CRITICAL ${thresholds.ALARM_3.toFixed(1)} m EL`, position: 'right', fill: '#dc2626', fontSize: 10 }} />}
                 <Area type="monotone" connectNulls={false} dataKey="observed" stroke="#0284c7" strokeWidth={3} fill="url(#gradientObserved)" dot={timeRange === '24h' ? { r: 3 } : false} />
               </AreaChart>
             </ResponsiveContainer>

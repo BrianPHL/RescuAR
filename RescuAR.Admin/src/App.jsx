@@ -105,7 +105,7 @@ export default function App({ session, access }) {
 
     switch (activeView) {
       case 'dashboard':
-        return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} />;
+        return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} access={access} />;
       case 'monitoring-stations':
         return <MonitoringStations />;
       case 'monitoring-river-level':

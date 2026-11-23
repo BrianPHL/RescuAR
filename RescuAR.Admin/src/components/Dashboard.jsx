@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  AlertTriangle, 
-  ClipboardList, 
-  Video, 
-  Users, 
-  Shield, 
-  ArrowUpRight, 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  AlertTriangle,
+  ClipboardList,
+  Video,
+  Users,
+  Shield,
+  ArrowUpRight,
   RefreshCw,
   ChevronRight,
   Activity,
@@ -15,6 +15,10 @@ import {
 } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Popup, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { supabase } from '../supabaseClient';
+import { canView } from '../rbac/access';
+import { exportCsv } from '../utils/exportData';
+import { fetchDashboardData, formatDashboardTimestamp } from '../services/dashboardDataService';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   BarChart, Bar
@@ -460,24 +464,6 @@ const injectedStyles = `
   }
 `;
 
-// Mock Data for Charts
-const reportData = [
-  { time: '00:00', reports: 12 },
-  { time: '04:00', reports: 8 },
-  { time: '08:00', reports: 35 },
-  { time: '12:00', reports: 42 },
-  { time: '16:00', reports: 28 },
-  { time: '20:00', reports: 15 },
-  { time: '24:00', reports: 10 },
-];
-
-const resourceData = [
-  { name: 'North', available: 40, used: 24 },
-  { name: 'South', available: 30, used: 13 },
-  { name: 'East', available: 20, used: 18 },
-  { name: 'West', available: 27, used: 19 },
-];
-
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
@@ -494,98 +480,115 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const formatCurrentDate = () => {
-  const now = new Date();
-  return `${now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} • ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
-};
+export default function Dashboard({ onViewChange = () => { }, onActionClick = () => { }, access }) {
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [dashboard, setDashboard] = useState(null);
+  const lastRealtimeRefresh = useRef(0);
 
-export default function Dashboard({ onViewChange = () => {}, onActionClick = () => {} }) {
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(formatCurrentDate());
-  
-  // Connected Data States
-  const [activities, setActivities] = useState([]);
-  const [isLoadingActivities, setIsLoadingActivities] = useState(true);
-
-  // Simulated Asynchronous Fetch for connected data
   useEffect(() => {
-    const fetchActivities = async () => {
-      setIsLoadingActivities(true);
-      // Simulate network request delay (connect to real API here later)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const fetchedData = [
-        { id: 1, text: 'Flood Report submitted (Barangay Tumana)', time: '08:38 AM', type: 'high' },
-        { id: 2, text: 'New Advisory Published', time: '08:32 AM', type: 'info' },
-        { id: 3, text: 'Road Obstruction Confirmed', time: '08:25 AM', type: 'medium' },
-        { id: 4, text: 'Evacuation Center #4 Opened', time: '07:45 AM', type: 'success' }
-      ];
-      setActivities(fetchedData);
-      setIsLoadingActivities(false);
-    };
+    let cancelled = false;
+    setIsRefreshing(true);
+    void fetchDashboardData(supabase).then((data) => {
+      if (!cancelled) setDashboard(data);
+    }).catch((error) => {
+      if (!cancelled) {
+        setDashboard({
+          successfulQueries: 0, totalQueries: 1, warnings: [error.message],
+          metrics: {}, incidents: null, mapMarkers: null, resourceData: null, activities: null
+        });
+      }
+    }).finally(() => { if (!cancelled) setIsRefreshing(false); });
+    return () => { cancelled = true; };
+  }, [refreshVersion]);
 
-    fetchActivities();
+  useEffect(() => {
+    const refresh = () => setRefreshVersion((version) => version + 1);
+    const poll = setInterval(refresh, 60_000);
+    // Polling is the fallback when Realtime publication is not enabled for a table.
+    const channel = supabase.channel('dashboard-live-changes');
+    const onChange = () => {
+      if (Date.now() - lastRealtimeRefresh.current < 15_000) return;
+      lastRealtimeRefresh.current = Date.now();
+      refresh();
+    };
+    for (const table of ['community_reports', 'advisories', 'evacuation_centers', 'monitoring_stations', 'station_catalog']) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange);
+    }
+    channel.subscribe();
+    return () => { clearInterval(poll); void supabase.removeChannel(channel); };
   }, []);
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setLastUpdated(formatCurrentDate());
-      setIsRefreshing(false);
-    }, 1000);
-  };
-  
-  // Real CSV Export Function
-  const handleExport = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    
-    // Header row
-    csvContent += "Time,Reports Submitted\n";
-    // Data rows
-    reportData.forEach(row => {
-      csvContent += `${row.time},${row.reports}\n`;
-    });
-    
-    csvContent += "\nRegion,Resources Available,Resources Deployed\n";
-    resourceData.forEach(row => {
-      csvContent += `${row.name},${row.available},${row.used}\n`;
-    });
-
-    // Create download link and click it
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "rescuar-analytics-export.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
+  const handleRefresh = () => setRefreshVersion((version) => version + 1);
+  const metrics = dashboard?.metrics || {};
+  const reportData = dashboard?.incidents;
+  const resourceData = dashboard?.resourceData;
+  const hazardMarkers = dashboard?.mapMarkers;
+  const activities = dashboard?.activities;
+  const hasData = (dashboard?.successfulQueries || 0) > 0;
+  const isPartial = hasData && dashboard.successfulQueries < dashboard.totalQueries;
+  const statusLabel = !dashboard ? 'Loading Data' : !hasData ? 'Data Unavailable' : isPartial ? 'Partial Data' : 'Data Connected';
   const analytics = [
-    { value: '43', label: 'Active Advisories', icon: <AlertTriangle size={24} />, target: 'content-advisories', colorClass: 'icon-orange' },
-    { value: '128', label: 'Pending Review', icon: <ClipboardList size={24} />, target: 'pending', colorClass: 'icon-blue' },
-    { value: '98%', label: 'Systems Operational', icon: <Activity size={24} />, target: 'systems', colorClass: 'icon-green' },
+    {
+      value: metrics.activeAdvisories ?? '—', label: 'Active Advisory Records', icon: <AlertTriangle size={24} />,
+      target: 'content-advisories', colorClass: 'icon-orange'
+    },
+    {
+      value: metrics.pendingReports ?? '—', label: 'Pending Reports', icon: <ClipboardList size={24} />,
+      target: 'community-reports-moderation', colorClass: 'icon-blue'
+    },
+    {
+      value: metrics.reportingStations ? `${metrics.reportingStations.healthy}/${metrics.reportingStations.total}` : '—',
+      label: 'Fresh PAGASA Stations', icon: <Activity size={24} />, target: 'monitoring-stations', colorClass: 'icon-green'
+    },
   ];
 
-  const hazardMarkers = [
-    { id: 1, pos: [14.6432, 121.0968], type: 'flood', label: 'Flooded Area - Tumana' },
-    { id: 2, pos: [14.6515, 121.1012], type: 'high', label: 'High Severity Report' },
-    { id: 3, pos: [14.6380, 121.0930], type: 'medium', label: 'Medium Severity Report' },
-    { id: 4, pos: [14.6480, 121.1080], type: 'evac', label: 'Tumana Evacuation Center' },
-  ];
+  const handleExport = () => {
+    if (!dashboard || !hasData) return;
+    // Use the existing safe quoted CSV writer and neutralize spreadsheet formulas from source titles.
+    const safe = (value) => {
+      const text = String(value ?? '');
+      return /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
+    };
+    const rows = [];
+    for (const metric of analytics) rows.push({
+      section: 'Metric', time: dashboard.fetchedAt,
+      label: metric.label, value: metric.value, details: ''
+    });
+    for (const bucket of reportData || []) rows.push({
+      section: 'Incident trend (4-hour bucket)',
+      time: bucket.time, label: 'Community reports submitted', value: bucket.reports, details: ''
+    });
+    for (const resource of resourceData || []) rows.push({
+      section: 'Evacuation capacity', time: '',
+      label: safe(resource.name), value: resource.used, details: `Capacity: ${resource.capacity}; available: ${resource.available}`
+    });
+    for (const event of activities || []) rows.push({
+      section: 'Recent activity', time: event.time,
+      label: safe(event.text), value: '', details: safe(event.source)
+    });
+    for (const marker of hazardMarkers || []) rows.push({
+      section: 'Map location', time: marker.observedAt,
+      label: safe(marker.label), value: marker.type,
+      details: safe(`${marker.detail}; latitude: ${marker.position[0]}; longitude: ${marker.position[1]}`)
+    });
+    exportCsv('rescuar-dashboard-live-data', rows,
+      [{ label: 'Section', key: 'section' }, { label: 'Time', key: 'time' },
+      { label: 'Label', key: 'label' }, { label: 'Value', key: 'value' }, { label: 'Details', key: 'details' }]);
+  };
 
   const getMarkerColor = (type) => {
-    switch(type) {
+    switch (type) {
       case 'flood': return '#3b82f6';
-      case 'high': return '#ef4444';
-      case 'medium': return '#f97316';
+      case 'report': return '#f97316';
+      case 'pending': return '#94a3b8';
       case 'evac': return '#10b981';
       default: return '#94a3b8';
     }
   };
 
   const getActivityColor = (type) => {
-    switch(type) {
+    switch (type) {
       case 'high': return '#ef4444';
       case 'medium': return '#f97316';
       case 'info': return '#3b82f6';
@@ -597,70 +600,79 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
   return (
     <div className="dashboard-container">
       <style>{injectedStyles}</style>
-      
+
       {/* Header Section */}
       <div className="header-section">
         <div className="header-left">
           <div className="title-row">
             <h1>RescuAR Command Center</h1>
-            <div className="status-badge">
-              <div className="status-dot"></div>
-              Live Operations
+            <div className="status-badge" aria-live="polite" style={(!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {}}>
+              <div className="status-dot" style={hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' }}></div>
+              {statusLabel}
             </div>
           </div>
-          <p className="last-updated">Last synchronized: {lastUpdated}</p>
+          <p className="last-updated">Last successful fetch: {hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds</p>
         </div>
-        
+
         <div className="header-actions">
-          <button onClick={handleExport} className="btn-outline">
+          <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
             <Download size={18} />
             Export Report
           </button>
-          <button onClick={handleRefresh} className="btn-primary">
+          <button onClick={handleRefresh} className="btn-primary" disabled={isRefreshing}>
             <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
             {isRefreshing ? 'Syncing...' : 'Sync Data'}
           </button>
         </div>
       </div>
 
+      {Boolean(dashboard?.warnings?.length) && (
+        <div role="alert" style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.75rem', color: '#92400e', fontSize: '0.88rem' }}>
+          <strong>Data notice:</strong> Some sources may be unavailable or incomplete.
+          <ul style={{ margin: '0.35rem 0 0 1.25rem', padding: 0 }}>
+            {dashboard.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </div>
+      )}
+
       {/* Top Stats Grid */}
       <div className="stats-grid row g-3">
         {analytics.map((stat, idx) => (
           <div key={idx} className="col-12 col-md-6 col-xxl-3">
-          <button type="button" onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100">
-            <div className={`stat-icon-wrapper ${stat.colorClass}`}>
-              {stat.icon}
-            </div>
-            <div>
-              <div className="stat-value">{stat.value}</div>
-              <div className="stat-footer">
-                <span className="stat-label">{stat.label}</span>
-                <ArrowUpRight size={24} className="stat-arrow" />
+            <button type="button" disabled={!canView(access, stat.target)} onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100" style={{ textAlign: 'left', cursor: canView(access, stat.target) ? 'pointer' : 'default' }}>
+              <div className={`stat-icon-wrapper ${stat.colorClass}`}>
+                {stat.icon}
               </div>
-            </div>
-          </button>
+              <div>
+                <div className="stat-value">{stat.value}</div>
+                <div className="stat-footer">
+                  <span className="stat-label">{stat.label}</span>
+                  <ArrowUpRight size={24} className="stat-arrow" />
+                </div>
+              </div>
+            </button>
           </div>
         ))}
       </div>
 
       {/* Main Content Layout */}
       <div className="main-layout">
-        
+
         {/* Left Column: Analytics & Map */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          
+
           {/* Analytics Panel */}
           <div className="content-panel">
-             <div className="panel-header">
-              <h2 className="section-title"><Activity size={20} color="#4f46e5"/> Incident Trends (24h)</h2>
-             </div>
-             <div className="chart-container">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="panel-header">
+              <h2 className="section-title"><Activity size={20} color="#4f46e5" /> Incident Reports (Last 24 Hours)</h2>
+            </div>
+            <div className="chart-container">
+              {reportData === null || reportData === undefined ? <p role="status" style={{ color: '#64748b' }}>Incident data unavailable.</p> : <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={reportData} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorReports" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="time" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
@@ -669,28 +681,32 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
                   <RechartsTooltip content={<CustomTooltip />} />
                   <Area type="monotone" dataKey="reports" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorReports)" name="Reports Submitted" />
                 </AreaChart>
-              </ResponsiveContainer>
-             </div>
+              </ResponsiveContainer>}
+            </div>
+            {dashboard?.incidentTruncated && <p style={{ fontSize: '0.8rem', color: '#92400e' }}>Showing only the latest 1,000 reports. The chart is incomplete for high-volume periods.</p>}
           </div>
 
           {/* Map Panel */}
           <div className="content-panel">
             <div className="panel-header">
-              <h2 className="section-title"><MapIcon size={20} color="#4f46e5"/> Live Hazard Mapping</h2>
-            </div>
-            
-            <div className="map-legend">
-              <span style={{ fontWeight: 700, color: '#475569' }}>Legend:</span>
-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#3b82f6' }}></div> Flood</div>
-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#ef4444' }}></div> High Risk</div>
-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#f97316' }}></div> Medium Risk</div>
-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#10b981' }}></div> Evacuation</div>
+              <h2 className="section-title"><MapIcon size={20} color="#4f46e5" /> Reported Incidents and Evacuation Centers</h2>
             </div>
 
+            <div className="map-legend">
+              <span style={{ fontWeight: 700, color: '#475569' }}>Legend:</span>
+              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#3b82f6' }}></div> Approved flood report</div>
+              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#f97316' }}></div> Other approved report</div>
+              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#94a3b8' }}></div> Pending/unverified report</div>
+              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#10b981' }}></div> Evacuation center (check status)</div>
+            </div>
+
+            <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '0.75rem' }}>Pins reflect geolocated records from Supabase, not verified flood hazard polygons. Reports are limited to the past 30 days. Center status is shown in each popup.</p>
+            {hazardMarkers?.length === 0 && <p role="status" style={{ color: '#64748b', marginBottom: '0.5rem' }}>No geolocated records were returned by the available sources.</p>}
+            {!hazardMarkers && <p role="status" style={{ color: '#b45309', marginBottom: '0.5rem' }}>Map records unavailable.</p>}
             <div className="map-container-wrapper">
-              <MapContainer 
-                center={[14.6416, 121.0950]} 
-                zoom={14} 
+              <MapContainer
+                center={[14.6416, 121.0950]}
+                zoom={14}
                 scrollWheelZoom={true}
                 style={{ height: '100%', width: '100%', zIndex: 0 }}
               >
@@ -708,11 +724,11 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
                     />
                   </LayersControl.BaseLayer>
                 </LayersControl>
-                
-                {hazardMarkers.map(marker => (
-                  <CircleMarker 
+
+                {(hazardMarkers || []).map(marker => (
+                  <CircleMarker
                     key={marker.id}
-                    center={marker.pos} 
+                    center={marker.position}
                     radius={8}
                     fillColor={getMarkerColor(marker.type)}
                     fillOpacity={0.8}
@@ -720,7 +736,9 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
                     weight={2}
                   >
                     <Popup className="premium-popup">
-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{marker.label}</span>
+                      <strong style={{ color: '#0f172a' }}>{marker.label}</strong>
+                      <div style={{ color: '#475569', marginTop: '4px' }}>{marker.detail}</div>
+                      {marker.observedAt && <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>{formatDashboardTimestamp(marker.observedAt)}</div>}
                     </Popup>
                   </CircleMarker>
                 ))}
@@ -731,49 +749,45 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
 
         {/* Right Column: Activity & Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          
+
           {/* Quick Actions Panel */}
           <div className="content-panel">
             <div className="panel-header">
               <h2 className="section-title">Quick Actions</h2>
             </div>
             <div className="actions-grid">
-              <div className="action-btn" onClick={() => onActionClick('advisory')}>
-                <Bell size={24} color="#4f46e5" />
-                New Advisory
-              </div>
-              <div className="action-btn" onClick={() => onActionClick('notify')}>
-                <Shield size={24} color="#10b981" />
-                Dispatch Unit
-              </div>
-              <div className="action-btn" onClick={() => onViewChange('community-residents')}>
-                <Users size={24} color="#f97316" />
-                Manage Crew
-              </div>
-              <div className="action-btn" onClick={() => onViewChange('monitoring-stations')}>
-                <Video size={24} color="#3b82f6" />
-                Live Feeds
-              </div>
+              {canView(access, 'content-advisories') && <button type="button" className="action-btn" onClick={() => onActionClick('advisory')}>
+                <Bell size={24} color="#4f46e5" /> New Advisory
+              </button>}
+              {canView(access, 'community-reports-moderation') && <button type="button" className="action-btn" onClick={() => onViewChange('community-reports-moderation')}>
+                <Shield size={24} color="#10b981" /> Review Reports
+              </button>}
+              {canView(access, 'community-user-management') && <button type="button" className="action-btn" onClick={() => onViewChange('community-user-management')}>
+                <Users size={24} color="#f97316" /> Manage Users
+              </button>}
+              {canView(access, 'monitoring-stations') && <button type="button" className="action-btn" onClick={() => onViewChange('monitoring-stations')}>
+                <Video size={24} color="#3b82f6" /> Monitoring Stations
+              </button>}
             </div>
           </div>
 
           {/* Resources Bar Chart Panel */}
           <div className="content-panel">
             <div className="panel-header">
-              <h2 className="section-title">Resource Allocation</h2>
+              <h2 className="section-title">Evacuation Center Capacity</h2>
             </div>
-             <div style={{ height: '220px', width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div style={{ height: '220px', width: '100%' }}>
+              {!resourceData ? <p role="status" style={{ color: '#64748b' }}>Evacuation capacity data unavailable.</p> : resourceData.length === 0 ? <p role="status" style={{ color: '#64748b' }}>No centers have recorded capacity and occupancy.</p> : <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={resourceData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(name) => name.length > 14 ? `${name.slice(0, 13)}…` : name} />
                   <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                  <RechartsTooltip cursor={{fill: '#f1f5f9'}} content={<CustomTooltip />} />
-                  <Bar dataKey="available" name="Available" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="used" name="Deployed" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={20} />
+                  <RechartsTooltip cursor={{ fill: '#f1f5f9' }} content={<CustomTooltip />} />
+                  <Bar dataKey="available" name="Available capacity" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="used" name="Current evacuees" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={20} />
                 </BarChart>
-              </ResponsiveContainer>
-             </div>
+              </ResponsiveContainer>}
+            </div>
           </div>
 
           {/* Connected Recent Activity Panel */}
@@ -781,14 +795,18 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
             <div className="panel-header">
               <h2 className="section-title">Recent Activity</h2>
             </div>
-            
+
             <div className="activity-list">
-              {isLoadingActivities ? (
+              {isRefreshing && !dashboard ? (
                 <>
                   <div className="loading-skeleton" style={{ width: '100%', marginBottom: '8px' }}></div>
                   <div className="loading-skeleton" style={{ width: '80%', marginBottom: '8px' }}></div>
                   <div className="loading-skeleton" style={{ width: '90%' }}></div>
                 </>
+              ) : activities === null || activities === undefined ? (
+                <p role="status" style={{ color: '#64748b' }}>Recent activity unavailable.</p>
+              ) : activities.length === 0 ? (
+                <p role="status" style={{ color: '#64748b' }}>No recent community reports or advisories.</p>
               ) : (
                 activities.map((activity) => (
                   <div key={activity.id} className="activity-item">
@@ -796,16 +814,19 @@ export default function Dashboard({ onViewChange = () => {}, onActionClick = () 
                       <div className="activity-dot" style={{ backgroundColor: getActivityColor(activity.type) }}></div>
                       <span className="activity-text">{activity.text}</span>
                     </div>
-                    <span className="activity-time">{activity.time}</span>
+                    <span className="activity-time" title={activity.time}>{formatDashboardTimestamp(activity.time)}</span>
                   </div>
                 ))
               )}
             </div>
 
-            <button className="view-all-btn" onClick={() => onViewChange('system-logs')}>
-              View All Logs
+            <p style={{ marginTop: '1rem', fontSize: '0.77rem', color: '#64748b' }}>
+              This feed shows actual creation timestamps, not a full administrator audit trail.
+            </p>
+            {canView(access, 'community-reports-moderation') && <button className="view-all-btn" onClick={() => onViewChange('community-reports-moderation')}>
+              View Community Reports
               <ChevronRight size={18} style={{ marginLeft: '4px' }} />
-            </button>
+            </button>}
           </div>
 
         </div>

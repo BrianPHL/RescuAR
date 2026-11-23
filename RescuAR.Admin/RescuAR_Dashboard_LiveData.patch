@@ -1,0 +1,794 @@
+diff --git a/src/App.jsx b/src/App.jsx
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -105,7 +105,7 @@
+ 
+     switch (activeView) {
+       case 'dashboard':
+-        return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} />;
++        return <Dashboard onViewChange={navigateTo} onActionClick={handleActionClick} access={access} />;
+       case 'monitoring-stations':
+         return <MonitoringStations />;
+       case 'monitoring-river-level':
+diff --git a/src/components/Dashboard.jsx b/src/components/Dashboard.jsx
+--- a/src/components/Dashboard.jsx
++++ b/src/components/Dashboard.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState, useEffect, useRef } from 'react';
+ import { 
+   AlertTriangle, 
+   ClipboardList, 
+@@ -15,6 +15,10 @@
+ } from 'lucide-react';
+ import { MapContainer, TileLayer, CircleMarker, Popup, LayersControl } from 'react-leaflet';
+ import 'leaflet/dist/leaflet.css';
++import { supabase } from '../supabaseClient';
++import { canView } from '../rbac/access';
++import { exportCsv } from '../utils/exportData';
++import { fetchDashboardData, formatDashboardTimestamp } from '../services/dashboardDataService';
+ import {
+   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
+   BarChart, Bar
+@@ -460,24 +464,6 @@
+   }
+ `;
+ 
+-// Mock Data for Charts
+-const reportData = [
+-  { time: '00:00', reports: 12 },
+-  { time: '04:00', reports: 8 },
+-  { time: '08:00', reports: 35 },
+-  { time: '12:00', reports: 42 },
+-  { time: '16:00', reports: 28 },
+-  { time: '20:00', reports: 15 },
+-  { time: '24:00', reports: 10 },
+-];
+-
+-const resourceData = [
+-  { name: 'North', available: 40, used: 24 },
+-  { name: 'South', available: 30, used: 13 },
+-  { name: 'East', available: 20, used: 18 },
+-  { name: 'West', available: 27, used: 19 },
+-];
+-
+ const CustomTooltip = ({ active, payload, label }) => {
+   if (active && payload && payload.length) {
+     return (
+@@ -494,91 +480,90 @@
+   return null;
+ };
+ 
+-const formatCurrentDate = () => {
+-  const now = new Date();
+-  return `${now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} • ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+-};
+-
+-export default function Dashboard({ onViewChange = () => {}, onActionClick = () => {} }) {
+-  const [isRefreshing, setIsRefreshing] = useState(false);
+-  const [lastUpdated, setLastUpdated] = useState(formatCurrentDate());
+-  
+-  // Connected Data States
+-  const [activities, setActivities] = useState([]);
+-  const [isLoadingActivities, setIsLoadingActivities] = useState(true);
+-
+-  // Simulated Asynchronous Fetch for connected data
++export default function Dashboard({ onViewChange = () => {}, onActionClick = () => {}, access }) {
++  const [refreshVersion, setRefreshVersion] = useState(0);
++  const [isRefreshing, setIsRefreshing] = useState(true);
++  const [dashboard, setDashboard] = useState(null);
++  const lastRealtimeRefresh = useRef(0);
++
+   useEffect(() => {
+-    const fetchActivities = async () => {
+-      setIsLoadingActivities(true);
+-      // Simulate network request delay (connect to real API here later)
+-      await new Promise(resolve => setTimeout(resolve, 1000));
+-      
+-      const fetchedData = [
+-        { id: 1, text: 'Flood Report submitted (Barangay Tumana)', time: '08:38 AM', type: 'high' },
+-        { id: 2, text: 'New Advisory Published', time: '08:32 AM', type: 'info' },
+-        { id: 3, text: 'Road Obstruction Confirmed', time: '08:25 AM', type: 'medium' },
+-        { id: 4, text: 'Evacuation Center #4 Opened', time: '07:45 AM', type: 'success' }
+-      ];
+-      setActivities(fetchedData);
+-      setIsLoadingActivities(false);
++    let cancelled = false;
++    setIsRefreshing(true);
++    void fetchDashboardData(supabase).then((data) => {
++      if (!cancelled) setDashboard(data);
++    }).catch((error) => {
++      if (!cancelled) {
++        setDashboard({ successfulQueries: 0, totalQueries: 1, warnings: [error.message],
++          metrics: {}, incidents: null, mapMarkers: null, resourceData: null, activities: null });
++      }
++    }).finally(() => { if (!cancelled) setIsRefreshing(false); });
++    return () => { cancelled = true; };
++  }, [refreshVersion]);
++
++  useEffect(() => {
++    const refresh = () => setRefreshVersion((version) => version + 1);
++    const poll = setInterval(refresh, 60_000);
++    // Polling is the fallback when Realtime publication is not enabled for a table.
++    const channel = supabase.channel('dashboard-live-changes');
++    const onChange = () => {
++      if (Date.now() - lastRealtimeRefresh.current < 15_000) return;
++      lastRealtimeRefresh.current = Date.now();
++      refresh();
+     };
+-
+-    fetchActivities();
++    for (const table of ['community_reports', 'advisories', 'evacuation_centers', 'monitoring_stations', 'station_catalog']) {
++      channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange);
++    }
++    channel.subscribe();
++    return () => { clearInterval(poll); void supabase.removeChannel(channel); };
+   }, []);
+ 
+-  const handleRefresh = () => {
+-    setIsRefreshing(true);
+-    setTimeout(() => {
+-      setLastUpdated(formatCurrentDate());
+-      setIsRefreshing(false);
+-    }, 1000);
++  const handleRefresh = () => setRefreshVersion((version) => version + 1);
++  const metrics = dashboard?.metrics || {};
++  const reportData = dashboard?.incidents;
++  const resourceData = dashboard?.resourceData;
++  const hazardMarkers = dashboard?.mapMarkers;
++  const activities = dashboard?.activities;
++  const hasData = (dashboard?.successfulQueries || 0) > 0;
++  const isPartial = hasData && dashboard.successfulQueries < dashboard.totalQueries;
++  const statusLabel = !dashboard ? 'Loading Data' : !hasData ? 'Data Unavailable' : isPartial ? 'Partial Data' : 'Data Connected';
++  const analytics = [
++    { value: metrics.activeAdvisories ?? '—', label: 'Active Advisory Records', icon: <AlertTriangle size={24} />,
++      target: 'content-advisories', colorClass: 'icon-orange' },
++    { value: metrics.pendingReports ?? '—', label: 'Pending Reports', icon: <ClipboardList size={24} />,
++      target: 'community-reports-moderation', colorClass: 'icon-blue' },
++    { value: metrics.reportingStations ? `${metrics.reportingStations.healthy}/${metrics.reportingStations.total}` : '—',
++      label: 'Fresh PAGASA Stations', icon: <Activity size={24} />, target: 'monitoring-stations', colorClass: 'icon-green' },
++  ];
++
++  const handleExport = () => {
++    if (!dashboard || !hasData) return;
++    // Use the existing safe quoted CSV writer and neutralize spreadsheet formulas from source titles.
++    const safe = (value) => {
++      const text = String(value ?? '');
++      return /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
++    };
++    const rows = [];
++    for (const metric of analytics) rows.push({ section: 'Metric', time: dashboard.fetchedAt,
++      label: metric.label, value: metric.value, details: '' });
++    for (const bucket of reportData || []) rows.push({ section: 'Incident trend (4-hour bucket)',
++      time: bucket.time, label: 'Community reports submitted', value: bucket.reports, details: '' });
++    for (const resource of resourceData || []) rows.push({ section: 'Evacuation capacity', time: '',
++      label: safe(resource.name), value: resource.used, details: `Capacity: ${resource.capacity}; available: ${resource.available}` });
++    for (const event of activities || []) rows.push({ section: 'Recent activity', time: event.time,
++      label: safe(event.text), value: '', details: safe(event.source) });
++    for (const marker of hazardMarkers || []) rows.push({ section: 'Map location', time: marker.observedAt,
++      label: safe(marker.label), value: marker.type,
++      details: safe(`${marker.detail}; latitude: ${marker.position[0]}; longitude: ${marker.position[1]}`) });
++    exportCsv('rescuar-dashboard-live-data', rows,
++      [{ label: 'Section', key: 'section' }, { label: 'Time', key: 'time' },
++        { label: 'Label', key: 'label' }, { label: 'Value', key: 'value' }, { label: 'Details', key: 'details' }]);
+   };
+-  
+-  // Real CSV Export Function
+-  const handleExport = () => {
+-    let csvContent = "data:text/csv;charset=utf-8,";
+-    
+-    // Header row
+-    csvContent += "Time,Reports Submitted\n";
+-    // Data rows
+-    reportData.forEach(row => {
+-      csvContent += `${row.time},${row.reports}\n`;
+-    });
+-    
+-    csvContent += "\nRegion,Resources Available,Resources Deployed\n";
+-    resourceData.forEach(row => {
+-      csvContent += `${row.name},${row.available},${row.used}\n`;
+-    });
+-
+-    // Create download link and click it
+-    const encodedUri = encodeURI(csvContent);
+-    const link = document.createElement("a");
+-    link.setAttribute("href", encodedUri);
+-    link.setAttribute("download", "rescuar-analytics-export.csv");
+-    document.body.appendChild(link);
+-    link.click();
+-    document.body.removeChild(link);
+-  };
+-
+-  const analytics = [
+-    { value: '43', label: 'Active Advisories', icon: <AlertTriangle size={24} />, target: 'content-advisories', colorClass: 'icon-orange' },
+-    { value: '128', label: 'Pending Review', icon: <ClipboardList size={24} />, target: 'pending', colorClass: 'icon-blue' },
+-    { value: '98%', label: 'Systems Operational', icon: <Activity size={24} />, target: 'systems', colorClass: 'icon-green' },
+-  ];
+-
+-  const hazardMarkers = [
+-    { id: 1, pos: [14.6432, 121.0968], type: 'flood', label: 'Flooded Area - Tumana' },
+-    { id: 2, pos: [14.6515, 121.1012], type: 'high', label: 'High Severity Report' },
+-    { id: 3, pos: [14.6380, 121.0930], type: 'medium', label: 'Medium Severity Report' },
+-    { id: 4, pos: [14.6480, 121.1080], type: 'evac', label: 'Tumana Evacuation Center' },
+-  ];
+ 
+   const getMarkerColor = (type) => {
+     switch(type) {
+       case 'flood': return '#3b82f6';
+-      case 'high': return '#ef4444';
+-      case 'medium': return '#f97316';
++      case 'report': return '#f97316';
++      case 'pending': return '#94a3b8';
+       case 'evac': return '#10b981';
+       default: return '#94a3b8';
+     }
+@@ -603,31 +588,40 @@
+         <div className="header-left">
+           <div className="title-row">
+             <h1>RescuAR Command Center</h1>
+-            <div className="status-badge">
+-              <div className="status-dot"></div>
+-              Live Operations
++            <div className="status-badge" aria-live="polite" style={(!hasData && dashboard) || isPartial ? { background: '#fffbeb', color: '#92400e', borderColor: '#fde68a' } : {}}>
++              <div className="status-dot" style={hasData && !isPartial ? {} : { background: '#d97706', animation: 'none' }}></div>
++              {statusLabel}
+             </div>
+           </div>
+-          <p className="last-updated">Last synchronized: {lastUpdated}</p>
++          <p className="last-updated">Last successful fetch: {hasData ? formatDashboardTimestamp(dashboard.fetchedAt) : 'Not yet available'} · Auto-refresh every 60 seconds</p>
+         </div>
+         
+         <div className="header-actions">
+-          <button onClick={handleExport} className="btn-outline">
++          <button onClick={handleExport} className="btn-outline" disabled={!hasData || isRefreshing} title="Export currently loaded database records">
+             <Download size={18} />
+             Export Report
+           </button>
+-          <button onClick={handleRefresh} className="btn-primary">
++          <button onClick={handleRefresh} className="btn-primary" disabled={isRefreshing}>
+             <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+             {isRefreshing ? 'Syncing...' : 'Sync Data'}
+           </button>
+         </div>
+       </div>
+ 
++      {Boolean(dashboard?.warnings?.length) && (
++        <div role="alert" style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.75rem', color: '#92400e', fontSize: '0.88rem' }}>
++          <strong>Data notice:</strong> Some sources may be unavailable or incomplete.
++          <ul style={{ margin: '0.35rem 0 0 1.25rem', padding: 0 }}>
++            {dashboard.warnings.map((warning) => <li key={warning}>{warning}</li>)}
++          </ul>
++        </div>
++      )}
++
+       {/* Top Stats Grid */}
+       <div className="stats-grid row g-3">
+         {analytics.map((stat, idx) => (
+           <div key={idx} className="col-12 col-md-6 col-xxl-3">
+-          <button type="button" onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100">
++          <button type="button" disabled={!canView(access, stat.target)} onClick={() => onViewChange(stat.target)} className="stat-card h-100 w-100" style={{ textAlign: 'left', cursor: canView(access, stat.target) ? 'pointer' : 'default' }}>
+             <div className={`stat-icon-wrapper ${stat.colorClass}`}>
+               {stat.icon}
+             </div>
+@@ -652,10 +646,10 @@
+           {/* Analytics Panel */}
+           <div className="content-panel">
+              <div className="panel-header">
+-              <h2 className="section-title"><Activity size={20} color="#4f46e5"/> Incident Trends (24h)</h2>
++              <h2 className="section-title"><Activity size={20} color="#4f46e5"/> Incident Reports (Last 24 Hours)</h2>
+              </div>
+              <div className="chart-container">
+-              <ResponsiveContainer width="100%" height="100%">
++              {reportData === null || reportData === undefined ? <p role="status" style={{ color: '#64748b' }}>Incident data unavailable.</p> : <ResponsiveContainer width="100%" height="100%">
+                 <AreaChart data={reportData} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
+                   <defs>
+                     <linearGradient id="colorReports" x1="0" y1="0" x2="0" y2="1">
+@@ -669,24 +663,28 @@
+                   <RechartsTooltip content={<CustomTooltip />} />
+                   <Area type="monotone" dataKey="reports" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorReports)" name="Reports Submitted" />
+                 </AreaChart>
+-              </ResponsiveContainer>
++              </ResponsiveContainer>}
+              </div>
++             {dashboard?.incidentTruncated && <p style={{ fontSize: '0.8rem', color: '#92400e' }}>Showing only the latest 1,000 reports. The chart is incomplete for high-volume periods.</p>}
+           </div>
+ 
+           {/* Map Panel */}
+           <div className="content-panel">
+             <div className="panel-header">
+-              <h2 className="section-title"><MapIcon size={20} color="#4f46e5"/> Live Hazard Mapping</h2>
++              <h2 className="section-title"><MapIcon size={20} color="#4f46e5"/> Reported Incidents and Evacuation Centers</h2>
+             </div>
+             
+             <div className="map-legend">
+               <span style={{ fontWeight: 700, color: '#475569' }}>Legend:</span>
+-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#3b82f6' }}></div> Flood</div>
+-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#ef4444' }}></div> High Risk</div>
+-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#f97316' }}></div> Medium Risk</div>
+-              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#10b981' }}></div> Evacuation</div>
+-            </div>
+-
++              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#3b82f6' }}></div> Approved flood report</div>
++              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#f97316' }}></div> Other approved report</div>
++              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#94a3b8' }}></div> Pending/unverified report</div>
++              <div className="legend-item"><div className="legend-dot" style={{ backgroundColor: '#10b981' }}></div> Evacuation center (check status)</div>
++            </div>
++
++            <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '0.75rem' }}>Pins reflect geolocated records from Supabase, not verified flood hazard polygons. Reports are limited to the past 30 days. Center status is shown in each popup.</p>
++            {hazardMarkers?.length === 0 && <p role="status" style={{ color: '#64748b', marginBottom: '0.5rem' }}>No geolocated records were returned by the available sources.</p>}
++            {!hazardMarkers && <p role="status" style={{ color: '#b45309', marginBottom: '0.5rem' }}>Map records unavailable.</p>}
+             <div className="map-container-wrapper">
+               <MapContainer 
+                 center={[14.6416, 121.0950]} 
+@@ -709,7 +707,7 @@
+                   </LayersControl.BaseLayer>
+                 </LayersControl>
+                 
+-                {hazardMarkers.map(marker => (
++                {(hazardMarkers || []).map(marker => (
+                   <CircleMarker 
+                     key={marker.id}
+                     center={marker.pos} 
+@@ -720,7 +718,9 @@
+                     weight={2}
+                   >
+                     <Popup className="premium-popup">
+-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{marker.label}</span>
++                      <strong style={{ color: '#0f172a' }}>{marker.label}</strong>
++                      <div style={{ color: '#475569', marginTop: '4px' }}>{marker.detail}</div>
++                      {marker.observedAt && <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>{formatDashboardTimestamp(marker.observedAt)}</div>}
+                     </Popup>
+                   </CircleMarker>
+                 ))}
+@@ -738,41 +738,37 @@
+               <h2 className="section-title">Quick Actions</h2>
+             </div>
+             <div className="actions-grid">
+-              <div className="action-btn" onClick={() => onActionClick('advisory')}>
+-                <Bell size={24} color="#4f46e5" />
+-                New Advisory
+-              </div>
+-              <div className="action-btn" onClick={() => onActionClick('notify')}>
+-                <Shield size={24} color="#10b981" />
+-                Dispatch Unit
+-              </div>
+-              <div className="action-btn" onClick={() => onViewChange('community-residents')}>
+-                <Users size={24} color="#f97316" />
+-                Manage Crew
+-              </div>
+-              <div className="action-btn" onClick={() => onViewChange('monitoring-stations')}>
+-                <Video size={24} color="#3b82f6" />
+-                Live Feeds
+-              </div>
++              {canView(access, 'content-advisories') && <button type="button" className="action-btn" onClick={() => onActionClick('advisory')}>
++                <Bell size={24} color="#4f46e5" /> New Advisory
++              </button>}
++              {canView(access, 'community-reports-moderation') && <button type="button" className="action-btn" onClick={() => onViewChange('community-reports-moderation')}>
++                <Shield size={24} color="#10b981" /> Review Reports
++              </button>}
++              {canView(access, 'community-user-management') && <button type="button" className="action-btn" onClick={() => onViewChange('community-user-management')}>
++                <Users size={24} color="#f97316" /> Manage Users
++              </button>}
++              {canView(access, 'monitoring-stations') && <button type="button" className="action-btn" onClick={() => onViewChange('monitoring-stations')}>
++                <Video size={24} color="#3b82f6" /> Monitoring Stations
++              </button>}
+             </div>
+           </div>
+ 
+           {/* Resources Bar Chart Panel */}
+           <div className="content-panel">
+             <div className="panel-header">
+-              <h2 className="section-title">Resource Allocation</h2>
++              <h2 className="section-title">Evacuation Center Capacity</h2>
+             </div>
+              <div style={{ height: '220px', width: '100%' }}>
+-              <ResponsiveContainer width="100%" height="100%">
++              {!resourceData ? <p role="status" style={{ color: '#64748b' }}>Evacuation capacity data unavailable.</p> : resourceData.length === 0 ? <p role="status" style={{ color: '#64748b' }}>No centers have recorded capacity and occupancy.</p> : <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={resourceData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
++                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(name) => name.length > 14 ? `${name.slice(0, 13)}…` : name} />
+                   <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                   <RechartsTooltip cursor={{fill: '#f1f5f9'}} content={<CustomTooltip />} />
+-                  <Bar dataKey="available" name="Available" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={20} />
+-                  <Bar dataKey="used" name="Deployed" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={20} />
++                  <Bar dataKey="available" name="Available capacity" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={20} />
++                  <Bar dataKey="used" name="Current evacuees" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={20} />
+                 </BarChart>
+-              </ResponsiveContainer>
++              </ResponsiveContainer>}
+              </div>
+           </div>
+ 
+@@ -783,12 +779,16 @@
+             </div>
+             
+             <div className="activity-list">
+-              {isLoadingActivities ? (
++              {isRefreshing && !dashboard ? (
+                 <>
+                   <div className="loading-skeleton" style={{ width: '100%', marginBottom: '8px' }}></div>
+                   <div className="loading-skeleton" style={{ width: '80%', marginBottom: '8px' }}></div>
+                   <div className="loading-skeleton" style={{ width: '90%' }}></div>
+                 </>
++              ) : activities === null || activities === undefined ? (
++                <p role="status" style={{ color: '#64748b' }}>Recent activity unavailable.</p>
++              ) : activities.length === 0 ? (
++                <p role="status" style={{ color: '#64748b' }}>No recent community reports or advisories.</p>
+               ) : (
+                 activities.map((activity) => (
+                   <div key={activity.id} className="activity-item">
+@@ -796,16 +796,19 @@
+                       <div className="activity-dot" style={{ backgroundColor: getActivityColor(activity.type) }}></div>
+                       <span className="activity-text">{activity.text}</span>
+                     </div>
+-                    <span className="activity-time">{activity.time}</span>
++                    <span className="activity-time" title={activity.time}>{formatDashboardTimestamp(activity.time)}</span>
+                   </div>
+                 ))
+               )}
+             </div>
+ 
+-            <button className="view-all-btn" onClick={() => onViewChange('system-logs')}>
+-              View All Logs
++            <p style={{ marginTop: '1rem', fontSize: '0.77rem', color: '#64748b' }}>
++              This feed shows actual creation timestamps, not a full administrator audit trail.
++            </p>
++            {canView(access, 'community-reports-moderation') && <button className="view-all-btn" onClick={() => onViewChange('community-reports-moderation')}>
++              View Community Reports
+               <ChevronRight size={18} style={{ marginLeft: '4px' }} />
+-            </button>
++            </button>}
+           </div>
+ 
+         </div>
+diff --git a/src/services/dashboardDataService.js b/src/services/dashboardDataService.js
+new file mode 100644
+--- /dev/null
++++ b/src/services/dashboardDataService.js
+@@ -0,0 +1,201 @@
++import { getTelemetryFreshness } from '../utils/telemetryFreshness.js';
++
++const MS_HOUR = 60 * 60 * 1000;
++export const INCIDENT_LOOKBACK_MS = 24 * MS_HOUR;
++export const INCIDENT_BUCKET_MS = 4 * MS_HOUR;
++export const REPORT_PAGE_LIMIT = 1000;
++export const MAP_REPORT_LIMIT = 250;
++const MAP_LOOKBACK_MS = 30 * 24 * MS_HOUR;
++const PH_TIME_ZONE = 'Asia/Manila';
++
++const safeDate = (value) => {
++  const ms = Date.parse(value || '');
++  return Number.isFinite(ms) ? ms : null;
++};
++
++const validCoordinate = (value, min, max) => {
++  if (value === null || value === undefined || String(value).trim() === '') return null;
++  const number = Number(value);
++  return Number.isFinite(number) && number >= min && number <= max ? number : null;
++};
++
++const timestampLabel = (ms) => new Intl.DateTimeFormat('en-PH', {
++  timeZone: PH_TIME_ZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
++}).format(new Date(ms));
++
++export function buildIncidentTrend(rows, nowMs) {
++  const start = nowMs - INCIDENT_LOOKBACK_MS;
++  const buckets = Array.from({ length: 6 }, (_, i) => ({
++    time: timestampLabel(start + i * INCIDENT_BUCKET_MS), reports: 0,
++  }));
++  for (const report of rows) {
++    const createdMs = safeDate(report.created_at);
++    if (createdMs === null || createdMs < start || createdMs > nowMs) continue;
++    const index = Math.floor((createdMs - start) / INCIDENT_BUCKET_MS);
++    if (index >= 0 && index < buckets.length) buckets[index].reports += 1;
++  }
++  return buckets;
++}
++
++export function buildMapMarkers(reports, centers) {
++  const markers = [];
++  for (const report of reports) {
++    if (!['Pending', 'Approved'].includes(report.status || 'Pending')) continue;
++    const lat = validCoordinate(report.latitude, -90, 90);
++    const lng = validCoordinate(report.longitude, -180, 180);
++    if (lat === null || lng === null) continue;
++    const category = String(report.category || '').toLowerCase();
++    markers.push({
++      id: `report:${report.id}`, position: [lat, lng],
++      type: report.status === 'Approved' ? (category.includes('flood') ? 'flood' : 'report') : 'pending',
++      label: report.title || report.category || 'Community incident',
++      detail: `Community report · ${report.status || 'Pending'}${report.address ? ` · ${report.address}` : ''}`,
++      observedAt: report.created_at || null,
++    });
++  }
++  for (const center of centers) {
++    const lat = validCoordinate(center.latitude, -90, 90);
++    const lng = validCoordinate(center.longitude, -180, 180);
++    if (lat === null || lng === null) continue;
++    markers.push({
++      id: `center:${center.id}`, position: [lat, lng], type: 'evac',
++      label: center.name || 'Evacuation center',
++      detail: `Evacuation center · ${center.status || 'Status unavailable'}`,
++    });
++  }
++  return markers;
++}
++
++const validNonNegative = (input) => {
++  if (input === null || input === undefined || String(input).trim() === '') return null;
++  const number = Number(input);
++  return Number.isFinite(number) && number >= 0 ? number : null;
++};
++
++export function buildCapacityChart(centers) {
++  return centers.flatMap((center) => {
++    const capacity = validNonNegative(center.capacity);
++    const occupancy = validNonNegative(center.current_evacuees);
++    if (capacity === null || occupancy === null) return [];
++    return [{
++      name: center.name || 'Unnamed center', available: Math.max(0, capacity - occupancy),
++      used: occupancy, capacity,
++    }];
++  }).sort((a, b) => b.capacity - a.capacity).slice(0, 6);
++}
++
++export function buildRecentActivities(reports, advisories) {
++  const reportEvents = reports.map((row) => ({
++    id: `report:${row.id}`, text: `Community report: ${row.title || row.category || 'Untitled'}`,
++    time: row.created_at, type: row.status === 'Pending' ? 'medium' : 'info',
++    source: 'community report',
++  }));
++  const advisoryEvents = advisories.map((row) => ({
++    id: `advisory:${row.id}`, text: `Advisory created: ${row.title || 'Untitled'}`,
++    time: row.created_at, type: 'info', source: 'advisory',
++  }));
++  return [...reportEvents, ...advisoryEvents]
++    .filter((entry) => safeDate(entry.time) !== null)
++    .sort((a, b) => safeDate(b.time) - safeDate(a.time))
++    .slice(0, 8);
++}
++
++export function countReportingStations(stations, catalog, nowMs) {
++  if (!Array.isArray(catalog) || catalog.length === 0) return null;
++  const active = new Set(catalog.filter((row) => row.enabled === true)
++    .map((row) => String(row.station_code || '').trim()).filter(Boolean));
++  const unique = new Map(stations.filter((row) => active.has(String(row.station_code || '').trim()))
++    .map((row) => [String(row.station_code).trim(), row]));
++  return {
++    healthy: [...unique.values()].filter((row) => {
++      const level = validNonNegative(row.level);
++      return level !== null && getTelemetryFreshness(row.observed_at || row.updated_at, nowMs).isUsableAsLive;
++    }).length,
++    total: active.size,
++  };
++}
++
++function makeQuery(client, table, selectColumns) {
++  return client.from(table).select(selectColumns);
++}
++
++// Individual read failures stay visible as unavailable, never fall back to invented values.
++export async function fetchDashboardData(client, nowMs = Date.now()) {
++  const since24 = new Date(nowMs - INCIDENT_LOOKBACK_MS).toISOString();
++  const since30 = new Date(nowMs - MAP_LOOKBACK_MS).toISOString();
++  const queries = {
++    advisoryCount: client.from('advisories').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
++    pendingCount: client.from('community_reports').select('id', { count: 'exact', head: true }).or('status.eq.Pending,status.is.null'),
++    incidentReports: makeQuery(client, 'community_reports', 'id,created_at')
++      .gte('created_at', since24).lte('created_at', new Date(nowMs).toISOString())
++      .order('created_at', { ascending: false }).limit(REPORT_PAGE_LIMIT),
++    mapReports: makeQuery(client, 'community_reports', 'id,title,category,status,address,latitude,longitude,created_at')
++      .gte('created_at', since30).or('status.eq.Pending,status.eq.Approved,status.is.null')
++      .order('created_at', { ascending: false }).limit(MAP_REPORT_LIMIT),
++    latestReports: makeQuery(client, 'community_reports', 'id,title,category,status,created_at')
++      .order('created_at', { ascending: false }).limit(12),
++    latestAdvisories: makeQuery(client, 'advisories', 'id,title,status,created_at')
++      .order('created_at', { ascending: false }).limit(12),
++    centers: makeQuery(client, 'evacuation_centers', 'id,name,latitude,longitude,status,capacity,current_evacuees')
++      .order('name', { ascending: true }).limit(500),
++    stations: makeQuery(client, 'monitoring_stations', 'station_code,level,observed_at,updated_at')
++      .eq('source', 'PAGASA_FFWWS').limit(300),
++    catalog: makeQuery(client, 'station_catalog', 'station_code,enabled')
++      .eq('source', 'PAGASA_FFWWS').limit(300),
++  };
++  // These are PostgREST builders (thenables), so await each without letting one failure hide other data.
++  const entries = await Promise.all(Object.entries(queries).map(async ([key, query]) => {
++    try {
++      const response = await query;
++      return [key, response?.error ? { ok: false, error: response.error.message || 'Query failed' }
++        : { ok: true, data: response?.data ?? [], count: response?.count }];
++    } catch (error) {
++      return [key, { ok: false, error: error?.message || 'Connection failed' }];
++    }
++  }));
++  const result = Object.fromEntries(entries);
++  const read = (key) => result[key].ok ? result[key].data : [];
++  const warnings = Object.entries(result)
++    .filter(([, response]) => !response.ok)
++    .map(([key, response]) => `${key}: ${response.error}`);
++  const mapMarkers = buildMapMarkers(read('mapReports'), read('centers'));
++  const resourceData = result.centers.ok ? buildCapacityChart(read('centers')) : null;
++  const incidents = result.incidentReports.ok ? buildIncidentTrend(read('incidentReports'), nowMs) : null;
++  const stations = result.stations.ok && result.catalog.ok
++    ? countReportingStations(read('stations'), read('catalog'), nowMs) : null;
++  if (result.catalog.ok && result.stations.ok && stations === null) {
++    warnings.push('No verified active station catalog; reporting-stations metric is unavailable.');
++  }
++  const truncated = result.incidentReports.ok && read('incidentReports').length >= REPORT_PAGE_LIMIT;
++  if (truncated) warnings.push('Incident chart shows at most the most recent 1,000 reports in the last 24 hours.');
++  if (result.mapReports.ok && read('mapReports').length >= MAP_REPORT_LIMIT) {
++    warnings.push('Map report pins are limited to the latest 250 records from the last 30 days.');
++  }
++  if (result.centers.ok && read('centers').length >= 500) {
++    warnings.push('Map and capacity data are limited to the first 500 evacuation centers.');
++  }
++  const reportActivityOk = result.latestReports.ok;
++  const advisoryActivityOk = result.latestAdvisories.ok;
++  return {
++    metrics: {
++      activeAdvisories: result.advisoryCount.ok ? result.advisoryCount.count : null,
++      pendingReports: result.pendingCount.ok ? result.pendingCount.count : null,
++      reportingStations: stations,
++    },
++    incidents,
++    incidentTruncated: Boolean(truncated),
++    mapMarkers: result.mapReports.ok || result.centers.ok ? mapMarkers : null,
++    resourceData,
++    activities: reportActivityOk || advisoryActivityOk
++      ? buildRecentActivities(read('latestReports'), read('latestAdvisories')) : null,
++    warnings,
++    successfulQueries: Object.values(result).filter((response) => response.ok).length,
++    totalQueries: Object.keys(queries).length,
++    fetchedAt: new Date().toISOString(),
++  };
++}
++
++export function formatDashboardTimestamp(value) {
++  const ms = safeDate(value);
++  return ms === null ? 'Unknown time' : timestampLabel(ms);
++}
+diff --git a/tests/dashboardDataService.test.mjs b/tests/dashboardDataService.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/dashboardDataService.test.mjs
+@@ -0,0 +1,139 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  buildIncidentTrend, buildMapMarkers, buildCapacityChart, buildRecentActivities,
++  countReportingStations, fetchDashboardData, INCIDENT_LOOKBACK_MS,
++} from '../src/services/dashboardDataService.js';
++
++const NOW = Date.parse('2026-11-23T05:00:00.000Z');
++const ISO = (ms) => new Date(ms).toISOString();
++
++test('24-hour chart counts only actual report creation times and respects bucket edges', () => {
++  const rows = [
++    { created_at: ISO(NOW - INCIDENT_LOOKBACK_MS) },
++    { created_at: ISO(NOW - 20 * 60 * 60 * 1000) },
++    { created_at: ISO(NOW - 1) },
++    { created_at: ISO(NOW - INCIDENT_LOOKBACK_MS - 1) },
++    { created_at: ISO(NOW + 1) },
++    { created_at: 'bad timestamp' },
++  ];
++  const trend = buildIncidentTrend(rows, NOW);
++  assert.equal(trend.length, 6);
++  assert.deepEqual(trend.map((bucket) => bucket.reports), [1, 1, 0, 0, 0, 1]);
++});
++
++test('map does not invent points or treat rejected reports as hazards', () => {
++  const markers = buildMapMarkers([
++    { id: '1', title: 'Flooding', category: 'Flood', status: 'Approved', latitude: '14.65', longitude: '121.09' },
++    { id: '2', title: 'Other event', category: 'Road', status: 'Pending', latitude: 14.65, longitude: 121.10 },
++    { id: '3', status: 'Rejected', latitude: 14.60, longitude: 121.01 },
++    { id: '4', status: 'Approved', latitude: '', longitude: 121.09 },
++    { id: '5', status: 'Approved', latitude: 999, longitude: 121.09 },
++  ], [
++    { id: 7, name: 'Shelter', latitude: '14.61', longitude: '121.11', status: 'Open' },
++    { id: 8, latitude: null, longitude: 121.1 },
++  ]);
++  assert.equal(markers.length, 3);
++  assert.deepEqual(markers.map((m) => m.type), ['flood', 'pending', 'evac']);
++  assert.deepEqual(markers[0].position, [14.65, 121.09]);
++});
++
++test('capacity ignores missing values and does not fabricate available space', () => {
++  assert.deepEqual(buildCapacityChart([
++    { name: 'A', capacity: 100, current_evacuees: 25 },
++    { name: 'B', capacity: null, current_evacuees: 5 },
++    { name: 'C', capacity: 30, current_evacuees: 40 },
++  ]), [
++    { name: 'A', available: 75, used: 25, capacity: 100 },
++    { name: 'C', available: 0, used: 40, capacity: 30 },
++  ]);
++});
++
++test('recent activities merge actual records in time order only', () => {
++  const activities = buildRecentActivities([
++    { id: 'r1', title: 'Bridge', created_at: ISO(NOW - 60_000), status: 'Pending' },
++  ], [
++    { id: 'a1', title: 'Notice', created_at: ISO(NOW - 10_000) },
++    { id: 'a2', title: 'No time' },
++  ]);
++  assert.equal(activities.length, 2);
++  assert.deepEqual(activities.map((event) => event.id), ['advisory:a1', 'report:r1']);
++});
++
++test('station reporting requires verified active catalog, fresh timestamps and valid levels', () => {
++  const rows = [
++    { station_code: 'A', level: 14.5, observed_at: ISO(NOW - 60_000) },
++    { station_code: 'B', level: 15.5, observed_at: ISO(NOW - 90 * 60_000) },
++    { station_code: 'C', level: 18, observed_at: ISO(NOW - 60_000) },
++    { station_code: 'D', level: null, observed_at: ISO(NOW - 60_000) },
++  ];
++  const catalog = ['A','B','D'].map((station_code) => ({station_code, enabled:true}));
++  assert.deepEqual(countReportingStations(rows, catalog, NOW), {healthy:1,total:3});
++  assert.equal(countReportingStations(rows, [], NOW), null);
++});
++
++function fakeClient(results) {
++  const calls = [];
++  return {
++    calls,
++    from(table) {
++      const query = { table, filters: [],
++        select(columns, options) { this.columns = columns; this.options = options; return this; },
++        eq(column, value) { this.filters.push(['eq',column,value]); return this; },
++        or(expression) { this.filters.push(['or',expression]); return this; },
++        gte(column, value) { this.filters.push(['gte',column,value]); return this; },
++        lte(column, value) { this.filters.push(['lte',column,value]); return this; },
++        order(column, options) { this.filters.push(['order',column,options]); return this; },
++        limit(value) { this.filters.push(['limit',value]); return this; },
++        then(resolve, reject) {
++          calls.push(this);
++          const name = table + '/' + (this.options?.head ? 'count' : this.columns);
++          const response = results[name] ?? {data:[],error:null};
++          return Promise.resolve(response).then(resolve,reject);
++        },
++      };
++      return query;
++    },
++  };
++}
++
++test('dashboard combines real Supabase results without fallback demo data', async () => {
++  const client = fakeClient({
++    'advisories/count': {count:2,error:null},
++    'community_reports/count': {count:7,error:null},
++    'community_reports/id,created_at': {data:[{id:'1',created_at:ISO(NOW-20_000)}],error:null},
++    'community_reports/id,title,category,status,address,latitude,longitude,created_at': {data:[
++      {id:'1',title:'Rain',category:'Flood',status:'Approved',latitude:14.64,longitude:121.09,created_at:ISO(NOW-20_000)},
++    ],error:null},
++    'community_reports/id,title,category,status,created_at': {data:[{id:'1',title:'Rain',created_at:ISO(NOW-20_000)}],error:null},
++    'advisories/id,title,status,created_at': {data:[{id:'a1',title:'Advisory',created_at:ISO(NOW-30_000)}],error:null},
++    'evacuation_centers/id,name,latitude,longitude,status,capacity,current_evacuees': {data:[{
++      id:10,name:'Shelter',latitude:14.62,longitude:121.1,status:'Standby',capacity:50,current_evacuees:15,
++    }],error:null},
++    'monitoring_stations/station_code,level,observed_at,updated_at': {data:[{
++      station_code:'A',level:14,observed_at:ISO(NOW-30_000),
++    }],error:null},
++    'station_catalog/station_code,enabled': {data:[{station_code:'A',enabled:true}],error:null},
++  });
++  const result = await fetchDashboardData(client, NOW);
++  assert.equal(result.successfulQueries, 9);
++  assert.deepEqual(result.metrics, {activeAdvisories:2,pendingReports:7,reportingStations:{healthy:1,total:1}});
++  assert.equal(result.incidents.reduce((sum,row)=>sum+row.reports,0),1);
++  assert.equal(result.mapMarkers.length,2);
++  assert.equal(result.resourceData[0].used,15);
++  assert.equal(result.activities[0].id,'report:1');
++  assert.equal(result.warnings.length,0);
++  assert.ok(client.calls.some((query)=>query.table==='community_reports' && query.options?.head));
++});
++
++test('query errors are visible and unavailable datasets remain null, not fake zero', async () => {
++  const client = fakeClient({
++    'advisories/count': {count:null,error:{message:'permission denied'}},
++    'community_reports/id,created_at': {data:null,error:{message:'Network failure'}},
++  });
++  const result = await fetchDashboardData(client, NOW);
++  assert.equal(result.metrics.activeAdvisories,null);
++  assert.equal(result.incidents,null);
++  assert.ok(result.warnings.some((notice)=>notice.includes('permission denied')));
++  assert.equal(result.successfulQueries,7);
++});
