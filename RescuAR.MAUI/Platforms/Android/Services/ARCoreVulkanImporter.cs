@@ -267,6 +267,7 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
             // The conversion fence does not cover Evergine's later sampling
             // of the target. Drain those draws before replacing that texture.
             WaitForGraphicsDeviceIdle(graphicsContext);
+            commandContext?.AcknowledgeDeviceDrain();
             CleanupExternalResources();
 
             return InitializeExternalCameraPipeline(
@@ -726,36 +727,35 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         }
     }
 
-    public void QuiesceAndDisposeOnDrawThread()
+    public void DisposeAfterDeviceDrain()
     {
         ThrowIfNotDrawThread();
-
-        if (disposed)
-        {
-            return;
-        }
-
-        WaitForGraphicsDeviceIdle(graphicsContext);
-
+        commandContext?.AcknowledgeDeviceDrain();
         Dispose();
     }
 
-    public static void WaitForGraphicsDeviceIdle(
-        VKGraphicsContext graphicsContext)
+    public static void WaitForGraphicsDeviceIdle(VKGraphicsContext graphicsContext) =>
+        RequireIdle(WaitForGraphicsDevice(graphicsContext));
+
+    public static bool DrainDeviceForTeardown(VKGraphicsContext graphicsContext)
+    {
+        VkResult result = WaitForGraphicsDevice(graphicsContext);
+        // Vulkan treats confirmed device loss as completion for resource lifetime.
+        // Resize still requires VK_SUCCESS because it will reuse the device.
+        if (result == VkResult.VK_ERROR_DEVICE_LOST) return true;
+        RequireIdle(result);
+        return false;
+    }
+
+    private static VkResult WaitForGraphicsDevice(VKGraphicsContext graphicsContext)
     {
         ArgumentNullException.ThrowIfNull(graphicsContext);
+        VkDevice device = graphicsContext.VkDevice;
+        return device.Handle == 0 ? VkResult.VK_SUCCESS : VulkanNative.vkDeviceWaitIdle(device);
+    }
 
-        VkDevice device =
-            graphicsContext.VkDevice;
-
-        if (device.Handle == 0)
-        {
-            return;
-        }
-
-        VkResult idleResult =
-            VulkanNative.vkDeviceWaitIdle(device);
-
+    private static void RequireIdle(VkResult idleResult)
+    {
         if (idleResult != VkResult.VK_SUCCESS)
         {
             throw new InvalidOperationException(
@@ -774,6 +774,8 @@ public unsafe sealed class ARCoreVulkanImporter : IDisposable
         }
 
         CleanupExternalResources();
+        if (commandContext is not null)
+            throw new InvalidOperationException("Camera resources are still owned by submitted Vulkan work.");
 
         disposed =
             true;

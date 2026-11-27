@@ -300,6 +300,8 @@ public static class ARTrackingStateBridge
                 TransitionAtUtc = timestamp
             };
 
+        public long TrackingEpoch => ActivePauseTransitionCount + LifecyclePauseTransitionCount;
+
         public bool IsRenderableFor(long sessionGeneration) =>
             IsAvailable &&
             IsTracking &&

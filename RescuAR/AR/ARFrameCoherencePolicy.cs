@@ -68,36 +68,35 @@ public static class ARFrameCoherencePolicy
         LogStatisticsIfDue(
             accepted
                 ? "camera/pose coherent"
-                : "camera/pose timestamp or generation mismatch");
+                : "camera/pose timestamp, geometry or tracking ownership mismatch");
 
         return accepted;
     }
 
-    public static ARDepthOcclusionBridge.DepthSnapshot
-        GetDepthForSpatialFrame(
+    public static ARDepthOcclusionBridge.DepthReadLease?
+        AcquireDepthForSpatialFrame(
             ARCameraPoseBridge.SpatialSnapshot frame)
     {
-        ARDepthOcclusionBridge.DepthSnapshot depth =
-            ARDepthOcclusionBridge.Current;
-
-        if (!frame.Metadata.IsValid ||
-            !depth.IsAvailable ||
-            !depth.Metadata.IsValid)
+        var lease = frame.IsTracking
+            ? ARDepthOcclusionBridge.Acquire() : null;
+        if (lease is null)
         {
             Interlocked.Increment(ref rejectedDepthPosePairs);
             LogStatisticsIfDue("Depth or pose unavailable");
-            return ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
+            return null;
         }
 
-        long skewNanoseconds =
-            AbsoluteTimestampDifference(
-                frame.FrameTimestamp,
-                depth.FrameTimestamp);
+        var depth = lease.Snapshot;
+        long skewNanoseconds = frame.FrameTimestamp - depth.FrameTimestamp;
 
         bool accepted =
             frame.Generation == depth.Generation &&
             frame.DisplayGeometry == depth.DisplayGeometry &&
-            skewNanoseconds <= MaximumDepthPoseSkewNanoseconds;
+            frame.Metadata.CameraZoomRatio == depth.Metadata.CameraZoomRatio &&
+            frame.TrackingEpoch == depth.TrackingEpoch &&
+            frame.WorldFrame == depth.WorldFrame &&
+            skewNanoseconds is >= 0 and <= MaximumDepthPoseSkewNanoseconds &&
+            ARCameraPoseBridge.IsCurrentTrackingFrame(frame);
 
         Interlocked.Exchange(
             ref lastDepthPoseSkewNanoseconds,
@@ -110,16 +109,17 @@ public static class ARFrameCoherencePolicy
         else
         {
             Interlocked.Increment(ref rejectedDepthPosePairs);
+            lease.Dispose();
         }
 
         LogStatisticsIfDue(
             accepted
                 ? "Depth/pose coherent"
-                : "Depth/pose timestamp or generation mismatch");
+                : "Depth/pose timestamp, generation, or optics mismatch");
 
         return accepted
-            ? depth
-            : ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
+            ? lease
+            : null;
     }
 
     private static void LogStatisticsIfDue(
@@ -153,19 +153,5 @@ public static class ARFrameCoherencePolicy
             $"lastCameraPoseSkewNs={Interlocked.Read(ref lastCameraPoseSkewNanoseconds)}, " +
             $"lastDepthPoseSkewNs={Interlocked.Read(ref lastDepthPoseSkewNanoseconds)}, " +
             $"reason='{reason}'.");
-    }
-
-    private static long AbsoluteTimestampDifference(
-        long first,
-        long second)
-    {
-        if (first <= 0 || second <= 0)
-        {
-            return long.MaxValue;
-        }
-
-        return first >= second
-            ? first - second
-            : second - first;
     }
 }

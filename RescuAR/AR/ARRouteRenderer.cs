@@ -800,9 +800,9 @@ public static class ARRouteRenderer
             return;
         }
 
-        ARDepthOcclusionBridge.DepthSnapshot depth =
-            ARFrameCoherencePolicy.GetDepthForSpatialFrame(
-                frame);
+        using var depthLease = DepthOcclusionRequested
+            ? ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(frame) : null;
+        var depth = depthLease?.Snapshot ?? ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
 
         int routeSlotCount = Math.Min(slots.Length, MaxRouteSegments);
         ApplyCameraVisualPolicy(

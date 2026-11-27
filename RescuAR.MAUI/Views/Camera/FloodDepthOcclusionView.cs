@@ -165,24 +165,25 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         ARFloodDepthBridge.FloodDepthSnapshot flood =
             ARFloodDepthBridge.Current;
 
-        ARDepthOcclusionBridge.DepthSnapshot depth =
+        using var depthLease =
             ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
                 out ARCameraPoseBridge.SpatialSnapshot spatialFrame)
-                ? ARFrameCoherencePolicy.GetDepthForSpatialFrame(
+                ? ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(
                     spatialFrame)
-                : ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
+                : null;
+        long depthVersion = depthLease?.Snapshot.Version ?? 0;
 
         // Avoid a paint pass when nothing changed. With V7.3 the depth bridge
         // publishes at <=10 Hz, so the UI cannot accidentally spin at the
         // device display refresh rate while the camera itself remains smooth.
         if (flood.Version == requestedFloodVersion &&
-            depth.Version == requestedDepthVersion)
+            depthVersion == requestedDepthVersion)
         {
             return;
         }
 
         requestedFloodVersion = flood.Version;
-        requestedDepthVersion = depth.Version;
+        requestedDepthVersion = depthVersion;
         InvalidateSurface();
     }
 
@@ -229,12 +230,13 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             return;
         }
 
-        ARDepthOcclusionBridge.DepthSnapshot depth =
+        using var depthLease =
             ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
                 out ARCameraPoseBridge.SpatialSnapshot spatialFrame)
-                ? ARFrameCoherencePolicy.GetDepthForSpatialFrame(
+                ? ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(
                     spatialFrame)
-                : ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
+                : null;
+        var depth = depthLease?.Snapshot ?? ARDepthOcclusionBridge.DepthSnapshot.Unavailable;
 
         if (!depth.IsAvailable ||
             !depth.GroundAvailable ||
@@ -285,7 +287,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
             renderedCanvasHeight = canvasHeight;
         }
 
-        if (maskBitmap is null)
+        if (maskBitmap is null || !ARCameraPoseBridge.IsCurrentTrackingFrame(spatialFrame))
         {
             return;
         }
@@ -532,7 +534,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         mappingAllocationCount++;
         LogAllocationMetricsIfNeeded();
 
-        float[] uv = depth.ViewToTextureUv;
+        ReadOnlySpan<float> uv = depth.ViewToTextureUv;
 
         for (int y = 0; y < maskHeight; y++)
         {
@@ -605,7 +607,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         hasCachedMappingUv = true;
     }
 
-    private bool UvMatches(float[] uv)
+    private bool UvMatches(ReadOnlySpan<float> uv)
     {
         if (!hasCachedMappingUv || uv.Length < 8)
         {
@@ -631,7 +633,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
     {
         int width = depth.Width;
         int height = depth.Height;
-        ushort[] values = depth.DepthMillimeters;
+        ReadOnlySpan<ushort> values = depth.DepthMillimeters;
 
         ushort center = values[centerY * width + centerX];
 
@@ -692,7 +694,7 @@ public sealed class FloodDepthOcclusionView : SKCanvasView
         depthMillimeters <= MaximumTrustedDepthMillimeters;
 
     private static void TransformViewToTexture(
-        float[] uv,
+        ReadOnlySpan<float> uv,
         float viewU,
         float viewV,
         out float textureU,

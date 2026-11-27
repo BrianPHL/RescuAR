@@ -132,31 +132,103 @@ internal static class ARSystemAuditChecks
         check(ARCameraPoseBridge.CurrentFrame.IsTracking && !ARCameraPoseBridge.CurrentFrame.Anchor.IsAvailable,
             "invalid ground coordinates withhold floor placement without discarding the valid camera pose");
 
-        bool Depth(ARFrameMetadata frame, int width = 1, int height = 1, float principal = 0,
-            float[]? uv = null)
+        ARCameraPoseBridge.SpatialSnapshot TrackedDepthPose(ARFrameMetadata frame)
+        {
+            ARTrackingStateBridge.PublishObservation(generation.SessionGeneration, "TRACKING", "NONE", frame.FrameTimestamp, true);
+            Pose(frame);
+            return ARCameraPoseBridge.CurrentFrame;
+        }
+
+        bool Depth(ARCameraPoseBridge.SpatialSnapshot frame, int width = 1, int height = 1, float principal = 0,
+            float[]? uv = null, long? imageTimestamp = null, ushort sample = 750)
         {
             var buffer = ArrayPool<ushort>.Shared.Rent(1);
-            bool accepted = ARDepthOcclusionBridge.Publish(frame, width, height, buffer,
+            buffer[0] = sample;
+            bool accepted = ARDepthOcclusionBridge.Publish(imageTimestamp ?? frame.FrameTimestamp, frame, width, height, buffer,
                 uv ?? [0,0, 1,0, 0,1, 1,1], 0,1.5f,0, 0,0,0,1,
-                1,1, principal,0, 1,1, ground,0);
+                1,1, principal,0, 1,1);
             if (!accepted) ArrayPool<ushort>.Shared.Return(buffer);
             return accepted;
         }
-        check(Depth(metadata), "valid depth takes ownership of its pooled buffer");
-        long oldDepthVersion = ARDepthOcclusionBridge.Current.Version;
-        Depth(metadata with { FrameTimestamp = 1_100_000_000 });
-        long newDepthVersion = ARDepthOcclusionBridge.Current.Version;
-        ARDepthOcclusionBridge.Clear(oldDepthVersion);
-        check(ARDepthOcclusionBridge.Current.IsAvailable && ARDepthOcclusionBridge.Current.Version == newDepthVersion,
-            "a stale reader cannot clear a newer depth publication");
-        check(!Depth(delayed), "delayed depth cannot appear newly acquired");
-        check(!Depth(metadata, width: 65_536, height: 65_536), "depth dimension multiplication cannot overflow buffer validation");
-        check(!Depth(metadata, principal: float.NaN), "depth rejects invalid optical intrinsics");
-        check(!Depth(metadata, uv: [0,0, 1,0, 0,float.NaN, 1,1]), "depth rejects invalid texture coordinates");
+
+        ARDepthOcclusionBridge.Clear();
+        long outstanding = ARDepthOcclusionBridge.OutstandingBufferCount;
+        var depthPose = TrackedDepthPose(metadata);
+        check(!Depth(depthPose, imageTimestamp: 0) && !Depth(depthPose, imageTimestamp: depthPose.FrameTimestamp - 1) &&
+            !Depth(depthPose, imageTimestamp: depthPose.FrameTimestamp + 1),
+            "the native depth timestamp must exactly match the camera optics and pose before taking ownership");
+        check(Depth(depthPose), "valid depth takes ownership of its pooled buffer");
+        using var renderRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(depthPose) ??
+            throw new InvalidOperationException("Depth renderer fixture did not acquire the snapshot.");
+        using var floodRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(depthPose) ??
+            throw new InvalidOperationException("Depth flood fixture did not acquire the snapshot.");
+        long oldDepthVersion = renderRead.Snapshot.Version;
+
+        var laterPose = TrackedDepthPose(metadata with { FrameTimestamp = 1_100_000_000 });
+        using (var latestRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(laterPose))
+            check(latestRead?.Snapshot.Version == oldDepthVersion, "a bounded older depth sample can use its own tracked origin");
+        var earlyZoomedPose = TrackedDepthPose(metadata with { FrameTimestamp = 1_125_000_000, CameraZoomRatio = 2.0f });
+        using (var wrongZoomRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(earlyZoomedPose))
+            check(wrongZoomRead is null, "a pre-zoom depth crop cannot be applied to a post-zoom camera pose");
+        var zoomedPose = TrackedDepthPose(metadata with { FrameTimestamp = 1_150_000_000, CameraZoomRatio = 2.0f });
+        check(Depth(zoomedPose, sample: 1200), "matching post-zoom depth replaces the active publication");
+        using (var futureDepthRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(earlyZoomedPose))
+            check(futureDepthRead is null, "depth from a later frame must wait for its camera presentation");
+
+        long newDepthVersion;
+        using (var latestRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(zoomedPose) ??
+               throw new InvalidOperationException("Replacement depth fixture did not acquire the snapshot."))
+        {
+            newDepthVersion = latestRead.Snapshot.Version;
+            ARDepthOcclusionBridge.Clear(oldDepthVersion);
+            check(ARDepthOcclusionBridge.HasCurrentDepth && latestRead.Snapshot.DepthMillimeters[0] == 1200,
+                "a stale reader cannot clear a newer depth publication");
+        }
+
+        var pausedPose = zoomedPose.Metadata with { FrameTimestamp = 1_160_000_000 };
+        ARTrackingStateBridge.PublishObservation(generation.SessionGeneration, "PAUSED", "INSUFFICIENT_FEATURES",
+            pausedPose.FrameTimestamp, true);
+        ARCameraPoseBridge.PublishTrackingUnavailable("INSUFFICIENT_FEATURES", pausedPose);
+        var recoveredPose = TrackedDepthPose(zoomedPose.Metadata with { FrameTimestamp = 1_175_000_000 });
+        using (var previousEpochRead = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(recoveredPose))
+            check(previousEpochRead is null && recoveredPose.TrackingEpoch != zoomedPose.TrackingEpoch,
+                "a bounded depth image from the previous tracking epoch cannot compose over a recovered pose");
+
+        check(ARDepthOcclusionBridge.OutstandingBufferCount == outstanding + 2 &&
+            renderRead.Snapshot.DepthMillimeters[0] == 750 && floodRead.Snapshot.DepthMillimeters[0] == 750,
+            "replacing depth preserves the previous image until both concurrent readers release it");
+        renderRead.Dispose();
+        renderRead.Dispose();
+        check(!renderRead.Snapshot.IsAvailable && ARDepthOcclusionBridge.OutstandingBufferCount == outstanding + 2 &&
+            floodRead.Snapshot.DepthMillimeters[0] == 750,
+            "a reader's duplicate disposal cannot release another reader's buffer");
         ARDepthOcclusionBridge.Clear(newDepthVersion);
-        check(!ARDepthOcclusionBridge.Current.IsAvailable, "the current depth owner can clear its own publication");
+        check(!ARDepthOcclusionBridge.HasCurrentDepth && ARDepthOcclusionBridge.OutstandingBufferCount == outstanding + 1,
+            "clear returns unread current depth immediately and keeps a retired image that a reader owns");
+        floodRead.Dispose();
+        check(ARDepthOcclusionBridge.OutstandingBufferCount == outstanding,
+            "the last release returns depth even when no further frames are published");
+
+        check(!Depth(TrackedDepthPose(delayed)), "delayed depth cannot appear newly acquired");
+        var qualifiedPose = TrackedDepthPose(metadata with { FrameTimestamp = 1_200_000_000 });
+        check(!Depth(qualifiedPose, width: 65_536, height: 65_536), "depth dimensions cannot overflow buffer validation");
+        check(!Depth(qualifiedPose, principal: float.NaN), "depth rejects invalid optical intrinsics");
+        check(!Depth(qualifiedPose, uv: [0,0, 1,0, 0,float.NaN, 1,1]), "depth rejects invalid texture coordinates");
+        if (!Depth(qualifiedPose)) throw new InvalidOperationException("Depth geometry-change fixture did not publish.");
+        using (var beforeResize = ARFrameCoherencePolicy.AcquireDepthForSpatialFrame(qualifiedPose) ??
+               throw new InvalidOperationException("Depth geometry-change fixture did not acquire the snapshot."))
+        {
+            ARRenderGenerationBridge.Activate(generation with { GeometryGeneration = generation.GeometryGeneration + 1 });
+            check(!ARDepthOcclusionBridge.HasCurrentDepth && ARDepthOcclusionBridge.OutstandingBufferCount == outstanding + 1 &&
+                beforeResize.Snapshot.DepthMillimeters[0] == 750,
+                "display generation change stops admitting a snapshot while its existing reader retains the pixels");
+        }
+        check(ARDepthOcclusionBridge.OutstandingBufferCount == outstanding,
+            "disposing the last reader reclaims depth after a generation change");
+        ARRenderGenerationBridge.Activate(generation);
         ARGroundStateBridge.Clear("audit fixture complete");
         ARCameraPoseBridge.Clear();
+        ARTrackingStateBridge.Clear();
 
         check(!ArCoreLifecyclePolicy.CanApplyState(ArCoreLifecycleState.Running, ArCoreLifecycleState.Faulted, 1, 2),
             "a superseded lifecycle timeout cannot fault a newer request");

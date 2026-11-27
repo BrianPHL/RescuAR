@@ -175,6 +175,8 @@ public sealed partial class ArCoreService
         Exception exception,
         long failedGraphicsGeneration)
     {
+        if (!runIntent.ShouldRun || !ARRenderGenerationBridge.IsCurrentGraphics(failedGraphicsGeneration)) return;
+
         ArCameraImportFailureDisposition disposition =
             ArCameraImportFailurePolicy.Classify(
                 exception);
@@ -187,6 +189,7 @@ public sealed partial class ArCoreService
 
             lock (cameraPipelineFailureLock)
             {
+                if (failedGraphicsGeneration != Interlocked.Read(ref graphicsGeneration)) return;
                 failureCount =
                     ++consecutiveCameraImportFailures;
 
@@ -267,8 +270,8 @@ public sealed partial class ArCoreService
 
         lock (cameraPipelineFailureLock)
         {
-            if (terminalCameraPipelineGraphicsGeneration ==
-                failedGraphicsGeneration)
+            if (failedGraphicsGeneration != Interlocked.Read(ref graphicsGeneration) ||
+                terminalCameraPipelineGraphicsGeneration == failedGraphicsGeneration)
             {
                 return;
             }

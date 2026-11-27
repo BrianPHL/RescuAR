@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Reflection;
 using RescuAR.AR;
 using RescuAR.Navigation.Models;
 using RescuAR.Navigation.Progress;
@@ -13,6 +14,78 @@ internal static class ARWorldCorrectionChecks
     {
         CheckAnchorYaw(check);
         CheckPendingRecovery(check);
+        CheckCameraPoseOwnership(check);
+    }
+
+    private static void CheckCameraPoseOwnership(Action<bool, string> check)
+    {
+        var previous = ARRenderGenerationBridge.Current;
+        bool accepting = ARRenderGenerationBridge.IsAcceptingFrames;
+        var worldField = typeof(ARCameraSpatialController).GetField(
+            "worldCorrectionRequestGeneration", BindingFlags.Static | BindingFlags.NonPublic)!;
+        long world = ARCameraSpatialController.WorldFrameGeneration;
+        var generation = new ARRenderGenerationToken(611, 612, 613);
+        var geometry = new ARDisplayGeometrySnapshot(generation.GeometryGeneration, 0, 1080, 1920);
+        ARFrameMetadata At(long timestamp) => new(generation, timestamp, geometry);
+        void Publish(ARFrameMetadata metadata, long? capturedWorldFrame = null, long? capturedTrackingEpoch = null)
+        {
+            ARTrackingStateBridge.PublishObservation(generation.SessionGeneration, "TRACKING", "NONE", metadata.FrameTimestamp, true);
+            ARCameraPoseBridge.PublishFrame(true, "NONE", 0, 1.35f, 0, 0, 0, 0, 1,
+                [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -.2f, 0], .1f, 100,
+                ARGroundStateBridge.GroundStateSnapshot.Unavailable, 0, 0, 0, metadata,
+                capturedWorldFrame: capturedWorldFrame, capturedTrackingEpoch: capturedTrackingEpoch);
+        }
+        bool Pair(ARFrameMetadata camera, out ARCameraPoseBridge.SpatialSnapshot pose) =>
+            ARCameraPoseBridge.TryGetFrameForMetadata(camera, ARFrameCoherencePolicy.MaximumCameraPoseSkewNanoseconds,
+                out pose, out _);
+
+        try
+        {
+            ARRenderGenerationBridge.Activate(generation);
+            ARCameraPoseBridge.Clear();
+            ARTrackingStateBridge.Clear();
+            var first = At(1_000_000_000);
+            Publish(first);
+            check(Pair(first, out var original), "camera pose: normal tracked frame pairs with its source image");
+
+            var paused = At(1_033_000_000);
+            ARTrackingStateBridge.PublishObservation(generation.SessionGeneration, "PAUSED", "INSUFFICIENT_FEATURES", paused.FrameTimestamp, true);
+            check(!Pair(first, out _) && !ARCameraPoseBridge.CurrentFrame.IsTracking,
+                "camera pose: an active loss invalidates the old pose before the unavailable pose is published");
+            ARCameraPoseBridge.PublishTrackingUnavailable("INSUFFICIENT_FEATURES", paused);
+            var recovered = At(1_066_000_000);
+            ARTrackingStateBridge.PublishObservation(generation.SessionGeneration, "TRACKING", "NONE", recovered.FrameTimestamp, true);
+            check(!Pair(first, out _), "camera pose: tracking recovery waits for a pose in the new tracking interval");
+
+            Publish(recovered, capturedTrackingEpoch: original.TrackingEpoch);
+            check(!Pair(recovered, out _), "camera pose: work captured before tracking loss cannot acquire the new epoch at publication");
+            Publish(recovered);
+            check(!Pair(first, out _) && !Pair(paused, out _) && Pair(recovered, out var current) &&
+                current.TrackingEpoch != original.TrackingEpoch,
+                "camera pose: nearby post-recovery poses cannot legitimize pre-recovery camera pixels");
+            check(Pair(At(1_070_000_000), out var nearby) && nearby.FrameTimestamp == recovered.FrameTimestamp,
+                "camera pose: the bounded nearest lookup still works within the active tracking interval");
+            check(!Pair(recovered with { DisplayGeometry = geometry with { Rotation = 1 } }, out _) &&
+                !Pair(recovered with { CameraZoomRatio = 2 }, out _),
+                "camera pose: matching timestamps cannot bypass geometry or zoom ownership");
+
+            worldField.SetValue(null, world + 1);
+            check(!Pair(recovered, out _) && !ARCameraPoseBridge.CurrentFrame.IsTracking,
+                "camera pose: advancing the world invalidates buffered render and live navigation poses");
+            var corrected = At(1_099_000_000);
+            Publish(corrected, capturedWorldFrame: world);
+            check(!Pair(corrected, out _), "camera pose: work captured before correction cannot acquire the new world at publication");
+            Publish(corrected);
+            check(!Pair(recovered, out _) && Pair(corrected, out var rebased) && rebased.WorldFrame == world + 1,
+                "camera pose: only camera pixels at or after the first corrected capture can render with the new world");
+        }
+        finally
+        {
+            worldField.SetValue(null, world);
+            ARCameraPoseBridge.Clear();
+            ARTrackingStateBridge.Clear();
+            if (accepting) ARRenderGenerationBridge.Activate(previous); else ARRenderGenerationBridge.Invalidate();
+        }
     }
 
     private static void CheckAnchorYaw(Action<bool, string> check)

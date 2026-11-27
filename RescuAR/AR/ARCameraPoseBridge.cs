@@ -29,6 +29,8 @@ public static class ARCameraPoseBridge
     private static SpatialSnapshot spatialSnapshot =
         SpatialSnapshot.Unavailable;
 
+    private static long firstTrackedFrameTimestamp = long.MaxValue;
+
     private static readonly SpatialSnapshot[] frameHistory =
         new SpatialSnapshot[FrameHistoryCapacity];
 
@@ -63,10 +65,12 @@ public static class ARCameraPoseBridge
 
             if (!ARRenderGenerationBridge.IsCurrent(
                     snapshot.Generation) ||
-                !snapshot.IsFresh)
+                !snapshot.IsFresh ||
+                snapshot.TrackingEpoch != CurrentTrackingEpoch(snapshot.Generation.SessionGeneration) ||
+                snapshot.WorldFrame != ARCameraSpatialController.WorldFrameGeneration)
             {
                 return snapshot.AsUnavailable(
-                    "The AR pose is stale or belongs to an inactive render generation.");
+                    "The AR pose is stale or its render, tracking or world frame changed.");
             }
 
             return snapshot;
@@ -131,7 +135,9 @@ public static class ARCameraPoseBridge
         float anchorY,
         float anchorZ,
         ARFrameMetadata metadata,
-        System.Numerics.Quaternion? anchorRotation = null)
+        System.Numerics.Quaternion? anchorRotation = null,
+        long? capturedWorldFrame = null,
+        long? capturedTrackingEpoch = null)
     {
         if (!metadata.IsValid ||
             !ARRenderGenerationBridge.TryAcceptCallback(
@@ -163,7 +169,7 @@ public static class ARCameraPoseBridge
             !double.IsFinite(rotationLengthSquared) || rotationLengthSquared < 0.0001 ||
             !projection.IsAvailable)
         {
-            PublishTrackingUnavailable("Invalid camera pose or projection", metadata);
+            PublishTrackingUnavailable("Invalid camera pose or projection", metadata, capturedWorldFrame, capturedTrackingEpoch);
             return;
         }
         if (groundState.HasGroundReference &&
@@ -204,17 +210,10 @@ public static class ARCameraPoseBridge
                 pose,
                 projection,
                 anchor,
-                CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
-                ARCameraSpatialController.WorldFrameGeneration);
+                capturedTrackingEpoch ?? CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
+                capturedWorldFrame ?? ARCameraSpatialController.WorldFrameGeneration);
 
-        lock (sync)
-        {
-            spatialSnapshot =
-                next;
-
-            AddToHistory(
-                next);
-        }
+        PublishSpatialSnapshot(next);
     }
 
     /// <summary>
@@ -223,7 +222,9 @@ public static class ARCameraPoseBridge
     /// </summary>
     public static void PublishTrackingUnavailable(
         string trackingFailureReason,
-        ARFrameMetadata metadata)
+        ARFrameMetadata metadata,
+        long? capturedWorldFrame = null,
+        long? capturedTrackingEpoch = null)
     {
         if (!metadata.IsValid ||
             !ARRenderGenerationBridge.TryAcceptCallback(
@@ -258,22 +259,44 @@ public static class ARCameraPoseBridge
                 PoseSnapshot.Unavailable,
                 projection,
                 AnchorSnapshot.Unavailable,
-                CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
-                ARCameraSpatialController.WorldFrameGeneration);
+                capturedTrackingEpoch ?? CurrentTrackingEpoch(metadata.Generation.SessionGeneration),
+                capturedWorldFrame ?? ARCameraSpatialController.WorldFrameGeneration);
 
+        PublishSpatialSnapshot(next);
+    }
+
+    private static void PublishSpatialSnapshot(SpatialSnapshot next)
+    {
         lock (sync)
         {
-            spatialSnapshot =
-                next;
+            if (!next.IsTracking || !next.Pose.IsTracking)
+                firstTrackedFrameTimestamp = long.MaxValue;
+            else if (!spatialSnapshot.IsTracking || !spatialSnapshot.Pose.IsTracking ||
+                     spatialSnapshot.Generation != next.Generation ||
+                     spatialSnapshot.TrackingEpoch != next.TrackingEpoch || spatialSnapshot.WorldFrame != next.WorldFrame)
+                firstTrackedFrameTimestamp = next.FrameTimestamp;
 
-            AddToHistory(
-                next);
+            spatialSnapshot = next;
+            AddToHistory(next);
         }
     }
 
+    public static bool IsCurrentTrackingFrame(in SpatialSnapshot frame)
+    {
+        var tracking = ARTrackingStateBridge.Current;
+        if (!frame.IsTracking || !frame.Pose.IsTracking || !frame.IsFresh ||
+            !tracking.IsRenderableFor(frame.Generation.SessionGeneration) ||
+            frame.TrackingEpoch != tracking.TrackingEpoch ||
+            frame.WorldFrame != ARCameraSpatialController.WorldFrameGeneration ||
+            !ARRenderGenerationBridge.IsCurrent(frame.Generation)) return false;
+
+        lock (sync)
+            return frame.FrameTimestamp >= firstTrackedFrameTimestamp;
+    }
+
     /// <summary>
-    /// Finds the pose publication nearest to a camera texture timestamp while
-    /// requiring the same session, graphics, and display-geometry generation.
+    /// Finds the nearest tracked pose for a camera texture captured in the
+    /// current tracking interval and world frame, with matching display geometry.
     /// </summary>
     public static bool TryGetFrameForMetadata(
         ARFrameMetadata cameraMetadata,
@@ -284,16 +307,25 @@ public static class ARCameraPoseBridge
         snapshot = SpatialSnapshot.Unavailable;
         timestampSkewNanoseconds = long.MaxValue;
 
-        if (!cameraMetadata.IsValid ||
+        var tracking = ARTrackingStateBridge.Current;
+        if (!cameraMetadata.IsFresh(MaximumPoseAgeMilliseconds, Environment.TickCount64) ||
             maximumTimestampSkewNanoseconds < 0 ||
+            !tracking.IsRenderableFor(cameraMetadata.Generation.SessionGeneration) ||
             !ARRenderGenerationBridge.IsCurrent(
                 cameraMetadata.Generation))
         {
             return false;
         }
 
+        long trackingEpoch = tracking.TrackingEpoch;
+        long worldFrame = ARCameraSpatialController.WorldFrameGeneration;
         lock (sync)
         {
+            // A nearby post-recovery pose must never make old camera pixels
+            // from before a tracking gap or world correction coherent again.
+            if (cameraMetadata.FrameTimestamp < firstTrackedFrameTimestamp)
+                return false;
+
             for (int index = 0;
                  index < frameHistoryCount;
                  index++)
@@ -306,8 +338,11 @@ public static class ARCameraPoseBridge
                     frameHistory[historyIndex];
 
                 if (candidate.Generation != cameraMetadata.Generation ||
-                    !candidate.IsFresh ||
-                    candidate.FrameTimestamp <= 0)
+                    candidate.DisplayGeometry != cameraMetadata.DisplayGeometry ||
+                    candidate.Metadata.CameraZoomRatio != cameraMetadata.CameraZoomRatio ||
+                    candidate.TrackingEpoch != trackingEpoch || candidate.WorldFrame != worldFrame ||
+                    !candidate.IsTracking || !candidate.Pose.IsTracking || !candidate.IsFresh ||
+                    candidate.FrameTimestamp < firstTrackedFrameTimestamp)
                 {
                     continue;
                 }
@@ -330,8 +365,11 @@ public static class ARCameraPoseBridge
             }
         }
 
-        return timestampSkewNanoseconds <=
-            maximumTimestampSkewNanoseconds;
+        if (timestampSkewNanoseconds <= maximumTimestampSkewNanoseconds && IsCurrentTrackingFrame(snapshot))
+            return true;
+
+        snapshot = SpatialSnapshot.Unavailable;
+        return false;
     }
 
     /// <summary>
@@ -389,8 +427,7 @@ public static class ARCameraPoseBridge
     private static long CurrentTrackingEpoch(long session)
     {
         var tracking = ARTrackingStateBridge.Current;
-        return tracking.SessionGeneration == session
-            ? tracking.ActivePauseTransitionCount + tracking.LifecyclePauseTransitionCount : 0;
+        return tracking.SessionGeneration == session ? tracking.TrackingEpoch : 0;
     }
 
     public static void PublishProjectionTelemetry(
@@ -452,6 +489,7 @@ public static class ARCameraPoseBridge
         {
             spatialSnapshot =
                 SpatialSnapshot.UnavailableWithVersion(nextVersion);
+            firstTrackedFrameTimestamp = long.MaxValue;
 
             Array.Clear(
                 frameHistory,

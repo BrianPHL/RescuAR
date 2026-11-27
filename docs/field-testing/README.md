@@ -68,7 +68,13 @@ package must explicitly use `RescuArDiagnosticBuild=false` and be checked with
   the existing eight-second ceiling and all ownership/position/hazard gates.
 - Missing camera background blocks scene presentation. Brief conversion gaps
   must not reveal a skybox; sustained interruption shows camera recovery and
-  eventually offers 2D Map. No route change intentionally restarts ARCore.
+  eventually offers 2D Map. Camera acquisition tolerates brief missing frames,
+  attempts one serialized restart per interruption, and exposes 2D Map on
+  persistent failure. No route change intentionally restarts ARCore.
+- After tracking recovers, AR overlays wait for a camera pose within the new
+  tracking epoch and world frame. A Depth image needs its own matching camera
+  pose before it can contribute to an overlay. Reuse is limited to 250 ms and
+  the same tracking epoch, world frame and zoom.
 - Diagnostic logging does not bypass Depth crash protections. SM-A546E/API 34
   and SM-A546E or SM-A156E/API 36+ retain the baseline quarantine. A controlled
   diagnostic experiment requires `rescuar.arcore.force_depth_on`; explicit
@@ -88,6 +94,8 @@ For GPS/AR cadence and recovery changes, use:
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --alignment-recovery
+dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --camera-lifecycle
 dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-replay
 ./tests/NavigationReplay.ExportChecks.ps1
 ```
@@ -145,6 +153,16 @@ a matching screen recording and logs for each trial.
     shelter. Expect a validated route to an eligible shelter or the shelter
     chooser. Select a shelter manually while automatic selection is pending and
     verify that the late result preserves the user's choice.
+11. Run 20 Camera exit/re-entry cycles and test background/resume. Interrupt
+    the camera if the device permits, then restore access. Expect recent camera
+    frames after recovery or the 2D fallback if recovery is exhausted. During
+    rapid exit/re-entry, verify one Vulkan cleanup acknowledgement per retired
+    graphics generation and no frames from that generation afterwards.
+12. On a Depth-capable device allowed by the baseline policy, pan quickly with
+    flood and route overlays active and briefly interrupt tracking. During the
+    interruption, expect old occlusion and placement to drop out until compatible
+    camera, pose and Depth data return. Record mask misalignment, camera gaps or
+    image exhaustion.
 
 After a trial, collect existing device evidence from the repository root:
 

@@ -610,6 +610,8 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
 
     // A failed drain must prevent destruction of ALL referenced resources,
     // including the image, descriptor, target and pipeline owned by the importer.
+    public void AcknowledgeDeviceDrain() => submissionPending = false;
+
     public bool TryDrainForDisposal()
     {
         if (!submissionPending) return true;

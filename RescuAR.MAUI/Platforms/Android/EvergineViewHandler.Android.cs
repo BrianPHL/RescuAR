@@ -29,10 +29,14 @@ namespace RescuAR.MAUI.Evergine
         private SwapChain? swapChain;
         private FrameBoundaryDisplay? frameBoundaryDisplay;
         private VKGraphicsContext? graphicsContext;
+        private MyApplication? hostedApplication;
+        private bool graphicsInitialized;
+        private bool graphicsInitializationFailed;
+        private bool applicationOwnsGraphicsContext;
+        private Task? graphicsRetirement;
         private readonly object graphicsDrawSync = new();
         private long graphicsGeneration;
         private int graphicsOwnerThreadId;
-        private int surfaceDetachAcknowledgementLogged;
         private int surfaceRecreationPending;
         private int surfaceResizePending;
         private int forceSurfaceRefresh;
@@ -108,6 +112,8 @@ namespace RescuAR.MAUI.Evergine
                     $"{typeof(MyApplication).FullName} instance on Android.");
             }
 
+            if (hostedApplication is not null) return;
+            hostedApplication = rescuarApplication = view.ClaimApplicationForAndroidHandler(rescuarApplication);
 
             AndroidWindowsSystem currentWindowsSystem =
                 windowsSystem
@@ -122,17 +128,8 @@ namespace RescuAR.MAUI.Evergine
             /*
              * Register the Evergine Android window system.
              */
-            application.Container.RegisterInstance(
+            rescuarApplication.Container.RegisterInstance(
                 currentWindowsSystem);
-
-            /*
-             * Create and register the audio device.
-             */
-            var audioDevice =
-                new global::Evergine.OpenAL.ALAudioDevice();
-
-            application.Container.RegisterInstance(
-                audioDevice);
 
             System.Diagnostics.Stopwatch clockTimer =
                 System.Diagnostics.Stopwatch.StartNew();
@@ -142,24 +139,47 @@ namespace RescuAR.MAUI.Evergine
                 {
                     lock (graphicsDrawSync)
                     {
-                        if (!handlerConnected) return;
-                        ConfigureGraphicsContext(
-                            rescuarApplication,
-                            currentSurface);
-
-                        application.Initialize();
-                        if (Volatile.Read(ref surfaceRecreationPending) == 0 &&
-                            currentSurface.Width > 0 && currentSurface.Height > 0)
-                        {
-                            arCoreService?.NotifyGraphicsSurfaceReady();
-                        }
+                        if (!handlerConnected || !ReferenceEquals(androidSurface, currentSurface)) return;
+                        graphicsOwnerThreadId = Environment.CurrentManagedThreadId;
+                        TryInitializeGraphics(rescuarApplication, currentSurface);
                     }
                 },
-                () => DrawOnSurfaceOwner(application, clockTimer));
+                () => DrawOnSurfaceOwner(rescuarApplication, currentSurface, clockTimer));
+        }
+
+        private bool TryInitializeGraphics(MyApplication application, AndroidSurface surface)
+        {
+            if (graphicsInitialized) return true;
+            if (graphicsInitializationFailed || Volatile.Read(ref surfaceRecreationPending) != 0 ||
+                surface.Width <= 0 || surface.Height <= 0) return false;
+
+            try
+            {
+                var service = (ArCoreService)MauiProgram.Services.GetRequiredService<IArCoreService>();
+                // A replacement surface can arrive while the old device is
+                // still draining. Try again from the draw owner without waiting.
+                if (!service.CanInitializeGraphicsContext) return false;
+                application.Container.RegisterInstance(new global::Evergine.OpenAL.ALAudioDevice());
+                ConfigureGraphicsContext(application, surface, service);
+                application.Initialize();
+                graphicsInitialized = true;
+                service.NotifyGraphicsSurfaceReady();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                graphicsInitializationFailed = true;
+                surfaceResizeFailed = true;
+                renderingEnabled = false;
+                if (graphicsGeneration > 0) arCoreService?.NotifyGraphicsSurfaceLost();
+                Log.Error(VulkanTag, $"AR graphics initialization failed: {exception}");
+                return false;
+            }
         }
 
         private void DrawOnSurfaceOwner(
-            global::Evergine.Framework.Application application,
+            MyApplication application,
+            AndroidSurface surface,
             System.Diagnostics.Stopwatch clockTimer)
         {
             bool idle = false;
@@ -167,8 +187,9 @@ namespace RescuAR.MAUI.Evergine
             {
                 // Evergine creates a new worker per SurfaceCreated. Reject
                 // callbacks from the old loop even if it overlaps recreation.
-                if (!handlerConnected ||
-                    Environment.CurrentManagedThreadId != graphicsOwnerThreadId)
+                if (!handlerConnected || !ReferenceEquals(androidSurface, surface) ||
+                    Environment.CurrentManagedThreadId != graphicsOwnerThreadId ||
+                    !TryInitializeGraphics(application, surface))
                 {
                     idle = true;
                 }
@@ -189,7 +210,7 @@ namespace RescuAR.MAUI.Evergine
                         {
                             application.UpdateFrame(gameTime);
                             application.DrawFrame(gameTime);
-                            idle = application is MyApplication { WasArDrawSkipped: true };
+                            idle = application.WasArDrawSkipped;
                         }
                         catch (Exception exception)
                         {
@@ -239,6 +260,9 @@ namespace RescuAR.MAUI.Evergine
             base.ConnectHandler(
                 platformView);
 
+            graphicsRetirement = null;
+            surfaceResizeFailed = false;
+            renderingEnabled = true;
             handlerConnected =
                 true;
 
@@ -269,10 +293,20 @@ namespace RescuAR.MAUI.Evergine
 
         protected override void DisconnectHandler(AndroidSurfaceView platformView)
         {
+            try { _ = RetireGraphicsHost(); }
+            finally { base.DisconnectHandler(platformView); }
+        }
+
+        private Task RetireGraphicsHost()
+        {
             renderingEnabled = false;
+            handlerConnected = false;
+            // Drain any host draw callback before detaching Android's surface.
+            // Vulkan queue completion happens on a worker outside this lock.
             lock (graphicsDrawSync)
             {
-                handlerConnected = false;
+                if (graphicsRetirement is not null) return graphicsRetirement;
+
                 AndroidSurface? surface = androidSurface;
                 if (surface is not null)
                 {
@@ -281,28 +315,21 @@ namespace RescuAR.MAUI.Evergine
                     surface.Closing -= AndroidSurface_OnClosing;
                 }
 
-                // Closing a handler is permanent. The native render loop may
-                // already have stopped, so cleanup cannot await its next draw.
-                try
-                {
-                    if (arCoreService is not null && graphicsContext is not null &&
-                        graphicsGeneration > 0)
-                    {
-                        arCoreService.QuiesceGraphicsContextAtSurfaceBoundary(
-                            graphicsContext, graphicsGeneration, "MAUI handler disconnect");
-                        LogSurfaceDetachAcknowledgement();
-                    }
-                }
-                catch (Exception exception)
-                {
-                    Log.Error(ArCoreTag,
-                        $"Refusing surface detachment before graphics cleanup: {exception}");
-                    return;
-                }
-
+                var retiringApplication = hostedApplication;
+                var retiringChain = swapChain;
+                var retiringDisplay = frameBoundaryDisplay;
+                var retiringContext = graphicsContext;
+                bool contextOwnedByApplication = applicationOwnsGraphicsContext;
+                long retiringGeneration = graphicsGeneration;
+                var retiringService = arCoreService;
                 arCoreService = null;
+                hostedApplication = null;
+                swapChain = null;
                 graphicsContext = null;
                 frameBoundaryDisplay = null;
+                graphicsInitialized = false;
+                graphicsInitializationFailed = false;
+                applicationOwnsGraphicsContext = false;
                 graphicsGeneration = 0;
                 graphicsOwnerThreadId = 0;
                 Interlocked.Exchange(ref forceSurfaceRefresh, 0);
@@ -311,7 +338,22 @@ namespace RescuAR.MAUI.Evergine
                 lastArCoreRotation = int.MinValue;
                 lastArCoreWidth = -1;
                 lastArCoreHeight = -1;
-                base.DisconnectHandler(platformView);
+
+                void ReleaseHost()
+                {
+                    // Display owns the swap chain. The application owns the
+                    // registered context, which must outlive the swap chain.
+                    if (retiringDisplay is not null) retiringDisplay.Dispose();
+                    else retiringChain?.Dispose();
+                    retiringApplication?.Dispose();
+                    if (!contextOwnedByApplication) retiringContext?.Dispose();
+                }
+
+                graphicsRetirement = retiringService is not null && retiringContext is not null && retiringGeneration > 0
+                    ? retiringService.RetireGraphicsContextAtSurfaceBoundaryAsync(retiringContext, retiringGeneration, ReleaseHost)
+                    : Task.Run(ReleaseHost);
+                _ = ObserveGraphicsRetirementAsync(graphicsRetirement, retiringGeneration);
+                return graphicsRetirement;
             }
         }
 
@@ -335,19 +377,23 @@ namespace RescuAR.MAUI.Evergine
             }
         }
 
-        private void LogSurfaceDetachAcknowledgement()
+        private static async Task ObserveGraphicsRetirementAsync(Task retirement, long retiredGeneration)
         {
-            if (Interlocked.Exchange(
-                    ref surfaceDetachAcknowledgementLogged,
-                    1) != 0)
+            try
             {
-                return;
+                try { await retirement.WaitAsync(TimeSpan.FromSeconds(6)).ConfigureAwait(false); }
+                catch (TimeoutException) when (!retirement.IsCompleted)
+                {
+                    Log.Warn(ArCoreTag, $"ARCORE_VULKAN_TEARDOWN_PENDING graphicsGeneration={retiredGeneration}.");
+                    await retirement.ConfigureAwait(false);
+                }
+                if (retiredGeneration > 0)
+                    Log.Info(ArCoreTag, $"ARCORE_SURFACE_DETACH_AFTER_DRAW_ACK graphicsGeneration={retiredGeneration}.");
             }
-
-            Log.Info(
-                ArCoreTag,
-                "ARCORE_SURFACE_DETACH_AFTER_DRAW_ACK " +
-                $"graphicsGeneration={graphicsGeneration}.");
+            catch (Exception exception)
+            {
+                Log.Error(ArCoreTag, $"AR graphics retirement failed for generation {retiredGeneration}: {exception}");
+            }
         }
 
         private void AndroidSurface_OnSurfaceInfoChanged(
@@ -397,7 +443,7 @@ namespace RescuAR.MAUI.Evergine
             object? sender,
             SizeEventArgs e)
         {
-            if (androidSurface is not { } surface)
+            if (!handlerConnected || androidSurface is not { } surface)
             {
                 return;
             }
@@ -477,14 +523,11 @@ namespace RescuAR.MAUI.Evergine
 
         private void ConfigureGraphicsContext(
             MyApplication application,
-            Surface surface)
+            Surface surface,
+            ArCoreService service)
         {
             graphicsOwnerThreadId =
                 Environment.CurrentManagedThreadId;
-
-            Volatile.Write(
-                ref surfaceDetachAcknowledgementLogged,
-                0);
 
             string[] deviceExtensions =
             [
@@ -501,22 +544,10 @@ namespace RescuAR.MAUI.Evergine
                     deviceExtensions,
                     instanceExtensions);
 
-            graphicsContext =
-                createdGraphicsContext;
-
-            arCoreService =
-                MauiProgram.Services
-                    .GetRequiredService<IArCoreService>()
-                as ArCoreService;
-
-            if (arCoreService is null)
-            {
-                throw new InvalidOperationException(
-                    "The registered IArCoreService is not an " +
-                    $"{nameof(ArCoreService)} instance.");
-            }
+            arCoreService = service;
 
             createdGraphicsContext.CreateDevice();
+            graphicsContext = createdGraphicsContext;
 
             Log.Debug(
                 VulkanTag,
@@ -560,7 +591,8 @@ namespace RescuAR.MAUI.Evergine
 
             long createdGraphicsGeneration =
                 arCoreService.SetGraphicsContext(
-                    createdGraphicsContext);
+                    createdGraphicsContext,
+                    RetireGraphicsHost);
 
             graphicsGeneration =
                 createdGraphicsGeneration;
@@ -639,6 +671,7 @@ namespace RescuAR.MAUI.Evergine
 
             application.Container.RegisterInstance(
                 createdGraphicsContext);
+            applicationOwnsGraphicsContext = true;
         }
 
         /// <summary>

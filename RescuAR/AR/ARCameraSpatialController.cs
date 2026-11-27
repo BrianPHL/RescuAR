@@ -772,17 +772,9 @@ public static class ARCameraSpatialController
         long rendererRouteVersion =
             ARRouteRenderer.AppliedRouteVersion;
 
-        ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
-            out ARCameraPoseBridge.SpatialSnapshot frame);
-
-        ARTrackingStateBridge.TrackingSnapshot trackingSnapshot =
-            ARTrackingStateBridge.Current;
-
         bool trackingValid =
-            frame.IsTracking &&
-            frame.Pose.IsTracking &&
-            trackingSnapshot.IsRenderableFor(
-                frame.Generation.SessionGeneration);
+            ARFrameCoherencePolicy.TryGetSpatialFrameForCurrentCamera(
+                out ARCameraPoseBridge.SpatialSnapshot frame);
 
         ARCameraPoseBridge.AnchorSnapshot anchor =
             frame.Anchor;
@@ -1073,6 +1065,18 @@ public static class ARCameraSpatialController
             MonitorRouteAnchorRefinement(
                 rendererRouteVersion,
                 frame);
+        }
+
+        // Monitoring can advance the world frame during this draw. Suppress
+        // every spatial overlay until the camera supplies a pose for it.
+        if (trackingValid && !ARCameraPoseBridge.IsCurrentTrackingFrame(frame))
+        {
+            trackingValid = false;
+            frame = frame.AsUnavailable("Tracking or world frame changed during draw.");
+            anchor = frame.Anchor;
+            routeGroundHeightPlausible = false;
+            capsule.IsEnabled = false;
+            floodDepthRoot.IsEnabled = false;
         }
 
         bool routeAlignmentCorrectionPending;

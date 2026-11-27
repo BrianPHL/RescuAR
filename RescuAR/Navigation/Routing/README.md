@@ -121,8 +121,17 @@ target during an unfinished conversion. Brief gaps retain the last presentation;
 sustained gaps show the existing camera overlay after two seconds of observed
 interruption, with a 2D Map fallback after 20 seconds. Recovery health uses
 completed camera draws as well as current textures, avoiding false covers when
-UI polling coincides with a conversion. This does not restart ARCore or remove
-the renderer's separate tracking/heading/ground safety gates.
+UI polling coincides with a conversion. An interrupted ARCore frame acquisition
+can trigger one serialized camera restart. Persistent or fatal failures expose
+the existing 2D fallback. Route changes do not restart ARCore. After tracking
+recovery or a world-frame change, the camera remains visible while route and
+ground overlays wait for a pose from the new tracking epoch and world frame.
+
+Depth occlusion uses the native image timestamp and projection from the matching
+camera pose. Route and flood renderers can reuse that copy for up to 250 ms while
+its tracking epoch, world frame and zoom still match. Permanent surface detach
+stops draws and hands off Vulkan cleanup before a replacement graphics context
+can start. Temporary surface recreation retains the graphics context.
 
 Online routing can continue if the offline graph fails. Arrival and mapped road
 access are held until the restriction graph is available; missing barrier data

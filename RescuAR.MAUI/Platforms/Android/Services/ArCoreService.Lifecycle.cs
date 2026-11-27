@@ -598,6 +598,8 @@ public sealed partial class ArCoreService
 
             VKGraphicsContext? shutdownGraphicsContext;
             long shutdownGraphicsGeneration;
+            Task? surfaceRetirement;
+            Func<Task>? retireHost;
 
             lock (graphicsTeardownLock)
             {
@@ -606,6 +608,8 @@ public sealed partial class ArCoreService
 
                 shutdownGraphicsGeneration =
                     Interlocked.Read(ref graphicsGeneration);
+                surfaceRetirement = graphicsTeardownTask;
+                retireHost = retireGraphicsHost;
 
                 graphicsContext = null;
 
@@ -618,14 +622,7 @@ public sealed partial class ArCoreService
             }
 
             ARRenderGenerationBridge.Invalidate();
-
-            bool cameraProcessorIdle = await Task.Run(
-                () => ARCameraTextureBridge.SuspendProcessing(CameraProcessorDrainTimeout),
-                cancellationToken).ConfigureAwait(false);
-            if (!cameraProcessorIdle)
-            {
-                throw new TimeoutException("The camera draw-thread processor did not become idle.");
-            }
+            ARCameraTextureBridge.SuspendProcessing(TimeSpan.Zero);
 
             CancellationTokenSource? frameCancellation = frameLoopCancellation;
             Task? runningLoop = frameLoopTask;
@@ -653,25 +650,30 @@ public sealed partial class ArCoreService
             await CancelGroundAnchorRecoveryAsync(
                 cancellationToken).ConfigureAwait(false);
 
-            if (shutdownGraphicsContext is not null)
+            Exception? graphicsFailure = null;
+            try
             {
-                Task drawThreadTeardown =
-                    ARCameraTextureBridge.RequestDrawThreadTeardownAsync(
-                        shutdownGraphicsGeneration,
-                        () => TeardownGraphicsResourcesOnDrawThread(
-                            shutdownGraphicsContext,
-                            shutdownGraphicsGeneration));
+                if (surfaceRetirement is not null)
+                {
+                    await surfaceRetirement.WaitAsync(GraphicsTeardownTimeout, cancellationToken).ConfigureAwait(false);
+                }
+                else if (shutdownGraphicsContext is not null)
+                {
+                    if (retireHost is null)
+                        throw new InvalidOperationException("No render owner is available to stop Vulkan draws.");
 
-                await drawThreadTeardown.WaitAsync(
-                    GraphicsTeardownTimeout,
-                    cancellationToken).ConfigureAwait(false);
+                    await Task.Run(retireHost).WaitAsync(GraphicsTeardownTimeout, cancellationToken).ConfigureAwait(false);
+                }
+                else if (importer is not null)
+                {
+                    throw new InvalidOperationException("The Vulkan camera importer has no context available for teardown.");
+                }
             }
-            else if (importer is not null)
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new InvalidOperationException(
-                    "The ARCore Vulkan importer still exists after its " +
-                    "graphics context became unavailable. Refusing an " +
-                    "off-thread resource teardown.");
+                // The stopped producer and acquired native buffer references
+                // let the Session close while its GPU owner retains resources.
+                graphicsFailure = exception;
             }
 
             bool updateGateEntered = await EnterGateAsync(
@@ -729,11 +731,7 @@ public sealed partial class ArCoreService
             lastProcessedTimestamp = long.MinValue;
             ARRenderGenerationBridge.Invalidate();
 
-            lock (graphicsTeardownLock)
-            {
-                graphicsTeardownContext = null;
-                graphicsTeardownTask = null;
-            }
+            if (graphicsFailure is not null) throw graphicsFailure;
 
             SetLifecycleState(ArCoreLifecycleState.Disposed, ArCoreFailure.None, requestGeneration);
             LifecycleChanged = null;
@@ -845,7 +843,7 @@ public sealed partial class ArCoreService
         lastSessionOperationException = null;
         try
         {
-            bool cameraProcessorIdle = await Task.Run(
+            bool cameraProcessorIdle = graphicsContext is null || await Task.Run(
                 () => ARCameraTextureBridge.SuspendProcessing(CameraProcessorDrainTimeout),
                 cancellationToken).ConfigureAwait(false);
             if (!cameraProcessorIdle)
@@ -1364,6 +1362,7 @@ public sealed partial class ArCoreService
 
     private void InvalidatePublishedFrameState()
     {
+        AdvanceCameraFramePublicationCycle();
         ARCameraPoseBridge.Clear();
         ARDepthOcclusionBridge.Clear();
         ARCameraTextureBridge.Clear();

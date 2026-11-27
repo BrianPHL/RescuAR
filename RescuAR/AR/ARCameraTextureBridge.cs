@@ -27,10 +27,7 @@ public static class ARCameraTextureBridge
     private static long processorGraphicsGeneration;
     private static bool processingSuspended = true;
     private static int activeProcessorCalls;
-    private static TeardownRequest? pendingTeardown;
-    private static TeardownRequest? teardownAwaitingFrameBoundary;
-    private static long completedTeardownGeneration;
-    private static Task completedTeardownTask = Task.CompletedTask;
+    private static TeardownRequest? teardown;
 
     public static TextureSnapshot Current
     {
@@ -81,9 +78,16 @@ public static class ARCameraTextureBridge
 
         lock (processingSync)
         {
+            if (activeProcessorCalls != 0 || teardown is { Step: not TeardownStep.Complete })
+                throw new InvalidOperationException("The previous camera draw owner has not finished.");
+
+            if (processorGraphicsGeneration == graphicsGeneration && teardown is not null)
+                throw new InvalidOperationException("A retired camera generation cannot be registered again.");
+
             drawThreadProcessor = processor;
             processorGraphicsGeneration = graphicsGeneration;
             processingSuspended = true;
+            teardown = null;
         }
     }
 
@@ -113,9 +117,7 @@ public static class ARCameraTextureBridge
     {
         lock (processingSync)
         {
-            if (graphicsGeneration != processorGraphicsGeneration ||
-                pendingTeardown is not null ||
-                teardownAwaitingFrameBoundary is not null)
+            if (graphicsGeneration != processorGraphicsGeneration || teardown is not null)
             {
                 return;
             }
@@ -142,33 +144,15 @@ public static class ARCameraTextureBridge
                 return Task.CompletedTask;
             }
 
-            if (completedTeardownGeneration == graphicsGeneration)
-            {
-                return completedTeardownTask;
-            }
-
-            if (pendingTeardown is not null &&
-                pendingTeardown.GraphicsGeneration == graphicsGeneration)
-            {
-                return pendingTeardown.Completion.Task;
-            }
-
-            if (teardownAwaitingFrameBoundary is not null &&
-                teardownAwaitingFrameBoundary.GraphicsGeneration ==
-                    graphicsGeneration)
-            {
-                return teardownAwaitingFrameBoundary.Completion.Task;
-            }
-
-            processingSuspended = true;
-            drawThreadProcessor = null;
-
-            TeardownRequest request =
-                new(graphicsGeneration, teardownAction);
-
-            pendingTeardown = request;
-            return request.Completion.Task;
+            return GetTeardownLocked(teardownAction).Completion.Task;
         }
+    }
+
+    private static TeardownRequest GetTeardownLocked(Action action)
+    {
+        processingSuspended = true;
+        drawThreadProcessor = null;
+        return teardown ??= new TeardownRequest(action);
     }
 
     /// <summary>
@@ -176,7 +160,7 @@ public static class ARCameraTextureBridge
     /// boundary on the Evergine owner thread and no later draw frame is
     /// guaranteed. Any waiter for the same generation receives the result.
     /// </summary>
-    public static void ExecuteDrawThreadTeardownAtSurfaceBoundary(
+    public static Task ExecuteDrawThreadTeardownAtSurfaceBoundaryAsync(
         long graphicsGeneration,
         Action teardownAction)
     {
@@ -188,14 +172,17 @@ public static class ARCameraTextureBridge
         {
             if (graphicsGeneration != processorGraphicsGeneration)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            if (completedTeardownGeneration == graphicsGeneration)
+            if (teardown is { Step: TeardownStep.AwaitingFrameBoundary } finished)
             {
-                completedTeardownTask.GetAwaiter().GetResult();
-                return;
+                CompleteTeardownLocked(finished);
+                return finished.Completion.Task;
             }
+
+            if (teardown is { Step: TeardownStep.Running or TeardownStep.Complete } claimed)
+                return claimed.Completion.Task;
 
             if (activeProcessorCalls != 0)
             {
@@ -204,45 +191,20 @@ public static class ARCameraTextureBridge
                     "camera work is still active.");
             }
 
-            request =
-                pendingTeardown ??
-                teardownAwaitingFrameBoundary ??
-                new TeardownRequest(
-                    graphicsGeneration,
-                    teardownAction);
-
-            pendingTeardown = null;
-            teardownAwaitingFrameBoundary = null;
-            processingSuspended = true;
-            drawThreadProcessor = null;
+            request = GetTeardownLocked(teardownAction);
+            request.Step = TeardownStep.Running;
+            activeProcessorCalls++;
+            processorIdle.Reset();
         }
 
-        Exception? failure = null;
-
-        try
-        {
-            request.Action();
-        }
-        catch (Exception exception)
-        {
-            failure = exception;
-        }
-
+        request.Run();
         lock (processingSync)
         {
-            completedTeardownGeneration = graphicsGeneration;
-            completedTeardownTask = request.Completion.Task;
+            if (--activeProcessorCalls == 0) processorIdle.Set();
+            CompleteTeardownLocked(request);
         }
 
-        if (failure is null)
-        {
-            request.Completion.TrySetResult();
-        }
-        else
-        {
-            request.Completion.TrySetException(failure);
-            throw failure;
-        }
+        return request.Completion.Task;
     }
 
     /// <summary>
@@ -253,7 +215,7 @@ public static class ARCameraTextureBridge
         long drawGraphicsGeneration)
     {
         Func<bool>? work = null;
-        TeardownRequest? teardown = null;
+        TeardownRequest? drawTeardown = null;
         bool skipDraw;
 
         lock (processingSync)
@@ -263,12 +225,12 @@ public static class ARCameraTextureBridge
                 (processingSuspended ||
                  drawGraphicsGeneration != processorGraphicsGeneration);
 
-            if (pendingTeardown is not null &&
-                pendingTeardown.GraphicsGeneration == drawGraphicsGeneration)
+            if (drawGraphicsGeneration == processorGraphicsGeneration &&
+                teardown is { Step: TeardownStep.Queued } queued)
             {
-                teardown = pendingTeardown;
-                pendingTeardown = null;
-                work = () => { teardown.Action(); return true; };
+                drawTeardown = queued;
+                drawTeardown.Step = TeardownStep.Running;
+                work = () => { queued.Run(); return true; };
                 skipDraw = true;
             }
             else if (!skipDraw)
@@ -292,15 +254,6 @@ public static class ARCameraTextureBridge
         {
             skipDraw |= work();
         }
-        catch (Exception exception)
-        {
-            if (teardown is null)
-            {
-                throw;
-            }
-
-            teardown.Exception = exception;
-        }
         finally
         {
             lock (processingSync)
@@ -312,9 +265,9 @@ public static class ARCameraTextureBridge
                     processorIdle.Set();
                 }
 
-                if (teardown is not null)
+                if (drawTeardown is not null)
                 {
-                    teardownAwaitingFrameBoundary = teardown;
+                    drawTeardown.Step = TeardownStep.AwaitingFrameBoundary;
                 }
 
                 // The importer may suspend this generation after a GPU error.
@@ -334,41 +287,19 @@ public static class ARCameraTextureBridge
     public static void CompleteDrawThreadFrame(
         long drawGraphicsGeneration)
     {
-        TeardownRequest? completed = null;
-
         lock (processingSync)
         {
-            if (teardownAwaitingFrameBoundary is not null &&
-                teardownAwaitingFrameBoundary.GraphicsGeneration ==
-                    drawGraphicsGeneration)
-            {
-                completed = teardownAwaitingFrameBoundary;
-                teardownAwaitingFrameBoundary = null;
-            }
+            if (drawGraphicsGeneration == processorGraphicsGeneration &&
+                teardown is { Step: TeardownStep.AwaitingFrameBoundary } finished)
+                CompleteTeardownLocked(finished);
         }
+    }
 
-        if (completed is null)
-        {
-            return;
-        }
-
-        lock (processingSync)
-        {
-            completedTeardownGeneration =
-                completed.GraphicsGeneration;
-
-            completedTeardownTask =
-                completed.Completion.Task;
-        }
-
-        if (completed.Exception is null)
-        {
-            completed.Completion.TrySetResult();
-        }
-        else
-        {
-            completed.Completion.TrySetException(completed.Exception);
-        }
+    private static void CompleteTeardownLocked(TeardownRequest request)
+    {
+        request.Step = TeardownStep.Complete;
+        if (request.Exception is { } failure) request.Completion.TrySetException(failure);
+        else request.Completion.TrySetResult();
     }
 
     public static bool Publish(
@@ -449,21 +380,22 @@ public static class ARCameraTextureBridge
                 null);
     }
 
-    private sealed class TeardownRequest
-    {
-        public TeardownRequest(
-            long graphicsGeneration,
-            Action action)
-        {
-            GraphicsGeneration = graphicsGeneration;
-            Action = action;
-            Completion = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-        }
+    private enum TeardownStep { Queued, Running, AwaitingFrameBoundary, Complete }
 
-        public long GraphicsGeneration { get; }
-        public Action Action { get; }
-        public TaskCompletionSource Completion { get; }
-        public Exception? Exception { get; set; }
+    private sealed class TeardownRequest(Action action)
+    {
+        private Action? actionToRun = action;
+
+        public TeardownStep Step { get; set; }
+        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Exception? Exception { get; private set; }
+
+        public void Run()
+        {
+            var run = actionToRun;
+            actionToRun = null;
+            try { run!(); }
+            catch (Exception exception) { Exception = exception; }
+        }
     }
 }

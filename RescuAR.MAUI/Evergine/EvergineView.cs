@@ -4,6 +4,19 @@ namespace RescuAR.MAUI.Evergine
 {
     public class EvergineView : View
     {
+#if ANDROID
+        private global::RescuAR.MyApplication? claimedApplication;
+
+        internal global::RescuAR.MyApplication ClaimApplicationForAndroidHandler(global::RescuAR.MyApplication application)
+        {
+            // A replacement handler needs a new container. The pinned engine
+            // only registers its surface, display and graphics device once.
+            if (ReferenceEquals(claimedApplication, application)) return new global::RescuAR.MyApplication();
+            claimedApplication = application;
+            return application;
+        }
+#endif
+
         public static readonly BindableProperty ApplicationProperty =
             BindableProperty.Create(
                 nameof(Application),

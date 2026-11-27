@@ -90,6 +90,16 @@ if (args.Contains("--ar-audit"))
     Console.WriteLine($"{passed} AR audit, route lookup, depth, registration and recovery checks passed.");
     return;
 }
+if (args.Contains("--camera-lifecycle"))
+{
+    ARCameraAcquisitionChecks.Run(Check);
+    ARCameraTeardownChecks.Run(Check);
+    ARCameraPresentationChecks.Run(Check);
+    CameraStartupChecks.Run(Check);
+    SurfaceResizeChecks.Run(Check);
+    Console.WriteLine($"{passed} camera lifecycle regression checks passed.");
+    return;
+}
 if (args.Contains("--offline-handoff"))
 {
     await OfflineHandoffChecks.RunAsync(Check);

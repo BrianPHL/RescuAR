@@ -55,6 +55,9 @@ public readonly record struct ARFrameMetadata(
     // Publishing later must not make an old camera or depth frame fresh again.
     public long AcquiredAtMonotonicMilliseconds { get; init; } = Environment.TickCount64;
 
+    // Depth UVs and the camera background use the same presentation crop.
+    public float CameraZoomRatio { get; init; } = 1.0f;
+
     public bool IsFresh(long maximumAgeMilliseconds, long monotonicNow)
     {
         long age = monotonicNow - AcquiredAtMonotonicMilliseconds;

@@ -1,7 +1,6 @@
 using RescuAR.Diagnostics;
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Threading;
 
 namespace RescuAR.AR;
@@ -9,63 +8,59 @@ namespace RescuAR.AR;
 /// <summary>
 /// Thread-safe handoff for ARCore's smoothed 16-bit depth image.
 /// The publisher transfers ownership of a rented depth buffer to this bridge.
-/// Superseded buffers stay retired beyond the maximum reader age before they
-/// return to the pool, preventing consumers from observing recycled memory.
+/// A superseded buffer returns to the pool after its last reader releases it.
 /// </summary>
 public static class ARDepthOcclusionBridge
 {
     public const long MaximumDepthAgeMilliseconds = 750;
 
-    private const long RetiredBufferSafetyMilliseconds =
-        MaximumDepthAgeMilliseconds * 3;
-
     private const string LogTag = "RescuAR-DepthBuffers";
 
     private static readonly object sync = new();
-    private static readonly Queue<RetiredBuffer> retiredBuffers = new();
 
     private static long version;
     private static long rentedBufferCount;
     private static long returnedBufferCount;
+    private static long retiredBufferCount;
     private static long peakRetiredBufferCount;
     private static long lastMetricsLogTimestamp = long.MinValue;
 
-    private static DepthSnapshot current = DepthSnapshot.Unavailable;
+    private static PublishedDepth? current;
 
-    public static DepthSnapshot Current
+    public static bool HasCurrentDepth
     {
         get
         {
-            DepthSnapshot snapshot;
-
             lock (sync)
-            {
-                ReclaimRetiredBuffersLocked(Environment.TickCount64);
-                snapshot = current;
-            }
+                return GetCurrentLocked() is not null;
+        }
+    }
 
-            if (!snapshot.IsAvailable)
-            {
-                return snapshot;
-            }
+    /// <summary>The number of published pooled arrays still owned by the bridge or a reader.</summary>
+    public static long OutstandingBufferCount
+    {
+        get { lock (sync) return rentedBufferCount - returnedBufferCount; }
+    }
 
-            if (!ARRenderGenerationBridge.IsCurrent(snapshot.Generation) ||
-                !snapshot.IsFresh)
-            {
-                Clear(snapshot.Version);
-                return DepthSnapshot.UnavailableWithVersion(snapshot.Version);
-            }
-
-            return snapshot;
+    internal static DepthReadLease? Acquire()
+    {
+        lock (sync)
+        {
+            var publication = GetCurrentLocked();
+            if (publication is null) return null;
+            publication.ReaderCount++;
+            return new DepthReadLease(publication);
         }
     }
 
     /// <summary>
     /// Publishes a rented depth array. Returns true only when ownership was
     /// accepted; on false the caller remains responsible for returning it.
+    /// The native timestamp must identify the exact pose and optics of the image.
     /// </summary>
     public static bool Publish(
-        ARFrameMetadata metadata,
+        long imageTimestamp,
+        in ARCameraPoseBridge.SpatialSnapshot spatial,
         int width,
         int height,
         ushort[] rentedDepthMillimeters,
@@ -82,17 +77,16 @@ public static class ARDepthOcclusionBridge
         float principalPointX,
         float principalPointY,
         int textureWidth,
-        int textureHeight,
-        ARGroundStateBridge.GroundStateSnapshot groundState,
-        float groundWorldY)
+        int textureHeight)
     {
         ArgumentNullException.ThrowIfNull(rentedDepthMillimeters);
         ArgumentNullException.ThrowIfNull(viewToTextureUv);
 
-        if (!metadata.IsFresh(MaximumDepthAgeMilliseconds, Environment.TickCount64) ||
-            !ARRenderGenerationBridge.TryAcceptCallback(
-                metadata.Generation,
-                "depth-publish") ||
+        var metadata = spatial.Metadata;
+        var groundState = spatial.Anchor.GroundState;
+        float groundWorldY = spatial.Anchor.IsAvailable ? spatial.Anchor.PositionY : 0.0f;
+        if (imageTimestamp <= 0 || imageTimestamp != metadata.FrameTimestamp ||
+            !ARCameraPoseBridge.IsCurrentTrackingFrame(spatial) ||
             width <= 0 ||
             height <= 0 ||
             rentedDepthMillimeters.LongLength < (long)width * height ||
@@ -121,11 +115,14 @@ public static class ARDepthOcclusionBridge
         long now = Environment.TickCount64;
         lock (sync)
         {
+            if (!metadata.IsFresh(MaximumDepthAgeMilliseconds, now) ||
+                !ARRenderGenerationBridge.IsCurrent(metadata.Generation)) return false;
+
             DepthSnapshot next = new(
                 ++version,
                 metadata,
-                metadata.AcquiredAtMonotonicMilliseconds,
-                true,
+                spatial.TrackingEpoch,
+                spatial.WorldFrame,
                 width,
                 height,
                 rentedDepthMillimeters,
@@ -146,10 +143,9 @@ public static class ARDepthOcclusionBridge
                 groundState,
                 groundWorldY);
 
-            RetireCurrentBufferLocked(now);
-            current = next;
+            RetireCurrentBufferLocked();
+            current = new PublishedDepth(next);
             rentedBufferCount++;
-            ReclaimRetiredBuffersLocked(now);
             LogBufferMetricsIfNeededLocked(now);
         }
 
@@ -162,41 +158,40 @@ public static class ARDepthOcclusionBridge
 
         lock (sync)
         {
-            if (expectedVersion.HasValue && current.Version != expectedVersion.Value) return;
-            RetireCurrentBufferLocked(now);
-            current = DepthSnapshot.UnavailableWithVersion(++version);
-            ReclaimRetiredBuffersLocked(now);
+            if (expectedVersion.HasValue && current?.Snapshot.Version != expectedVersion.Value) return;
+            RetireCurrentBufferLocked();
             LogBufferMetricsIfNeededLocked(now);
         }
     }
 
-    private static void RetireCurrentBufferLocked(long now)
+    private static PublishedDepth? GetCurrentLocked()
     {
-        if (!current.OwnsPooledDepthBuffer ||
-            current.DepthMillimeters.Length == 0)
+        if (current is { } publication &&
+            (!publication.Snapshot.IsFresh || !ARRenderGenerationBridge.IsCurrent(publication.Snapshot.Generation)))
         {
-            return;
+            RetireCurrentBufferLocked();
         }
-
-        retiredBuffers.Enqueue(
-            new RetiredBuffer(
-                current.DepthMillimeters,
-                now + RetiredBufferSafetyMilliseconds));
-
-        peakRetiredBufferCount = Math.Max(
-            peakRetiredBufferCount,
-            retiredBuffers.Count);
+        return current;
     }
 
-    private static void ReclaimRetiredBuffersLocked(long now)
+    private static void RetireCurrentBufferLocked()
     {
-        while (retiredBuffers.Count > 0 &&
-               retiredBuffers.Peek().ReturnAfterMonotonicMilliseconds <= now)
+        if (current is not { } publication) return;
+        current = null;
+        publication.Retired = true;
+        if (publication.ReaderCount == 0)
+            ReturnBufferLocked(publication);
+        else
         {
-            RetiredBuffer retired = retiredBuffers.Dequeue();
-            ArrayPool<ushort>.Shared.Return(retired.Buffer, clearArray: false);
-            returnedBufferCount++;
+            retiredBufferCount++;
+            peakRetiredBufferCount = Math.Max(peakRetiredBufferCount, retiredBufferCount);
         }
+    }
+
+    private static void ReturnBufferLocked(PublishedDepth publication)
+    {
+        ArrayPool<ushort>.Shared.Return(publication.Snapshot.RentedDepthMillimeters!, clearArray: false);
+        returnedBufferCount++;
     }
 
     private static void LogBufferMetricsIfNeededLocked(long now)
@@ -213,41 +208,54 @@ public static class ARDepthOcclusionBridge
             LogTag,
             "ARCORE_DEPTH_BUFFER_METRICS " +
             $"rented={rentedBufferCount}; returned={returnedBufferCount}; " +
-            $"retired={retiredBuffers.Count}; peakRetired={peakRetiredBufferCount}; " +
-            $"active={(current.OwnsPooledDepthBuffer ? 1 : 0)}.");
+            $"retired={retiredBufferCount}; peakRetired={peakRetiredBufferCount}; " +
+            $"active={(current is not null ? 1 : 0)}.");
     }
 
-    private readonly record struct RetiredBuffer(
-        ushort[] Buffer,
-        long ReturnAfterMonotonicMilliseconds);
+    internal sealed class PublishedDepth(DepthSnapshot snapshot)
+    {
+        internal DepthSnapshot Snapshot { get; } = snapshot;
+        internal int ReaderCount;
+        internal bool Retired;
+    }
+
+    /// <summary>Keep this lease alive for the whole operation that reads its snapshot's pixels.</summary>
+    public sealed class DepthReadLease : IDisposable
+    {
+        private PublishedDepth? publication;
+
+        internal DepthReadLease(PublishedDepth publication) => this.publication = publication;
+
+        public DepthSnapshot Snapshot => Volatile.Read(ref publication)?.Snapshot ?? DepthSnapshot.Unavailable;
+
+        public void Dispose()
+        {
+            var released = Interlocked.Exchange(ref publication, null);
+            if (released is null) return;
+
+            lock (sync)
+            {
+                released.ReaderCount--;
+                if (released.Retired && released.ReaderCount == 0)
+                {
+                    retiredBufferCount--;
+                    ReturnBufferLocked(released);
+                }
+            }
+        }
+    }
 
     public readonly struct DepthSnapshot
     {
-        public static DepthSnapshot Unavailable => UnavailableWithVersion(0);
+        private readonly float[]? viewToTextureUv;
 
-        public static DepthSnapshot UnavailableWithVersion(long version) =>
-            new(
-                version,
-                ARFrameMetadata.Invalid,
-                long.MinValue,
-                false,
-                0,
-                0,
-                Array.Empty<ushort>(),
-                Array.Empty<float>(),
-                0, 0, 0,
-                0, 0, 0, 1,
-                0, 0,
-                0, 0,
-                0, 0,
-                ARGroundStateBridge.GroundStateSnapshot.Unavailable,
-                0);
+        public static DepthSnapshot Unavailable => default;
 
-        public DepthSnapshot(
+        internal DepthSnapshot(
             long version,
             ARFrameMetadata metadata,
-            long publishedAtMonotonicMilliseconds,
-            bool isAvailable,
+            long trackingEpoch,
+            long worldFrame,
             int width,
             int height,
             ushort[] depthMillimeters,
@@ -270,12 +278,12 @@ public static class ARDepthOcclusionBridge
         {
             Version = version;
             Metadata = metadata;
-            PublishedAtMonotonicMilliseconds = publishedAtMonotonicMilliseconds;
-            IsAvailable = isAvailable;
+            TrackingEpoch = trackingEpoch;
+            WorldFrame = worldFrame;
             Width = width;
             Height = height;
-            DepthMillimeters = depthMillimeters;
-            ViewToTextureUv = viewToTextureUv;
+            RentedDepthMillimeters = depthMillimeters;
+            this.viewToTextureUv = viewToTextureUv;
             CameraX = cameraX;
             CameraY = cameraY;
             CameraZ = cameraZ;
@@ -291,7 +299,6 @@ public static class ARDepthOcclusionBridge
             TextureHeight = textureHeight;
             GroundState = groundState;
             GroundWorldY = groundWorldY;
-            OwnsPooledDepthBuffer = isAvailable;
         }
 
         public long Version { get; }
@@ -299,12 +306,14 @@ public static class ARDepthOcclusionBridge
         public ARRenderGenerationToken Generation => Metadata.Generation;
         public long FrameTimestamp => Metadata.FrameTimestamp;
         public ARDisplayGeometrySnapshot DisplayGeometry => Metadata.DisplayGeometry;
-        public long PublishedAtMonotonicMilliseconds { get; }
-        public bool IsAvailable { get; }
+        public long TrackingEpoch { get; }
+        public long WorldFrame { get; }
+        public bool IsAvailable => RentedDepthMillimeters is not null;
         public int Width { get; }
         public int Height { get; }
-        public ushort[] DepthMillimeters { get; }
-        public float[] ViewToTextureUv { get; }
+        internal ushort[]? RentedDepthMillimeters { get; }
+        public ReadOnlySpan<ushort> DepthMillimeters => RentedDepthMillimeters.AsSpan(0, Width * Height);
+        public ReadOnlySpan<float> ViewToTextureUv => viewToTextureUv;
         public float CameraX { get; }
         public float CameraY { get; }
         public float CameraZ { get; }
@@ -325,12 +334,6 @@ public static class ARDepthOcclusionBridge
         public bool GroundIsVerified => GroundTrust == ARGroundTrust.Verified;
         public long GroundReferenceGeneration => GroundState.ReferenceGeneration;
         public float GroundWorldY { get; }
-        internal bool OwnsPooledDepthBuffer { get; }
-
-        public bool IsFresh =>
-            PublishedAtMonotonicMilliseconds != long.MinValue &&
-            Environment.TickCount64 - PublishedAtMonotonicMilliseconds >= 0 &&
-            Environment.TickCount64 - PublishedAtMonotonicMilliseconds <=
-                MaximumDepthAgeMilliseconds;
+        public bool IsFresh => Metadata.IsFresh(MaximumDepthAgeMilliseconds, Environment.TickCount64);
     }
 }

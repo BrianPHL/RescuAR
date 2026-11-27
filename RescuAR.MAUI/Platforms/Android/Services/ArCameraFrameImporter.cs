@@ -14,6 +14,8 @@ internal interface IArCameraFrameImporter : IDisposable
     // Called only while the handler excludes every old/new render callback.
     void RebindDrawThread();
 
+    void DisposeAfterDeviceDrain();
+
     Texture? Import(
         HardwareBuffer hardwareBuffer,
         float[] cameraUv,
@@ -57,6 +59,11 @@ internal sealed class EvergineArCameraFrameImporter : IArCameraFrameImporter
         inner.Dispose();
 
     public void RebindDrawThread() => inner.RebindDrawThread();
+
+    public void DisposeAfterDeviceDrain() => inner.DisposeAfterDeviceDrain();
+
+    public static bool DrainDeviceForTeardown(VKGraphicsContext graphicsContext) =>
+        ARCoreVulkanImporter.DrainDeviceForTeardown(graphicsContext);
 
     public static void WaitForGraphicsDeviceIdle(
         VKGraphicsContext graphicsContext) =>
