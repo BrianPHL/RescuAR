@@ -14,7 +14,9 @@ param(
 
     [string]$CMakeVersion = "3.22.1",
 
-    [string]$AndroidApi = "26"
+    [string]$AndroidApi = "26",
+
+    [string]$SourceRevision
 )
 
 $ErrorActionPreference = "Stop"
@@ -299,7 +301,10 @@ try {
         $ProvenanceOutput = "$resolvedArtifact.native-provenance.json"
     }
 
-    $sourceRevision = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
+    $recordedRevision = if (-not [string]::IsNullOrWhiteSpace($SourceRevision)) {
+        $SourceRevision
+    }
+    elseif ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
         'unavailable'
     }
     else {
@@ -326,7 +331,7 @@ try {
         cmakeVersion = $CMakeVersion
         androidApi = $AndroidApi
         readElfTool = [System.IO.Path]::GetFileName($resolvedReadElf)
-        sourceRevision = $sourceRevision
+        sourceRevision = $recordedRevision
     }
 
     $provenanceDirectory = Split-Path -Parent $ProvenanceOutput

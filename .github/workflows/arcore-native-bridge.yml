@@ -5,12 +5,21 @@ on:
     paths:
       - "RescuAR.MAUI/**"
       - "RescuAR/**"
+      - "RescuAR.weproj"
+      - "Content/**"
+      - "tests/**"
       - "RescuAR.MAUI.sln"
       - "Directory.Build.props"
+      - "nuget.config"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "build/Verify-VulkanCameraTextureOwnership.ps1"
+      - "build/Test-ARCoreRegression.ps1"
       - "build/Test-ARCorePackage.ps1"
       - "build/Invoke-ARCoreAndroidInstrumentation.ps1"
+      - "build/Export-NavigationReplay.ps1"
+      - "build/Export-ARPerformanceProfile.ps1"
+      - "build/Capture-NavigationFieldEvidence.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - "ARCORE_EVIDENCE_BUNDLE_SCHEMA.json"
       - "ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md"
@@ -21,12 +30,21 @@ on:
     paths:
       - "RescuAR.MAUI/**"
       - "RescuAR/**"
+      - "RescuAR.weproj"
+      - "Content/**"
+      - "tests/**"
       - "RescuAR.MAUI.sln"
       - "Directory.Build.props"
+      - "nuget.config"
       - "build/Verify-AndroidNativeBridge.ps1"
       - "build/Verify-ARCoreReleaseReadiness.ps1"
+      - "build/Verify-VulkanCameraTextureOwnership.ps1"
+      - "build/Test-ARCoreRegression.ps1"
       - "build/Test-ARCorePackage.ps1"
       - "build/Invoke-ARCoreAndroidInstrumentation.ps1"
+      - "build/Export-NavigationReplay.ps1"
+      - "build/Export-ARPerformanceProfile.ps1"
+      - "build/Capture-NavigationFieldEvidence.ps1"
       - "ARCORE_DEPENDENCY_COMPATIBILITY_MATRIX.md"
       - "ARCORE_EVIDENCE_BUNDLE_SCHEMA.json"
       - "ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md"
@@ -44,10 +62,53 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up .NET 8 for Evergine and host checks
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
       - name: Set up .NET 9
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+
+      - name: Select the .NET 9 SDK
+        shell: pwsh
+        run: |
+          '{"sdk":{"version":"9.0.100","rollForward":"latestFeature"}}' | Set-Content -LiteralPath global.json
+          dotnet --version
+
+      - name: Verify locked AR compatibility profile
+        shell: pwsh
+        run: ./build/Verify-ARCoreReleaseReadiness.ps1
+
+      - name: Restore the pinned Evergine Core assets
+        shell: pwsh
+        run: |
+          # This add-on is distributed separately from the .NET NuGet packages.
+          $coreVersion = '2025.10.21.3204'
+          $corePackage = "Evergine.Core.$coreVersion.wepkg"
+          $archive = Join-Path $env:RUNNER_TEMP $corePackage
+          Invoke-WebRequest -Uri "https://everginestudio.blob.core.windows.net/pkg-stable/$corePackage" -OutFile $archive
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($hash -ne '72E37BAD78579C6265F8E767E822350DEFD1E6B7D5B967FC476905AC44B5BE15') {
+            throw 'The Evergine Core archive does not match the pinned version hash.'
+          }
+          $profile = [Environment]::GetFolderPath('UserProfile')
+          $addon = Join-Path $profile ".evergine/packages/Evergine.Core/$coreVersion"
+          [IO.Compression.ZipFile]::ExtractToDirectory($archive, $addon, $true)
+          Copy-Item -LiteralPath $archive -Destination $addon
+          'Restored the verified Evergine Core add-on for this run.' | Set-Content -LiteralPath (Join-Path $addon '.installed')
+
+      - name: Run focused AR regression checks
+        shell: pwsh
+        run: ./build/Test-ARCoreRegression.ps1
+
+      - name: Verify AR evidence exporters
+        shell: pwsh
+        run: |
+          ./tests/NavigationReplay.ExportChecks.ps1
+          ./tests/ARPerformanceProfile.ExportChecks.ps1
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -67,10 +128,6 @@ jobs:
         shell: pwsh
         run: dotnet workload install maui-android
 
-      - name: Verify locked AR compatibility profile
-        shell: pwsh
-        run: ./build/Verify-ARCoreReleaseReadiness.ps1
-
       - name: Restore
         shell: pwsh
         run: dotnet restore RescuAR.MAUI.sln
@@ -87,58 +144,40 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($sdkRoot)) {
             throw "The Android SDK root is unavailable."
           }
+          $evergineProject = (Resolve-Path -LiteralPath ./RescuAR.weproj).Path
 
           dotnet publish RescuAR.MAUI/RescuAR.MAUI.csproj `
+            --no-restore `
             -c Release `
             -f net9.0-android `
             -p:RuntimeIdentifier=android-arm64 `
             -p:AndroidPackageFormats=apk `
             "-p:AndroidSdkDirectory=$sdkRoot" `
+            "-p:EvergineProjectFilePath=$evergineProject" `
             -p:BuildNativeBridgeOnBuild=true `
             -p:ContinuousIntegrationBuild=true `
-            -p:RescuArSourceRevision=${{ github.sha }} `
+            -p:RescuArDiagnosticBuild=false `
+            "-p:RescuArSourceRevision=$env:GITHUB_SHA" `
             -p:VerifyPackagedNativeBridge=false
 
-      - name: Verify packaged native bridge and provenance
-        id: verify
+      - name: Verify compiled Vulkan camera ownership
         shell: pwsh
-        run: |
-          $artifact = Get-ChildItem `
-            -Path "RescuAR.MAUI/bin/Release/net9.0-android/android-arm64/publish" `
-            -Filter "*.apk" `
-            -File |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
+        run: ./build/Verify-VulkanCameraTextureOwnership.ps1
 
-          if ($null -eq $artifact) {
-            throw "The publish step did not produce an APK."
-          }
-
-          $provenance = Join-Path $artifact.DirectoryName "native-bridge-provenance.json"
-
-          ./build/Verify-AndroidNativeBridge.ps1 `
-            -ArtifactPath $artifact.FullName `
-            -ExpectedAbi "arm64-v8a" `
-            -RequireStripped `
-            -NdkVersion "28.2.13676358" `
-            -CMakeVersion "3.22.1" `
-            -AndroidApi "26" `
-            -ProvenanceOutput $provenance
-
-          "artifact=$($artifact.FullName)" >> $env:GITHUB_OUTPUT
-          "provenance=$provenance" >> $env:GITHUB_OUTPUT
-
-      - name: Test final ARCore package
+      - name: Verify exact signed APK and native bridge provenance
         id: package
         shell: pwsh
         run: |
+          $artifact = (Resolve-Path -LiteralPath "RescuAR.MAUI/bin/Release/net9.0-android/android-arm64/publish/com.rescuar.app-Signed.apk").Path
           $packageEvidence = "artifacts/package-evidence"
           ./build/Test-ARCorePackage.ps1 `
-            -ArtifactPath "${{ steps.verify.outputs.artifact }}" `
+            -ArtifactPath $artifact `
             -ExpectedAbi "arm64-v8a" `
             -ExpectedPackage "com.rescuar.app" `
             -ExpectedDiagnosticBuild "false" `
+            -ExpectedSourceRevision $env:GITHUB_SHA `
             -OutputDirectory $packageEvidence
+          "artifact=$artifact" >> $env:GITHUB_OUTPUT
           "evidence=$packageEvidence" >> $env:GITHUB_OUTPUT
 
       - name: Upload verified APK and provenance
@@ -147,6 +186,5 @@ jobs:
           name: rescuar-arm64-native-verified
           if-no-files-found: error
           path: |
-            ${{ steps.verify.outputs.artifact }}
-            ${{ steps.verify.outputs.provenance }}
+            ${{ steps.package.outputs.artifact }}
             ${{ steps.package.outputs.evidence }}

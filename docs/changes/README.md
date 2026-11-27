@@ -10,6 +10,7 @@ Records preserve what was changed and checked at that time. Consult the
 
 | Date (Asia/Manila) | Record | Scope |
 | --- | --- | --- |
+| 2026-11-27 | [AR release gate and profiling](2026-11-27-ar-release-gate-and-profiling.md) | Focused build gate, exact APK verification and performance evidence |
 | 2026-11-27 | [AR camera lifecycle safeguards](2026-11-27-ar-camera-lifecycle-safeguards.md) | Native image release, Depth matching and ownership, tracking recovery and Vulkan teardown |
 | 2026-11-27 | [AR trip guidance safeguards](2026-11-27-ar-trip-guidance-safeguards.md) | Arrival evidence, emergency shelter selection, hazard updates and offline continuity |
 | 2026-11-05 | [A* continuity and exact local replay](2026-11-05-navigation-replay-and-astar-continuity.md) | Preserve disputed registration/progress, keep vicinity guidance active, automatically capture exact diagnostic inputs and replay policies locally |

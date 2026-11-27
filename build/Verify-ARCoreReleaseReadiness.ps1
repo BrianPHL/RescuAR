@@ -198,7 +198,11 @@ foreach ($workflowToken in @(
     "ndk;28.2.13676358",
     "cmake;3.22.1",
     "-f net9.0-android",
-    "Verify-ARCoreReleaseReadiness.ps1"
+    "Verify-ARCoreReleaseReadiness.ps1",
+    "Test-ARCoreRegression.ps1",
+    "Verify-VulkanCameraTextureOwnership.ps1",
+    "-p:RescuArDiagnosticBuild=false",
+    '-ExpectedSourceRevision $env:GITHUB_SHA'
 )) {
     if (-not $workflow.Contains($workflowToken)) {
         throw "AR compatibility workflow does not record required token '$workflowToken'."

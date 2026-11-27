@@ -4,6 +4,8 @@ Aligned with source on 2026-11-05, starting at `dev` revision `60986f0` plus the
 [A* continuity, arrival and exact replay changes](../changes/2026-11-05-navigation-replay-and-astar-continuity.md).
 The [November 27 trip guidance changes](../changes/2026-11-27-ar-trip-guidance-safeguards.md)
 extend the arrival, hazard, shelter selection and offline re-entry cases.
+The [AR release gate and profiling record](../changes/2026-11-27-ar-release-gate-and-profiling.md)
+tracks package identity and performance evidence for the Phase 3 candidate.
 This is the current procedure. Dated reports retain their own candidate results;
 none establishes acceptance of a later build.
 
@@ -14,8 +16,9 @@ From the repository root, build a diagnostic candidate for field evidence:
 
 ```powershell
 $fieldRevision = (git rev-parse HEAD).Trim()
+$projectFile = (Resolve-Path ./RescuAR.weproj).Path
 ./build/Verify-ARCoreReleaseReadiness.ps1
-dotnet publish RescuAR.MAUI/RescuAR.MAUI.csproj -c Release -f net9.0-android -r android-arm64 -p:AndroidPackageFormats=apk -p:RescuArDiagnosticBuild=true "-p:RescuArSourceRevision=$fieldRevision"
+dotnet publish RescuAR.MAUI/RescuAR.MAUI.csproj -c Release -f net9.0-android -r android-arm64 -p:AndroidPackageFormats=apk -p:RescuArDiagnosticBuild=true "-p:EvergineProjectFilePath=$projectFile" "-p:RescuArSourceRevision=$fieldRevision"
 ```
 
 If source has uncommitted edits, retain the diff and identify the candidate with
@@ -27,7 +30,7 @@ the original machine; a filename in a report is not a reproducible source releas
 Run package verification against the exact candidate path:
 
 ```powershell
-./build/Test-ARCorePackage.ps1 -ArtifactPath "<absolute-path-to-candidate.apk>" -ExpectedDiagnosticBuild true -OutputDirectory artifacts/package-evidence
+./build/Test-ARCorePackage.ps1 -ArtifactPath "<absolute-path-to-candidate.apk>" -ExpectedDiagnosticBuild true -ExpectedSourceRevision $fieldRevision -OutputDirectory artifacts/package-evidence
 ```
 
 Native ELF verification needs the configured NDK tools. For rebuilding the native
@@ -88,20 +91,17 @@ startup candidates. Their field targets remain targets, not verified results.
 
 ## Focused host checks
 
-For GPS/AR cadence and recovery changes, use:
+From the repository root, run the shared release gate with PowerShell 7, a .NET
+9 SDK, the .NET 8 runtime and the pinned Evergine Core add-on available to the
+build user. The gate builds the normal Evergine regression project once with
+`RescuAR.weproj`, then runs the focused AR suites.
 
 ```powershell
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-cadence
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --offline-handoff
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --ar-audit
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --alignment-recovery
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --camera-lifecycle
-dotnet run --project tests/RescuAR.RegressionChecks/RescuAR.RegressionChecks.csproj -- --field-replay
-./tests/NavigationReplay.ExportChecks.ps1
+./build/Test-ARCoreRegression.ps1
 ```
 
-Select different focused checks for other changes. A host check or successful APK
-build does not measure street alignment, device sensor cadence or crash freedom.
+For an already restored checkout, add `-NoRestore`. A host check or successful
+APK build does not measure street alignment, device sensor cadence or crash freedom.
 Before another physical walk, follow [exact capture and local replay](navigation-replay.md).
 The existing November 5 logs support a synthetic relative reconstruction only;
 their redacted absolute GPS cannot be recovered.
@@ -178,6 +178,32 @@ for each trial.
 For a provider-controlled diagnostic trial, the retained device reliability report
 lists the launch override; record that override explicitly.
 
+## Performance measurement
+
+Use one verified diagnostic APK on both devices and compare the installed hash
+against its package report. Record OS, ARCore version, route, provider, Depth
+mode, movement, battery and starting thermal conditions. Use a fresh app process
+for each trial and label AR guidance, flood visualization and 2D fallback trials
+separately. Include Camera entry and a sustained route segment in the AR trials.
+Capture the trial promptly so startup and timing records remain in Android's logs.
+
+The field collector writes `ar-performance-profile.json` alongside replay evidence.
+To reprocess saved logs from the repository root:
+
+```powershell
+./build/Export-ARPerformanceProfile.ps1 -LogPaths "<bundle>/navigation-logcat.txt" -TrialManifestPath "<bundle>/trial.json" -OutputDirectory "<bundle>"
+```
+
+Review sample counts and run boundaries before comparing frame intervals, camera
+gaps, native image import, conversion and scene draw/present time. First-camera
+timing starts when the image worker starts. Use the recording to measure the full
+time from Camera entry. The first route overlay measures qualifying geometry in a
+completed draw. Camera gaps are measured between distinct presented images, so
+record any outage that lasts through the end of the trial separately. Conversion
+timing includes time until the app observes GPU completion. Managed heap samples
+and post-trial Android process memory snapshots describe different things. Report
+growth only when the trial contains comparable samples over time.
+
 ## Acceptance boundary
 
 Record the build, device/OS/ARCore versions, provider, Depth flags, visible failure
@@ -186,11 +212,10 @@ placement at known street/sidewalk references; GPS/compass consistency alone doe
 not establish surveyed alignment. Sustained useful AR, recovery-time/visibility
 and placement targets remain unverified without those measurements.
 
-For performance comparisons, retain the same APK/profile, route, Depth mode and
-device conditions. Record camera gaps, frame-time distribution, managed allocation/
-GC rate and thermal state; distinguish native import/conversion waits from route
-projection and UI work. Source operation-count checks establish bounded lookup
-work, not device FPS, battery savings or a measured Vulkan bottleneck.
+Use the performance report to decide whether to investigate Vulkan import reuse
+or multiple conversion targets. Compare equivalent trials and keep unmeasured
+metrics open. Source operation-count checks establish bounded lookup work, not
+device FPS, battery savings or a measured Vulkan bottleneck.
 
 Report actual results and matching evidence before further behavior-dependent
 fixes. The [finding matrix](../../ARCORE_FINAL_FINDING_VALIDATION_MATRIX.md)

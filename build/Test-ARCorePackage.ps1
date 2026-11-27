@@ -6,15 +6,20 @@ param(
     [string]$OutputDirectory,
     [string]$ReadElfPath,
     [string]$ApkAnalyzerPath,
-    [string]$BundleToolPath
+    [string]$BundleToolPath,
+    [string]$ExpectedSourceRevision
 )
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-function Get-Sha256([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+function Get-BuildProfileValue([string]$Text, [string]$Key) {
+    $entries = [regex]::Matches($Text, "(?m)^$([regex]::Escape($Key))=([^\r\n]*)\r?$")
+    if ($entries.Count -ne 1 -or [string]::IsNullOrWhiteSpace($entries[0].Groups[1].Value)) {
+        throw "Expected exactly one packaged '$Key' value."
+    }
+    return $entries[0].Groups[1].Value
 }
 
 function Find-ApkAnalyzer {
@@ -52,12 +57,6 @@ $provenance = Join-Path $output "native-bridge-provenance.json"
 $manifestFile = Join-Path $output "merged-android-manifest.xml"
 $reportFile = Join-Path $output "arcore-package-test-report.json"
 
-$verifyArgs = @{
-    ArtifactPath = $artifact; ExpectedAbi = $ExpectedAbi; RequireStripped = $true; ProvenanceOutput = $provenance
-}
-if ($ReadElfPath) { $verifyArgs.ReadElfPath = $ReadElfPath }
-& (Join-Path $PSScriptRoot "Verify-AndroidNativeBridge.ps1") @verifyArgs
-
 $archive = [IO.Compression.ZipFile]::OpenRead($artifact)
 try {
     $nativeEntries = @($archive.Entries | Where-Object { $_.FullName -match '^(?:base/)?lib/[^/]+/[^/]+\.so$' } | ForEach-Object FullName | Sort-Object)
@@ -74,12 +73,22 @@ if ($nativeEntries.Count -eq 0) { throw "The artifact contains no native librari
 if ($observedAbis.Count -ne 1 -or $observedAbis[0] -ne $ExpectedAbi) {
     throw "Expected only ABI '$ExpectedAbi'; observed '$($observedAbis -join ', ')'."
 }
-if ($buildProfile -notmatch "(?m)^diagnosticBuild=$([regex]::Escape($ExpectedDiagnosticBuild))\r?$") {
+$diagnosticBuild = Get-BuildProfileValue $buildProfile 'diagnosticBuild'
+if ($diagnosticBuild -ne $ExpectedDiagnosticBuild) {
     throw "Packaged diagnostic-build profile does not match expected value '$ExpectedDiagnosticBuild'."
 }
-if ($buildProfile -notmatch '(?m)^diagnosticRouteOverride=false\r?$') { throw "Road diagnostics must retain navigation confidence checks." }
-if ($buildProfile -notmatch '(?m)^correctiveBatch=ARCore-14\r?$') { throw "Packaged corrective-batch profile is missing or incorrect." }
-if ($buildProfile -notmatch '(?m)^validationProfile=ARCORE_MANUAL_FIELD_VALIDATION_V1\r?$') { throw "Packaged validation profile is missing or incorrect." }
+$sourceRevision = Get-BuildProfileValue $buildProfile 'sourceRevision'
+if ($ExpectedSourceRevision -and $sourceRevision -cne $ExpectedSourceRevision) {
+    throw "Packaged source revision '$sourceRevision' does not match '$ExpectedSourceRevision'."
+}
+$configuration = Get-BuildProfileValue $buildProfile 'configuration'
+if ($configuration -ne 'Release') { throw "Expected a Release package, found '$configuration'." }
+if ((Get-BuildProfileValue $buildProfile 'diagnosticRouteOverride') -ne 'false') { throw "Road diagnostics must retain navigation confidence checks." }
+if ((Get-BuildProfileValue $buildProfile 'correctiveBatch') -cne 'ARCore-14') { throw "Packaged corrective-batch profile is incorrect." }
+$validationProfile = Get-BuildProfileValue $buildProfile 'validationProfile'
+if ($validationProfile -cne 'ARCORE_MANUAL_FIELD_VALIDATION_V1') { throw "Packaged validation profile is incorrect." }
+$monoGcBridge = Get-BuildProfileValue $buildProfile 'monoGcBridge'
+if ($monoGcBridge -cne 'new') { throw "Packaged Mono GC bridge profile is incorrect." }
 
 if ($extension -eq '.apk') {
     $manifestLines = @(& (Find-ApkAnalyzer) manifest print $artifact 2>&1)
@@ -93,6 +102,7 @@ $manifest = $manifestLines -join "`n"
 $manifest | Set-Content -LiteralPath $manifestFile -Encoding UTF8
 
 if ($manifest -notmatch "package=[`"']$([regex]::Escape($ExpectedPackage))[`"']") { throw "Package ID mismatch." }
+if ($manifest -notmatch '<uses-sdk(?=[^>]*android:minSdkVersion=["'']26["''])[^>]*>') { throw "Minimum Android API declaration mismatch." }
 Assert-ManifestElement $manifest "meta-data" "com.google.ar.core" "android:value=[`"']required[`"']"
 Assert-ManifestElement $manifest "uses-feature" "android.hardware.camera" "android:required=[`"']true[`"']"
 Assert-ManifestElement $manifest "uses-feature" "android.hardware.camera.ar" "android:required=[`"']true[`"']"
@@ -105,13 +115,23 @@ if ($manifest -notmatch '<uses-feature(?=[^>]*android:name=["'']android\.hardwar
 $buildProps = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) "Directory.Build.props") -Raw
 if ($buildProps -notmatch '<RescuArDiagnosticBuild[^>]*>false</RescuArDiagnosticBuild>') { throw "Production-default diagnostic policy is missing." }
 
+$verifyArgs = @{
+    ArtifactPath = $artifact; ExpectedAbi = $ExpectedAbi; RequireStripped = $true
+    ProvenanceOutput = $provenance; SourceRevision = $sourceRevision
+}
+if ($ReadElfPath) { $verifyArgs.ReadElfPath = $ReadElfPath }
+& (Join-Path $PSScriptRoot "Verify-AndroidNativeBridge.ps1") @verifyArgs
+$nativeEvidence = Get-Content -LiteralPath $provenance -Raw | ConvertFrom-Json
+
 [ordered]@{
     schemaVersion = 1; testLayer = "packaging"; verifiedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); result = "PASS"
-    artifactFile = [IO.Path]::GetFileName($artifact); artifactType = $extension.TrimStart('.'); artifactSha256 = Get-Sha256 $artifact
+    artifactFile = [IO.Path]::GetFileName($artifact); artifactType = $extension.TrimStart('.'); artifactSha256 = $nativeEvidence.artifactSha256
+    sourceRevision = $sourceRevision; configuration = $configuration; nativeSha256 = $nativeEvidence.nativeSha256
     artifactBytes = (Get-Item -LiteralPath $artifact).Length; expectedPackage = $ExpectedPackage; expectedAbi = $ExpectedAbi
     observedAbis = $observedAbis; nativeEntries = $nativeEntries; nativeProvenance = [IO.Path]::GetFileName($provenance)
     mergedManifest = [IO.Path]::GetFileName($manifestFile); arSupportPolicy = "required"; vulkanRequirement = "vulkan-1.0-level-0"
-    diagnosticBuild = $ExpectedDiagnosticBuild; buildProfileAsset = $profileEntryName; validationProfile = "ARCORE_MANUAL_FIELD_VALIDATION_V1"
+    androidMinApi = 26; diagnosticBuild = $diagnosticBuild; buildProfileAsset = $profileEntryName
+    validationProfile = $validationProfile; monoGcBridge = $monoGcBridge
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportFile -Encoding UTF8
 
 Write-Host "ARCore package test PASSED."
