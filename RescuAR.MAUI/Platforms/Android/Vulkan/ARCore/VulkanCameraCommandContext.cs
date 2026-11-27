@@ -31,6 +31,10 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
     private bool hasSubmittedWork;
     private bool submissionPending;
     private long submittedAtMilliseconds;
+#if RESCUAR_DIAGNOSTICS
+    private long conversionProfileRun;
+    private long conversionSubmittedAt;
+#endif
     private bool disposed;
 
     private VulkanCameraCommandContext(
@@ -172,6 +176,9 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
         }
         ThrowIfFailed(result, "vkWaitForFences");
         submissionPending = false;
+#if RESCUAR_DIAGNOSTICS
+        ARPerformanceProfile.RecordElapsed(conversionProfileRun, ARPerformanceProfile.Metric.ConversionObserved, conversionSubmittedAt);
+#endif
         return true;
     }
 
@@ -591,6 +598,10 @@ internal unsafe sealed class VulkanCameraCommandContext : IDisposable
                 pSignalSemaphores = null
             };
 
+#if RESCUAR_DIAGNOSTICS
+        conversionProfileRun = ARPerformanceProfile.CurrentRun;
+        conversionSubmittedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         VkResult result =
             VulkanNative.vkQueueSubmit(
                 graphicsQueue,

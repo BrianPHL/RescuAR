@@ -2,6 +2,9 @@
 using Android.Util;
 using Evergine.Bindings.Vulkan;
 using Evergine.Vulkan;
+#if RESCUAR_DIAGNOSTICS
+using RescuAR.AR;
+#endif
 
 namespace RescuAR.MAUI.Platforms.Android.Vulkan.ARCore;
 
@@ -208,6 +211,10 @@ internal unsafe sealed class VulkanExternalFrameImporter
         VkImageView imageView =
             default;
 
+#if RESCUAR_DIAGNOSTICS
+        long profileRun = ARPerformanceProfile.CurrentRun;
+        long importStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
         try
         {
             image =
@@ -228,6 +235,9 @@ internal unsafe sealed class VulkanExternalFrameImporter
                     image,
                     ycbcrResources.Conversion);
 
+#if RESCUAR_DIAGNOSTICS
+            ARPerformanceProfile.RecordElapsed(profileRun, ARPerformanceProfile.Metric.NativeImport, importStarted);
+#endif
             return new VulkanExternalFrame(
                 graphicsContext,
                 image,

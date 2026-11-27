@@ -69,10 +69,21 @@ public partial class MyApplication
             ARCameraSpatialController.ProcessDrawThreadWork(
                 drawGraphicsGeneration);
 
+#if RESCUAR_DIAGNOSTICS
+            long profileRun = drawGraphicsGeneration > 0 ? ARPerformanceProfile.CurrentRun : 0;
+            long sceneDrawStarted = profileRun > 0 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+#endif
             base.DrawFrame(
                 gameTime);
             if (drawGraphicsGeneration > 0)
-                ARCameraPresentationPolicy.RecordPresented(camera.Metadata, Environment.TickCount64);
+            {
+                long now = Environment.TickCount64;
+#if RESCUAR_DIAGNOSTICS
+                ARPerformanceProfile.RecordElapsed(profileRun, ARPerformanceProfile.Metric.SceneDrawPresent, sceneDrawStarted);
+                ARPerformanceProfile.RecordPresentation(profileRun, camera.Metadata, now);
+#endif
+                ARCameraPresentationPolicy.RecordPresented(camera.Metadata, now);
+            }
         }
         finally
         {

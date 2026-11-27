@@ -1057,6 +1057,9 @@ public sealed partial class ArCoreService : IArCoreService
             Tag,
             "ARCore frame loop worker entered.");
 
+#if RESCUAR_DIAGNOSTICS
+        long profileRun = ARPerformanceProfile.BeginRun(sessionGeneration, Interlocked.Read(ref graphicsGeneration));
+#endif
         try
         {
             RefreshPowerThermalDecisionIfNeeded(
@@ -1096,6 +1099,9 @@ public sealed partial class ArCoreService : IArCoreService
         }
         finally
         {
+#if RESCUAR_DIAGNOSTICS
+            ARPerformanceProfile.EndRun(profileRun);
+#endif
             Log.Debug(
                 Tag,
                 "ARCore frame loop worker exited.");

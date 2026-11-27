@@ -54,6 +54,9 @@ public sealed partial class ArCoreService
         ARPowerThermalPolicy.AndroidThermalSeverity thermalSeverity =
             TryReadAndroidThermalSeverity();
 
+#if RESCUAR_DIAGNOSTICS
+        ARPerformanceProfile.RecordSystem(thermalSeverity, temperatureCelsius, powerSaveMode);
+#endif
         ARPowerThermalPolicy.WorkloadDecision previous =
             powerThermalDecision;
 

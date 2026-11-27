@@ -206,6 +206,10 @@ namespace RescuAR.MAUI.Evergine
                         TimeSpan gameTime = TimeSpan.FromMilliseconds(
                             Math.Min(clockTimer.Elapsed.TotalMilliseconds, 100.0));
                         clockTimer.Restart();
+#if RESCUAR_DIAGNOSTICS
+                        long profileRun = ARPerformanceProfile.CurrentRun;
+                        long profileStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
                         try
                         {
                             application.UpdateFrame(gameTime);
@@ -224,6 +228,12 @@ namespace RescuAR.MAUI.Evergine
                             Log.Error(VulkanTag,
                                 $"AR draw failed; waiting for surface recreation: {exception}");
                         }
+#if RESCUAR_DIAGNOSTICS
+                        finally
+                        {
+                            ARPerformanceProfile.RecordElapsed(profileRun, ARPerformanceProfile.Metric.FrameWork, profileStart);
+                        }
+#endif
                     }
                 }
             }
