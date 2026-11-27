@@ -155,7 +155,7 @@ namespace RescuAR.App.Models
         public int Capacity { get; set; }
 
         [Column("current_evacuees")]
-        public int CurrentEvacuees { get; set; }
+        public int? CurrentEvacuees { get; set; }
 
         [Column("status")]
         public string Status { get; set; } = string.Empty;

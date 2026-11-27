@@ -14,6 +14,7 @@ public class CachedEvacuationCenterItem
     public double Longitude { get; set; }
     public int Capacity { get; set; }
     public int CurrentEvacuees { get; set; }
+    public bool HasReportedOccupancy { get; set; }
     public string Status { get; set; } = "Unknown";
     public string HeadOfficer { get; set; } = "Unassigned";
     public string Contact { get; set; } = "N/A";

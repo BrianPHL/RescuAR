@@ -11,7 +11,6 @@ using RescuAR.MAUI.Services.Navigation;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.App.Models;
 using RescuAR.App.Services.Reports;
-using RescuAR.App.Services.AreaStatus;
 using RescuAR.App.Services.Flood;
 using RescuAR.Navigation.Guidance;
 using RescuAR.Navigation.Hazards;
@@ -2444,7 +2443,7 @@ namespace RescuAR.App.Views.Camera
             DisasterAdvisory? advisory =
                 lastEmergencyAdvisoryForStatus;
 
-            if (advisory is null && ApplyRouteHazardStatusBanner())
+            if ((routeHazardBlocksGuidance || advisory is null) && ApplyRouteHazardStatusBanner())
             {
                 cameraModeStatusBanner.IsVisible = !safeZoneConfirmed;
                 return;
@@ -3045,6 +3044,7 @@ namespace RescuAR.App.Views.Camera
         {
             if (e.Parameter is ShelterSearchDisplayItem item && item.Center != null)
             {
+                CancelEmergencyShelterSearch();
                 _selectedShelterFor2DMap = item.Center;
                 if (mapDestinationSelectedLabel != null)
                 {
@@ -3254,6 +3254,7 @@ namespace RescuAR.App.Views.Camera
 
             SubscribeEmergencyAdvisories();
             SubscribeConnectivityChanges();
+            SubscribeRouteHazards();
             _arCoreService.LifecycleChanged -=
                 OnArCoreLifecycleChanged;
             _arCoreService.LifecycleChanged +=
@@ -3319,9 +3320,9 @@ namespace RescuAR.App.Views.Camera
             UnsubscribeDestinationChanged();
             UnsubscribeEmergencyAdvisories();
             UnsubscribeConnectivityChanges();
+            UnsubscribeRouteHazards();
             _arCoreService.LifecycleChanged -=
                 OnArCoreLifecycleChanged;
-            offlineRouteHandoff.Reset();
             HideEmergencyAdvisoryOverlay(
                 "Camera tab exited",
                 restoreTurnGuidance: false);
@@ -4128,21 +4129,6 @@ namespace RescuAR.App.Views.Camera
 
                 if (!CanApplyRouteRequest(destination.Version, cancellationToken)) return false;
 
-                // Reports may change while the routing provider is working.
-                // An unsafe result is never accepted, drawn, or handed to AR.
-                var currentHazards = _hazardReroutingService.GetRouteHazards();
-                if (route is { Points.Count: >= 2 } &&
-                    (RouteHazardGeometry.IsDestinationExcluded(destination.Coordinate, currentHazards) ||
-                     !RouteHazardGeometry.IsSegmentSafeFromOrigin(origin, route.Points[0].Coordinate, origin, currentHazards) ||
-                     !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(route, origin, currentHazards)))
-                {
-                    routeStartupFailureMessage = "Route blocked by a reported hazard. Choose another shelter or retry.";
-                    pendingInitialRoute = null;
-                    startupWork.Cancel();
-                    try { await headingWork; } catch (OperationCanceledException) { }
-                    return false;
-                }
-
                 if (route is null || route.Points.Count < 2)
                 {
                     pendingInitialRoute = null;
@@ -4182,6 +4168,16 @@ namespace RescuAR.App.Views.Camera
                     return false;
                 }
 
+                // Reports can change while the provider is working. Accept against the current snapshot.
+                if (!_hazardReroutingService.TryAcceptRoute(route, origin, destination.Coordinate))
+                {
+                    routeStartupFailureMessage = "Route blocked by a reported hazard. Choose another shelter or retry.";
+                    pendingInitialRoute = null;
+                    startupWork.Cancel();
+                    try { await headingWork; } catch (OperationCanceledException) { }
+                    return false;
+                }
+
                 ARRouteBridge.Clear();
                 ClearRoadApproachCue();
                 lastHeadingAlignment = null;
@@ -4204,7 +4200,6 @@ namespace RescuAR.App.Views.Camera
 
                 ResetArRouteVisualMode("new route requires independent road-entry confirmation");
                 _routeProgressTracker.SetRoute(route);
-                _hazardReroutingService.AcceptRoute(route, origin);
                 positionObservationHeld = false;
                 ClearRouteHazardNotice();
                 LogAcceptedRoute(route, destination.Version, "START");
@@ -4270,6 +4265,7 @@ namespace RescuAR.App.Views.Camera
 
                 _headingRevalidationPolicy.Reset("new geographic route accepted");
 
+                RetainRouteAfterNetworkLoss("initial route accepted");
                 UpdateTurnGuidance();
 
                 StartRouteProgress();
@@ -4728,39 +4724,61 @@ namespace RescuAR.App.Views.Camera
                 $"activeAlgorithm='{activeRoute?.Algorithm ?? "<none>"}'.");
 #endif
 
-            RetainRouteAfterNetworkLoss($"ConnectivityChanged:{e.NetworkAccess}");
+            RetainRouteAfterNetworkLoss($"ConnectivityChanged:{e.NetworkAccess}",
+                e.NetworkAccess == NetworkAccess.Internet, Environment.TickCount64,
+                NavigationDestinationBridge.Current.Version);
         }
 
         /// <summary>Change the trip controller without changing geometry, progress,
         /// registration, voice guidance or the route's true provider provenance.</summary>
-        private void RetainRouteAfterNetworkLoss(string reason)
+        private void RetainRouteAfterNetworkLoss(string reason, bool? observedInternet = null,
+            long? observedAt = null, long? observedTrip = null)
         {
 #if ANDROID
             if (Dispatcher.IsDispatchRequired)
             {
-                Dispatcher.Dispatch(() => RetainRouteAfterNetworkLoss(reason));
+                Dispatcher.Dispatch(() => RetainRouteAfterNetworkLoss(reason, observedInternet, observedAt, observedTrip));
                 return;
             }
-            if (!pageIsVisible || safeZoneConfirmed || activeRoute is not { } route) return;
+            long trip = activeDestinationVersion;
+            var destination = NavigationDestinationBridge.Current;
+            if (safeZoneConfirmed || activeRoute is not { } route || !destination.IsAvailable ||
+                destination.Version != trip || (observedTrip.HasValue && observedTrip.Value != trip)) return;
+
+            bool active = pageIsVisible && !cameraMapWindowStopped;
+            if (!active && !observedInternet.HasValue) return;
             long now = Environment.TickCount64;
-            bool changed = offlineRouteHandoff.Observe(route, activeDestinationVersion,
-                Connectivity.Current.NetworkAccess == NetworkAccess.Internet, now);
+            bool changed = offlineRouteHandoff.Observe(route, trip,
+                observedInternet ?? (Connectivity.Current.NetworkAccess == NetworkAccess.Internet), observedAt ?? now);
             if (changed)
             {
                 Log.Info(RerouteLogTag,
                     $"OFFLINE HANDOFF: controller=AStar; geometry='{route.Algorithm}'; " +
                     $"savedLifetimeMs={OfflineRouteHandoffPolicy.SavedRouteLifetimeMilliseconds}; reason='{reason}'.");
-                RefreshArTrackingStatusBanner();
-                RefreshCameraMapNavigation();
+                if (active)
+                {
+                    RefreshArTrackingStatusBanner();
+                    RefreshCameraMapNavigation();
+                }
             }
+            if (!active) return;
             LocationReading? reading;
-            lock (routeProgressFusionSync) reading = latestRouteStartupReading;
-            bool qualified = !positionObservationHeld && !routeRequestInProgress &&
-                !dynamicRerouteInProgress && IsCurrentRouteStartupLocationAcceptable(reading);
-            if (offlineRouteHandoff.TryBeginRefresh(route, activeDestinationVersion, now, qualified))
+            bool qualified;
+            lock (routeProgressFusionSync)
+            {
+                reading = latestRouteStartupReading;
+                qualified = !routeRequestInProgress && !dynamicRerouteInProgress &&
+                    IsQualifiedBackgroundRerouteReading(route, reading);
+            }
+            if (offlineRouteHandoff.TryBeginRefresh(route, trip, now, qualified))
                 _ = TryDynamicRerouteAsync(reading!.Coordinate, "saved MLD route expired", backgroundRefresh: true);
 #endif
         }
+
+        // Evaluate under routeProgressFusionSync so confidence belongs to this measured fix.
+        private bool IsQualifiedBackgroundRerouteReading(RouteResult route, LocationReading? reading) =>
+            !positionObservationHeld && reading is not null && IsCurrentRouteStartupLocationAcceptable(reading) &&
+            navigationStability.IsCurrentReliableFix(route, reading.Coordinate, reading.ObservationTime, NavigationClock.UtcNow);
 
         private static bool IsMldRoute(
             RouteResult route)
@@ -4810,6 +4828,7 @@ namespace RescuAR.App.Views.Camera
             NavigationDestinationBridge.DestinationSnapshot destination =
                 NavigationDestinationBridge.Current;
             if (destination.Version == observedDestinationVersion) return;
+            CancelEmergencyShelterSearch();
             RefreshForegroundLocationOwnership();
             observedDestinationVersion = destination.Version;
 
@@ -4972,6 +4991,7 @@ namespace RescuAR.App.Views.Camera
             Dispatcher.Dispatch(
                 RefreshCameraModuleDynamicUi);
 
+            ApplyPreparedEmergencyRoute(destination);
             StartRouteRequestIfPossible();
         }
 
@@ -6250,95 +6270,6 @@ namespace RescuAR.App.Views.Camera
         }
 #endif
 
-        private bool StartHazardRerouteIfNeeded(
-            RouteResult route,
-            double progressMeters,
-            GeoCoordinate origin)
-        {
-#if ANDROID
-            if (safeZoneConfirmed ||
-                !pageIsVisible ||
-                !origin.IsValid ||
-                !ReferenceEquals(
-                    route,
-                    activeRoute) ||
-                !activeDestinationCoordinate.HasValue)
-            {
-                return false;
-            }
-
-            HazardReroutingService.HazardRouteAssessment assessment =
-                _hazardReroutingService.AssessRoute(
-                    route,
-                    progressMeters,
-                    Connectivity.Current.NetworkAccess ==
-                        NetworkAccess.Internet);
-
-            UpdateRouteHazardNotice(route, assessment);
-
-            if (!assessment.IsUnsafe ||
-                assessment.PrimaryHazard is null)
-            {
-                return false;
-            }
-
-            RouteHazard hazard =
-                assessment.PrimaryHazard;
-
-            // Safety monitoring continues during an outage, but uncertain
-            // estimates are never promoted to routing origins or failed-route caches.
-            if (!navigationStability.Current.Reliable) return true;
-
-            if (dynamicRerouteInProgress ||
-                routeRequestInProgress)
-            {
-                LogDetailedDebug(
-                    HazardRerouteLogTag,
-                    "Unsafe route is already known, but another route operation " +
-                    "is active. Hazard-aware rerouting owns this GPS cycle and " +
-                    "will be reconsidered on the next route-progress poll.");
-
-                return true;
-            }
-
-            if (!_hazardReroutingService.TryReserveReroute(
-                    assessment,
-                    out string reservationReason))
-            {
-                LogDetailedDebug(
-                    HazardRerouteLogTag,
-                    "Hazard reroute not repeated yet: " +
-                    $"id='{DiagnosticPrivacyPolicy.FormatRouteLabel(hazard.Id)}', reason='{reservationReason}'.");
-
-                return true;
-            }
-
-            Log.Warn(
-                HazardRerouteLogTag,
-                "HAZARD-DRIVEN REROUTE TRIGGERED: " +
-                $"id='{DiagnosticPrivacyPolicy.FormatRouteLabel(hazard.Id)}', " +
-                $"category='{hazard.Category}', " +
-                $"severity='{hazard.Severity}', " +
-                $"distanceAhead={assessment.DistanceAheadMeters:F1} m, " +
-                $"activeAlgorithm='{route.Algorithm}', " +
-                $"hazardsToAvoid={assessment.ActiveHazards.Count}. " +
-                "Current AR guidance will remain visible until a safe " +
-                "replacement route is publishable.");
-
-            _ =
-                TryDynamicRerouteAsync(
-                    origin,
-                    $"ROUTE_HAZARD:{hazard.Id}",
-                    hazardsToAvoid: assessment.ActiveHazards,
-                    triggeringHazard: hazard,
-                    hazardAssessment: assessment);
-
-            return true;
-#else
-            return false;
-#endif
-        }
-
 #if RESCUAR_DIAGNOSTICS
         private void OnDeveloperHazardRerouteTestClicked(
             object? sender,
@@ -6587,12 +6518,17 @@ namespace RescuAR.App.Views.Camera
                 }
 
                 LocationReading? rerouteReading;
-                lock (routeProgressFusionSync) rerouteReading = latestRouteStartupReading;
-                if (positionObservationHeld || !IsCurrentRouteStartupLocationAcceptable(rerouteReading) ||
-                    rerouteReading!.Coordinate.DistanceTo(origin) > 5)
+                bool needsReliableFix = backgroundRefresh || hazardAssessment.HasValue;
+                lock (routeProgressFusionSync)
                 {
-                    lastRerouteResult = "PositionUncertain";
-                    return false;
+                    rerouteReading = latestRouteStartupReading;
+                    if (positionObservationHeld || !IsCurrentRouteStartupLocationAcceptable(rerouteReading) ||
+                        rerouteReading!.Coordinate.DistanceTo(origin) > 5 ||
+                        (needsReliableFix && !IsQualifiedBackgroundRerouteReading(routeBeforeReroute, rerouteReading)))
+                    {
+                        lastRerouteResult = "PositionUncertain";
+                        return false;
+                    }
                 }
                 var replanningHazards = hazardsToAvoid ?? _hazardReroutingService.GetRouteHazards();
                 RouteReplacementResult replacement =
@@ -6618,18 +6554,6 @@ namespace RescuAR.App.Views.Camera
                 if (!CanApplyRouteRequest(destinationVersion, cancellationToken))
                 {
                     lastRerouteResult = "Cancelled";
-                    return false;
-                }
-                var latestHazards = _hazardReroutingService.GetRouteHazards();
-                if (replacementRoute is { Points.Count: >= 2 } &&
-                    (RouteHazardGeometry.IsDestinationExcluded(destination, latestHazards) ||
-                     !RouteHazardGeometry.IsSegmentSafeFromOrigin(origin, replacementRoute.Points[0].Coordinate, origin, latestHazards) ||
-                     !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(replacementRoute, origin, latestHazards)))
-                {
-                    lastRerouteResult = "ReplacementRejected";
-                    UpdateRouteHazardNotice(routeBeforeReroute, _hazardReroutingService.AssessRoute(
-                        routeBeforeReroute, _routeProgressTracker.Current.CommittedProgressMeters,
-                        Connectivity.Current.NetworkAccess == NetworkAccess.Internet));
                     return false;
                 }
                 if (replacementRoute is null ||
@@ -6700,6 +6624,7 @@ namespace RescuAR.App.Views.Camera
                 {
                     destinationStillCurrent =
                         CanApplyRouteRequest(destinationVersion, cancellationToken) &&
+                        ReferenceEquals(activeRoute, routeBeforeReroute) &&
                         activeDestinationCoordinate.HasValue &&
                         activeDestinationCoordinate.Value ==
                             destination &&
@@ -6730,9 +6655,18 @@ namespace RescuAR.App.Views.Camera
                         if (positionObservationHeld ||
                             !IsCurrentRouteStartupLocationAcceptable(latestRouteStartupReading) ||
                             latestRouteStartupReading!.Coordinate.DistanceTo(origin) > 5 ||
+                            (needsReliableFix && !IsQualifiedBackgroundRerouteReading(routeBeforeReroute, latestRouteStartupReading)) ||
                             (offlineRouteHandoff.OfflineSelected && !HybridRoutingService.IsOfflineRoute(replacementRoute)))
                         {
                             lastRerouteResult = "PositionOrProviderChanged";
+                            return false;
+                        }
+                        if (!_hazardReroutingService.TryAcceptRoute(replacementRoute, origin, destination))
+                        {
+                            lastRerouteResult = "ReplacementRejected";
+                            UpdateRouteHazardNotice(routeBeforeReroute, _hazardReroutingService.AssessRoute(
+                                routeBeforeReroute, _routeProgressTracker.Current.CommittedProgressMeters,
+                                Connectivity.Current.NetworkAccess == NetworkAccess.Internet));
                             return false;
                         }
                         routeAccepted = true;
@@ -6743,8 +6677,6 @@ namespace RescuAR.App.Views.Camera
 
                         _routeProgressTracker.SetRoute(
                             replacementRoute);
-                        _hazardReroutingService.AcceptRoute(replacementRoute, origin,
-                            hazardAware ? hazardsToAvoid : null);
                         positionObservationHeld = false;
                         LogAcceptedRoute(replacementRoute, destinationVersion, hazardAware ? "HAZARD" : "REPLAN");
                         // Match the current physical observation to the new route now.
@@ -8293,6 +8225,7 @@ namespace RescuAR.App.Views.Camera
             safeZoneConfirmed =
                 true;
             MldGuidanceBridge.MarkArrived(activeDestinationVersion);
+            offlineRouteHandoff.Reset();
             arrivalWasUserReported = userReported;
 
             CancelRouteRequest("arrival confirmed");
@@ -8942,6 +8875,7 @@ namespace RescuAR.App.Views.Camera
                 return;
             }
 
+            CancelEmergencyShelterSearch();
             FloodDepthVisualizationService.FloodVisualizationSnapshot floodSnapshot =
                 _floodDepthVisualizationService.FromAdvisory(
                     advisory);
@@ -9382,6 +9316,7 @@ namespace RescuAR.App.Views.Camera
         {
             if (emergencyGuidanceStartInProgress ||
                 !pageIsVisible ||
+                cameraMapWindowStopped ||
                 safeZoneConfirmed ||
                 !IsCurrentEmergencyAdvisory(advisory))
             {
@@ -9410,230 +9345,17 @@ namespace RescuAR.App.Views.Camera
                     $"category='{advisory.Category}'.");
 #endif
 
-                /*
-                 * The user-visible commitment happens immediately. The
-                 * emergency screen must close at the end of the five-second
-                 * countdown (or as soon as the Start button is pressed), not
-                 * after a potentially slow GPS acquisition. Route setup then
-                 * continues asynchronously behind the live Camera page.
-                 */
                 HideEmergencyAdvisoryOverlay(
                     $"AR evacuation guidance proceeding ({trigger})",
                     restoreTurnGuidance: false);
 
-                ApplyCameraModuleView(
-                    CameraModuleViewMode.ArCamera,
-                    "emergency AR evacuation guidance proceeding");
+                var destination = NavigationDestinationBridge.Current;
+                if (!destination.IsAvailable)
+                    return await SelectEmergencyShelterAsync(advisory, destination);
 
-#if ANDROID
-                Log.Info(
-                    EmergencyAlertLogTag,
-                    "EMERGENCY OVERLAY CLOSED; route startup is continuing in the background.");
-#endif
-
-                /*
-                 * If the user is already navigating to a verified evacuation
-                 * destination, never silently replace it. The emergency action
-                 * simply resumes/reveals the existing AR guidance.
-                 */
-                NavigationDestinationBridge.DestinationSnapshot destination =
-                    NavigationDestinationBridge.Current;
-
-                if (destination.IsAvailable)
-                {
-#if ANDROID
-                    Log.Info(
-                        EmergencyAlertLogTag,
-                        "Emergency guidance will retain the existing destination: " +
-                        $"'{DiagnosticPrivacyPolicy.FormatRouteLabel(destination.Name)}'.");
-#endif
-
-                    if (activeRoute is null &&
-                        !routeRequestInProgress)
-                    {
-                        StartRouteRequestIfPossible();
-                    }
-
-                    return true;
-                }
-
-                /*
-                 * No destination exists yet. Resolve the current position and
-                 * reuse the app's existing local evacuation-center repository
-                 * to choose the nearest verified center. This keeps Stage 6
-                 * dependent on the same destination/MLD pipeline as normal UI
-                 * navigation instead of creating a second routing path.
-                 */
-                if (!await _locationService.EnsurePermissionAsync())
-                {
-#if ANDROID
-                    Log.Warn(
-                        EmergencyAlertLogTag,
-                        "Emergency AR guidance could not start: location permission was not granted.");
-#endif
-
-                    await DisplayAlert(
-                        "Location Required",
-                        "Location permission is required to start AR evacuation guidance.",
-                        "OK");
-
-                    return false;
-                }
-
-                /*
-                 * Prefer the cached Android/MAUI location first. It normally
-                 * returns immediately and is sufficient for choosing the
-                 * nearest verified evacuation center. A fresh Best-accuracy
-                 * request can take the full 15-second service timeout, which
-                 * previously left the emergency overlay appearing frozen even
-                 * though the five-second countdown had completed.
-                 */
-                LocationReading? reading =
-                    await _locationService.GetLastKnownLocationAsync();
-
-                bool usedLastKnownLocation =
-                    reading is not null &&
-                    reading.Coordinate.IsValid &&
-                    NavigationClock.UtcNow - reading.ObservationTime <=
-                        TimeSpan.FromMinutes(10) &&
-                    (!reading.AccuracyMeters.HasValue ||
-                     reading.AccuracyMeters.Value <= 250.0);
-
-                if (!usedLastKnownLocation)
-                {
-#if ANDROID
-                    if (reading is not null)
-                    {
-                        LogDetailedDebug(
-                            EmergencyAlertLogTag,
-                            "Cached location is too old/inaccurate for emergency destination selection; requesting a fresh location.");
-                    }
-#endif
-
-                    reading =
-                        await _locationService.GetCurrentLocationAsync();
-                }
-
-#if ANDROID
-                if (reading is not null &&
-                    reading.Coordinate.IsValid)
-                {
-                    string locationSource =
-                        usedLastKnownLocation
-                            ? "LAST_KNOWN"
-                            : "CURRENT";
-
-                    string accuracyText =
-                        reading.AccuracyMeters.HasValue
-                            ? $"{reading.AccuracyMeters.Value:F1}m"
-                            : "<unknown>";
-
-                    Log.Info(
-                        EmergencyAlertLogTag,
-                        "Emergency destination selection location acquired: " +
-                        $"source='{locationSource}', " +
-                        $"accuracy={accuracyText}, " +
-                        $"timestamp={reading.ObservationTime:O}.");
-                }
-#endif
-
-                if (reading is null ||
-                    !reading.Coordinate.IsValid)
-                {
-#if ANDROID
-                    Log.Warn(
-                        EmergencyAlertLogTag,
-                        "Emergency AR guidance could not start: no valid GPS location is available.");
-#endif
-
-                    await DisplayAlert(
-                        "Location Unavailable",
-                        "Your location could not be determined. Keep Location enabled and try Start AR Evacuation Guidance again.",
-                        "OK");
-
-                    return false;
-                }
-
-                /*
-                 * The overlay has already been intentionally closed, so the
-                 * advisory is no longer current UI state. Do not cancel the
-                 * committed navigation request merely because
-                 * currentEmergencyAdvisory was cleared by that close.
-                 */
-                if (!pageIsVisible ||
-                    safeZoneConfirmed)
-                {
-                    return false;
-                }
-
-                var nearest =
-                    AreaStatusService.Instance.GetNearestEvacuationCenter(
-                        reading.Coordinate.Latitude,
-                        reading.Coordinate.Longitude);
-
-                RescuAR.App.Models.EvacuationCenter? nearestCenter =
-                    nearest.Center;
-
-                if (nearestCenter is null ||
-                    !double.IsFinite(nearestCenter.Latitude) ||
-                    !double.IsFinite(nearestCenter.Longitude))
-                {
-#if ANDROID
-                    Log.Warn(
-                        EmergencyAlertLogTag,
-                        "Emergency AR guidance could not start: no verified evacuation center is available.");
-#endif
-
-                    await DisplayAlert(
-                        "Safe Zone Unavailable",
-                        "No verified evacuation center is currently available for AR guidance.",
-                        "OK");
-
-                    return false;
-                }
-
-                bool destinationPublished =
-                    CameraNavigationLauncher.Publish(
-                        nearestCenter);
-
-                if (!destinationPublished)
-                {
-#if ANDROID
-                    Log.Warn(
-                        EmergencyAlertLogTag,
-                        $"Emergency AR guidance destination publish failed for '{DiagnosticPrivacyPolicy.FormatRouteLabel(nearestCenter.Name)}'.");
-#endif
-
-                    await DisplayAlert(
-                        "Guidance Unavailable",
-                        "The nearest evacuation center could not be prepared for AR navigation.",
-                        "OK");
-
-                    return false;
-                }
-
-#if ANDROID
-                Log.Info(
-                    EmergencyAlertLogTag,
-                    "EMERGENCY AR DESTINATION SELECTED: " +
-                    $"name='{DiagnosticPrivacyPolicy.FormatRouteLabel(nearestCenter.Name)}', " +
-                    $"distance={nearest.DistanceInMeters:F1} m, " +
-                    $"origin={DiagnosticPrivacyPolicy.FormatCoordinate(reading.Coordinate.Latitude, reading.Coordinate.Longitude)}, " +
-                    $"destination={DiagnosticPrivacyPolicy.FormatCoordinate(nearestCenter.Latitude, nearestCenter.Longitude)}.");
-#endif
-
-                /*
-                 * CameraNavigationLauncher.Publish(...) raises
-                 * NavigationDestinationBridge.DestinationChanged. CameraPage's
-                 * existing handler resets stale navigation state and starts the
-                 * normal MLD request automatically.
-                 */
-#if ANDROID
-                Log.Info(
-                    EmergencyAlertLogTag,
-                    "EMERGENCY AR GUIDANCE STARTED through the existing navigation destination pipeline.");
-#endif
-
+                ApplyCameraModuleView(CameraModuleViewMode.ArCamera, "retained emergency guidance destination");
+                if (activeRoute is null && !routeRequestInProgress)
+                    StartRouteRequestIfPossible();
                 return true;
             }
             catch (Exception exception)
@@ -11455,6 +11177,7 @@ namespace RescuAR.App.Views.Camera
             EventArgs e)
         {
             if (!pageIsVisible || cameraMapWindowStopped) return;
+            RefreshRouteHazards();
             RefreshCameraMapNavigation();
 #if ANDROID
             TryResetExpiredNavigationHeading();

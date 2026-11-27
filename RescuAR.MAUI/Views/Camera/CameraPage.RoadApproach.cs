@@ -208,10 +208,6 @@ public partial class CameraPage
             LogNavigationUiState();
             return false;
         }
-        var reading = GetQualifiedArrivalReading();
-        TimeSpan age = reading is null ? TimeSpan.MaxValue : NavigationClock.UtcNow - reading.ObservationTime;
-        bool fresh = age >= TimeSpan.FromSeconds(-2) && age <= TimeSpan.FromSeconds(10);
-        if (!fresh || reading is null) return false;
         routeLocatorIcon.IsVisible = false;
         arrivalNoticeCategory = decision.IsConfirmed ? "VICINITY_OBSERVED_GUIDANCE_ACTIVE" : "NEAR_UNCONFIRMED";
         string detail = decision.Reason?.StartsWith("A mapped major road", StringComparison.Ordinal) == true

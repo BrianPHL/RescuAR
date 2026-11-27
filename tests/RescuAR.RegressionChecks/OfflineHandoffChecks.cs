@@ -53,6 +53,18 @@ internal static class OfflineHandoffChecks
         policy.Reset();
         check(!policy.OfflineSelected, "stopping guidance clears offline ownership");
 
+        policy.Observe(route, 9, false, 10_000);
+        check(!policy.Observe(route, 9, false, 300_000) && policy.OfflineSelected &&
+            !policy.TryBeginRefresh(route, 9, 309_999, true),
+            "returning to Camera while offline keeps the original saved-route deadline");
+        check(!policy.Observe(route, 9, true, 315_000) &&
+            policy.ProviderLabel(route) == "A-STAR · saved MLD path" &&
+            !policy.TryBeginRefresh(route, 9, 315_000, false) && policy.TryBeginRefresh(route, 9, 315_000, true),
+            "returning after reconnect and expiry retains A* ownership and waits for qualified GPS to replace the route");
+        check(!policy.TryBeginRefresh(route, 9, 320_000, true) && policy.TryBeginRefresh(route, 9, 345_000, true),
+            "a retained trip also preserves the background refresh retry deadline across page inactivity");
+        policy.Reset();
+
         var nodes = new Dictionary<int, RoadNode>();
         var a = new RoadNode(1, C(0)); var b = new RoadNode(2, C(100));
         nodes.Add(1, a); nodes.Add(2, b);

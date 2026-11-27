@@ -74,8 +74,11 @@ deviation, reverse walk, new hazard or changed destination can require a route
 earlier. Expiry requests a background A* replacement only with a fresh qualified
 measured position. The existing route stays active while calculation runs or a
 candidate fails validation; expiry retries are at least 30 seconds apart.
-Hazard restrictions still apply immediately. Reconnection alone does not select
-MLD again within that trip. Explicit offline selection also controls hazard
+Hazard restrictions still apply immediately. Leaving Camera or reconnecting
+preserves the trip's offline selection and the original expiry and retry
+deadlines. Re-entering Camera can request the overdue replacement once a
+qualified position is available. Selecting another destination or ending the
+trip clears the handoff. Explicit offline selection also controls hazard
 replanning, regardless of the retained geometry's original algorithm.
 
 ## Camera navigation and AR
@@ -124,12 +127,28 @@ the renderer's separate tracking/heading/ground safety gates.
 Online routing can continue if the offline graph fails. Arrival and mapped road
 access are held until the restriction graph is available; missing barrier data
 never authorizes check-in. GPS vicinity requires fresh, accurate independent
-observations within the configured boundary, rejects held or conflicting
-geographic evidence, and remains informational. Guidance continues until an
-eligible explicit user arrival action; vicinity alone does not complete the trip.
+observations within the configured boundary and remains informational. A new held
+or conflicting location observation revokes arrival eligibility, including for
+a dialog already open. Guidance continues until an eligible explicit user
+arrival action.
 
 Camera currently owns this navigation state. Leaving Camera stops its progress
 loop. Shared background/map navigation is a separate change.
+
+## Hazard updates and emergency shelters
+
+Hazard snapshot changes reassess the active route independently of GPS polling.
+Known unsafe guidance is held promptly. A replacement still needs a fresh,
+qualified measured origin, and the final route is checked against the latest
+known exclusions before acceptance. An expired feed is shown as expired. Its
+last known exclusions stay in effect until a complete newer snapshot replaces
+them.
+
+With no user-selected destination, emergency guidance can choose a shelter from
+a live directory updated within two minutes. Automatic selection requires an
+open or operational shelter with reported free capacity and a validated walking
+route. A user's choice takes precedence during lookup. If automatic selection
+cannot verify an eligible route, Camera opens the existing 2D shelter chooser.
 
 ## Validation
 

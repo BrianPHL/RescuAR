@@ -179,6 +179,7 @@ public partial class CameraPage
     private void CameraMapWindowStopped(object? sender, EventArgs args)
     {
         cameraMapWindowStopped = true;
+        Interlocked.Increment(ref arrivalSessionGeneration);
         RefreshForegroundLocationOwnership();
         StopCameraMapDisplay();
     }

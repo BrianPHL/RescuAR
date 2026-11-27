@@ -48,6 +48,16 @@ internal static class ARPlacementHazardChecks
             return new(points, length, algorithm);
         }
         var now = DateTimeOffset.UtcNow;
+        check(RouteHazardCoveragePolicy.Evaluate(null, now, false, true) == RouteHazardCoverage.Unavailable &&
+            RouteHazardCoveragePolicy.Evaluate(now.AddSeconds(1), now, false, true) == RouteHazardCoverage.Unavailable,
+            "unknown or future-dated hazard coverage is unavailable");
+        check(RouteHazardCoveragePolicy.Evaluate(now, now, false, true) == RouteHazardCoverage.Saved &&
+            RouteHazardCoveragePolicy.Evaluate(now, now, true, true) == RouteHazardCoverage.Live &&
+            RouteHazardCoveragePolicy.Evaluate(now, now, true, false) == RouteHazardCoverage.Saved,
+            "a restored hazard snapshot stays saved until a live response while online");
+        check(RouteHazardCoveragePolicy.Evaluate(now.AddHours(-2), now, false, false) == RouteHazardCoverage.Saved &&
+            RouteHazardCoveragePolicy.Evaluate(now.AddHours(-2).AddMilliseconds(-1), now, false, false) == RouteHazardCoverage.Expired,
+            "the coverage expiry is evaluated when used, including across a long running trip");
         RouteHazard H(string id, double x, double radius) =>
             new(id, C(x), radius, "Flood Warning", "Medium", "Fixture", "fixture", now);
         var near = H("near", 20, 10);
@@ -69,6 +79,19 @@ internal static class ARPlacementHazardChecks
                 $"{algorithm}: an exclusion at the current position is still detected");
 
             var monitor = new RouteHazardMonitor();
+            monitor.AcceptRoute(straight, C(0), Array.Empty<RouteHazard>(), C(230));
+            var beforeReport = monitor.Assess(straight, 0, Array.Empty<RouteHazard>(), false);
+            var reportedAtSameProgress = monitor.Assess(straight, 0, new[] { near }, false);
+            check(!beforeReport.Unsafe.IsAffected && reportedAtSameProgress.Unsafe.IsAffected &&
+                reportedAtSameProgress.SafePrefixEndProgressMeters < 11 &&
+                !monitor.IsCurrentContext(beforeReport.Retry),
+                $"{algorithm}: a newly reported exclusion invalidates an unchanged position and clips the unsafe geometry");
+            var shelterOnly = monitor.Assess(straight, 0, new[] { H("shelter", 230, 10) }, false);
+            check(shelterOnly.DestinationExcluded && shelterOnly.Unsafe.IsAffected &&
+                shelterOnly.SafePrefixEndProgressMeters == 0,
+                $"{algorithm}: an excluded requested shelter blocks the route even when the snapped endpoint stops outside it");
+            check(!monitor.Assess(straight, 0, Array.Empty<RouteHazard>(), false).Unsafe.IsAffected,
+                $"{algorithm}: a complete replacement snapshot can clear an earlier exclusion without waiting for movement");
             monitor.AcceptRoute(straight, C(0));
             check(monitor.Assess(straight, 0, new[] { originHazard }, true).Unsafe.IsAffected,
                 $"{algorithm}: normal route matching inside a hazard grants no escape exemption");

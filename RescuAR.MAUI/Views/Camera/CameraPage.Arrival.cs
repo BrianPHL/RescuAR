@@ -15,8 +15,6 @@ public partial class CameraPage
     private long activeDestinationVersion;
     private string arrivalNoticeCategory = "HIDDEN";
     private readonly ArrivalGuidancePolicy arrivalGuidance = new();
-    private LocationReading? latestQualifiedArrivalReading;
-    private long qualifiedArrivalTrip = -1;
     private string ArrivalStatusSource => safeZoneConfirmed ? "USER_REPORTED" :
         lastSafeZoneDecision.IsConfirmed && !lastSafeZoneDecision.IsObservationHeld
             ? "GPS_VICINITY_GUIDANCE_ACTIVE" : "UNCONFIRMED";
@@ -27,45 +25,39 @@ public partial class CameraPage
     {
         lock (routeProgressFusionSync)
         {
+            var selectedDestination = NavigationDestinationBridge.Current;
+            if (!selectedDestination.IsAvailable || selectedDestination.Version != trip)
+                return SafeZoneConfirmationService.SafeZoneDecision.Unavailable;
             var evaluatedAt = NavigationClock.UtcNow;
             var decision = arrivalGuidance.Evaluate(_safeZoneConfirmationService,
                 new(reading.Coordinate, reading.AccuracyMeters, reading.Provider, reading.ObservationTime),
                 destination, radius, remaining, evaluatedAt, trip, majorRoadBarrier, geographicHeld);
             LogReplayArrivalObservation(reading, destination, radius, remaining, majorRoadBarrier,
                 trip, geographicHeld, decision, evaluatedAt);
-            if (arrivalGuidance.LastEvidence.IsAccepted)
-            {
-                latestQualifiedArrivalReading = reading;
-                qualifiedArrivalTrip = trip;
-            }
             return decision;
         }
     }
 
-    private LocationReading? GetQualifiedArrivalReading()
+    private ArrivalGuidancePolicy.Observation? GetQualifiedArrivalReading(
+        NavigationDestinationBridge.DestinationSnapshot destination)
     {
         lock (routeProgressFusionSync)
-            return qualifiedArrivalTrip == NavigationDestinationBridge.Current.Version
-                ? latestQualifiedArrivalReading : null;
+            return arrivalGuidance.GetConfirmationObservation(destination.Version, destination.Coordinate);
     }
 
     private void ResetArrivalEvidence()
     {
         lock (routeProgressFusionSync)
-        {
             arrivalGuidance.Reset();
-            latestQualifiedArrivalReading = null;
-            qualifiedArrivalTrip = -1;
-        }
     }
 
     private bool HasArrivalNoticePriority()
     {
         var destination = NavigationDestinationBridge.Current;
-        var reading = GetQualifiedArrivalReading();
-        if (!pageIsVisible || safeZoneConfirmed || emergencyAdvisoryVisible || !destination.IsAvailable ||
-            activeDestinationVersion != destination.Version || reading is null) return false;
-        TimeSpan age = NavigationClock.UtcNow - reading.ObservationTime;
+        if (!pageIsVisible || cameraMapWindowStopped || safeZoneConfirmed || emergencyAdvisoryVisible || !destination.IsAvailable ||
+            activeDestinationVersion != destination.Version ||
+            GetQualifiedArrivalReading(destination) is not { } reading) return false;
+        TimeSpan age = NavigationClock.UtcNow - reading.ObservedAt;
         return age >= TimeSpan.FromSeconds(-2) && age <= UserArrivalConfirmationPolicy.MaximumFixAge &&
             reading.Coordinate.DistanceTo(destination.Coordinate) <=
                 Math.Min(destination.SafeZoneRadiusMeters, SafeZoneConfirmationService.MaximumAutomaticConfirmationRadiusMeters);
@@ -74,41 +66,53 @@ public partial class CameraPage
     private void SetTurnGuidanceVisible(bool visible) =>
         turnGuidancePanel.IsVisible = visible && !routeHazardBlocksGuidance;
 
-    private bool CanOfferUserArrival()
+    private bool CanOfferUserArrival() =>
+        TryGetUserArrivalReading(NavigationDestinationBridge.Current, out _);
+
+    private bool TryGetUserArrivalReading(NavigationDestinationBridge.DestinationSnapshot destination,
+        out ArrivalGuidancePolicy.Observation reading)
     {
-        var destination = NavigationDestinationBridge.Current;
-        var reading = GetQualifiedArrivalReading();
-        return pageIsVisible && !safeZoneConfirmed && !emergencyAdvisoryVisible &&
-            currentCameraModuleView != CameraModuleViewMode.FloodDepth &&
-            destination.IsAvailable && activeDestinationVersion == destination.Version &&
-            activeDestinationCoordinate == destination.Coordinate &&
-            reading is not null && UserArrivalConfirmationPolicy.CanOffer(
-                reading.Coordinate, destination.Coordinate, reading.AccuracyMeters,
-                reading.ObservationTime, NavigationClock.UtcNow,
-                majorRoadBarrier: arrivalRoadGraph is null || arrivalRoadGraph.AccessCrossesMajorRoad(
-                    reading.Coordinate, destination.Coordinate));
+        reading = default;
+        if (!pageIsVisible || cameraMapWindowStopped || safeZoneConfirmed || emergencyAdvisoryVisible ||
+            currentCameraModuleView == CameraModuleViewMode.FloodDepth ||
+            !destination.IsAvailable || activeDestinationVersion != destination.Version ||
+            activeDestinationCoordinate != destination.Coordinate ||
+            GetQualifiedArrivalReading(destination) is not { } observation) return false;
+
+        reading = observation;
+        return UserArrivalConfirmationPolicy.CanOffer(reading.Coordinate, destination.Coordinate,
+            reading.AccuracyMeters, reading.ObservedAt, NavigationClock.UtcNow,
+            majorRoadBarrier: arrivalRoadGraph is null || arrivalRoadGraph.AccessCrossesMajorRoad(
+                reading.Coordinate, destination.Coordinate));
     }
 
     private async void OnConfirmUserArrivalClicked(object? sender, EventArgs e)
     {
-        if (userArrivalPromptOpen || !CanOfferUserArrival()) return;
-        var destination = NavigationDestinationBridge.Current;
-        long sessionGeneration = Interlocked.Read(ref arrivalSessionGeneration);
-        userArrivalPromptOpen = true;
+        NavigationDestinationBridge.DestinationSnapshot destination;
+        long sessionGeneration;
+        long confirmationRevision;
+        lock (routeProgressFusionSync)
+        {
+            destination = NavigationDestinationBridge.Current;
+            if (userArrivalPromptOpen || !TryGetUserArrivalReading(destination, out _)) return;
+            sessionGeneration = Interlocked.Read(ref arrivalSessionGeneration);
+            confirmationRevision = arrivalGuidance.ConfirmationRevision;
+            userArrivalPromptOpen = true;
+        }
         confirmUserArrivalButton.IsEnabled = false;
         try
         {
             bool accepted = await DisplayAlert("Confirm your arrival",
                 $"Are you physically at {destination.Name}? This records your confirmation and stops route guidance. GPS has not verified your arrival.",
                 "Confirm arrival", "Keep guiding");
-            if (!accepted || sessionGeneration != Interlocked.Read(ref arrivalSessionGeneration) ||
-                NavigationDestinationBridge.Current != destination || !CanOfferUserArrival()) return;
+            if (!accepted) return;
 
             lock (routeProgressFusionSync)
             {
                 if (sessionGeneration != Interlocked.Read(ref arrivalSessionGeneration) ||
-                    NavigationDestinationBridge.Current != destination || !CanOfferUserArrival() ||
-                    GetQualifiedArrivalReading() is not { } reading) return;
+                    confirmationRevision != arrivalGuidance.ConfirmationRevision ||
+                    NavigationDestinationBridge.Current != destination ||
+                    !TryGetUserArrivalReading(destination, out var reading)) return;
                 var progress = _routeProgressTracker.Current;
                 var decision = new SafeZoneConfirmationService.SafeZoneDecision(
                     IsAvailable: true, IsCandidate: false, IsConfirmed: true,
@@ -118,7 +122,7 @@ public partial class CameraPage
                     ArrivalRadiusMeters: SafeZoneConfirmationService.ArrivalRadiusMeters,
                     RemainingRouteMeters: progress.RemainingMeters,
                     MaximumRemainingRouteMeters: SafeZoneConfirmationService.MaximumRemainingRouteMeters,
-                    AccuracyMeters: reading.AccuracyMeters, ObservedAt: reading.ObservationTime,
+                    AccuracyMeters: reading.AccuracyMeters, ObservedAt: reading.ObservedAt,
                     Reason: "User reported arrival; GPS proximity and facility entry are unverified.",
                     DestinationVersion: destination.Version);
                 HandleSafeZoneDecision(decision, userReported: true);

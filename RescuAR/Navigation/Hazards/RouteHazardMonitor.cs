@@ -15,6 +15,7 @@ public sealed class RouteHazardMonitor
 {
     private RouteResult? currentRoute;
     private GeoCoordinate acceptedOrigin;
+    private GeoCoordinate? requestedDestination;
     private readonly Dictionary<string, RouteHazard> escapeHazards = new(StringComparer.Ordinal);
     private readonly HashSet<int> unavailableSegments = new();
     private RetryContext? latestContext;
@@ -23,11 +24,13 @@ public sealed class RouteHazardMonitor
     public readonly record struct RetryContext(RouteResult Route, string Snapshot,
         bool InternetAvailable, int CurrentSegment);
     public readonly record struct Assessment(RouteHazardGeometry.RouteHazardIntersection Unsafe,
-        RouteHazard? Escaping, RetryContext Retry, double SafePrefixEndProgressMeters = double.PositiveInfinity);
+        RouteHazard? Escaping, RetryContext Retry, double SafePrefixEndProgressMeters = double.PositiveInfinity,
+        bool DestinationExcluded = false);
 
     public void Reset()
     {
         currentRoute = null;
+        requestedDestination = null;
         escapeHazards.Clear();
         unavailableSegments.Clear();
         latestContext = null;
@@ -35,15 +38,17 @@ public sealed class RouteHazardMonitor
     }
 
     public void AcceptRoute(RouteResult route, GeoCoordinate origin,
-        IReadOnlyList<RouteHazard>? validatedHazards = null)
+        IReadOnlyList<RouteHazard>? validatedHazards = null, GeoCoordinate? destination = null)
     {
         Reset();
         currentRoute = route;
         acceptedOrigin = origin;
-        // Only a hazard-aware, validated replacement grants an escape exemption.
+        requestedDestination = destination;
+        // Only a route validated against its current exclusions grants an escape exemption.
         // A new GPS fix inside an exclusion zone cannot grant one by itself.
         if (validatedHazards is null || !origin.IsValid || route.Points.Count < 2 ||
-            validatedHazards.Any(h => route.Points[^1].Coordinate.DistanceTo(h.Coordinate) <= h.RadiusMeters) ||
+            RouteHazardGeometry.IsDestinationExcluded(destination ?? route.Points[^1].Coordinate, validatedHazards) ||
+            RouteHazardGeometry.IsDestinationExcluded(route.Points[^1].Coordinate, validatedHazards) ||
             !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(route, origin, validatedHazards)) return;
         foreach (var hazard in validatedHazards)
             if (origin.DistanceTo(hazard.Coordinate) <= hazard.RadiusMeters)
@@ -57,6 +62,7 @@ public sealed class RouteHazardMonitor
         RouteHazard? escaping = null;
         double safePrefixEnd = double.PositiveInfinity;
         bool sameRoute = ReferenceEquals(currentRoute, route);
+        bool destinationExcluded = false;
         bool hasPosition = RouteDisplayProgressPolicy.TryAtDistance(route, progress, out var position);
         foreach (var hazard in hazards)
         {
@@ -66,6 +72,22 @@ public sealed class RouteHazardMonitor
             var intersection = acceptedEscape
                 ? RouteHazardGeometry.FindFirstUnsafeIntersectionFromOrigin(route, acceptedOrigin, one, progress)
                 : RouteHazardGeometry.FindFirstIntersection(route, progress, one);
+            double destinationClearance = sameRoute && requestedDestination is { IsValid: true } target
+                ? target.DistanceTo(hazard.Coordinate)
+                : double.PositiveInfinity;
+            if (destinationClearance <= hazard.RadiusMeters)
+            {
+                // A snapped route can stop outside the exclusion even when its
+                // requested shelter lies inside it. Geometry stopping short
+                // of the exclusion cannot justify guidance to that shelter.
+                destinationExcluded = true;
+                if (!intersection.IsAffected)
+                {
+                    safePrefixEnd = 0;
+                    intersection = new(true, hazard, destinationClearance, Math.Max(0, route.TotalDistanceMeters - progress),
+                        Math.Max(0, route.Points.Count - 2));
+                }
+            }
             if (intersection.IsAffected && (!best.IsAffected || intersection.DistanceAheadMeters < best.DistanceAheadMeters))
                 best = intersection;
             // An unchanged, validated escape hazard cannot have a later
@@ -84,7 +106,7 @@ public sealed class RouteHazardMonitor
             if (!HasCurrentInputs(context)) unavailableSegments.Clear();
             latestContext = context;
         }
-        return new(best, escaping, context, safePrefixEnd);
+        return new(best, escaping, context, safePrefixEnd, destinationExcluded);
     }
 
     private bool HasCurrentInputs(RetryContext context) =>

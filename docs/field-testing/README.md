@@ -2,6 +2,8 @@
 
 Aligned with source on 2026-11-05, starting at `dev` revision `60986f0` plus the
 [A* continuity, arrival and exact replay changes](../changes/2026-11-05-navigation-replay-and-astar-continuity.md).
+The [November 27 trip guidance changes](../changes/2026-11-27-ar-trip-guidance-safeguards.md)
+extend the arrival, hazard, shelter selection and offline re-entry cases.
 This is the current procedure. Dated reports retain their own candidate results;
 none establishes acceptance of a later build.
 
@@ -49,13 +51,17 @@ package must explicitly use `RescuArDiagnosticBuild=false` and be checked with
   observation's freshness requirement. Held or conflicting geographic readings
   cannot vote. Vicinity does not end guidance; only eligible explicit user arrival
   does. Pin overlap alone is not entry evidence.
+- When a fresh held or conflicting fix arrives, the arrival action must become
+  unavailable. If the confirmation dialog is already open, accepting it must
+  leave the route active. A later qualified fix can enable a new confirmation.
 - Live tracked visual continuity is bounded by time, distance and frame/route
   ownership; it does not create geographic progress or arrival evidence.
 - Network loss switches the controller label to `A-STAR · saved MLD path`,
   preserving the downloaded route and placement until a validated replacement.
   Saved geometry expires after five minutes; confirmed deviation/hazard can
   require an earlier replacement. Fresh position and normal safety checks still
-  gate acceptance. Reconnection does not automatically switch this trip back.
+  gate acceptance. Leaving Camera and reconnecting preserve the original expiry
+  and provider ownership for the retained trip.
   Same-corridor A* replacement remaps progress while retaining registration
   uncertainty and support age. An unsupported transform holds AR instead of
   immediately reseeding from the same disputed fix. Qualified A* previews retain
@@ -127,6 +133,18 @@ a matching screen recording and logs for each trial.
    Separately test a safe deviation before expiry and reconnect during the trip;
    both must retain local controller ownership. Record actual placement, camera
    gaps and recovery messages; host checks do not establish these results.
+8. Leave Camera after an offline handoff. Return once while still offline and
+   once after reconnecting in a separate trial. Expect the same route and A*
+   controller, with the five-minute timer measured from the original handoff.
+9. In a controlled test, publish a route-blocking hazard while GPS is stalled.
+   Expect the unsafe section and its turn instructions to be held promptly.
+   Expect any detour request to wait for qualified GPS. While a route request is
+   already running, change the applicable hazard and verify the old result
+   cannot replace guidance through the affected section.
+10. Trigger the emergency shelter flow with a full or unreachable nearest
+    shelter. Expect a validated route to an eligible shelter or the shelter
+    chooser. Select a shelter manually while automatic selection is pending and
+    verify that the late result preserves the user's choice.
 
 After a trial, collect existing device evidence from the repository root:
 

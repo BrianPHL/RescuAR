@@ -79,7 +79,20 @@ public static class NavigationDestinationBridge
     public static void Set(
         string name,
         GeoCoordinate coordinate,
-        double safeZoneRadiusMeters)
+        double safeZoneRadiusMeters) =>
+        Publish(name, coordinate, safeZoneRadiusMeters, expectedEmptyVersion: null);
+
+    public static bool TrySetIfUnselected(
+        long expectedVersion,
+        string name,
+        GeoCoordinate coordinate) =>
+        Publish(name, coordinate, SafeZoneFacilityCatalog.GetArrivalRadiusMeters(name), expectedVersion);
+
+    private static bool Publish(
+        string name,
+        GeoCoordinate coordinate,
+        double safeZoneRadiusMeters,
+        long? expectedEmptyVersion)
     {
         if (!coordinate.IsValid)
         {
@@ -103,6 +116,10 @@ public static class NavigationDestinationBridge
 
         lock (sync)
         {
+            if (expectedEmptyVersion is { } expected &&
+                (current.IsAvailable || current.Version != expected))
+                return false;
+
             next = new DestinationSnapshot(true, name ?? string.Empty, coordinate,
                 effectiveSafeZoneRadiusMeters, ++version);
             current =
@@ -119,6 +136,7 @@ public static class NavigationDestinationBridge
         DestinationChanged?.Invoke(
             null,
             EventArgs.Empty);
+        return true;
     }
 
     public static void Clear()

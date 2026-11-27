@@ -12,6 +12,8 @@ public sealed class ArrivalGuidancePolicy
     public static readonly TimeSpan ProviderReferenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Dictionary<string, Observation> providers = new();
     private Observation? accepted;
+    private Observation? confirmationObservation;
+    private DateTimeOffset? latestConfirmationObservationAt;
     private long destinationVersion;
     private GeoCoordinate? destination;
 
@@ -20,11 +22,18 @@ public sealed class ArrivalGuidancePolicy
     public readonly record struct EvidenceDecision(bool IsAccepted, string Reason, string Provider,
         DateTimeOffset ObservedAt);
     public EvidenceDecision LastEvidence { get; private set; }
+    public long ConfirmationRevision { get; private set; }
+
+    public Observation? GetConfirmationObservation(long trip, GeoCoordinate target) =>
+        destinationVersion == trip && destination == target ? confirmationObservation : null;
 
     public void Reset()
     {
         providers.Clear();
         accepted = null;
+        confirmationObservation = null;
+        latestConfirmationObservationAt = null;
+        ConfirmationRevision++;
         destination = null;
         destinationVersion = 0;
         LastEvidence = default;
@@ -48,6 +57,7 @@ public sealed class ArrivalGuidancePolicy
         }
         LastEvidence = target.IsValid ? Qualify(observation, now, geographicHeld)
             : new(false, "destination coordinate is invalid", observation.Provider, observation.ObservedAt);
+        UpdateConfirmationEvidence(observation, now);
         if (!LastEvidence.IsAccepted)
         {
             double effectiveRadius = Math.Min(SafeZoneConfirmationService.MaximumAutomaticConfirmationRadiusMeters,
@@ -80,15 +90,40 @@ public sealed class ArrivalGuidancePolicy
         userReported && explicitActionEligible && decision.IsAvailable &&
         decision.IsConfirmed && !decision.IsObservationHeld;
 
+    private void UpdateConfirmationEvidence(Observation observation, DateTimeOffset now)
+    {
+        if (!IsFresh(observation, now) ||
+            latestConfirmationObservationAt is { } latest && observation.ObservedAt < latest)
+            return;
+
+        if (!LastEvidence.IsAccepted)
+        {
+            if (confirmationObservation.HasValue) ConfirmationRevision++;
+            confirmationObservation = null;
+        }
+        else if (observation.ObservedAt != latestConfirmationObservationAt || confirmationObservation.HasValue)
+        {
+            // A competing reading with the same acquisition time cannot undo a hold.
+            confirmationObservation = observation;
+        }
+
+        latestConfirmationObservationAt = observation.ObservedAt;
+    }
+
+    private static bool IsFresh(Observation observation, DateTimeOffset now)
+    {
+        TimeSpan age = now - observation.ObservedAt;
+        return age >= TimeSpan.FromSeconds(-2) && age <= UserArrivalConfirmationPolicy.MaximumFixAge;
+    }
+
     private EvidenceDecision Qualify(Observation observation, DateTimeOffset now, bool geographicHeld)
     {
         EvidenceDecision Result(bool allowed, string reason) => new(allowed, reason,
             observation.Provider, observation.ObservedAt);
-        TimeSpan age = now - observation.ObservedAt;
         if (!observation.Coordinate.IsValid || observation.AccuracyMeters is not double accuracy ||
             !double.IsFinite(accuracy) || accuracy < 0 || accuracy > MaximumEvidenceAccuracyMeters)
             return Result(false, "a precise geographic observation is required");
-        if (age < TimeSpan.FromSeconds(-2) || age > TimeSpan.FromSeconds(5))
+        if (!IsFresh(observation, now))
             return Result(false, "a fresh geographic observation is required");
         if (geographicHeld) return Result(false, "navigation has not accepted this geographic observation");
         if (accepted is { } last && observation.ObservedAt < last.ObservedAt)

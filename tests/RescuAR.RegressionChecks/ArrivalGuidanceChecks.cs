@@ -89,5 +89,38 @@ internal static class ArrivalGuidanceChecks
             "geographic replay: a same-provider jump beyond pedestrian motion and uncertainty cannot supply arrival evidence");
         check(!Observe(10, 20, barrier: true).IsConfirmed,
             "vicinity: a loaded mapped barrier still prevents confirmation");
+
+        policy.Reset();
+        vicinity.Reset();
+        Observe(10, 2, 4);
+        long promptRevision = policy.ConfirmationRevision;
+        check(policy.GetConfirmationObservation(1, C(0)) is { } promptFix &&
+            UserArrivalConfirmationPolicy.CanOffer(promptFix.Coordinate, C(0), promptFix.AccuracyMeters,
+                promptFix.ObservedAt, at.AddSeconds(2)),
+            "explicit arrival: a current qualified fix can open a confirmation prompt");
+        Observe(50, 1, 8, "network", held: true);
+        check(policy.GetConfirmationObservation(1, C(0)) is { } currentFix &&
+            currentFix.ObservedAt == at.AddSeconds(2) && policy.ConfirmationRevision == promptRevision,
+            "explicit arrival: a delayed held reading cannot invalidate newer confirmation evidence");
+        var conflict = Observe(50, 4, 8, "network");
+        check(conflict.IsObservationHeld && policy.GetConfirmationObservation(1, C(0)) is null &&
+            policy.ConfirmationRevision != promptRevision && vicinity.Current.ConfirmationCount == 1,
+            "explicit arrival: a fresh conflicting fix revokes eligibility and invalidates a prompt without adding a vicinity vote");
+        Observe(10, 3, 4);
+        Observe(10, 4, 4);
+        check(policy.GetConfirmationObservation(1, C(0)) is null,
+            "explicit arrival: older and same-time fixes cannot undo the newer hold");
+        Observe(10, 5, 4);
+        check(policy.GetConfirmationObservation(1, C(0)) is { } recoveredFix &&
+            recoveredFix.ObservedAt == at.AddSeconds(5) && policy.ConfirmationRevision != promptRevision,
+            "explicit arrival: newer qualified GPS restores eligibility for a new prompt only");
+        Observe(10, 6, 4, trip: 2);
+        long newTripRevision = policy.ConfirmationRevision;
+        Observe(100, 7, 10, "network", held: true, trip: 1);
+        check(policy.GetConfirmationObservation(1, C(0)) is null &&
+            policy.GetConfirmationObservation(2, C(10)) is null &&
+            policy.GetConfirmationObservation(2, C(0)) is { } newTripFix &&
+            newTripFix.ObservedAt == at.AddSeconds(6) && policy.ConfirmationRevision == newTripRevision,
+            "explicit arrival: evidence and prompt validity belong to the selected trip and coordinate");
     }
 }

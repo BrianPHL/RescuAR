@@ -1,7 +1,6 @@
 using RescuAR.Navigation.Timing;
 using RescuAR.Navigation.Progress;
 using Microsoft.Maui.Controls;
-using Microsoft.Maui.Networking;
 using RescuAR.App.Services.Evacuation;
 using RescuAR.MAUI.Services.Location;
 using RescuAR.MAUI.Services.Navigation;
@@ -99,17 +98,17 @@ public partial class CameraPage
         mapRouteStepsButton.Text = route is null ? "Retry" : "Steps";
         mapRouteStepsButton.IsEnabled = !routeRequestInProgress;
         if (route is null)
+        {
             mapRouteStatsLabel.Text = safeZoneConfirmed ? "Arrival confirmed"
                 : routeHazardNotice ?? routeStartupFailureMessage ?? "Calculating pedestrian route…";
+            if (!safeZoneConfirmed && activeRoute is not null)
+                mapRouteStatsLabel.Text += $"\n{GetRouteHazardCoverageDescription()}";
+        }
         else
         {
             var progress = _routeProgressTracker.Current;
             double remaining = progress.HasProgress ? progress.RemainingMeters : route.TotalDistanceMeters;
-            var hazardUpdated = _hazardReroutingService.LastRemoteRefreshSuccessUtc;
-            string hazardStatus = hazardUpdated is not { } at ? "Hazard data unavailable"
-                : Connectivity.Current.NetworkAccess == NetworkAccess.Internet && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(15)
-                    ? $"Known hazards updated {at.ToLocalTime():HH:mm}" : $"Saved hazards · {at.ToLocalTime():MMM d, HH:mm}";
-            mapRouteStatsLabel.Text = $"{offlineRouteHandoff.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{hazardStatus}";
+            mapRouteStatsLabel.Text = $"{offlineRouteHandoff.ProviderLabel(route)} · {remaining:F0} m · ~{Math.Max(1, Math.Round(remaining / 80)):F0} min walk\n{GetRouteHazardCoverageDescription()}";
             if (GetCameraMapLocationMarker() is { } marker)
                 mapRouteStatsLabel.Text += $"\n{marker.Label}";
         }

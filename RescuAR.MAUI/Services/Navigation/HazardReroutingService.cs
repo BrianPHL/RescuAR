@@ -38,8 +38,8 @@ public sealed class HazardReroutingService
     private static readonly TimeSpan PerHazardRerouteCooldown =
         TimeSpan.FromSeconds(20);
 
-    private static readonly TimeSpan MaximumOfflineCacheAge =
-        TimeSpan.FromHours(2);
+    private static readonly TimeSpan RemoteRefreshTimeout =
+        TimeSpan.FromSeconds(4);
 
     private const string HazardCachePreferenceKey =
         "RescuAR.Navigation.VerifiedHazards.V1";
@@ -65,6 +65,9 @@ public sealed class HazardReroutingService
         DateTimeOffset.MinValue;
 
     private DateTimeOffset? lastRemoteRefreshSuccessUtc;
+    private bool liveResponseReceived;
+    private long snapshotVersion;
+    private string? remoteFingerprint;
 
     private int remoteRefreshInProgress;
     private Task remoteRefreshTask = Task.CompletedTask;
@@ -77,6 +80,8 @@ public sealed class HazardReroutingService
 
     private int lastLoggedDistanceBucket =
         -1;
+
+    public event Action? SnapshotChanged;
 
     public HazardReroutingService()
         : this(new CommunityReportService())
@@ -103,7 +108,9 @@ public sealed class HazardReroutingService
         DateTimeOffset? LastRemoteRefreshSuccessUtc,
         RouteHazard? EscapingHazard = null,
         RouteHazardMonitor.RetryContext RetryContext = default,
-        double SafePrefixEndProgressMeters = double.PositiveInfinity)
+        double SafePrefixEndProgressMeters = double.PositiveInfinity,
+        long SnapshotVersion = 0,
+        bool DestinationExcluded = false)
     {
         public static HazardRouteAssessment Safe(
             IReadOnlyList<RouteHazard> hazards,
@@ -136,19 +143,13 @@ public sealed class HazardReroutingService
 
         RouteHazard[] hazards;
         DateTimeOffset? lastSuccess;
-
-        lock (sync)
-        {
-            hazards =
-                MergeHazardsLocked();
-
-            lastSuccess =
-                lastRemoteRefreshSuccessUtc;
-        }
-
+        long version;
         RouteHazardMonitor.Assessment monitored;
         lock (sync)
         {
+            hazards = MergeHazardsLocked();
+            lastSuccess = lastRemoteRefreshSuccessUtc;
+            version = snapshotVersion;
             if (!ReferenceEquals(fingerprintInput, hazards))
             {
                 fingerprintInput = hazards;
@@ -171,7 +172,7 @@ public sealed class HazardReroutingService
             }
 
             return HazardRouteAssessment.Safe(hazards, lastSuccess) with
-            { EscapingHazard = monitored.Escaping, RetryContext = monitored.Retry };
+            { EscapingHazard = monitored.Escaping, RetryContext = monitored.Retry, SnapshotVersion = version };
         }
 
         RouteHazard hazard =
@@ -224,19 +225,31 @@ public sealed class HazardReroutingService
             intersection.DistanceAheadMeters,
             intersection.MinimumDistanceMeters,
             hazards,
-            lastSuccess, monitored.Escaping, monitored.Retry, monitored.SafePrefixEndProgressMeters);
+            lastSuccess, monitored.Escaping, monitored.Retry, monitored.SafePrefixEndProgressMeters, version,
+            monitored.DestinationExcluded);
     }
 
-    public void AcceptRoute(RouteResult route, GeoCoordinate origin,
-        IReadOnlyList<RouteHazard>? validatedHazards = null)
+    public bool TryAcceptRoute(RouteResult route, GeoCoordinate origin, GeoCoordinate destination)
     {
-        lock (sync) monitor.AcceptRoute(route, origin, validatedHazards);
+        if (route.Points.Count < 2 || !origin.IsValid || !destination.IsValid) return false;
+        lock (sync)
+        {
+            RouteHazard[] hazards = MergeHazardsLocked();
+            if (RouteHazardGeometry.IsDestinationExcluded(destination, hazards) ||
+                !RouteHazardGeometry.IsSegmentSafeFromOrigin(origin, route.Points[0].Coordinate, origin, hazards) ||
+                !RouteHazardGeometry.RouteAvoidsHazardsFromOrigin(route, origin, hazards))
+                return false;
+
+            monitor.AcceptRoute(route, origin, hazards, destination);
+            return true;
+        }
     }
 
     public bool MarkNoRoute(HazardRouteAssessment assessment, RouteReplacementFailure reason = RouteReplacementFailure.NoRoute)
     {
         lock (sync)
         {
+            if (assessment.SnapshotVersion != snapshotVersion) return false;
             if (reason != RouteReplacementFailure.DestinationExcluded && !monitor.IsCurrentContext(assessment.RetryContext)) return false;
             return monitor.MarkNoRoute(assessment.RetryContext, reason);
         }
@@ -244,7 +257,8 @@ public sealed class HazardReroutingService
 
     public bool IsCurrentAssessment(HazardRouteAssessment assessment)
     {
-        lock (sync) return monitor.IsCurrentContext(assessment.RetryContext);
+        lock (sync)
+            return assessment.SnapshotVersion == snapshotVersion && monitor.IsCurrentContext(assessment.RetryContext);
     }
 
     public void AllowRetryForPositionChange(RouteResult route)
@@ -259,7 +273,7 @@ public sealed class HazardReroutingService
 
     public bool IsDestinationExcluded(HazardRouteAssessment assessment)
     {
-        lock (sync) return monitor.IsDestinationExcluded(assessment.RetryContext);
+        lock (sync) return assessment.DestinationExcluded || monitor.IsDestinationExcluded(assessment.RetryContext);
     }
 
     /// <summary>
@@ -278,7 +292,7 @@ public sealed class HazardReroutingService
 
         lock (sync)
         {
-            if (!monitor.CanRetry(assessment.RetryContext))
+            if (assessment.SnapshotVersion != snapshotVersion || !monitor.CanRetry(assessment.RetryContext))
             {
                 reason = "no safe alternative for unchanged route, hazards, connectivity and segment";
                 return false;
@@ -331,6 +345,7 @@ public sealed class HazardReroutingService
                 hazard is null
                     ? Array.Empty<RouteHazard>()
                     : new[] { hazard };
+            snapshotVersion++;
 
             lastLoggedHazardId =
                 null;
@@ -361,6 +376,7 @@ public sealed class HazardReroutingService
         {
             monitor.Reset();
 #if RESCUAR_DIAGNOSTICS
+            if (developerHazards.Length > 0) snapshotVersion++;
             developerHazards =
                 Array.Empty<RouteHazard>();
 #endif
@@ -380,9 +396,11 @@ public sealed class HazardReroutingService
         lock (sync) return MergeHazardsLocked().ToArray();
     }
 
-    public DateTimeOffset? LastRemoteRefreshSuccessUtc
+    public (long Version, RouteHazardCoverage Coverage, DateTimeOffset? RefreshedAt) GetSnapshotStatus(bool internetAvailable)
     {
-        get { lock (sync) return lastRemoteRefreshSuccessUtc; }
+        lock (sync)
+            return (snapshotVersion, RouteHazardCoveragePolicy.Evaluate(lastRemoteRefreshSuccessUtc,
+                DateTimeOffset.UtcNow, liveResponseReceived, internetAvailable), lastRemoteRefreshSuccessUtc);
     }
 
     public async Task<RouteHazard[]> GetRouteHazardsAsync(bool internetAvailable, CancellationToken token)
@@ -423,10 +441,12 @@ public sealed class HazardReroutingService
 
     private async Task RefreshRemoteHazardsAsync()
     {
+        using var timeout = new CancellationTokenSource(RemoteRefreshTimeout);
         try
         {
             List<CommunityReport>? reports =
-                await communityReportService.TryGetRemoteReportsAsync();
+                await communityReportService.TryGetRemoteReportsAsync(timeout.Token).ConfigureAwait(false);
+            timeout.Token.ThrowIfCancellationRequested();
 
             if (reports is null)
             {
@@ -452,16 +472,23 @@ public sealed class HazardReroutingService
             DateTimeOffset refreshedAtUtc =
                 DateTimeOffset.UtcNow;
 
+            string fingerprint = RouteHazardMonitor.Fingerprint(hazards);
+            bool changed;
             lock (sync)
             {
-                verifiedRemoteHazards =
-                    hazards;
-
-                lastRemoteRefreshSuccessUtc =
-                    refreshedAtUtc;
+                changed = remoteFingerprint != fingerprint;
+                if (changed)
+                {
+                    remoteFingerprint = fingerprint;
+                    verifiedRemoteHazards = hazards;
+                    snapshotVersion++;
+                }
+                lastRemoteRefreshSuccessUtc = refreshedAtUtc;
+                liveResponseReceived = true;
             }
 
-            string fingerprint = RouteHazardMonitor.Fingerprint(hazards);
+            if (changed) SnapshotChanged?.Invoke();
+
             // Retain the live safety refresh cadence. Only unchanged disk
             // serialization/writes are coalesced to a one-minute heartbeat.
             if (fingerprint != persistedFingerprint || refreshedAtUtc - lastCachePersistedAt >= TimeSpan.FromMinutes(1))
@@ -475,6 +502,10 @@ public sealed class HazardReroutingService
                 "Verified route-hazard snapshot refreshed: " +
                 $"remoteReports={reports.Count}, " +
                 $"activeRoutingHazards={hazards.Length}.");
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            WriteDebug("Verified hazard refresh timed out. Retaining the last successful hazard snapshot.");
         }
         catch (Exception exception)
         {
@@ -510,9 +541,8 @@ public sealed class HazardReroutingService
 
             if (snapshot is null ||
                 snapshot.Hazards is null ||
-                DateTimeOffset.UtcNow -
-                    snapshot.RefreshedAtUtc >
-                    MaximumOfflineCacheAge)
+                RouteHazardCoveragePolicy.Evaluate(snapshot.RefreshedAtUtc, DateTimeOffset.UtcNow,
+                    liveResponseReceived: false, internetAvailable: false) == RouteHazardCoverage.Unavailable)
             {
                 Microsoft.Maui.Storage.Preferences.Default.Remove(
                     HazardCachePreferenceKey);
@@ -546,6 +576,9 @@ public sealed class HazardReroutingService
 
                 lastRemoteRefreshSuccessUtc =
                     snapshot.RefreshedAtUtc;
+                remoteFingerprint = persistedFingerprint = RouteHazardMonitor.Fingerprint(hazards);
+                lastCachePersistedAt = snapshot.RefreshedAtUtc;
+                snapshotVersion++;
             }
 
             WriteDebug(

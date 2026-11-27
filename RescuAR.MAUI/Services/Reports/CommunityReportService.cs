@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using RescuAR.App.Models;
 using RescuAR.Services;
@@ -23,26 +24,36 @@ public class CommunityReportService
     /// and never substitutes local sample rows. This prevents a fallback UI
     /// record from being interpreted as a verified live road hazard.
     /// </summary>
-    public async Task<List<CommunityReport>?> TryGetRemoteReportsAsync()
+    public async Task<List<CommunityReport>?> TryGetRemoteReportsAsync(CancellationToken cancellationToken)
     {
-        var client = await GetClientAsync();
-
-        if (client is null)
-        {
-            return null;
-        }
-
         try
         {
-            var response = await client.From<CommunityReport>()
-                .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                .Get();
+            var client = await GetClientAsync().WaitAsync(cancellationToken);
+            if (client is null) return null;
 
-            return response.Models?.Where(r =>
-                !string.IsNullOrWhiteSpace(r.Status) &&
-                r.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)).ToList() ??
-                new List<CommunityReport>();
+            const int maximumHazards = 1000;
+            // The count call clears its table's filters. Build a fresh query
+            // with the same predicates for the row request.
+            Supabase.Postgrest.Interfaces.IPostgrestTable<CommunityReport> ApprovedHazards() =>
+                client.From<CommunityReport>()
+                    .Filter("status", Supabase.Postgrest.Constants.Operator.ILike, "Approved")
+                    .Or([
+                        new Supabase.Postgrest.QueryFilter("category", Supabase.Postgrest.Constants.Operator.ILike, "Flood Warning"),
+                        new Supabase.Postgrest.QueryFilter("category", Supabase.Postgrest.Constants.Operator.ILike, "Road Hazard")
+                    ]);
+            int expected = await ApprovedHazards().Count(Supabase.Postgrest.Constants.CountType.Exact, cancellationToken);
+            if (expected < 0 || expected > maximumHazards) return null;
+
+            var response = await ApprovedHazards()
+                .Select("id,title,latitude,longitude,category,severity,status,created_at")
+                .Limit(maximumHazards + 1)
+                .Get(cancellationToken);
+
+            // A provider cap or a changing feed can return fewer rows than the
+            // exact count. Keep the previous exclusions on an incomplete read.
+            return response?.Models is { } reports && reports.Count == expected ? reports : null;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
 #if ANDROID

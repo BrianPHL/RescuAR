@@ -60,6 +60,11 @@ public sealed class NavigationStabilityPolicy
         if (AStarRouteDisplayPolicy.AppliesTo(replacement) && ReferenceEquals(route, previous)) route = replacement;
     }
 
+    public bool IsCurrentReliableFix(RouteResult activeRoute, GeoCoordinate coordinate,
+        DateTimeOffset observedAt, DateTimeOffset now) =>
+        ReferenceEquals(route, activeRoute) && Current.Reliable && lastReliable == observedAt &&
+        reliableCoordinate == coordinate && now >= observedAt && now - observedAt <= Options.MaximumFixAge;
+
     public Decision ObserveGeographic(RouteResult activeRoute, GeoCoordinate coordinate, double? accuracy,
         DateTimeOffset at, DateTimeOffset now) =>
         Observe(activeRoute, coordinate, accuracy, at, now, motion: null, observationHeld: false);

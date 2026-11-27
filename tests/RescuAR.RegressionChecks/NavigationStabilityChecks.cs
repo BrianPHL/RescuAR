@@ -19,6 +19,11 @@ internal static class NavigationStabilityChecks
             NavigationStabilityPolicy.Decision Observe(double x, double accuracy, int seconds, bool held = false) =>
                 policy.Observe(route, C(x), accuracy, at.AddSeconds(seconds), at.AddSeconds(seconds), M((float)x), held);
             check(Observe(0, 5, 0) is { Reliable: true, AssessDeviation: true }, $"{algorithm}: initial qualified assessment is due");
+            check(policy.IsCurrentReliableFix(route, C(0), at, at.AddSeconds(3)) &&
+                !policy.IsCurrentReliableFix(route, C(0), at, at.AddSeconds(4)) &&
+                !policy.IsCurrentReliableFix(route, C(1), at.AddSeconds(1), at.AddSeconds(1)) &&
+                !policy.IsCurrentReliableFix(Road(algorithm), C(0), at, at),
+                $"{algorithm}: a hazard update may replan only from the current route's exact, still-fresh qualified measurement");
             check(Observe(1, 5, 1) is { Reliable: true, AssessDeviation: false }, $"{algorithm}: fresh position updates do not continuously assess rerouting");
             check(Observe(3, 5, 3).AssessDeviation, $"{algorithm}: configured assessment interval releases the next assessment");
             check(!Observe(3, 5, 3).AssessDeviation, $"{algorithm}: duplicate location cannot add deviation evidence");

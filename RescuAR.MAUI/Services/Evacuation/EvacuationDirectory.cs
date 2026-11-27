@@ -144,6 +144,7 @@ public sealed class EvacuationDirectory
         Id = item.Id, Name = item.Name, Barangay = item.Barangay, Classification = item.Classification,
         Address = item.Address, VerifiedBy = item.VerifiedBy, FacilityImageUrl = item.FacilityImageUrl, MapImageSource = item.MapImageSource,
         Latitude = item.Latitude, Longitude = item.Longitude, Capacity = item.Capacity, CurrentEvacuees = item.CurrentEvacuees,
+        HasReportedOccupancy = item.HasReportedOccupancy,
         Status = item.Status, HeadOfficer = item.HeadOfficer, Contact = item.Contact, Facilities = item.Facilities?.ToList() ?? new()
     };
 

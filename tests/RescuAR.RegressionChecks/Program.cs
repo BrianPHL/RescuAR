@@ -54,6 +54,7 @@ if (args.Contains("--field-replay"))
     NavigationDecisionReplayChecks.Run(Check);
     AStarReplacementContinuityChecks.Run(Check);
     ArrivalGuidanceChecks.Run(Check);
+    EmergencyShelterSelectionChecks.Run(Check);
     await OfflineHandoffChecks.RunAsync(Check);
     ARRegistrationChecks.Run(Check);
     RouteDisplayProgressChecks.Run(Check);
@@ -110,6 +111,7 @@ if (args.Contains("--field-cadence"))
     await AStarLocationAcquisitionChecks.RunAsync(Check);
     NavigationStabilityChecks.Run(Check);
     ArrivalArrowChecks.Run(Check);
+    EmergencyShelterSelectionChecks.Run(Check);
     ARFieldValidationChecks.Run(Check);
     PdrMapMatchingChecks.Run(Check);
     RouteDisplayProgressChecks.Run(Check);

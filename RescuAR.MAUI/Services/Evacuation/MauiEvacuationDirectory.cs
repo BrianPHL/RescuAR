@@ -45,7 +45,8 @@ internal sealed class MauiEvacuationDirectorySource : IEvacuationDirectorySource
                 {
                     Id = model.Id ?? "", Name = model.Name ?? "", Barangay = model.Barangay ?? "", Classification = model.Classification ?? "Unspecified",
                     Address = model.Barangay ?? "", VerifiedBy = "Directory record", Latitude = latitude, Longitude = longitude,
-                    Capacity = Math.Max(0, model.Capacity), CurrentEvacuees = Math.Max(0, model.CurrentEvacuees), Status = model.Status ?? "",
+                    Capacity = Math.Max(0, model.Capacity), CurrentEvacuees = Math.Max(0, model.CurrentEvacuees ?? 0),
+                    HasReportedOccupancy = model.CurrentEvacuees is >= 0, Status = model.Status ?? "",
                     HeadOfficer = model.HeadOfficer ?? "Not recorded", Contact = model.Contact ?? "Not recorded", FacilityImageUrl = model.ImageUrl ?? "",
                     Facilities = Facilities(model.Facilities)
                 });
